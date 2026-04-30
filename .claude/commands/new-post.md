@@ -37,7 +37,7 @@ You are a blog post generator for **cvam.sight**, a static blog with a hand-draw
   <div class="layout">
     <aside class="sidebar">
       <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
-      <p class="sidebar-sub">notes from a devops + ml apprentice</p>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
       <nav>
         <a href="../index.html">Home</a>
         <a href="../archive.html">Archive</a>

@@ -1,5 +1,5 @@
 ---
-description: Generate a blog post from raw writing. Provide your raw notes/draft and metadata — this command creates the formatted HTML file and adds the entry to posts.js.
+description: Generate a blog post from raw writing. Dump your raw notes/draft and metadata — this command creates the formatted HTML file, updates posts.js, wires up navigation, and updates the homepage.
 ---
 
 You are a blog post generator for **cvam.sight**, a static blog with a hand-drawn paper aesthetic. The user will dump raw writing below along with metadata. Your job:
@@ -7,7 +7,7 @@ You are a blog post generator for **cvam.sight**, a static blog with a hand-draw
 1. **Ask for any missing info** using the ask-questions tool. Required fields:
    - **title**: Post title (short, lowercase-ish, opinionated — matches the blog's voice)
    - **slug**: URL-friendly id (lowercase, hyphens, no spaces). Derive from title if not given.
-   - **category**: One of the existing topics in `site/posts.js` (`ml`, `devops`, `postgres`, `security`, `resources`). If the user names a new category, add it to the TOPICS array too.
+   - **category**: One of the existing topics in `site/posts.js` — check the TOPICS array for valid ids. If the user names a new category, add it to the TOPICS array too.
    - **tags**: Array of short lowercase tags. Always include the category as the first tag.
    - **date**: Default to today's date in "Mon DD, YYYY" format (e.g. "May 1, 2026").
 
@@ -85,7 +85,16 @@ You are a blog post generator for **cvam.sight**, a static blog with a hand-draw
 
 4. **Update `site/posts.js`**: Add the new post entry at the **top** of the `POSTS` array with all metadata fields (`slug`, `title`, `date`, `cat`, `tags`, `time`, `words`, `excerpt`). Generate the `excerpt` as a 1-2 sentence teaser from the content.
 
-5. **Update the previous newest post's nav**: In the HTML file of what was previously the newest post, update its `<div class="post-nav">` so the empty `<span></span>` (or missing prev link) now links back to the new post.
+5. **Update the previous newest post's nav**: Read the HTML file of what was previously the first entry in `POSTS`. In its `<div class="post-nav">`, update the first `<span></span>` to be `<a href="NEW_SLUG.html">← prev: NEW_SHORT_TITLE</a>` linking to the new post.
+
+6. **Update the homepage hero** in `site/index.html`:
+   - Update the `hero-label` meta line: `// latest · DATE_SHORT · TIME min read`
+   - Update the `<h1>` link text and `href` to point to the new post
+   - Update the `excerpt` text
+   - Update the `tag-row` tags
+   - Update the "read post →" button `href`
+
+**Important:** The stats box and streak in `site/index.html` are auto-calculated by `app.js` from the POSTS array — do NOT edit them manually. The JS computes post count, streak, topic count, and word count dynamically.
 
 **Rules:**
 - The first tag in `tag-row` always gets class `fill` (it's the category).
@@ -94,5 +103,6 @@ You are a blog post generator for **cvam.sight**, a static blog with a hand-draw
 - Keep excerpts punchy — one or two sentences max, matching the blog's tone.
 - If the user provides a new category not in TOPICS, add it to the TOPICS array in posts.js.
 - Use `../style.css` and `../app.js` for relative paths in post files.
+- Sidebar category links use `archive.html?cat=CATEGORY_ID` for filtering.
 
 $ARGUMENTS

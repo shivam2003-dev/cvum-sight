@@ -28,7 +28,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Apr 28, 2026 · ml · 7 min read · 1240 words</p>
+        <p class="meta">May 1, 2026 · ml · 10 min read · 1950 words</p>
         <h1>Why softmax temperature is just confidence, rebranded.</h1>
         <div class="tag-row">
           <span class="tag fill">ml</span>
@@ -41,7 +41,8 @@
         <p>
           Spent the morning unlearning what I thought I knew about logits. Notes from chapter 4
           of the deep learning book + a sketch I drew on the back of a napkin while waiting for
-          k8s pods to schedule.
+          k8s pods to schedule. Turns out temperature is one of those things everyone uses but
+          few people actually sit with long enough to build intuition.
         </p>
 
         <h2>The short version</h2>
@@ -50,22 +51,56 @@
           temperature = "I'm not sure, spread the probability around." Low temperature = "I'm
           very confident, sharpen the distribution."
         </p>
+        <p>
+          That's it. That's the whole mental model. Everything else is just the math confirming this.
+        </p>
 
         <h2>What softmax actually does</h2>
         <p>
-          Given a vector of logits <code>z</code>, softmax converts them to probabilities:
+          Before we touch temperature, let's make sure softmax is solid. Given a vector of
+          logits <code>z</code> — the raw, unnormalized outputs of a neural network — softmax
+          converts them to a proper probability distribution:
         </p>
         <pre>softmax(z_i) = exp(z_i) / Σ exp(z_j)</pre>
         <p>
-          When you introduce temperature, you divide each logit by τ before applying softmax:
+          Every output is between 0 and 1. They all sum to 1. The exponential does the heavy
+          lifting: it makes big logits <em>much</em> bigger relative to small ones, creating
+          a natural "winner takes more" dynamic.
+        </p>
+        <p>
+          The subtle thing people miss: softmax doesn't just normalize. It <em>amplifies
+          differences</em>. A logit of 5.0 vs 4.0 — only 1.0 apart — becomes a probability
+          ratio of roughly 2.7:1 after exponentiation. Softmax is opinionated by default.
+        </p>
+
+        <h2>Enter temperature</h2>
+        <p>
+          When you introduce temperature, you divide each logit by τ <em>before</em> applying softmax:
         </p>
         <pre>softmax(z_i / τ) = exp(z_i / τ) / Σ exp(z_j / τ)</pre>
-
-        <h2>Why this matters</h2>
         <p>
-          When τ → 0, the distribution collapses to a one-hot vector (argmax). When τ → ∞,
-          it approaches uniform. The "temperature" metaphor comes from statistical mechanics —
-          high temperature = high entropy = more randomness.
+          This single division changes everything about the output distribution. Let's walk
+          through the extremes.
+        </p>
+
+        <h3>τ → 0 (freezing cold)</h3>
+        <p>
+          Dividing by a tiny number makes all logits huge, but the largest one dominates
+          exponentially. The distribution collapses to a one-hot vector — pure argmax. The
+          model becomes maximally confident, always picking its top choice with probability ≈ 1.
+        </p>
+
+        <h3>τ = 1 (room temperature)</h3>
+        <p>
+          No change. You get the distribution the model was trained to produce. This is the
+          default behavior.
+        </p>
+
+        <h3>τ → ∞ (boiling hot)</h3>
+        <p>
+          Dividing by a massive number squashes all logits toward zero. <code>exp(0) = 1</code>
+          for everything, so the distribution approaches uniform. The model says "I genuinely
+          have no idea, all options are equally valid."
         </p>
 
         <blockquote>
@@ -73,23 +108,120 @@
           decisively the model acts on what it learned.
         </blockquote>
 
+        <h2>Where the name comes from</h2>
+        <p>
+          The "temperature" metaphor is borrowed from statistical mechanics, specifically
+          the Boltzmann distribution:
+        </p>
+        <pre>P(state_i) = exp(-E_i / kT) / Σ exp(-E_j / kT)</pre>
+        <p>
+          Same structure. In physics, high temperature means high entropy — particles explore
+          more states randomly. Low temperature means particles settle into low-energy states
+          predictably. The analogy is perfect:
+        </p>
+        <ul>
+          <li><strong>Low T</strong> → system settles into the most likely state (greedy, deterministic)</li>
+          <li><strong>High T</strong> → system explores many states (random, creative)</li>
+        </ul>
+        <p>
+          This isn't a loose metaphor. It's the exact same equation with different variable names.
+          The logits are negative energies. The temperature scales exploration. That's it.
+        </p>
+
         <h2>The napkin sketch</h2>
         <p>
-          I drew three softmax distributions at τ=0.5, τ=1.0, and τ=2.0 over a 4-class problem.
-          The visual difference is striking — the low-temperature version looks like a spike,
-          the high-temperature one looks almost flat.
+          I drew three softmax distributions at τ=0.5, τ=1.0, and τ=2.0 over a 4-class problem
+          with logits <code>[2.0, 1.0, 0.5, 0.1]</code>.
+        </p>
+        <p>
+          At <strong>τ=0.5</strong>, the top class gets ~73% probability. It's a spike — the model
+          is very sure. At <strong>τ=1.0</strong>, the top class drops to ~46%. Still the winner,
+          but not by a mile. At <strong>τ=2.0</strong>, probabilities are roughly 32%, 27%, 24%, 18%.
+          Almost flat. The model shrugs.
+        </p>
+        <p>
+          The visual difference is striking. Same logits, same model, same learned knowledge.
+          Completely different behavior.
+        </p>
+
+        <h2>Where you actually see this</h2>
+        <p>
+          Temperature shows up everywhere in modern ML, and knowing what it does makes a lot
+          of API parameters suddenly make sense.
+        </p>
+
+        <h3>LLM text generation</h3>
+        <p>
+          When you set <code>temperature=0.2</code> in the OpenAI API, you're telling the model
+          "be predictable, pick the most likely tokens." At <code>temperature=1.5</code>, you get
+          more creative, surprising (and sometimes unhinged) completions. It's the same model
+          either way — you're just turning the confidence dial.
+        </p>
+
+        <h3>Knowledge distillation</h3>
+        <p>
+          Hinton's distillation paper uses high temperature to "soften" a teacher model's outputs.
+          Why? Because the relative probabilities of wrong answers carry useful information. At
+          τ=1, the teacher might say "it's a 3" with 99% confidence. At τ=20, it might say "it's
+          a 3 (40%) but also looks like an 8 (25%) and a 5 (15%)." That softer distribution is
+          a richer teaching signal.
+        </p>
+
+        <h3>Reinforcement learning</h3>
+        <p>
+          The explore-exploit tradeoff. High temperature early in training = explore more actions.
+          Anneal the temperature down over time = gradually commit to what works. Same principle,
+          different domain.
+        </p>
+
+        <h2>Common mistakes I've seen (and made)</h2>
+        <ul>
+          <li>
+            <strong>Confusing temperature with top-k/top-p.</strong> Temperature reshapes the
+            entire distribution. Top-k truncates it. Top-p clips by cumulative probability.
+            They're different knobs — and they compose.
+          </li>
+          <li>
+            <strong>Thinking τ=0 is safe.</strong> Greedy decoding (τ→0) gives you the single
+            most likely sequence, but that's not always the best sequence. Beam search with
+            moderate temperature often produces better results.
+          </li>
+          <li>
+            <strong>Not realizing temperature is applied before sampling.</strong> The softmax
+            distribution is computed with temperature, then you sample from that distribution.
+            Temperature doesn't add randomness — it modulates how much randomness the existing
+            distribution contains.
+          </li>
+        </ul>
+
+        <h2>The mental model that sticks</h2>
+        <p>
+          Forget the physics metaphor if it doesn't click. Here's the one that works for me:
+        </p>
+        <blockquote>
+          Temperature is how many drinks your model has had. Sober (τ→0) = rigid, by-the-book,
+          won't take risks. Tipsy (τ=1) = normal, balanced judgment. Hammered (τ→∞) = says
+          anything, zero filter.
+        </blockquote>
+        <p>
+          Crude? Yes. Accurate? Also yes.
         </p>
 
         <h2>Takeaway</h2>
         <p>
           Next time someone says "adjust the temperature," just read it as "adjust the
-          confidence." It clicks faster that way.
+          confidence." It clicks faster that way. The model already knows what it knows.
+          Temperature just decides how boldly it acts on that knowledge.
+        </p>
+        <p>
+          One parameter. No retraining. Complete control over the confidence-creativity tradeoff.
+          Pretty elegant, honestly.
         </p>
       </div>
 
       <div class="post-nav">
         <span></span>
-        <a href="pg-logical-replication-k8s.html">next: postgres logical replication →</a>
+        <span></span>
       </div>
     </article>
 

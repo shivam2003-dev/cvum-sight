@@ -31,28 +31,74 @@
     POSTS.forEach(p => { catCounts[p.cat] = (catCounts[p.cat] || 0) + 1; });
     const sorted = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
     sidebarCats.innerHTML = sorted.map(([cat, count]) =>
-      `<a class="sidebar-cat" href="archive.html">
+      `<a class="sidebar-cat" href="archive.html?cat=${encodeURIComponent(cat)}">
         <span>// ${escapeHtml(cat)}</span>
         <span class="count">${count}</span>
       </a>`
     ).join("");
   }
 
-  // ── contribution grid ──
+  // ── contribution grid (driven by real post dates) ──
   const contribGrid = document.getElementById("contrib-grid");
-  if (contribGrid) {
-    const total = 5 * 26;
+  if (contribGrid && typeof POSTS !== "undefined") {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // build set of dates that have posts (normalize to YYYY-MM-DD)
+    const postDates = new Set();
+    POSTS.forEach(p => {
+      const d = new Date(p.date);
+      if (!isNaN(d)) postDates.add(d.toISOString().slice(0, 10));
+    });
+
+    // grid: 26 columns × 5 rows = 130 cells, each cell = 1 day going backward
+    const totalCells = 5 * 26;
     let html = "";
-    for (let i = 0; i < total; i++) {
-      const r = Math.random();
+    for (let i = totalCells - 1; i >= 0; i--) {
+      const cellDate = new Date(today);
+      cellDate.setDate(today.getDate() - i);
+      const key = cellDate.toISOString().slice(0, 10);
+      const isToday = i === 0;
+      const hasPost = postDates.has(key);
       let cls = "";
-      if (r > 0.92) cls = " l4";
-      else if (r > 0.78) cls = " l3";
-      else if (r > 0.55) cls = " l2";
-      else if (r > 0.30) cls = " l1";
-      html += `<div class="contrib-cell${cls}"></div>`;
+      if (hasPost) cls = isToday ? " l4" : " l3";
+      else if (isToday) cls = " l1";
+      html += `<div class="contrib-cell${cls}" title="${key}"></div>`;
     }
     contribGrid.innerHTML = html;
+
+    // compute streak + stats for the streak section
+    let streak = 0;
+    const checkDate = new Date(today);
+    while (true) {
+      const key = checkDate.toISOString().slice(0, 10);
+      if (postDates.has(key)) {
+        streak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else break;
+    }
+
+    const totalPosts = POSTS.length;
+    const totalWords = POSTS.reduce((s, p) => s + (p.words || 0), 0);
+    const wordsLabel = totalWords >= 1000 ? Math.round(totalWords / 1000) + "k" : totalWords;
+
+    const streakStats = document.querySelector(".streak-stats");
+    if (streakStats) {
+      streakStats.innerHTML =
+        `<span>${streak}d ${streak > 0 ? "🔥" : ""}</span>` +
+        `<span>${totalPosts} post${totalPosts !== 1 ? "s" : ""} · ${wordsLabel} words</span>`;
+    }
+
+    // update stats box if present
+    const statGrid = document.querySelector(".stat-grid");
+    if (statGrid) {
+      const topicCount = typeof TOPICS !== "undefined" ? TOPICS.length : 0;
+      statGrid.innerHTML =
+        `<div><strong>${totalPosts}</strong><span>posts</span></div>` +
+        `<div><strong>${streak}d</strong><span>streak</span></div>` +
+        `<div><strong>${topicCount}</strong><span>topics</span></div>` +
+        `<div><strong>${wordsLabel}</strong><span>words</span></div>`;
+    }
   }
 
   // ── home page: post grid ──
@@ -64,7 +110,19 @@
   // ── archive page ──
   const archiveList = document.getElementById("archive-list");
   if (archiveList && typeof POSTS !== "undefined") {
-    archiveList.innerHTML = POSTS.map(p =>
+    const params = new URLSearchParams(window.location.search);
+    const filterCat = params.get("cat");
+    const filtered = filterCat ? POSTS.filter(p => p.cat === filterCat) : POSTS;
+
+    // update subtitle to reflect filter
+    const archiveSub = document.querySelector(".archive-subtitle");
+    if (archiveSub) {
+      archiveSub.textContent = filterCat
+        ? `Posts in // ${filterCat} · ${filtered.length} post${filtered.length !== 1 ? "s" : ""}`
+        : `All posts · newest first`;
+    }
+
+    archiveList.innerHTML = filtered.map(p =>
       `<li>
         <span class="meta">${escapeHtml(p.date)}</span>
         <span class="tag fill">${escapeHtml(p.cat)}</span>

@@ -47,8 +47,8 @@ You are a blog post generator for **cvam.sight**, a static blog with a hand-draw
       </nav>
       <div class="sidebar-footer">
         <a href="#">RSS</a>
-        <a href="#">GitHub</a>
-        <a href="#">Email</a>
+        <a href="https://github.com/shivam2003-dev" target="_blank">GitHub</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
       </div>
     </aside>
     <div class="page">

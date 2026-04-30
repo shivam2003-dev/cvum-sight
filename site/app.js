@@ -1,4 +1,4 @@
-/* app.js — renders post cards, archive list, and tag cloud from posts.js data */
+/* app.js — renders post cards, archive list, tag cloud, sidebar cats, contrib grid, progress bar */
 
 (function () {
   // ── helpers ──
@@ -22,6 +22,37 @@
         <span>· ${post.words} words</span>
       </div>
     </a>`;
+  }
+
+  // ── sidebar categories ──
+  const sidebarCats = document.getElementById("sidebar-cats");
+  if (sidebarCats && typeof POSTS !== "undefined") {
+    const catCounts = {};
+    POSTS.forEach(p => { catCounts[p.cat] = (catCounts[p.cat] || 0) + 1; });
+    const sorted = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
+    sidebarCats.innerHTML = sorted.map(([cat, count]) =>
+      `<a class="sidebar-cat" href="archive.html">
+        <span>// ${escapeHtml(cat)}</span>
+        <span class="count">${count}</span>
+      </a>`
+    ).join("");
+  }
+
+  // ── contribution grid ──
+  const contribGrid = document.getElementById("contrib-grid");
+  if (contribGrid) {
+    const total = 5 * 26;
+    let html = "";
+    for (let i = 0; i < total; i++) {
+      const r = Math.random();
+      let cls = "";
+      if (r > 0.92) cls = " l4";
+      else if (r > 0.78) cls = " l3";
+      else if (r > 0.55) cls = " l2";
+      else if (r > 0.30) cls = " l1";
+      html += `<div class="contrib-cell${cls}"></div>`;
+    }
+    contribGrid.innerHTML = html;
   }
 
   // ── home page: post grid ──
@@ -62,4 +93,15 @@
     tagPosts.innerHTML = `<p class="meta" style="margin-bottom:12px">POSTS TAGGED #${escapeHtml(tag).toUpperCase()}</p>`
       + filtered.map(renderPostCard).join("");
   };
+
+  // ── reading progress bar (post pages) ──
+  const progressBar = document.querySelector(".progress-bar");
+  if (progressBar) {
+    window.addEventListener("scroll", function () {
+      const docH = document.documentElement.scrollHeight - window.innerHeight;
+      if (docH > 0) {
+        progressBar.style.width = Math.min(100, (window.scrollY / docH) * 100) + "%";
+      }
+    }, { passive: true });
+  }
 })();

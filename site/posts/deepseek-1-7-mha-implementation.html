@@ -21,7 +21,7 @@
         <a href="../about.html">About</a>
       </nav>
       <div class="sidebar-footer">
-        <a href="#">RSS</a>
+        
         <a href="https://github.com/shivam2003-dev" target="_blank">GitHub</a>
         <a href="mailto:shivam.sk2003@gmail.com">Email</a>
       </div>
@@ -234,6 +234,51 @@ Q = Q.view(B, T, self.n_heads, self.d_head).transpose(1, 2)</pre>
         <p>
           This is the critical tensor manipulation. Let's trace through it:
         </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 580 200" xmlns="http://www.w3.org/2000/svg" style="max-width:580px">
+            <style>
+              .rb { rx: 3; stroke: #2a2620; stroke-width: 1.5; }
+              .rt { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; }
+              .rs { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .rl { stroke: #2a2620; stroke-width: 1; marker-end: url(#ah_rs); }
+            </style>
+            <defs><marker id="ah_rs" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5" fill="none" stroke="#2a2620" stroke-width="1"/></marker></defs>
+            <text x="290" y="14" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#948a78;text-anchor:middle;text-transform:uppercase;letter-spacing:0.1em">tensor reshape for multi-head attention</text>
+            <!-- Step 1: Linear output (B, T, C) -->
+            <rect x="10" y="30" width="140" height="50" class="rb" fill="#ebe3cf"/>
+            <text x="80" y="52" class="rt">(B, T, C)</text>
+            <text x="80" y="68" class="rs">e.g. (2, 8, 512)</text>
+            <text x="80" y="88" class="rs">QKV linear output</text>
+            <!-- Arrow -->
+            <line x1="150" y1="55" x2="170" y2="55" class="rl"/>
+            <text x="160" y="45" class="rs">.view()</text>
+            <!-- Step 2: View (B, T, nh, d_head) -->
+            <rect x="170" y="30" width="160" height="50" class="rb" fill="rgba(240,192,64,0.3)"/>
+            <text x="250" y="52" class="rt">(B, T, nh, d_h)</text>
+            <text x="250" y="68" class="rs">e.g. (2, 8, 8, 64)</text>
+            <text x="250" y="88" class="rs">split C → heads</text>
+            <!-- Arrow -->
+            <line x1="330" y1="55" x2="350" y2="55" class="rl"/>
+            <text x="340" y="45" class="rs">.transpose(1,2)</text>
+            <!-- Step 3: Transpose (B, nh, T, d_head) -->
+            <rect x="350" y="30" width="160" height="50" class="rb" fill="#f0c040"/>
+            <text x="430" y="52" class="rt">(B, nh, T, d_h)</text>
+            <text x="430" y="68" class="rs">e.g. (2, 8, 8, 64)</text>
+            <text x="430" y="88" class="rs">heads in batch dim</text>
+            <!-- Annotation: why this matters -->
+            <rect x="350" y="100" width="160" height="40" rx="3" fill="none" stroke="#c96442" stroke-width="1" stroke-dasharray="3,2"/>
+            <text x="430" y="116" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#c96442;text-anchor:middle">Q @ K.T now does</text>
+            <text x="430" y="130" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#c96442;text-anchor:middle">all heads in parallel!</text>
+            <line x1="430" y1="80" x2="430" y2="100" stroke="#c96442" stroke-width="1" stroke-dasharray="3,2"/>
+            <!-- Output path -->
+            <text x="290" y="170" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#948a78;text-anchor:middle">Output: reverse — .transpose(1,2).contiguous().view(B, T, C)</text>
+            <rect x="180" y="175" width="220" height="18" class="rb" fill="#ebe3cf"/>
+            <text x="290" y="188" class="rs">concat all heads → back to (B, T, C)</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — The view+transpose trick puts attention heads into the batch dimension for parallel GPU computation.</p>
+        </div>
+
         <ol>
           <li><code>Q.view(B, T, n_heads, d_head)</code> — reshapes (B, T, C) into (B, T, n_heads, d_head). The last dimension C = n_heads × d_head, so we're just reinterpreting the memory layout.</li>
           <li><code>.transpose(1, 2)</code> — swaps the T and n_heads dimensions: (B, n_heads, T, d_head). Now each head is its own "batch" — PyTorch's batched matmul handles all heads in parallel.</li>
@@ -354,6 +399,34 @@ print(f"  Attention fraction: {stats['attn_fraction']:.1%}")
 stats = profile_mha(5120, 128, 4096)
 print(f"\nDeepSeek-V2 MHA layer: {stats['total_gflops']:.1f} GFLOPs")
 print(f"  KV cache: {stats['kv_cache_mb']:.1f} MB")</pre>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 480 155" xmlns="http://www.w3.org/2000/svg" style="max-width:480px">
+            <style>
+              .fl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: end; }
+              .fv { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #f5efe1; text-anchor: start; }
+              .fn { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: start; }
+            </style>
+            <text x="240" y="14" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#948a78;text-anchor:middle;text-transform:uppercase;letter-spacing:0.1em">MHA FLOPs breakdown (GPT-3 scale)</text>
+            <!-- QKV projection -->
+            <text x="108" y="44" class="fl">QKV proj</text>
+            <rect x="115" y="30" width="320" height="22" rx="2" fill="#2a2620" stroke="#2a2620" stroke-width="1"/>
+            <text x="122" y="44" class="fv">~75% — 3 × d_model²</text>
+            <!-- Attention scores -->
+            <text x="108" y="74" class="fl">Q·K^T</text>
+            <rect x="115" y="60" width="42" height="22" rx="2" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <text x="163" y="74" class="fn">~10% — n²·d_h</text>
+            <!-- Att × V -->
+            <text x="108" y="104" class="fl">Att × V</text>
+            <rect x="115" y="90" width="42" height="22" rx="2" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <text x="163" y="104" class="fn">~10% — n²·d_h</text>
+            <!-- Output proj -->
+            <text x="108" y="134" class="fl">Out proj</text>
+            <rect x="115" y="120" width="22" height="22" rx="2" fill="#c96442" stroke="#2a2620" stroke-width="1"/>
+            <text x="143" y="134" class="fn">~5% — d_model²</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — Linear projections dominate MHA compute (~80%), not the attention matrix itself.</p>
+        </div>
 
         <h2>Comparison with PyTorch built-in</h2>
         <pre>

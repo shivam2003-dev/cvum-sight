@@ -113,7 +113,7 @@ Create `site/posts/my-new-post.html` (the filename must match the `slug`):
     <footer class="footer">
       <span>© cvam — written in plaintext, served warm</span>
       <span class="footer-links">
-        <a href="#">RSS</a> <a href="#">GitHub</a> <a href="#">Email</a>
+         <a href="#">GitHub</a> <a href="#">Email</a>
       </span>
     </footer>
   </div>

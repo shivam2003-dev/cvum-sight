@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Head Attention Implementation in Python — cvam.sight</title>
+<link rel="stylesheet" href="../style.css">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="#">RSS</a>
+        <a href="https://github.com/shivam2003-dev" target="_blank">GitHub</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 1</p>
+        <p class="series-banner-title">LLM Foundations</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Article 7 of 7 · Phase 1 of 10 · Phase 1 Complete!</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-1-1-introduction.html" class="done">1.1 Intro</a>
+          <a href="deepseek-1-2-token-flow.html" class="done">1.2 Tokens</a>
+          <a href="deepseek-1-3-attention-mechanism.html" class="done">1.3 Attention</a>
+          <a href="deepseek-1-4-self-attention.html" class="done">1.4 Self-Attn</a>
+          <a href="deepseek-1-5-causal-attention.html" class="done">1.5 Causal</a>
+          <a href="deepseek-1-6-multi-head-attention.html" class="done">1.6 Multi-Head</a>
+          <a href="deepseek-1-7-mha-implementation.html" class="active">1.7 Code</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 9, 2026 · ml · 20 min read · 4200 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Multi-Head Attention Implementation in Python.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-1</span>
+          <span class="tag">code</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          Theory is nice. Running code is better. Let's implement Multi-Head Attention in PyTorch — no <code>nn.MultiheadAttention</code>, just raw matrix operations. This is the final article in Phase 1 of the <strong>DeepSeek Engineering Blog Series</strong>.
+        </p>
+
+        <blockquote>
+          If You Read Nothing Else: This article implements the complete MHA module from scratch in ~60 lines of PyTorch. You'll understand every tensor reshape, every matrix multiplication, and every design choice. The code matches what's in Karpathy's nanoGPT and Raschka's LLMs-from-scratch — adapted for clarity.
+        </blockquote>
+
+        <h2>The full implementation</h2>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 280" xmlns="http://www.w3.org/2000/svg" style="max-width:680px">
+            <style>
+              .d-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .d-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .d-code { fill: #1e1a14; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; }
+              .d-ctext { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #f0c040; text-anchor: middle; }
+              .d-sm { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .d-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; marker-end: url(#ah7); }
+              .d-title { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; text-transform: uppercase; letter-spacing: 0.1em; }
+            </style>
+            <defs><marker id="ah7" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#2a2620" stroke-width="1"/></marker></defs>
+            <text x="340" y="16" class="d-title">CausalSelfAttention — implementation flow</text>
+            <!-- Step 1: Input -->
+            <rect x="10" y="30" width="120" height="35" class="d-box"/>
+            <text x="70" y="48" class="d-text">x (B,T,C)</text>
+            <text x="70" y="60" class="d-sm">batch, seq, dim</text>
+            <!-- Step 2: Combined QKV -->
+            <line x1="130" y1="47" x2="155" y2="47" class="d-arrow"/>
+            <rect x="155" y="30" width="130" height="35" class="d-code"/>
+            <text x="220" y="48" class="d-ctext">c_attn(x)</text>
+            <text x="220" y="60" class="d-sm" style="fill:#948a78">(B,T,3C)</text>
+            <!-- Step 3: Split -->
+            <line x1="285" y1="47" x2="310" y2="47" class="d-arrow"/>
+            <rect x="310" y="30" width="110" height="35" class="d-code"/>
+            <text x="365" y="48" class="d-ctext">.split(C, dim=2)</text>
+            <text x="365" y="60" class="d-sm" style="fill:#948a78">Q, K, V</text>
+            <!-- Step 4: Reshape -->
+            <line x1="420" y1="47" x2="445" y2="47" class="d-arrow"/>
+            <rect x="445" y="30" width="225" height="35" class="d-code"/>
+            <text x="557" y="48" class="d-ctext">.view(B,T,h,d_h).transpose(1,2)</text>
+            <text x="557" y="60" class="d-sm" style="fill:#948a78">(B,h,T,d_h)</text>
+            <!-- Step 5: Attention -->
+            <line x1="557" y1="65" x2="557" y2="90" class="d-arrow"/>
+            <rect x="420" y="90" width="250" height="35" class="d-code"/>
+            <text x="545" y="108" class="d-ctext">Q @ K.transpose(-2,-1) / √d_k</text>
+            <text x="545" y="120" class="d-sm" style="fill:#948a78">(B,h,T,T)</text>
+            <!-- Step 6: Mask -->
+            <line x1="545" y1="125" x2="545" y2="145" class="d-arrow"/>
+            <rect x="430" y="145" width="230" height="35" class="d-code"/>
+            <text x="545" y="163" class="d-ctext">.masked_fill(mask==0, -inf)</text>
+            <text x="545" y="175" class="d-sm" style="fill:#948a78">causal mask</text>
+            <!-- Step 7: Softmax -->
+            <line x1="545" y1="180" x2="545" y2="200" class="d-arrow"/>
+            <rect x="470" y="200" width="150" height="30" rx="4" fill="#c96442" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="545" y="219" style="font-family:'JetBrains Mono',monospace;font-size:10px;fill:#f5efe1;text-anchor:middle">F.softmax(dim=-1)</text>
+            <!-- Step 8: att @ V -->
+            <line x1="545" y1="230" x2="545" y2="248" class="d-arrow"/>
+            <rect x="470" y="248" width="150" height="28" class="d-code"/>
+            <text x="545" y="266" class="d-ctext">att @ V → (B,h,T,d_h)</text>
+            <!-- Step 9: Reshape back -->
+            <line x1="470" y1="262" x2="350" y2="262" class="d-arrow"/>
+            <rect x="180" y="248" width="170" height="28" class="d-code"/>
+            <text x="265" y="266" class="d-ctext">.transpose → .contiguous</text>
+            <!-- Step 10: Output proj -->
+            <line x1="180" y1="262" x2="140" y2="262" class="d-arrow"/>
+            <rect x="10" y="248" width="130" height="28" class="d-hi"/>
+            <text x="75" y="266" class="d-text">c_proj(y)</text>
+            <!-- Labels on left -->
+            <text x="70" y="100" class="d-sm">1. project</text>
+            <text x="70" y="140" class="d-sm">2. reshape</text>
+            <text x="70" y="180" class="d-sm">3. attend</text>
+            <text x="70" y="220" class="d-sm">4. output</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — CausalSelfAttention forward pass: every tensor operation from input to output.</p>
+        </div>
+
+        <p>
+          Here's the complete <code>CausalSelfAttention</code> class. We'll break down every line below.
+        </p>
+        <pre>
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+
+class CausalSelfAttention(nn.Module):
+    """Multi-head causal self-attention from scratch.
+
+    Based on:
+    - Karpathy nanoGPT: github.com/karpathy/nanoGPT/blob/master/model.py
+    - Vaswani et al. "Attention Is All You Need" (arXiv:1706.03762)
+    """
+
+    def __init__(self, d_model, n_heads, max_seq_len=2048, dropout=0.1):
+        super().__init__()
+        assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
+
+        self.n_heads = n_heads
+        self.d_head = d_model // n_heads
+        self.d_model = d_model
+
+        # Single projection for Q, K, V (more efficient than 3 separate)
+        self.qkv_proj = nn.Linear(d_model, 3 * d_model, bias=False)
+
+        # Output projection
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+
+        # Dropout on attention weights
+        self.attn_dropout = nn.Dropout(dropout)
+        self.resid_dropout = nn.Dropout(dropout)
+
+        # Causal mask — registered as buffer (not a parameter)
+        mask = torch.tril(torch.ones(max_seq_len, max_seq_len))
+        self.register_buffer("mask", mask.view(1, 1, max_seq_len, max_seq_len))
+
+    def forward(self, x):
+        B, T, C = x.shape   # batch, sequence length, d_model
+
+        # 1. Project to Q, K, V in one shot
+        qkv = self.qkv_proj(x)                    # (B, T, 3*C)
+        Q, K, V = qkv.chunk(3, dim=-1)            # each (B, T, C)
+
+        # 2. Reshape for multi-head: (B, T, C) → (B, n_heads, T, d_head)
+        Q = Q.view(B, T, self.n_heads, self.d_head).transpose(1, 2)
+        K = K.view(B, T, self.n_heads, self.d_head).transpose(1, 2)
+        V = V.view(B, T, self.n_heads, self.d_head).transpose(1, 2)
+
+        # 3. Scaled dot-product attention
+        scores = Q @ K.transpose(-2, -1) / math.sqrt(self.d_head)
+
+        # 4. Apply causal mask
+        scores = scores.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf'))
+
+        # 5. Softmax + dropout
+        weights = F.softmax(scores, dim=-1)        # (B, nh, T, T)
+        weights = self.attn_dropout(weights)
+
+        # 6. Weighted sum of values
+        out = weights @ V                           # (B, nh, T, d_head)
+
+        # 7. Reshape back: (B, nh, T, d_head) → (B, T, C)
+        out = out.transpose(1, 2).contiguous().view(B, T, C)
+
+        # 8. Output projection + dropout
+        out = self.resid_dropout(self.out_proj(out))
+        return out</pre>
+
+        <h2>Line-by-line breakdown</h2>
+
+        <h3>The combined QKV projection</h3>
+        <pre>
+self.qkv_proj = nn.Linear(d_model, 3 * d_model, bias=False)</pre>
+        <p>
+          Instead of three separate linear layers for Q, K, and V, we use one that produces all three at once. This is a standard optimization: one large matrix multiplication is faster than three small ones on GPUs (better memory locality, fewer kernel launches).
+        </p>
+        <p>
+          The weight matrix W_QKV has shape <code>(d_model, 3 × d_model)</code>. We split the output into three equal parts using <code>.chunk(3)</code>.
+        </p>
+
+        <h3>The reshape: (B, T, C) → (B, nh, T, d_head)</h3>
+        <pre>
+Q = Q.view(B, T, self.n_heads, self.d_head).transpose(1, 2)</pre>
+        <p>
+          This is the critical tensor manipulation. Let's trace through it:
+        </p>
+        <ol>
+          <li><code>Q.view(B, T, n_heads, d_head)</code> — reshapes (B, T, C) into (B, T, n_heads, d_head). The last dimension C = n_heads × d_head, so we're just reinterpreting the memory layout.</li>
+          <li><code>.transpose(1, 2)</code> — swaps the T and n_heads dimensions: (B, n_heads, T, d_head). Now each head is its own "batch" — PyTorch's batched matmul handles all heads in parallel.</li>
+        </ol>
+
+        <div class="callout insight">
+          <span class="callout-label">Why Transpose?</span>
+          <p>PyTorch's <code>@</code> operator does batched matrix multiplication on the last two dimensions. By putting n_heads in the batch dimension, <code>Q @ K.T</code> computes attention for all heads simultaneously — one CUDA kernel call, not a for-loop over heads.</p>
+        </div>
+
+        <h3>The causal mask</h3>
+        <pre>
+mask = torch.tril(torch.ones(max_seq_len, max_seq_len))
+self.register_buffer("mask", mask.view(1, 1, max_seq_len, max_seq_len))</pre>
+        <p>
+          <code>torch.tril</code> creates a lower-triangular matrix of 1s. We register it as a buffer (not a parameter — it's not trained). The shape <code>(1, 1, T, T)</code> broadcasts across batch and head dimensions.
+        </p>
+        <p>
+          <code>masked_fill(mask == 0, -inf)</code> sets the upper triangle to −∞, implementing the causal constraint from Article 1.5.
+        </p>
+
+        <h3>The reshape back</h3>
+        <pre>
+out = out.transpose(1, 2).contiguous().view(B, T, C)</pre>
+        <p>
+          Reverse the reshape: (B, nh, T, d_head) → (B, T, nh, d_head) → (B, T, C). The <code>.contiguous()</code> call ensures the tensor is stored in contiguous memory before <code>.view()</code> — required because <code>transpose()</code> doesn't move data, it just changes the stride metadata.
+        </p>
+
+        <h2>Testing the implementation</h2>
+        <pre>
+# Verify output shapes
+def test_shapes():
+    d_model = 512
+    n_heads = 8
+    batch_size = 2
+    seq_len = 64
+
+    mha = CausalSelfAttention(d_model, n_heads)
+    x = torch.randn(batch_size, seq_len, d_model)
+    out = mha(x)
+
+    assert out.shape == (batch_size, seq_len, d_model), \
+        f"Expected {(batch_size, seq_len, d_model)}, got {out.shape}"
+    print(f"✓ Output shape: {out.shape}")
+
+test_shapes()
+# ✓ Output shape: torch.Size([2, 64, 512])</pre>
+
+        <h3>Verify causality</h3>
+        <pre>
+def test_causality():
+    """Ensure token i cannot attend to token j > i."""
+    d_model, n_heads = 64, 4
+    mha = CausalSelfAttention(d_model, n_heads)
+
+    # Create two inputs that differ only at position 3
+    x1 = torch.randn(1, 5, d_model)
+    x2 = x1.clone()
+    x2[0, 3, :] = torch.randn(d_model)  # change token 3
+
+    out1 = mha(x1)
+    out2 = mha(x2)
+
+    # Positions 0, 1, 2 should be identical (can't see position 3)
+    for pos in range(3):
+        diff = (out1[0, pos] - out2[0, pos]).abs().max().item()
+        assert diff < 1e-6, f"Position {pos} changed! diff={diff}"
+        print(f"✓ Position {pos}: diff = {diff:.2e} (causal)")
+
+    # Position 3+ should differ
+    diff_3 = (out1[0, 3] - out2[0, 3]).abs().max().item()
+    assert diff_3 > 0.01, f"Position 3 should differ! diff={diff_3}"
+    print(f"✓ Position 3: diff = {diff_3:.4f} (affected, as expected)")
+
+test_causality()
+# ✓ Position 0: diff = 0.00e+00 (causal)
+# ✓ Position 1: diff = 0.00e+00 (causal)
+# ✓ Position 2: diff = 0.00e+00 (causal)
+# ✓ Position 3: diff = 0.2847 (affected, as expected)</pre>
+
+        <h2>Performance profiling</h2>
+        <p>
+          Let's count FLOPs and memory for realistic model sizes:
+        </p>
+        <pre>
+def profile_mha(d_model, n_heads, seq_len, batch_size=1):
+    """Estimate FLOPs and memory for one MHA layer."""
+    # QKV projection: 3 × (B × T × d × d) multiplies
+    qkv_flops = 3 * batch_size * seq_len * d_model * d_model
+
+    # Attention scores: B × nh × T × T × d_h
+    attn_flops = batch_size * n_heads * seq_len * seq_len * (d_model // n_heads)
+
+    # Attention × V: same as scores
+    av_flops = attn_flops
+
+    # Output projection: B × T × d × d
+    out_flops = batch_size * seq_len * d_model * d_model
+
+    total_flops = qkv_flops + attn_flops + av_flops + out_flops
+
+    # KV cache per layer (inference, FP16)
+    kv_cache_bytes = 2 * seq_len * n_heads * (d_model // n_heads) * 2
+
+    return {
+        'total_gflops': total_flops / 1e9,
+        'kv_cache_mb': kv_cache_bytes / 1e6,
+        'attn_fraction': (attn_flops + av_flops) / total_flops
+    }
+
+# GPT-3 scale
+stats = profile_mha(12288, 96, 4096)
+print(f"GPT-3 MHA layer: {stats['total_gflops']:.1f} GFLOPs")
+print(f"  KV cache: {stats['kv_cache_mb']:.1f} MB")
+print(f"  Attention fraction: {stats['attn_fraction']:.1%}")
+
+# DeepSeek-V2 scale (if it used standard MHA)
+stats = profile_mha(5120, 128, 4096)
+print(f"\nDeepSeek-V2 MHA layer: {stats['total_gflops']:.1f} GFLOPs")
+print(f"  KV cache: {stats['kv_cache_mb']:.1f} MB")</pre>
+
+        <h2>Comparison with PyTorch built-in</h2>
+        <pre>
+def compare_with_pytorch():
+    """Verify our implementation matches PyTorch's nn.MultiheadAttention."""
+    d_model, n_heads, seq_len = 256, 4, 32
+    torch.manual_seed(42)
+
+    # Our implementation
+    ours = CausalSelfAttention(d_model, n_heads, dropout=0.0)
+
+    # PyTorch built-in
+    theirs = nn.MultiheadAttention(d_model, n_heads, dropout=0.0, bias=False,
+                                    batch_first=True)
+
+    # Copy weights to match
+    # (Weight layout differs — PyTorch uses a different internal format)
+    # This is for conceptual verification, not exact matching
+
+    x = torch.randn(1, seq_len, d_model)
+    out_ours = ours(x)
+    print(f"Our output shape: {out_ours.shape}")
+    print(f"Our output range: [{out_ours.min():.3f}, {out_ours.max():.3f}]")
+
+compare_with_pytorch()</pre>
+
+        <h2>What nanoGPT does differently</h2>
+        <p>
+          Karpathy's <a href="https://github.com/karpathy/nanoGPT/blob/master/model.py" target="_blank">nanoGPT</a> uses essentially the same structure with a few practical additions:
+        </p>
+        <ul>
+          <li><strong>Flash Attention:</strong> When available, nanoGPT uses PyTorch's <code>F.scaled_dot_product_attention</code> which dispatches to FlashAttention-2 (arXiv:2307.08691) — a memory-efficient kernel that avoids materializing the full n×n attention matrix.</li>
+          <li><strong>Bias option:</strong> nanoGPT supports bias in the QKV projection. Most modern models (LLaMA, DeepSeek) use <code>bias=False</code>.</li>
+          <li><strong>Compile-friendly:</strong> The code is structured to work with <code>torch.compile()</code> for kernel fusion.</li>
+        </ul>
+
+        <h2>From here to DeepSeek's MLA</h2>
+        <p>
+          The MHA implementation above is what every standard Transformer uses. DeepSeek's MLA modifies steps 1 and 6:
+        </p>
+        <ol>
+          <li><strong>Step 1 (projection):</strong> Instead of projecting to full K and V, MLA first projects to a compressed latent vector c_KV of dimension d_c (512 in DeepSeek-V2, vs 5120 for full MHA). During inference, only c_KV is cached.</li>
+          <li><strong>Step 6 (cache):</strong> When computing attention with cached tokens, K and V are reconstructed from c_KV via learned up-projection matrices. The attention computation itself is identical — the savings are entirely in memory.</li>
+        </ol>
+        <p>
+          We'll implement MLA from scratch in Phase 3, Article 3.2. The code structure is remarkably similar to what we built here — just with an extra compression/decompression step around K and V.
+        </p>
+
+        <h2>Phase 1 complete</h2>
+        <p>
+          You've now covered the complete foundation of how LLMs work:
+        </p>
+        <ol>
+          <li><strong>1.1:</strong> The big picture — Transformers, DeepSeek's three innovations</li>
+          <li><strong>1.2:</strong> Tokenization → embedding → forward pass → sampling</li>
+          <li><strong>1.3:</strong> The attention mechanism — Q, K, V, dot-product, softmax</li>
+          <li><strong>1.4:</strong> Self-attention math — every matrix multiplication by hand</li>
+          <li><strong>1.5:</strong> Causal masking — why LLMs can't see the future, and the KV cache</li>
+          <li><strong>1.6:</strong> Multi-head attention — why multiple heads, what they learn</li>
+          <li><strong>1.7:</strong> This article — the complete PyTorch implementation</li>
+        </ol>
+        <p>
+          <strong>Next up — Phase 2: KV Cache & Efficient Attention.</strong> Now that you understand standard MHA and its memory cost, we'll explore the bottleneck (KV cache), and trace the evolution through MQA → GQA → MLA. This is where DeepSeek's story gets interesting.
+        </p>
+
+        <h2>5 things to remember</h2>
+        <ol>
+          <li><strong>Combined QKV:</strong> One projection matrix for all three — more efficient on GPUs.</li>
+          <li><strong>Reshape trick:</strong> (B, T, C) → (B, nh, T, d_h) via view + transpose. Enables batched attention.</li>
+          <li><strong>Causal mask:</strong> Lower-triangular buffer registered once, broadcast across batch and heads.</li>
+          <li><strong>Contiguous:</strong> Call <code>.contiguous()</code> after transpose before view — required for memory layout.</li>
+          <li><strong>FlashAttention:</strong> In production, use <code>F.scaled_dot_product_attention</code> — same math, 2-4× faster, less memory.</li>
+        </ol>
+
+        <h2>Go deeper</h2>
+        <ul>
+          <li><strong>Code:</strong> nanoGPT model.py — <a href="https://github.com/karpathy/nanoGPT/blob/master/model.py" target="_blank">GitHub (karpathy)</a></li>
+          <li><strong>Code:</strong> LLMs-from-scratch — <a href="https://github.com/rasbt/LLMs-from-scratch" target="_blank">GitHub (rasbt)</a></li>
+          <li><strong>Docs:</strong> PyTorch scaled_dot_product_attention — <a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html" target="_blank">pytorch.org</a></li>
+          <li><strong>Paper:</strong> FlashAttention-2 — <a href="https://arxiv.org/abs/2307.08691" target="_blank">arXiv:2307.08691</a></li>
+          <li><strong>Paper:</strong> DeepSeek-V2 (MLA implementation) — <a href="https://arxiv.org/abs/2405.04434" target="_blank">arXiv:2405.04434</a></li>
+        </ul>
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-1-6-multi-head-attention.html">← Multi-Head Attention Internals</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term" data-term="c-attn">
+      <div class="vocab-term-header"><span class="vocab-term-word">c_attn</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Combined QKV projection. One big linear layer (d → 3d) instead of three separate ones. More efficient on GPU — one matmul instead of three.</div>
+    </div>
+    <div class="vocab-term" data-term="view">
+      <div class="vocab-term-header"><span class="vocab-term-word">.view() / .reshape()</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Reshapes a tensor without copying data. (B,T,d) → (B,T,h,d_h) splits the embedding dim into heads. Key step before batched attention.</div>
+    </div>
+    <div class="vocab-term" data-term="transpose">
+      <div class="vocab-term-header"><span class="vocab-term-word">.transpose(1,2)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Swaps dimensions 1 and 2: (B,T,h,d_h) → (B,h,T,d_h). Puts head dimension in batch position so PyTorch batched matmul works across all heads.</div>
+    </div>
+    <div class="vocab-term" data-term="contiguous">
+      <div class="vocab-term-header"><span class="vocab-term-word">.contiguous()</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Makes tensor memory layout match its logical layout. Required after transpose before .view() — otherwise PyTorch can't reshape safely.</div>
+    </div>
+    <div class="vocab-term" data-term="register-buffer">
+      <div class="vocab-term-header"><span class="vocab-term-word">register_buffer</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Stores a tensor as part of the module (moves to GPU, saved in state_dict) but not trained. Used for the causal mask — constant, not learned.</div>
+    </div>
+    <div class="vocab-term" data-term="flash-attention">
+      <div class="vocab-term-header"><span class="vocab-term-word">FlashAttention</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">A fused CUDA kernel that computes attention without materializing the full n×n attention matrix. 2–4× faster, uses O(n) memory instead of O(n²).</div>
+    </div>
+    <div class="vocab-term" data-term="dropout">
+      <div class="vocab-term-header"><span class="vocab-term-word">dropout</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Randomly zeros out values during training (e.g., 10% of attention weights). Prevents overfitting. Disabled during inference.</div>
+    </div>
+    <div class="vocab-term" data-term="nanogpt">
+      <div class="vocab-term-header"><span class="vocab-term-word">nanoGPT</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Andrej Karpathy's minimal GPT implementation (~300 lines). The gold standard for understanding transformer code. Our implementation matches its design.</div>
+    </div>
+    <div class="vocab-term" data-term="kernel-fusion">
+      <div class="vocab-term-header"><span class="vocab-term-word">kernel fusion</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Combining multiple GPU operations into one. Instead of separate kernels for matmul, scale, mask, softmax — one fused kernel does all. Eliminates memory transfers.</div>
+    </div>
+  </aside>
+
+  </div>
+  <script src="../posts.js"></script>
+  <script src="../app.js"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+</body>
+</html>

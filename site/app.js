@@ -104,7 +104,28 @@
   // ── home page: post grid ──
   const grid = document.getElementById("post-grid");
   if (grid && typeof POSTS !== "undefined") {
-    grid.innerHTML = POSTS.map(renderPostCard).join("");
+    const standalone = POSTS.filter(p => !p.series);
+    const seriesPosts = POSTS.filter(p => p.series);
+    let html = "";
+    // series promo card if there are series posts
+    if (seriesPosts.length > 0) {
+      html += `<a href="series.html" class="post-card series-promo-card">
+        <span class="cat">series</span>
+        <h3>DeepSeek Engineering Blog Series</h3>
+        <p class="card-excerpt">From Transformer internals to DeepSeek-V4. ${seriesPosts.length} articles published across 10 planned phases.</p>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <span class="tag">#deepseek</span>
+          <span class="tag">#ml</span>
+          <span class="tag">#transformers</span>
+        </div>
+        <div class="card-meta">
+          <span>Ongoing</span>
+          <span>· ${seriesPosts.length} articles</span>
+        </div>
+      </a>`;
+    }
+    html += standalone.map(renderPostCard).join("");
+    grid.innerHTML = html;
   }
 
   // ── archive page ──

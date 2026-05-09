@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Causal Attention and Autoregressive Generation — cvam.sight</title>
+<link rel="stylesheet" href="../style.css">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="#">RSS</a>
+        <a href="https://github.com/shivam2003-dev" target="_blank">GitHub</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 1</p>
+        <p class="series-banner-title">LLM Foundations</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 5 of 7 · Phase 1 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-1-1-introduction.html" class="done">1.1 Intro</a>
+          <a href="deepseek-1-2-token-flow.html" class="done">1.2 Tokens</a>
+          <a href="deepseek-1-3-attention-mechanism.html" class="done">1.3 Attention</a>
+          <a href="deepseek-1-4-self-attention.html" class="done">1.4 Self-Attn</a>
+          <a href="deepseek-1-5-causal-attention.html" class="active">1.5 Causal</a>
+          <a href="deepseek-1-6-multi-head-attention.html">1.6 Multi-Head</a>
+          <a href="deepseek-1-7-mha-implementation.html">1.7 Code</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 9, 2026 · ml · 14 min read · 3000 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Causal Attention and Autoregressive Generation.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-1</span>
+          <span class="tag">intermediate</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          Why can't an LLM see into the future? The causal mask is why — and it's elegantly simple. This is article 5 of 7 in Phase 1 of the <strong>DeepSeek Engineering Blog Series</strong>.
+        </p>
+
+        <blockquote>
+          If You Read Nothing Else: During training, the model sees the full sequence at once — but it shouldn't "cheat" by looking at future tokens when predicting the next one. The causal mask sets all future positions to −∞ before softmax, forcing zero attention weight on them. During inference, this mask becomes unnecessary because future tokens simply don't exist yet. This design forces the use of a KV cache — the memory bottleneck that DeepSeek's MLA solves.
+        </blockquote>
+
+        <h2>The problem: training vs inference</h2>
+        <p>
+          There's a fundamental asymmetry in how LLMs work:
+        </p>
+        <ul>
+          <li><strong>During training:</strong> We have the complete sequence. "The cat sat on the mat" — all 6 tokens available at once. We can process them in parallel.</li>
+          <li><strong>During inference:</strong> We only have the past. We've generated "The cat" and need to predict "sat" — but "on the mat" doesn't exist yet.</li>
+        </ul>
+        <p>
+          The problem: if during training token position 3 can attend to positions 4, 5, and 6, it would learn to "cheat" — using information from the future to predict the present. But at inference time, that future information won't be available. The model would fail catastrophically.
+        </p>
+
+        <h2>The causal (triangular) mask</h2>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" style="max-width:680px">
+            <style>
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #2a2620; text-anchor: middle; }
+              .d-sm { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .d-title { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; text-transform: uppercase; letter-spacing: 0.1em; }
+            </style>
+            <text x="340" y="16" class="d-title">causal mask — lower-triangular attention pattern</text>
+            <!-- Attention scores (before mask) -->
+            <text x="120" y="40" class="d-sm">attention scores</text>
+            <!-- Grid: 4x4 -->
+            <rect x="55" y="50" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="90" y="50" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="125" y="50" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="160" y="50" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="55" y="78" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="90" y="78" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="125" y="78" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="160" y="78" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="55" y="106" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="90" y="106" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="125" y="106" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="160" y="106" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="55" y="134" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="90" y="134" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="125" y="134" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="160" y="134" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <!-- values -->
+            <text x="72" y="69" class="d-text">2.1</text>
+            <text x="107" y="69" class="d-text">0.5</text>
+            <text x="142" y="69" class="d-text">1.3</text>
+            <text x="177" y="69" class="d-text">0.8</text>
+            <text x="72" y="97" class="d-text">0.3</text>
+            <text x="107" y="97" class="d-text">1.7</text>
+            <text x="142" y="97" class="d-text">0.9</text>
+            <text x="177" y="97" class="d-text">2.4</text>
+            <text x="72" y="125" class="d-text">1.1</text>
+            <text x="107" y="125" class="d-text">0.4</text>
+            <text x="142" y="125" class="d-text">1.8</text>
+            <text x="177" y="125" class="d-text">0.6</text>
+            <text x="72" y="153" class="d-text">0.7</text>
+            <text x="107" y="153" class="d-text">1.2</text>
+            <text x="142" y="153" class="d-text">0.5</text>
+            <text x="177" y="153" class="d-text">1.9</text>
+            <!-- Arrow -->
+            <text x="235" y="100" style="font-family:'JetBrains Mono',monospace;font-size:18px;fill:#c96442;text-anchor:middle">→</text>
+            <text x="235" y="118" class="d-sm">mask</text>
+            <!-- After mask: lower-triangular -->
+            <text x="390" y="40" class="d-sm">after causal mask</text>
+            <rect x="325" y="50" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="360" y="50" width="35" height="28" fill="#ebe3cf" stroke="#2a2620" stroke-width="1"/>
+            <rect x="395" y="50" width="35" height="28" fill="#ebe3cf" stroke="#2a2620" stroke-width="1"/>
+            <rect x="430" y="50" width="35" height="28" fill="#ebe3cf" stroke="#2a2620" stroke-width="1"/>
+            <rect x="325" y="78" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="360" y="78" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="395" y="78" width="35" height="28" fill="#ebe3cf" stroke="#2a2620" stroke-width="1"/>
+            <rect x="430" y="78" width="35" height="28" fill="#ebe3cf" stroke="#2a2620" stroke-width="1"/>
+            <rect x="325" y="106" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="360" y="106" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="395" y="106" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="430" y="106" width="35" height="28" fill="#ebe3cf" stroke="#2a2620" stroke-width="1"/>
+            <rect x="325" y="134" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="360" y="134" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="395" y="134" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <rect x="430" y="134" width="35" height="28" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <!-- values -->
+            <text x="342" y="69" class="d-text">2.1</text>
+            <text x="377" y="69" class="d-text">−∞</text>
+            <text x="412" y="69" class="d-text">−∞</text>
+            <text x="447" y="69" class="d-text">−∞</text>
+            <text x="342" y="97" class="d-text">0.3</text>
+            <text x="377" y="97" class="d-text">1.7</text>
+            <text x="412" y="97" class="d-text">−∞</text>
+            <text x="447" y="97" class="d-text">−∞</text>
+            <text x="342" y="125" class="d-text">1.1</text>
+            <text x="377" y="125" class="d-text">0.4</text>
+            <text x="412" y="125" class="d-text">1.8</text>
+            <text x="447" y="125" class="d-text">−∞</text>
+            <text x="342" y="153" class="d-text">0.7</text>
+            <text x="377" y="153" class="d-text">1.2</text>
+            <text x="412" y="153" class="d-text">0.5</text>
+            <text x="447" y="153" class="d-text">1.9</text>
+            <!-- Legend -->
+            <rect x="500" y="60" width="16" height="12" fill="#f0c040" stroke="#2a2620" stroke-width="1"/>
+            <text x="530" y="70" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#2a2620;text-anchor:start">= can attend</text>
+            <rect x="500" y="82" width="16" height="12" fill="#ebe3cf" stroke="#2a2620" stroke-width="1"/>
+            <text x="530" y="92" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#2a2620;text-anchor:start">= −∞ (blocked)</text>
+            <text x="500" y="120" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#948a78;text-anchor:start">softmax(−∞) = 0</text>
+            <text x="500" y="134" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#948a78;text-anchor:start">future tokens get</text>
+            <text x="500" y="148" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#948a78;text-anchor:start">zero attention weight</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Causal mask: upper-triangle set to −∞ so each token can only attend to itself and past tokens.</p>
+        </div>
+        <p>
+          The solution is the <strong>causal attention mask</strong> — a triangular matrix applied to the attention scores <em>before</em> softmax. Every position above the diagonal (future positions) gets set to −∞.
+        </p>
+        <pre>
+# Attention scores (4×4) BEFORE masking:
+scores = [[0.5, 1.2, 0.8, 0.3],    # token 0 → all tokens
+          [1.1, 0.4, 0.9, 0.6],    # token 1 → all tokens
+          [0.7, 1.3, 0.2, 1.0],    # token 2 → all tokens
+          [0.8, 0.5, 1.1, 0.4]]    # token 3 → all tokens
+
+# The causal mask:
+mask = [[ 0,  -∞,  -∞,  -∞],       # token 0: only see itself
+        [ 0,   0,  -∞,  -∞],       # token 1: see tokens 0-1
+        [ 0,   0,   0,  -∞],       # token 2: see tokens 0-2
+        [ 0,   0,   0,   0]]       # token 3: see all tokens 0-3
+
+# After masking (add mask to scores):
+masked = [[0.5,  -∞,  -∞,  -∞],
+          [1.1, 0.4,  -∞,  -∞],
+          [0.7, 1.3, 0.2,  -∞],
+          [0.8, 0.5, 1.1, 0.4]]</pre>
+
+        <h2>Effect on softmax</h2>
+        <p>
+          When softmax encounters −∞, <code>exp(−∞) = 0</code>. Those positions get exactly zero attention weight:
+        </p>
+        <pre>
+# After softmax:
+weights = [[1.00, 0.00, 0.00, 0.00],   # token 0: 100% self
+           [0.67, 0.33, 0.00, 0.00],   # token 1: attends to 0 and 1
+           [0.30, 0.55, 0.15, 0.00],   # token 2: attends to 0, 1, 2
+           [0.24, 0.18, 0.33, 0.16]]   # token 3: attends to all</pre>
+        <p>
+          Each row sums to 1.0, but only over the tokens up to and including the current position. Future tokens are invisible.
+        </p>
+
+        <div class="callout insight">
+          <span class="callout-label">Key Insight</span>
+          <p>The causal mask is the only difference between encoder-style attention (BERT, which sees everything) and decoder-style attention (GPT, which can only look backward). It's a single triangular matrix — and it changes the entire model from bidirectional to autoregressive.</p>
+        </div>
+
+        <h2>Implementation in code</h2>
+        <pre>
+import torch
+import torch.nn.functional as F
+
+def causal_self_attention(X, W_Q, W_K, W_V):
+    """Self-attention with causal masking."""
+    Q = X @ W_Q
+    K = X @ W_K
+    V = X @ W_V
+
+    n = Q.shape[0]
+    d_k = K.shape[-1]
+
+    scores = Q @ K.T / (d_k ** 0.5)      # (n, n)
+
+    # Create causal mask: upper triangle = True
+    mask = torch.triu(torch.ones(n, n, dtype=torch.bool), diagonal=1)
+    scores = scores.masked_fill(mask, float('-inf'))
+
+    weights = F.softmax(scores, dim=-1)    # (n, n)
+    output = weights @ V                   # (n, d_v)
+    return output, weights</pre>
+        <p>
+          The key line: <code>torch.triu(..., diagonal=1)</code> creates an upper-triangular boolean mask. <code>masked_fill</code> sets those positions to −∞. That's the entire causal mechanism.
+        </p>
+        <p>
+          This is exactly how it's implemented in Karpathy's <a href="https://github.com/karpathy/nanoGPT/blob/master/model.py" target="_blank">nanoGPT</a> — see the <code>CausalSelfAttention</code> class, line 40: <code>self.register_buffer("bias", torch.tril(torch.ones(block_size, block_size)))</code>.
+        </p>
+
+        <h2>The autoregressive generation loop</h2>
+        <p>
+          At inference time, generation happens one token at a time:
+        </p>
+        <pre>
+# Autoregressive generation — step by step
+
+# Step 1: Input = ["The"]
+tokens = ["The"]
+logits = model(["The"])           # predict next
+next = sample(logits)              # → "cat"
+tokens = ["The", "cat"]
+
+# Step 2: Input = ["The", "cat"]
+logits = model(["The", "cat"])    # predict next
+next = sample(logits)              # → "sat"
+tokens = ["The", "cat", "sat"]
+
+# Step 3: Input = ["The", "cat", "sat"]
+logits = model(["The", "cat", "sat"])
+next = sample(logits)              # → "down"
+tokens = ["The", "cat", "sat", "down"]
+
+# ... and so on</pre>
+        <p>
+          Each step feeds the <em>entire</em> sequence so far through the model. The model outputs logits for every position, but we only use the logit at the last position to predict the next token.
+        </p>
+
+        <h2>Teacher forcing vs free-running</h2>
+        <p>
+          During <strong>training</strong>, we use <strong>teacher forcing</strong>: the model receives the true sequence as input and predicts the next token at every position simultaneously. The causal mask ensures it can't cheat by looking ahead. The loss is computed at every position in parallel.
+        </p>
+        <pre>
+# Training: teacher forcing (parallel)
+input  = ["The", "cat", "sat", "on",  "the"]
+target = ["cat", "sat", "on",  "the", "mat"]
+
+# Model processes all 5 positions at once
+# Causal mask ensures position 0 can't see positions 1-4
+# Loss computed at all positions simultaneously</pre>
+        <p>
+          During <strong>inference</strong>, we use <strong>free-running</strong>: the model generates one token at a time, feeding its own output back as input. Any mistake propagates — if the model generates a wrong token, all subsequent tokens are conditioned on that error.
+        </p>
+
+        <h2>Why this design forces the KV cache</h2>
+        <p>
+          Here's the problem that leads directly to Phase 2. At inference step t, the model needs to compute attention over all t tokens. The naive approach: recompute Q, K, V for all previous tokens every step.
+        </p>
+        <p>
+          For a 1000-token sequence at step 1000, you'd compute 1000 Q vectors, 1000 K vectors, and 1000 V vectors — even though the first 999 haven't changed since the last step.
+        </p>
+        <p>
+          The <strong>KV cache</strong> solves this: cache the K and V vectors from all previous steps. At step t, only compute Q, K, V for the new token. Look up cached K and V for all previous tokens. This reduces per-step compute from O(t²) to O(t).
+        </p>
+
+        <div class="callout warning">
+          <span class="callout-label">The Catch</span>
+          <p>The KV cache saves compute but costs memory. For DeepSeek-V3 with 61 layers, 128 attention heads, head dimension 128, and 128K context: the KV cache alone is <strong>2 × 61 × 128 × 128 × 128,000 × 2 bytes ≈ 50+ GB</strong>. This is the memory bottleneck that MLA (Phase 3) compresses by 93%.</p>
+        </div>
+
+        <h2>Causal attention in DeepSeek</h2>
+        <p>
+          DeepSeek-V3 uses the same causal masking principle but with two key differences:
+        </p>
+        <ol>
+          <li><strong>MLA replaces standard KV caching.</strong> Instead of caching full K and V per head, DeepSeek caches a compressed latent vector. The causal structure is preserved — the mask still prevents attending to future tokens — but the memory cost is dramatically lower.</li>
+          <li><strong>MTP (Multi-Token Prediction)</strong> changes what happens at the output. Instead of predicting just the next token, DeepSeek-V3 predicts 2 tokens ahead. But the causal constraint still holds — each prediction can only use information from tokens before the position being predicted.</li>
+        </ol>
+
+        <h2>5 things to remember</h2>
+        <ol>
+          <li><strong>Causal mask:</strong> Upper-triangle set to −∞. Prevents future information leakage during training.</li>
+          <li><strong>softmax(−∞) = 0:</strong> Future tokens get exactly zero attention weight. Clean and exact.</li>
+          <li><strong>Training parallel, inference sequential:</strong> Teacher forcing (parallel) during training, free-running (sequential) during generation.</li>
+          <li><strong>KV cache:</strong> Cache previous steps' K and V to avoid recomputation. Saves compute, costs memory.</li>
+          <li><strong>Memory bottleneck:</strong> The KV cache grows linearly with sequence length. This is why MLA and GQA exist — and why Phase 2 matters.</li>
+        </ol>
+
+        <h2>Go deeper</h2>
+        <ul>
+          <li><strong>Code:</strong> nanoGPT causal mask — <a href="https://github.com/karpathy/nanoGPT/blob/master/model.py" target="_blank">model.py line 40</a></li>
+          <li><strong>Book:</strong> Raschka — "Build a Large Language Model From Scratch" (Chapter 3) — Manning</li>
+          <li><strong>Blog:</strong> The Illustrated GPT-2 (autoregressive section) — <a href="https://jalammar.github.io/illustrated-gpt2/" target="_blank">Jay Alammar</a></li>
+          <li><strong>Paper:</strong> Language Models are Unsupervised Multitask Learners (GPT-2) — <a href="https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf" target="_blank">OpenAI</a></li>
+        </ul>
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-1-4-self-attention.html">← Self-Attention From Scratch</a>
+        <a href="deepseek-1-6-multi-head-attention.html">Multi-Head Attention Internals →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term" data-term="causal-mask">
+      <div class="vocab-term-header"><span class="vocab-term-word">causal mask</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">A lower-triangular matrix that blocks attention to future positions. Sets future scores to −∞ before softmax, making their attention weights exactly 0.</div>
+    </div>
+    <div class="vocab-term" data-term="autoregressive">
+      <div class="vocab-term-header"><span class="vocab-term-word">autoregressive</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Generating tokens one at a time, each conditioned only on previous tokens. The causal mask enforces this during parallel training.</div>
+    </div>
+    <div class="vocab-term" data-term="teacher-forcing">
+      <div class="vocab-term-header"><span class="vocab-term-word">teacher forcing</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">During training: feed the correct previous token as input (not the model's prediction). Enables parallel training of all positions at once.</div>
+    </div>
+    <div class="vocab-term" data-term="free-running">
+      <div class="vocab-term-header"><span class="vocab-term-word">free-running</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">During inference: the model feeds its own predictions back as input. Errors can compound — one wrong token leads to more wrong tokens.</div>
+    </div>
+    <div class="vocab-term" data-term="kv-cache">
+      <div class="vocab-term-header"><span class="vocab-term-word">KV cache</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Stored Key/Value vectors from all previous tokens. Without it, generating token N requires recomputing attention for all N-1 previous tokens.</div>
+    </div>
+    <div class="vocab-term" data-term="triu">
+      <div class="vocab-term-header"><span class="vocab-term-word">torch.triu</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Returns the upper-triangular part of a matrix. Used to create the causal mask: triu with offset 1 gives the positions to block.</div>
+    </div>
+    <div class="vocab-term" data-term="masked-fill">
+      <div class="vocab-term-header"><span class="vocab-term-word">masked_fill</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">PyTorch method that replaces values at True positions with a given value (like −∞). How the causal mask is applied to attention scores.</div>
+    </div>
+    <div class="vocab-term" data-term="mla">
+      <div class="vocab-term-header"><span class="vocab-term-word">MLA</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Multi-Head Latent Attention. DeepSeek's solution to KV cache memory — compresses all K/V info into a small latent vector. 93% memory reduction.</div>
+    </div>
+  </aside>
+
+  </div>
+  <script src="../posts.js"></script>
+  <script src="../app.js"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+</body>
+</html>

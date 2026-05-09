@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Head Attention Internals — cvam.sight</title>
+<link rel="stylesheet" href="../style.css">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="#">RSS</a>
+        <a href="https://github.com/shivam2003-dev" target="_blank">GitHub</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 1</p>
+        <p class="series-banner-title">LLM Foundations</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 6 of 7 · Phase 1 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-1-1-introduction.html" class="done">1.1 Intro</a>
+          <a href="deepseek-1-2-token-flow.html" class="done">1.2 Tokens</a>
+          <a href="deepseek-1-3-attention-mechanism.html" class="done">1.3 Attention</a>
+          <a href="deepseek-1-4-self-attention.html" class="done">1.4 Self-Attn</a>
+          <a href="deepseek-1-5-causal-attention.html" class="done">1.5 Causal</a>
+          <a href="deepseek-1-6-multi-head-attention.html" class="active">1.6 Multi-Head</a>
+          <a href="deepseek-1-7-mha-implementation.html">1.7 Code</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 9, 2026 · ml · 16 min read · 3400 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Multi-Head Attention Internals.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-1</span>
+          <span class="tag">intermediate</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          One attention head learns one pattern. Why does GPT-4 have 96 of them? This is article 6 of 7 in Phase 1 of the <strong>DeepSeek Engineering Blog Series</strong>.
+        </p>
+
+        <blockquote>
+          If You Read Nothing Else: A single attention head can only learn one type of relationship (e.g., "attend to the previous word"). Multi-Head Attention (MHA) runs multiple attention heads in parallel, each learning a different pattern. The outputs are concatenated and projected back. This gives the model the ability to simultaneously track syntax, semantics, coreference, and position — all in one layer.
+        </blockquote>
+
+        <h2>Why one head isn't enough</h2>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg" style="max-width:680px">
+            <style>
+              .d-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .d-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; }
+              .d-sm { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .d-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; marker-end: url(#ah6); }
+              .d-title { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; text-transform: uppercase; letter-spacing: 0.1em; }
+            </style>
+            <defs><marker id="ah6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#2a2620" stroke-width="1"/></marker></defs>
+            <text x="340" y="16" class="d-title">multi-head attention — parallel heads + concatenation</text>
+            <!-- Input -->
+            <rect x="270" y="30" width="140" height="30" class="d-box"/>
+            <text x="340" y="50" class="d-text">input X (n × d)</text>
+            <!-- Fan out to heads -->
+            <line x1="260" y1="60" x2="90" y2="85" class="d-arrow"/>
+            <line x1="310" y1="60" x2="240" y2="85" class="d-arrow"/>
+            <line x1="370" y1="60" x2="390" y2="85" class="d-arrow"/>
+            <line x1="420" y1="60" x2="540" y2="85" class="d-arrow"/>
+            <!-- Head 1 -->
+            <rect x="30" y="85" width="120" height="60" class="d-hi" rx="4"/>
+            <text x="90" y="105" class="d-text">Head 1</text>
+            <text x="90" y="118" class="d-sm">d_h = d/h</text>
+            <text x="90" y="133" class="d-sm">👁 positional</text>
+            <!-- Head 2 -->
+            <rect x="180" y="85" width="120" height="60" class="d-hi" rx="4"/>
+            <text x="240" y="105" class="d-text">Head 2</text>
+            <text x="240" y="118" class="d-sm">d_h = d/h</text>
+            <text x="240" y="133" class="d-sm">🔗 syntactic</text>
+            <!-- Head 3 -->
+            <rect x="330" y="85" width="120" height="60" class="d-hi" rx="4"/>
+            <text x="390" y="105" class="d-text">Head 3</text>
+            <text x="390" y="118" class="d-sm">d_h = d/h</text>
+            <text x="390" y="133" class="d-sm">↔ coreference</text>
+            <!-- Head h -->
+            <rect x="480" y="85" width="120" height="60" class="d-box" stroke-dasharray="4,3"/>
+            <text x="540" y="105" class="d-text">Head h</text>
+            <text x="540" y="118" class="d-sm">d_h = d/h</text>
+            <text x="540" y="133" class="d-sm">… learned</text>
+            <!-- ... between head 3 and h -->
+            <text x="465" y="115" style="font-family:'JetBrains Mono',monospace;font-size:14px;fill:#948a78;text-anchor:middle">···</text>
+            <!-- Arrows down to concat -->
+            <line x1="90" y1="145" x2="90" y2="170" class="d-arrow"/>
+            <line x1="240" y1="145" x2="240" y2="170" class="d-arrow"/>
+            <line x1="390" y1="145" x2="390" y2="170" class="d-arrow"/>
+            <line x1="540" y1="145" x2="540" y2="170" class="d-arrow"/>
+            <!-- Concat -->
+            <rect x="30" y="170" width="570" height="30" rx="4" fill="#c96442" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="315" y="189" style="font-family:'JetBrains Mono',monospace;font-size:11px;fill:#f5efe1;text-anchor:middle">Concat(head_1, head_2, ..., head_h) → (n × d)</text>
+            <!-- W_O -->
+            <line x1="315" y1="200" x2="315" y2="220" class="d-arrow"/>
+            <rect x="255" y="220" width="120" height="30" class="d-hi"/>
+            <text x="315" y="239" class="d-text">× W_O (d×d)</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Multi-head attention: h parallel heads, each learning different patterns, concatenated and projected.</p>
+        </div>
+
+        <p>
+          In the previous articles, we implemented single-head self-attention. It works — but it has a fundamental limitation. A single attention head produces one set of attention weights per token. That means token "it" gets one chance to decide what to attend to.
+        </p>
+        <p>
+          But language has multiple simultaneous relationships:
+        </p>
+        <ul>
+          <li>"it" needs to attend to "animal" (coreference)</li>
+          <li>"it" needs to attend to "was" (syntactic — subject-verb)</li>
+          <li>"it" needs to attend to its position neighbors (local context)</li>
+        </ul>
+        <p>
+          One attention head can learn one of these patterns. Multi-head attention learns all of them in parallel.
+        </p>
+
+        <h2>How multi-head attention works</h2>
+        <p>
+          The idea from Section 3.2.2 of "Attention Is All You Need" (arXiv:1706.03762):
+        </p>
+        <ol>
+          <li><strong>Split:</strong> Divide the model dimension d into h heads, each of size d_h = d / h.</li>
+          <li><strong>Project:</strong> Each head has its own W_Q, W_K, W_V matrices of size (d, d_h).</li>
+          <li><strong>Attend:</strong> Run self-attention independently in each head.</li>
+          <li><strong>Concatenate:</strong> Stack all h output vectors side by side → dimension h × d_h = d.</li>
+          <li><strong>Output projection:</strong> Multiply by W_O (size d × d) to mix information across heads.</li>
+        </ol>
+
+        <pre>
+MultiHead(Q, K, V) = Concat(head_1, head_2, ..., head_h) · W_O
+
+where head_i = Attention(X · W_Q_i, X · W_K_i, X · W_V_i)</pre>
+
+        <h3>Concrete dimensions</h3>
+        <table>
+          <tr>
+            <th>Model</th>
+            <th>d_model</th>
+            <th>Heads (h)</th>
+            <th>d_head</th>
+            <th>Total QKV params/layer</th>
+          </tr>
+          <tr>
+            <td>GPT-2 Small</td>
+            <td>768</td>
+            <td>12</td>
+            <td>64</td>
+            <td>1.8M</td>
+          </tr>
+          <tr>
+            <td>GPT-3 175B</td>
+            <td>12,288</td>
+            <td>96</td>
+            <td>128</td>
+            <td>603M</td>
+          </tr>
+          <tr>
+            <td>LLaMA-2 70B</td>
+            <td>8,192</td>
+            <td>64</td>
+            <td>128</td>
+            <td>268M</td>
+          </tr>
+          <tr>
+            <td><strong>DeepSeek-V2</strong></td>
+            <td>5,120</td>
+            <td>128</td>
+            <td>128 (Q) / latent (KV)</td>
+            <td>MLA — different</td>
+          </tr>
+        </table>
+
+        <p>
+          Notice DeepSeek-V2 has 128 attention heads — more than GPT-3's 96 — but uses MLA instead of standard MHA. The head dimension for queries is 128, but Keys and Values are compressed into a 512-dimensional latent space (covered in Phase 3).
+        </p>
+
+        <h2>What different heads learn</h2>
+        <p>
+          Researchers have analyzed what trained attention heads actually do. Using tools like <a href="https://github.com/jessevig/bertviz" target="_blank">BertViz</a>, several distinct patterns emerge:
+        </p>
+
+        <h3>Positional heads</h3>
+        <p>
+          Some heads consistently attend to the previous or next token. These learn bigram-like patterns — local context that helps with syntax and word prediction.
+        </p>
+
+        <h3>Syntactic heads</h3>
+        <p>
+          Some heads track grammatical structure. In English, specific heads learn that verbs attend to their subjects, adjectives attend to the nouns they modify, and prepositions attend to their objects.
+        </p>
+
+        <h3>Coreference heads</h3>
+        <p>
+          These resolve pronouns. The head that helps "it" attend to "animal" in our running example. Lena Voita's research (<a href="https://lena-voita.github.io/nlp_course/seq2seq_and_attention.html" target="_blank">Analyzing Multi-Head Attention</a>) found specific heads that cleanly track coreference chains.
+        </p>
+
+        <h3>Rare-word / copy heads</h3>
+        <p>
+          Some heads attend strongly to rare or important tokens — proper nouns, numbers, technical terms. These help the model "copy" information forward when it needs to reference specific details.
+        </p>
+
+        <div class="callout insight">
+          <span class="callout-label">Redundancy</span>
+          <p>Not all heads are equally useful. Research by Michel et al. ("Are Sixteen Heads Really Better than One?", arXiv:1905.10650) showed that many heads can be pruned after training with minimal quality loss. Some heads are redundant. This insight partly motivates the move from MHA to MQA/GQA/MLA — if many heads learn similar Key-Value patterns, why not share them?</p>
+        </div>
+
+        <h2>The computational cost</h2>
+        <p>
+          Multi-head attention has the same asymptotic complexity as single-head attention: <strong>O(n² · d)</strong>. This is because:
+        </p>
+        <ul>
+          <li>Each head computes attention over (n, d_h) matrices: O(n² · d_h) per head</li>
+          <li>With h heads: O(h · n² · d_h) = O(n² · d) — same as single-head with full dimension</li>
+        </ul>
+        <p>
+          The heads run in parallel on GPUs (different heads = different matrix multiplications that can execute simultaneously), so wall-clock time is similar to single-head. The total FLOPs are the same — you're just distributing the same work across specialized sub-problems.
+        </p>
+
+        <h3>Memory cost: the KV cache problem</h3>
+        <p>
+          This is where multi-head attention gets expensive at inference. Each head caches its own K and V vectors. The KV cache size per layer:
+        </p>
+        <pre>
+KV cache per layer = 2 × n_heads × head_dim × seq_len × bytes_per_element
+                   = 2 × h × d_h × n × sizeof(dtype)
+
+# GPT-3 at 4096 context, FP16:
+= 2 × 96 × 128 × 4096 × 2 bytes
+= 201 MB per layer
+× 96 layers
+= 19.3 GB total KV cache</pre>
+        <p>
+          For DeepSeek-V2 with standard MHA, this would be enormous. That's why MLA exists — it replaces the per-head KV cache with a shared latent vector, reducing memory by 93%.
+        </p>
+
+        <h2>The output projection W_O</h2>
+        <p>
+          After concatenating all head outputs, we multiply by W_O ∈ ℝ^(d × d). This matrix serves a critical purpose: it lets information from different heads interact.
+        </p>
+        <p>
+          Without W_O, each head's output would remain in its own subspace. The output projection mixes them, allowing the model to combine syntactic information from head 3 with coreference information from head 7 into a single unified representation.
+        </p>
+        <pre>
+# Pseudocode
+heads = []
+for i in range(h):
+    Q_i = X @ W_Q[i]    # (n, d_h)
+    K_i = X @ W_K[i]    # (n, d_h)
+    V_i = X @ W_V[i]    # (n, d_h)
+    head_i = attention(Q_i, K_i, V_i)  # (n, d_h)
+    heads.append(head_i)
+
+concat = torch.cat(heads, dim=-1)  # (n, h*d_h) = (n, d)
+output = concat @ W_O              # (n, d)</pre>
+
+        <h2>Efficient batched implementation</h2>
+        <p>
+          In practice, no one runs a for-loop over heads. Instead, Q, K, V are computed with a single large matrix multiplication, then reshaped:
+        </p>
+        <pre>
+# Efficient: one matmul, then reshape
+QKV = X @ W_QKV          # (n, 3*d) — single projection
+Q, K, V = QKV.chunk(3)    # each (n, d)
+
+# Reshape: (n, d) → (n, h, d_h) → (h, n, d_h)
+Q = Q.view(n, h, d_h).transpose(0, 1)
+K = K.view(n, h, d_h).transpose(0, 1)
+V = V.view(n, h, d_h).transpose(0, 1)
+
+# Batched attention over all heads simultaneously
+attn = scaled_dot_product_attention(Q, K, V)  # (h, n, d_h)
+
+# Reshape back: (h, n, d_h) → (n, h, d_h) → (n, d)
+output = attn.transpose(0, 1).contiguous().view(n, d)
+output = output @ W_O</pre>
+        <p>
+          This is exactly how it's implemented in nanoGPT (<a href="https://github.com/karpathy/nanoGPT/blob/master/model.py" target="_blank">model.py</a>) and in the official PyTorch <code>nn.MultiheadAttention</code>. We'll build this from scratch in Article 1.7.
+        </p>
+
+        <h2>From MHA to what comes next</h2>
+        <p>
+          Understanding MHA is essential because every optimization in Phase 2 and 3 is a modification of this exact mechanism:
+        </p>
+        <ul>
+          <li><strong>MQA (Multi-Query Attention):</strong> All heads share the same K and V. Reduces KV cache by factor h. Used by PaLM, Falcon.</li>
+          <li><strong>GQA (Grouped Query Attention):</strong> Group heads into g groups, each sharing K and V. Compromise between MHA and MQA. Used by LLaMA-2/3, Mistral.</li>
+          <li><strong>MLA (Multi-Head Latent Attention):</strong> DeepSeek's approach. Compress all KV into a single learned latent vector. Different philosophy — compress rather than share.</li>
+        </ul>
+        <p>
+          All three are trying to solve the same problem: MHA's KV cache is too large for long-context inference. They just take different approaches to reducing it.
+        </p>
+
+        <h2>5 things to remember</h2>
+        <ol>
+          <li><strong>Multiple heads:</strong> Split d into h heads of size d/h. Each learns a different attention pattern.</li>
+          <li><strong>Concat + W_O:</strong> Concatenate all heads, project with W_O to mix across heads.</li>
+          <li><strong>Same FLOPs:</strong> MHA has the same compute cost as single-head attention with full dimension.</li>
+          <li><strong>KV cache:</strong> Each head stores its own K and V → memory scales with h × d_h × n × layers.</li>
+          <li><strong>Head specialization:</strong> Different heads learn syntax, coreference, position, and copy patterns.</li>
+        </ol>
+
+        <h2>Go deeper</h2>
+        <ul>
+          <li><strong>Paper:</strong> "Attention Is All You Need" (Section 3.2.2) — <a href="https://arxiv.org/abs/1706.03762" target="_blank">arXiv:1706.03762</a></li>
+          <li><strong>Paper:</strong> "Are Sixteen Heads Really Better than One?" — <a href="https://arxiv.org/abs/1905.10650" target="_blank">arXiv:1905.10650</a></li>
+          <li><strong>Tool:</strong> BertViz — attention head visualizer — <a href="https://github.com/jessevig/bertviz" target="_blank">GitHub</a></li>
+          <li><strong>Blog:</strong> Lena Voita — Attention head analysis — <a href="https://lena-voita.github.io/nlp_course/seq2seq_and_attention.html" target="_blank">lena-voita.github.io</a></li>
+        </ul>
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-1-5-causal-attention.html">← Causal Attention</a>
+        <a href="deepseek-1-7-mha-implementation.html">MHA Implementation in Python →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term" data-term="multi-head">
+      <div class="vocab-term-header"><span class="vocab-term-word">multi-head attention</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Running h independent attention operations in parallel, each with its own Q/K/V weights. Results are concatenated and projected through W_O.</div>
+    </div>
+    <div class="vocab-term" data-term="head-dim">
+      <div class="vocab-term-header"><span class="vocab-term-word">head dimension (d_h)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">d_model / n_heads. Each head works in a smaller subspace. GPT-3: 12288/96 = 128. Total compute stays the same as single-head.</div>
+    </div>
+    <div class="vocab-term" data-term="concat">
+      <div class="vocab-term-header"><span class="vocab-term-word">concatenation</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Joining all head outputs side by side: h tensors of (n, d_h) become one tensor of (n, d). Preserves each head's learned information.</div>
+    </div>
+    <div class="vocab-term" data-term="wo">
+      <div class="vocab-term-header"><span class="vocab-term-word">W_O (output proj.)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">A learned (d×d) matrix applied after concatenation. Mixes information across heads — without this, heads can't share what they learned.</div>
+    </div>
+    <div class="vocab-term" data-term="head-specialization">
+      <div class="vocab-term-header"><span class="vocab-term-word">head specialization</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Different heads learn different patterns: positional (attend to neighbors), syntactic (subject↔verb), coreference (pronoun↔noun), copy (rare words).</div>
+    </div>
+    <div class="vocab-term" data-term="mqa">
+      <div class="vocab-term-header"><span class="vocab-term-word">MQA</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Multi-Query Attention. All heads share one set of K/V weights. Reduces KV cache by h×. Quality trade-off. Used by PaLM, Falcon.</div>
+    </div>
+    <div class="vocab-term" data-term="gqa">
+      <div class="vocab-term-header"><span class="vocab-term-word">GQA</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Grouped Query Attention. Groups of heads share K/V weights. Middle ground between MHA (no sharing) and MQA (full sharing). Used by LLaMA-3.</div>
+    </div>
+    <div class="vocab-term" data-term="mla">
+      <div class="vocab-term-header"><span class="vocab-term-word">MLA</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Multi-Head Latent Attention. DeepSeek's approach: compress all KV into a single latent vector, reconstruct on demand. Better than GQA. Phase 3.</div>
+    </div>
+    <div class="vocab-term" data-term="flops">
+      <div class="vocab-term-header"><span class="vocab-term-word">FLOPs</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Floating Point Operations. Measures compute cost. MHA total FLOPs = QKV projections + attention scores + A×V + output projection.</div>
+    </div>
+  </aside>
+
+  </div>
+  <script src="../posts.js"></script>
+  <script src="../app.js"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+</body>
+</html>

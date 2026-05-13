@@ -75,21 +75,21 @@
   var slug = getSlug();
   recordView(slug);
 
-  // ── Render per-article reader count ──
+  // ── Render per-article view count ──
   // Inject into the .meta line inside .post-header
   var postMeta = document.querySelector(".post-header .meta");
   if (postMeta) {
     var count = getViews(slug);
     var span = document.createElement("span");
     span.className = "readers-badge";
-    span.innerHTML = " · 👁 " + fmt(count) + (count === 1 ? " reader" : " readers");
+    span.innerHTML = " · " + fmt(count) + (count === 1 ? " view" : " views");
     postMeta.appendChild(span);
   }
 
   // ── Render site-wide stat in sidebar ──
   var sidebarStat = document.getElementById("site-readers");
   if (sidebarStat) {
-    sidebarStat.textContent = fmt(getTotalViews()) + " total reads";
+    sidebarStat.textContent = fmt(getTotalViews()) + " total views";
   }
 
   // ── Expose for card rendering (used by app.js) ──

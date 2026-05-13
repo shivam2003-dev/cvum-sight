@@ -12,7 +12,7 @@
     var stats = window.cvamStats;
     var views = stats ? stats.getViews(post.slug) : 0;
     var readersHtml = views > 0
-      ? `<span class="card-readers">· 👁 ${stats.fmt(views)}</span>`
+      ? `<span class="card-readers">· ${stats.fmt(views)} views</span>`
       : "";
     return `<a href="posts/${escapeHtml(post.slug)}.html" class="post-card">
       <span class="cat">${escapeHtml(post.cat)}</span>

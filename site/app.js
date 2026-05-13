@@ -78,22 +78,51 @@
     const filterCat = params.get("cat");
     const filtered = filterCat ? POSTS.filter(p => p.cat === filterCat) : POSTS;
 
+    // Collapse series posts: keep only the first article per series, show count
+    const seenSeries = {};
+    const collapsed = [];
+    filtered.forEach(p => {
+      if (p.series) {
+        if (!seenSeries[p.series]) {
+          seenSeries[p.series] = { post: p, count: 1 };
+          collapsed.push({ type: "series", data: seenSeries[p.series] });
+        } else {
+          seenSeries[p.series].count++;
+        }
+      } else {
+        collapsed.push({ type: "post", data: p });
+      }
+    });
+
     // update subtitle to reflect filter
     const archiveSub = document.querySelector(".archive-subtitle");
     if (archiveSub) {
       archiveSub.textContent = filterCat
-        ? `Posts in // ${filterCat} · ${filtered.length} post${filtered.length !== 1 ? "s" : ""}`
+        ? `Posts in // ${filterCat} · ${collapsed.length} entr${collapsed.length !== 1 ? "ies" : "y"}`
         : `All posts · newest first`;
     }
 
-    archiveList.innerHTML = filtered.map(p =>
-      `<li>
-        <span class="meta">${escapeHtml(p.date)}</span>
-        <span class="tag fill">${escapeHtml(p.cat)}</span>
-        <a href="posts/${escapeHtml(p.slug)}.html">${escapeHtml(p.title)}</a>
-        <span class="meta">${p.time} min</span>
-      </li>`
-    ).join("");
+    archiveList.innerHTML = collapsed.map(item => {
+      if (item.type === "series") {
+        const p = item.data.post;
+        const count = item.data.count;
+        // link to the first article of the series
+        return `<li>
+          <span class="meta">${escapeHtml(p.date)}</span>
+          <span class="tag fill">series</span>
+          <a href="posts/${escapeHtml(p.slug)}.html">${escapeHtml(p.series.charAt(0).toUpperCase() + p.series.slice(1))} Series</a>
+          <span class="meta">${count} article${count !== 1 ? "s" : ""}</span>
+        </li>`;
+      } else {
+        const p = item.data;
+        return `<li>
+          <span class="meta">${escapeHtml(p.date)}</span>
+          <span class="tag fill">${escapeHtml(p.cat)}</span>
+          <a href="posts/${escapeHtml(p.slug)}.html">${escapeHtml(p.title)}</a>
+          <span class="meta">${p.time} min</span>
+        </li>`;
+      }
+    }).join("");
   }
 
   // ── tags page ──

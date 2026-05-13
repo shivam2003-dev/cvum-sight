@@ -17,14 +17,11 @@ No build step. No package.json. Changes are live on refresh.
 
 ## Adding a blog post
 
-Two files always change together:
+Use `/new-post` to do all of this automatically from raw writing. Manual steps:
 
 1. **`site/posts.js`** — add new entry at **top** of `POSTS` array (newest-first order matters; `app.js` renders in array order)
 2. **`site/posts/<slug>.html`** — create post file; filename must match `slug`
-
-Also update the **previous newest post's `<div class="post-nav">`** to add a forward link to the new post.
-
-Use `/new-post` to do all of this automatically from raw writing.
+3. Update the **previous newest post's `<div class="post-nav">`** to add a forward link to the new post
 
 ## Architecture
 
@@ -37,14 +34,84 @@ Use `/new-post` to do all of this automatically from raw writing.
 
 The index/archive/tags pages have no server-side logic — `app.js` reads `POSTS` from `posts.js` (loaded as a plain `<script>`) and renders everything client-side.
 
-## Post HTML template
+**Important:** `site/index.html` hero section and `site/series.html` are **hardcoded HTML** — they do NOT auto-update from `posts.js`. When adding new series articles or phases, manually update both files.
 
-Post files use a two-column layout (`<div class="layout">`): `<aside class="sidebar">` + `<div class="page">`. The `<div class="progress-bar">` goes before the layout. The `<h1>` title ends with a period. First tag in `.tag-row` gets class `fill` (the category tag).
+## Post HTML structure
 
-## Deployment
+Post files use a two-column layout:
+```html
+<div class="progress-bar"></div>
+<div class="layout">       <!-- add "has-vocab" class if post has a vocab panel -->
+  <aside class="sidebar">…</aside>
+  <div class="page">
+    <article>
+      <div class="post-header">
+        <p class="meta">DATE · CAT · N min read · N words</p>
+        <h1>Title ends with a period.</h1>
+        <div class="tag-row">
+          <span class="tag fill">category</span>  <!-- first tag gets "fill" -->
+          <span class="tag">other-tag</span>
+        </div>
+      </div>
+      <div class="post-body">…</div>
+      <div class="post-nav">…</div>
+    </article>
+  </div>
+</div>
+```
 
-Deployed to Vercel. `vercel.json` sets `outputDirectory: "site"`, no build command. Deploy triggered manually via GitHub Actions (`workflow_dispatch`). Requires `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN` secrets in the repo.
+## Series posts (additional requirements)
+
+Series posts have extra `posts.js` fields and richer HTML.
+
+**Extra `posts.js` fields:**
+```js
+{
+  series: "deepseek",    // series identifier
+  seriesNum: "1.3"       // phase.article number
+}
+```
+
+**Additional HTML elements for series posts:**
+
+1. `<div class="series-banner">` before `<div class="post-header">` — contains label, title, pip progress indicators (`.series-pip`, `.series-pip.done`, `.series-pip.current`), article count meta, and nav links (`.series-banner-nav a`, add `class="active"` on current, `class="done"` on completed)
+
+2. Difficulty badge in `.meta` line: `<span class="difficulty beginner">beginner</span>` — levels: `beginner`, `intermediate`, `advanced`, `expert`
+
+3. Vocab panel (optional) — add `has-vocab` to layout div, then after the `<div class="page">` block add:
+```html
+<aside class="vocab-panel" id="vocab-panel">
+  <p class="vocab-panel-label">// vocab</p>
+  <div class="vocab-term">
+    <div class="vocab-term-header">
+      <span class="vocab-term-word">Term</span>
+      <span class="vocab-term-arrow">▶</span>
+    </div>
+    <div class="vocab-term-def">Definition text.</div>
+  </div>
+</aside>
+```
+Vocab panel is hidden below 1100px viewport width.
+
+## Diagrams
+
+Inline SVGs go in a `.diagram-container` div with a caption:
+```html
+<div class="diagram-container">
+  <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">…</svg>
+  <p class="diagram-label">Fig N — caption text.</p>
+</div>
+```
+Use CSS classes defined in the SVG `<style>` block; color palette: `#ebe3cf` (paper), `#2a2620` (ink), `#f0c040` (yellow), `#c96442` (accent), `#948a78` (faint).
+
+## CSS cache busting
+
+All HTML files reference `style.css?v=2`. Bump this version number (`?v=3`, `?v=4`, etc.) across all HTML files when making CSS changes that need to bypass browser caches.
 
 ## Existing topics/categories
 
 `ml`, `devops`, `postgres`, `security`, `resources` — defined in `TOPICS` array in `posts.js`. New categories must be added there before use.
+
+## Deployment
+
+Deployed to Vercel. `vercel.json` sets `outputDirectory: "site"`, no build command, `cleanUrls: true` (so `.html` extensions are stripped in production URLs but required locally). Deploy triggered manually via GitHub Actions (`workflow_dispatch`). Requires `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN` secrets in the repo.

@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "gepa-paper-juice",
+    title: "GEPA — What If AI Could Write Its Own Prompts Better Than You?",
+    date: "May 14, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "prompt-optimization", "reinforcement-learning"],
+    time: 12,
+    words: 2600,
+    excerpt: "A Berkeley/Stanford paper that teaches AI to evolve its own instructions using natural selection — and it works 35x faster than brute force."
+  },
+  {
     slug: "deepseek-1-7-mha-implementation",
     title: "Multi-Head Attention Implementation in Python",
     date: "May 9, 2026",
@@ -119,9 +129,10 @@ const POSTS = [
  *   - desc:  one-line description
  */
 const TOPICS = [
-  { id: "ml",        name: "ML",        desc: "Notes, derivations, and half-baked ideas from my masters in AI/ML." },
-  { id: "devops",    name: "DevOps",    desc: "Infrastructure, CI/CD, Kubernetes, and the stuff that glues it together." },
-  { id: "postgres",  name: "Postgres",  desc: "Queries, replication, indexing — the database I keep coming back to." },
-  { id: "security",  name: "Security",  desc: "Threat models, hardening, and the paranoia that keeps things safe." },
-  { id: "resources", name: "Resources", desc: "Books, papers, courses, and tools I actually use." },
+  { id: "ml",         name: "ML",          desc: "Notes, derivations, and half-baked ideas from my masters in AI/ML." },
+  { id: "paperjuice", name: "Paper Juice", desc: "Research papers debunked and explained so anyone can get it." },
+  { id: "devops",     name: "DevOps",      desc: "Infrastructure, CI/CD, Kubernetes, and the stuff that glues it together." },
+  { id: "postgres",   name: "Postgres",    desc: "Queries, replication, indexing — the database I keep coming back to." },
+  { id: "security",   name: "Security",    desc: "Threat models, hardening, and the stuff that keeps things safe." },
+  { id: "resources",  name: "Resources",   desc: "Books, papers, courses, and tools I actually use." },
 ];

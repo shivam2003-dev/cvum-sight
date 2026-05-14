@@ -103,11 +103,11 @@
     const filterCat = params.get("cat");
     const filtered = filterCat ? POSTS.filter(p => p.cat === filterCat) : POSTS;
 
-    // Collapse series posts: keep only the first article per series, show count
+    // Collapse series posts: only collapse deepseek series, show paperjuice series individually
     const seenSeries = {};
     const collapsed = [];
     filtered.forEach(p => {
-      if (p.series) {
+      if (p.series && p.series === "deepseek") {
         if (!seenSeries[p.series]) {
           seenSeries[p.series] = { post: p, count: 1 };
           collapsed.push({ type: "series", data: seenSeries[p.series] });

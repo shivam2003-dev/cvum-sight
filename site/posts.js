@@ -16,9 +16,49 @@
 
 const POSTS = [
   {
+    slug: "flashattention-4-paper-juice",
+    title: "FlashAttention-4 — When Tensor Cores Got Too Fast for Everything Else.",
+    date: "May 14, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "attention", "gpu-optimization", "flashattention-series"],
+    time: 15,
+    words: 3300,
+    excerpt: "Blackwell GPUs doubled tensor core speed but left everything else the same. FlashAttention-4 fakes exponentials in software to keep up."
+  },
+  {
+    slug: "flashattention-3-paper-juice",
+    title: "FlashAttention-3 — Teaching Old Attention New Hardware Tricks.",
+    date: "May 13, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "attention", "gpu-optimization", "flashattention-series"],
+    time: 13,
+    words: 2900,
+    excerpt: "The H100 arrived with async execution and FP8. FlashAttention-3 rewrites attention to exploit both — hitting 75% utilization and crossing petaFLOP territory."
+  },
+  {
+    slug: "flashattention-2-paper-juice",
+    title: "FlashAttention-2 — Same Algorithm, Double the Speed, One Author.",
+    date: "May 12, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "attention", "gpu-optimization", "flashattention-series"],
+    time: 12,
+    words: 2700,
+    excerpt: "Tri Dao, alone, doubled FlashAttention's speed by fixing how GPU threads split work. The algorithm barely changed. The scheduling changed everything."
+  },
+  {
+    slug: "flashattention-1-paper-juice",
+    title: "FlashAttention — What If Your GPU Has Been Reading Memory Wrong This Whole Time.",
+    date: "May 11, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "attention", "gpu-optimization", "flashattention-series"],
+    time: 14,
+    words: 3100,
+    excerpt: "The 2022 paper that changed how every transformer runs attention — not by changing the math, but by respecting the GPU memory hierarchy."
+  },
+  {
     slug: "gepa-paper-juice",
     title: "GEPA — What If AI Could Write Its Own Prompts Better Than You?",
-    date: "May 14, 2026",
+    date: "May 10, 2026",
     cat: "paperjuice",
     tags: ["paperjuice", "ml", "prompt-optimization", "reinforcement-learning"],
     time: 12,

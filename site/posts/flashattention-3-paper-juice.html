@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlashAttention-3 — Teaching Old Attention New Hardware Tricks. — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=2">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">May 13, 2026 · paperjuice · 13 min read · 2900 words</p>
+        <h1>FlashAttention-3 — Teaching Old Attention New Hardware Tricks.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">attention</span>
+          <span class="tag">gpu-optimization</span>
+          <span class="tag">flashattention-series</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          NVIDIA released the H100 GPU in 2023. It was a monster — 3× the tensor core
+          throughput of the A100, new asynchronous execution pipelines, and native FP8 support.
+          Every CUDA kernel on earth got faster for free.
+        </p>
+        <p>
+          Except FlashAttention. It got faster, sure, but only <strong>35% utilization</strong>
+          on H100. The old code was leaving two-thirds of the new hardware's power unused.
+        </p>
+        <p>
+          The A100 version couldn't tap into the H100's best features because those features
+          didn't exist when FlashAttention-2 was written. It's like buying a car with a
+          turbocharger and never pushing the boost button because your old car didn't have one.
+        </p>
+        <p style="color:var(--faint);font-style:italic;">
+          Part 3 of the <a href="flashattention-1-paper-juice.html">FlashAttention evolution series</a>.
+          <a href="flashattention-2-paper-juice.html">Part 2</a> covered how FA-2 doubled speed
+          through better work partitioning. Now it's time to exploit new hardware.
+        </p>
+
+        <!-- PLACEHOLDER: hero image showing H100 GPU with utilization gauge going from 35% to 75% -->
+
+        <h2>The problem: new GPU, old tricks</h2>
+        <p>
+          NVIDIA's Hopper architecture (H100) introduced three game-changing features:
+        </p>
+        <ul>
+          <li><strong>Asynchronous execution</strong> — the Tensor Memory Accelerator (TMA) can
+            load data from HBM while tensor cores are busy computing. Two things happening
+            at once instead of taking turns.</li>
+          <li><strong>Warp specialization</strong> — different warps can be dedicated to different
+            roles (some load data, some compute). Like having dedicated sous chefs for prep
+            and line cooks for cooking, instead of everyone doing everything.</li>
+          <li><strong>FP8 precision</strong> — native hardware support for 8-bit floating point.
+            Half the bits of FP16 means you can move twice the data in the same time and
+            fit twice the data in the same memory.</li>
+        </ul>
+        <p>
+          FlashAttention-2 couldn't use any of these. It was written for the A100's programming
+          model, where everything happens synchronously — load data, wait, compute, wait,
+          load more data. On the H100, that's like running on one leg when you have two.
+        </p>
+
+        <h2>The big idea: overlap everything</h2>
+        <p>
+          FlashAttention-3's core principle is <strong>asynchronous pipelining</strong>. Instead
+          of the linear "load → compute → load → compute" pattern, it overlaps loading and
+          computing so neither the memory unit nor the tensor cores are ever idle.
+        </p>
+
+        <h3>1. Warp specialization — divide and conquer</h3>
+        <p>
+          FlashAttention-3 splits its warps into two teams: <strong>producers</strong> and
+          <strong>consumers</strong>.
+        </p>
+        <p>
+          Producers are responsible for loading the next block of K and V from HBM into
+          shared memory using TMA. They don't do any math. They're the warehouse team,
+          stocking shelves.
+        </p>
+        <p>
+          Consumers take whatever's been loaded and run the attention computation — the
+          QK<sup>T</sup> matmul, softmax, and PV matmul. They're the cashiers, processing
+          customers.
+        </p>
+        <p>
+          The genius is that these happen <em>simultaneously</em>. While consumers are computing
+          attention on block <em>j</em>, producers are already loading block <em>j+1</em>. When
+          consumers finish, the next block is already waiting. Zero idle time.
+        </p>
+
+        <blockquote>
+          FlashAttention-2 ran like a relay race — one runner at a time. FlashAttention-3
+          runs like a factory assembly line — loading and computing happen in parallel,
+          continuously.
+        </blockquote>
+
+        <!-- PLACEHOLDER: pipeline diagram showing overlapped load and compute stages -->
+
+        <h3>2. Ping-pong scheduling — interleaving matmul and softmax</h3>
+        <p>
+          Here's a subtle problem: even with data loading overlapped, there's another
+          bottleneck inside the computation itself. The two matmuls (QK<sup>T</sup> and PV)
+          use tensor cores, but the softmax between them uses general-purpose cores. While
+          softmax runs, tensor cores sit idle.
+        </p>
+        <p>
+          FlashAttention-3 fixes this with a "ping-pong" schedule. It works on two tiles
+          at once. While tile A's softmax runs on the general-purpose cores, tile B's matmul
+          runs on the tensor cores. Then they swap. Neither unit is ever waiting for the other.
+        </p>
+        <p>
+          It's like a juggler keeping two balls in the air — one hand catches while the
+          other throws.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bg { fill: #ebe3cf; }
+              .box { fill: none; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .box-fill { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .box-accent { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .box-faint { fill: #948a78; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; }
+              .label-sm { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .label-white { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: #ebe3cf; text-anchor: middle; }
+              .label-left { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: end; }
+            </style>
+            <rect width="680" height="220" class="bg"/>
+
+            <text x="340" y="18" class="label" font-weight="bold">FlashAttention-3 Ping-Pong Pipeline</text>
+
+            <!-- Time labels -->
+            <text x="55" y="50" class="label-left">TMA (load)</text>
+            <text x="55" y="90" class="label-left">Tensor Core</text>
+            <text x="55" y="130" class="label-left">Softmax</text>
+
+            <!-- Time axis -->
+            <line x1="65" y1="155" x2="650" y2="155" stroke="#948a78" stroke-width="1"/>
+            <text x="360" y="170" class="label-sm">time →</text>
+
+            <!-- Pipeline stages -->
+            <!-- TMA row -->
+            <rect x="70" y="38" width="70" height="22" class="box-faint"/><text x="105" y="53" class="label-white">load K₁V₁</text>
+            <rect x="145" y="38" width="70" height="22" class="box-faint"/><text x="180" y="53" class="label-white">load K₂V₂</text>
+            <rect x="220" y="38" width="70" height="22" class="box-faint"/><text x="255" y="53" class="label-white">load K₃V₃</text>
+            <rect x="295" y="38" width="70" height="22" class="box-faint"/><text x="330" y="53" class="label-white">load K₄V₄</text>
+            <rect x="370" y="38" width="70" height="22" class="box-faint"/><text x="405" y="53" class="label-white">load K₅V₅</text>
+
+            <!-- Tensor Core row — ping pong -->
+            <rect x="145" y="78" width="70" height="22" class="box-fill"/><text x="180" y="93" class="label">QK₁ᵀ</text>
+            <rect x="295" y="78" width="70" height="22" class="box-fill"/><text x="330" y="93" class="label">PV₁+QK₂ᵀ</text>
+            <rect x="445" y="78" width="70" height="22" class="box-fill"/><text x="480" y="93" class="label">PV₂+QK₃ᵀ</text>
+            <rect x="595" y="78" width="50" height="22" class="box-fill"/><text x="620" y="93" class="label">...</text>
+
+            <!-- Softmax row — interleaved -->
+            <rect x="220" y="118" width="70" height="22" class="box-accent"/><text x="255" y="133" class="label-white">soft₁</text>
+            <rect x="370" y="118" width="70" height="22" class="box-accent"/><text x="405" y="133" class="label-white">soft₂</text>
+            <rect x="520" y="118" width="70" height="22" class="box-accent"/><text x="555" y="133" class="label-white">soft₃</text>
+
+            <text x="360" y="195" class="label-sm">Fig 1 — Data loading, matmul, and softmax all overlap. No unit waits idle.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — The ping-pong pipeline: TMA loads, tensor cores compute, softmax runs — all simultaneously.</p>
+        </div>
+
+        <h3>3. FP8 with incoherent processing — fast AND accurate</h3>
+        <p>
+          FP8 (8-bit floating point) is tempting because it halves the memory bandwidth
+          needed compared to FP16. But naively quantizing attention scores to FP8 introduces
+          significant numerical errors. Some tokens get huge attention scores while others
+          are tiny — and 8 bits can't represent both accurately.
+        </p>
+        <p>
+          FlashAttention-3 uses a clever trick called <strong>incoherent processing</strong>.
+          Before quantizing, it multiplies the input by a random orthogonal matrix that
+          "spreads out" the values, making them more uniform. After computing attention
+          in FP8, it undoes the transformation. The net effect: you get FP8 speed with
+          <strong>2.6× lower numerical error</strong> than naive FP8 attention.
+        </p>
+        <p>
+          Think of it like packing a suitcase. If you have a few bulky items and many small
+          ones, they pack poorly — wasted space everywhere. But if you reorganize everything
+          to be roughly the same size first, everything fits snugly. Same contents, better
+          packing, less wasted precision.
+        </p>
+
+        <h2>Does it actually work?</h2>
+        <ul>
+          <li><strong>1.5–2.0× speedup over FlashAttention-2</strong> on H100 with FP16</li>
+          <li><strong>740 TFLOPs/s</strong> in FP16 — 75% of the H100's theoretical maximum</li>
+          <li><strong>~1.2 PFLOPs/s</strong> in FP8 — yes, that's <em>petaFLOPS</em>, from a single GPU</li>
+          <li><strong>2.6× lower numerical error</strong> than naive FP8 attention</li>
+        </ul>
+        <p>
+          Let's put that in perspective. FlashAttention-1 on A100 did about 120 TFLOPs/s.
+          FlashAttention-2 pushed that to 225 TFLOPs/s. Now FlashAttention-3 on H100 hits
+          740 TFLOPs/s. That's a <strong>6× improvement</strong> in three years — and most of
+          it came from smarter software, not just faster hardware.
+        </p>
+
+        <h2>The surprise: the hardware gap keeps growing</h2>
+        <p>
+          Here's something I didn't expect. Even after all these optimizations, FlashAttention-3
+          only hits 75% utilization on H100. Where's the other 25%?
+        </p>
+        <p>
+          The answer is softmax. On the A100, the bottleneck was memory bandwidth. On the
+          H100, memory bandwidth is better but tensor cores are <em>so fast</em> that now the
+          bottleneck is the general-purpose cores running softmax. The faster tensor cores get,
+          the more the non-matmul operations become the choking point.
+        </p>
+        <p>
+          This is a hardware design trend: each GPU generation doubles matmul speed but
+          barely speeds up everything else. It's like building a faster engine without
+          widening the exhaust pipe. FlashAttention-4 (spoiler) will have to deal with this
+          problem getting even worse on the next GPU generation.
+        </p>
+
+        <h2>Why should you care?</h2>
+        <ol>
+          <li>
+            <strong>Hardware-software co-design is mandatory now.</strong> You can't just write
+            "GPU code" anymore. You need to write "H100 code" or "A100 code." Each architecture
+            has different bottlenecks and different features to exploit.
+          </li>
+          <li>
+            <strong>FP8 is real and it works.</strong> FlashAttention-3 proved that lower precision
+            doesn't have to mean worse results. With the right tricks (incoherent processing),
+            FP8 attention is both faster and surprisingly accurate.
+          </li>
+          <li>
+            <strong>The bottleneck shifted.</strong> Attention's bottleneck went from memory
+            bandwidth (FA-1 era) → GPU utilization (FA-2 era) → non-matmul throughput (FA-3 era).
+            Each paper solved the current bottleneck and revealed the next one.
+          </li>
+        </ol>
+
+        <h2>The one-paragraph version</h2>
+        <blockquote>
+          FlashAttention-3 rewrites FlashAttention for the H100's new capabilities: warp
+          specialization to overlap data loading with computation, a ping-pong schedule to
+          run matmul and softmax simultaneously on different hardware units, and FP8 support
+          with incoherent processing for accurate low-precision math. The result: 1.5–2× faster
+          than FA-2, hitting 75% of H100's theoretical max in FP16 and crossing the petaFLOP
+          barrier in FP8.
+        </blockquote>
+
+        <h2>The napkin takeaway</h2>
+        <p>
+          The FlashAttention evolution so far:
+        </p>
+        <ul>
+          <li><strong>FA-1</strong> = stopped wasting time in traffic (eliminated memory round-trips)</li>
+          <li><strong>FA-2</strong> = learned to use all lanes (better GPU utilization through work partitioning)</li>
+          <li><strong>FA-3</strong> = upgraded to a hybrid engine (overlap loading + computing + softmax, all running simultaneously)</li>
+        </ul>
+        <p>
+          Each version solved the bottleneck the previous one revealed.
+        </p>
+
+        <p style="margin-top:32px;font-style:italic;color:var(--faint)">
+          Paper: "FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-precision"
+          — Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay Thakkar, Pradeep Ramani, Tri Dao.
+          Together AI / Colfax / NVIDIA / Georgia Tech. 2024.
+        </p>
+
+        <p style="margin-top:16px;font-style:italic;color:var(--accent)">
+          Next up: <a href="flashattention-4-paper-juice.html">FlashAttention-4</a> — Blackwell GPUs
+          arrive, tensor cores get so fast that <em>exponential functions</em> become the bottleneck,
+          and the team has to fake math in software to keep up.
+        </p>
+      </div>
+
+      <div class="post-nav">
+        <a href="flashattention-2-paper-juice.html">← FlashAttention-2 Paper Juice</a>
+        <a href="flashattention-4-paper-juice.html">FlashAttention-4 Paper Juice →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+  </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+
+    <div class="vocab-term" data-term="hopper">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Hopper (H100)</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">NVIDIA's GPU architecture released in 2023. Key features: 3× tensor core throughput over A100, asynchronous execution via TMA, warp specialization, and native FP8 support. The target hardware for FlashAttention-3.</div>
+    </div>
+
+    <div class="vocab-term" data-term="tma">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">TMA (Tensor Memory Accelerator)</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A dedicated hardware unit on H100 that loads data from HBM to shared memory without using any compute threads. Runs independently from tensor cores, enabling true overlap between loading and computing.</div>
+    </div>
+
+    <div class="vocab-term" data-term="warp-spec">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">warp specialization</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Assigning different warps to dedicated roles — some only load data (producers), some only compute (consumers). Eliminates the synchronous "load then compute" pattern by letting both happen simultaneously.</div>
+    </div>
+
+    <div class="vocab-term" data-term="fp8">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">FP8</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">8-bit floating point — half the bits of FP16. Doubles the effective memory bandwidth and throughput, but with much less numerical precision. Requires careful handling to avoid significant accuracy loss.</div>
+    </div>
+
+    <div class="vocab-term" data-term="incoherent">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">incoherent processing</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A trick where you multiply inputs by a random orthogonal matrix before quantization to spread out value magnitudes, making them more uniform and easier to represent in low precision. Reversed after computation.</div>
+    </div>
+
+    <div class="vocab-term" data-term="pipeline">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">pipelining</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Overlapping multiple stages of computation so that while one stage processes data, the next stage is already preparing. Like a factory assembly line versus a single worker doing every step sequentially.</div>
+    </div>
+
+    <div class="vocab-term" data-term="ping-pong">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">ping-pong schedule</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Working on two tiles alternately: while one tile's softmax runs on general cores, the other tile's matmul runs on tensor cores. Ensures neither hardware unit is ever idle.</div>
+    </div>
+  </aside>
+
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+</body>
+</html>

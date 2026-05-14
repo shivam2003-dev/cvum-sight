@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlashAttention-4 — When Tensor Cores Got Too Fast for Everything Else. — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=2">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">May 14, 2026 · paperjuice · 15 min read · 3300 words</p>
+        <h1>FlashAttention-4 — When Tensor Cores Got Too Fast for Everything Else.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">attention</span>
+          <span class="tag">gpu-optimization</span>
+          <span class="tag">flashattention-series</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          Imagine you're building a factory. Every year you double the speed of the main
+          assembly line — the welding robots, the painting arms, the precision cutters. But
+          the conveyor belts? They run at the same speed. The forklift drivers? Same pace.
+          The QA inspectors? Still doing things by hand.
+        </p>
+        <p>
+          Eventually, your assembly line is so fast that it finishes a product and then just…
+          waits. For the conveyor. For the forklift. For the inspector. Your $50 million
+          robot is idle 60% of the time because the $500 conveyor belt can't keep up.
+        </p>
+        <p>
+          That's exactly what happened with NVIDIA's Blackwell GPUs. And FlashAttention-4 is
+          the paper that fixes it.
+        </p>
+        <p style="color:var(--faint);font-style:italic;">
+          Part 4 of the <a href="flashattention-1-paper-juice.html">FlashAttention evolution series</a> — the
+          finale. We've gone from <a href="flashattention-1-paper-juice.html">memory hierarchy awareness</a>
+          to <a href="flashattention-2-paper-juice.html">work partitioning</a> to
+          <a href="flashattention-3-paper-juice.html">asynchronous pipelining</a>. Now we face the
+          hardest problem yet: the hardware itself is lopsided.
+        </p>
+
+        <!-- PLACEHOLDER: hero image showing Blackwell GPU with asymmetric scaling — tensor cores flying, everything else crawling -->
+
+        <h2>The problem: asymmetric hardware scaling</h2>
+        <p>
+          NVIDIA's Blackwell B200 doubled the tensor core throughput compared to the H100.
+          2.25 petaFLOPs of matmul power. That's 2,250,000,000,000,000 floating-point operations
+          per second for matrix multiplication.
+        </p>
+        <p>
+          But shared memory bandwidth? <em>Unchanged.</em> The exponential unit (used for
+          softmax)? <em>Unchanged.</em> Integer ALUs? <em>Unchanged.</em>
+        </p>
+        <p>
+          The paper calls this <strong>asymmetric hardware scaling</strong>. Tensor cores scale
+          aggressively because they're the most important for AI workloads. Everything else
+          gets left behind because silicon is expensive and power budgets are fixed.
+        </p>
+        <p>
+          The consequence for FlashAttention-3: running it on Blackwell, the shared memory
+          traffic and exponential operations now take <strong>25–60% longer</strong> than the
+          matmul computation. The tensor cores finish their matrix multiply and then sit there,
+          tapping their feet, waiting for softmax to catch up.
+        </p>
+
+        <blockquote>
+          On Hopper, tensor cores were the bottleneck. On Blackwell, tensor cores are the
+          fastest thing in the room — and <em>everything else</em> is the bottleneck.
+        </blockquote>
+
+        <h2>FlashAttention-4's big idea: co-design for imbalance</h2>
+        <p>
+          If the hardware is lopsided, the algorithm must be lopsided too. FlashAttention-4
+          doesn't treat the GPU as a uniform compute resource. It explicitly identifies
+          the slow parts and engineers around them.
+        </p>
+
+        <h3>1. Software-emulated exponentials — faking math to go faster</h3>
+        <p>
+          This is the wildest trick in the paper. The exponential unit on B200 can do 16
+          operations per clock cycle per SM. Tensor cores can do 8,192. That's a <strong>512:1
+          ratio</strong>. The exp unit is hopelessly outgunned.
+        </p>
+        <p>
+          FlashAttention-4's solution: don't use the exponential unit for all exponentials.
+          Instead, <em>fake</em> some of the exponentials using polynomial approximation on
+          the FMA (fused multiply-add) units. These FMA units are faster than the
+          exp unit and can run in parallel with it.
+        </p>
+        <p>
+          The approximation uses a degree-3 polynomial. Is it perfectly precise? No — at FP32
+          it has 600× more error than the hardware exponential. But here's the key insight:
+          the output gets rounded to BF16 anyway, and BF16's quantization error is so large
+          that it completely drowns out the polynomial's error. After rounding, the approximate
+          and exact results are indistinguishable on 99% of inputs.
+        </p>
+        <p>
+          They don't even fake <em>all</em> the exponentials — just 10–25% of them. Enough to
+          eliminate the bottleneck without introducing meaningful error. It's like replacing
+          one out of four QA inspectors with a slightly less precise but much faster automated
+          scanner. The overall quality doesn't change, but the line stops backing up.
+        </p>
+
+        <!-- PLACEHOLDER: diagram showing exponential unit vs FMA polynomial approximation -->
+
+        <h3>2. Conditional softmax rescaling — skipping work that doesn't matter</h3>
+        <p>
+          Remember the online softmax from FlashAttention-1? Every time you process a new
+          block, you check if the new maximum score is bigger than the old one. If it is,
+          you have to rescale all previous results. This rescaling involves multiplying an
+          entire output tile by a scaling factor — expensive.
+        </p>
+        <p>
+          FlashAttention-4 notices that most of the time, rescaling barely matters. If the
+          new maximum is only slightly larger than the old one, the rescaling factor is close
+          to 1.0, and skipping it introduces negligible error.
+        </p>
+        <p>
+          So it sets a threshold: only rescale when the difference exceeds log₂(256) = 8.0.
+          Below that threshold, skip the rescale and just keep accumulating. At the very end,
+          apply one final correction to get the exact result. This eliminates most rescaling
+          operations entirely.
+        </p>
+        <p>
+          It's like checking your bank balance after every purchase. Sure, you <em>could</em> —
+          but if you bought a $3 coffee, it probably doesn't affect your budget. Check only
+          when the purchase is big. Same final balance at the end of the month.
+        </p>
+
+        <blockquote>
+          The best optimization isn't making something faster — it's realizing you don't
+          need to do it at all.
+        </blockquote>
+
+        <h3>3. Tensor memory (TMEM) + 2-CTA MMA — less shared memory traffic</h3>
+        <p>
+          Blackwell introduces a new type of on-chip memory called <strong>tensor memory
+          (TMEM)</strong> — 256 KB per SM, specifically designed to hold intermediate tensor
+          core results. Unlike shared memory, TMEM is directly wired to the tensor cores.
+          Matmul outputs go straight to TMEM without passing through shared memory or registers.
+        </p>
+        <p>
+          FlashAttention-4 stores its attention score matrices (S, P) and accumulator (O) in
+          TMEM instead of registers. This frees up register space (reducing the horrific
+          "register pressure" that plagued Hopper kernels) and eliminates shared memory traffic
+          for intermediate results.
+        </p>
+        <p>
+          For the backward pass, shared memory is the dominant bottleneck — 30% more cycles
+          than matmul. FlashAttention-4 uses Blackwell's <strong>2-CTA MMA mode</strong>:
+          two CTAs (cooperative thread arrays) pair up to execute a single larger matrix
+          multiply. Each CTA loads only half the operand, halving shared memory traffic.
+          And because the dQ computation gets split across the pair, the number of global
+          atomic reductions is also halved.
+        </p>
+
+        <h3>4. Written entirely in Python — 30× faster to compile</h3>
+        <p>
+          Here's a fact that would make any CUDA developer's jaw drop. FlashAttention 1, 2,
+          and 3 were all written in C++ with CUDA template metaprogramming. Hundreds of
+          template instantiations. Compile times measured in minutes.
+        </p>
+        <p>
+          FlashAttention-4 is written entirely in <strong>CuTe-DSL</strong>, embedded in Python.
+          Full GPU kernel expressivity — direct PTX access, warp specialization, tensor memory
+          management — but in Python syntax with JIT compilation.
+        </p>
+        <p>
+          The result: compile time dropped from <strong>55 seconds to 2.5 seconds</strong> for
+          a single kernel. That's a <strong>22× speedup</strong> in compile time. For the
+          backward pass kernel: <strong>45 seconds → 1.4 seconds (32×)</strong>.
+        </p>
+        <p>
+          This isn't just a convenience. FlashAttention kernels need to be precompiled for
+          hundreds of attention variants (different head dims, causal vs non-causal, different
+          precisions). Cutting compile time by 30× means researchers can iterate on kernel
+          designs in seconds instead of waiting through coffee-length compile cycles.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 280" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bg { fill: #ebe3cf; }
+              .box { fill: none; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .box-fill { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .box-accent { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .box-faint { fill: #948a78; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; }
+              .label-sm { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .label-white { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: #ebe3cf; text-anchor: middle; }
+              .label-big { font-family: 'IBM Plex Mono', monospace; font-size: 13px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+            </style>
+            <rect width="680" height="280" class="bg"/>
+
+            <text x="340" y="22" class="label-big">The FlashAttention Evolution: 4 Years, 13× Faster</text>
+
+            <!-- Timeline -->
+            <line x1="80" y1="55" x2="620" y2="55" stroke="#2a2620" stroke-width="2"/>
+
+            <!-- FA1 -->
+            <circle cx="120" cy="55" r="6" fill="#f0c040" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="120" y="78" class="label">FA-1</text>
+            <text x="120" y="92" class="label-sm">2022</text>
+            <text x="120" y="108" class="label-sm">~120 TF/s</text>
+            <text x="120" y="122" class="label-sm">A100</text>
+
+            <!-- FA2 -->
+            <circle cx="280" cy="55" r="6" fill="#f0c040" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="280" y="78" class="label">FA-2</text>
+            <text x="280" y="92" class="label-sm">2023</text>
+            <text x="280" y="108" class="label-sm">225 TF/s</text>
+            <text x="280" y="122" class="label-sm">A100</text>
+
+            <!-- FA3 -->
+            <circle cx="440" cy="55" r="6" fill="#c96442" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="440" y="78" class="label">FA-3</text>
+            <text x="440" y="92" class="label-sm">2024</text>
+            <text x="440" y="108" class="label-sm">740 TF/s</text>
+            <text x="440" y="122" class="label-sm">H100</text>
+
+            <!-- FA4 -->
+            <circle cx="600" cy="55" r="6" fill="#c96442" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="600" y="78" class="label">FA-4</text>
+            <text x="600" y="92" class="label-sm">2026</text>
+            <text x="600" y="108" class="label-sm">1613 TF/s</text>
+            <text x="600" y="122" class="label-sm">B200</text>
+
+            <!-- Key innovations -->
+            <rect x="60" y="140" width="120" height="40" class="box-fill"/>
+            <text x="120" y="155" class="label">IO-awareness</text>
+            <text x="120" y="168" class="label">tiling</text>
+
+            <rect x="220" y="140" width="120" height="40" class="box-fill"/>
+            <text x="280" y="155" class="label">work partition</text>
+            <text x="280" y="168" class="label">seq parallelism</text>
+
+            <rect x="380" y="140" width="120" height="40" class="box-accent"/>
+            <text x="440" y="155" class="label-white">warp specialize</text>
+            <text x="440" y="168" class="label-white">FP8 + async</text>
+
+            <rect x="540" y="140" width="120" height="40" class="box-accent"/>
+            <text x="600" y="155" class="label-white">fake exp + TMEM</text>
+            <text x="600" y="168" class="label-white">Python DSL</text>
+
+            <!-- Bottleneck evolution -->
+            <text x="340" y="210" class="label" font-weight="bold">Bottleneck that each version solved:</text>
+            <text x="120" y="230" class="label-sm">memory bandwidth</text>
+            <text x="280" y="230" class="label-sm">GPU utilization</text>
+            <text x="440" y="230" class="label-sm">sync overhead</text>
+            <text x="600" y="230" class="label-sm">non-matmul units</text>
+
+            <text x="340" y="268" class="label-sm">Fig 1 — Four papers, four bottlenecks, four solutions. Each unlocked the next ceiling.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — The FlashAttention timeline: from 120 TFLOPs/s to 1,613 TFLOPs/s in four papers.</p>
+        </div>
+
+        <h2>Does it actually work?</h2>
+        <ul>
+          <li><strong>Up to 1.3× faster than cuDNN 9.13</strong> — NVIDIA's own optimized library</li>
+          <li><strong>Up to 2.7× faster than Triton</strong> on B200</li>
+          <li><strong>1,613 TFLOPs/s</strong> in BF16 — 71% of theoretical max on B200</li>
+          <li><strong>20–30× faster compile times</strong> vs FlashAttention-3 (CuTe-DSL vs C++)</li>
+          <li><strong>Deterministic backward pass</strong> with only ~25% performance overhead — crucial for RL training reproducibility</li>
+        </ul>
+        <p>
+          1,613 TFLOPs/s. Let me put that in context. FlashAttention-1, four years ago, did
+          about 120. That's a <strong>13× improvement</strong>. Yes, some of that is faster
+          hardware. But the B200 is "only" about 2× faster in raw tensor core throughput than
+          the A100. The other 6.5× came from software — from four iterations of increasingly
+          clever engineering that squeezes out every last drop of performance.
+        </p>
+
+        <h2>The surprise: NVIDIA adopted the techniques</h2>
+        <p>
+          Here's something remarkable buried in the appendix. After FlashAttention-4 was released,
+          NVIDIA incorporated many of its techniques into cuDNN (their official library). Later
+          cuDNN versions (9.14+) now perform similarly to FlashAttention-4 because they
+          <em>are</em> FlashAttention-4, essentially.
+        </p>
+        <p>
+          An academic project didn't just beat the GPU vendor's optimized library — the vendor
+          adopted the academic's techniques. That's the ultimate validation.
+        </p>
+
+        <h2>The evolution: looking back at all four papers</h2>
+        <p>
+          The FlashAttention series tells a beautiful story about the cat-and-mouse game
+          between software and hardware:
+        </p>
+        <ol>
+          <li><strong>FA-1 (2022):</strong> The bottleneck was memory bandwidth. Solution: stop shuffling
+            data between HBM and SRAM. Result: 2–4× speedup.</li>
+          <li><strong>FA-2 (2023):</strong> The bottleneck was GPU utilization. Solution: better work
+            partitioning across threads. Result: 2× over FA-1.</li>
+          <li><strong>FA-3 (2024):</strong> The bottleneck was synchronous execution. Solution: overlap
+            everything with warp specialization and pipelining. Result: 1.5–2× over FA-2.</li>
+          <li><strong>FA-4 (2026):</strong> The bottleneck was non-matmul units. Solution: fake
+            exponentials, skip rescaling, use new memory types. Result: ~2× over FA-3.</li>
+        </ol>
+        <p>
+          Each paper solved one bottleneck and revealed the next. That's how performance
+          engineering works: you're never done, you just find the next ceiling.
+        </p>
+
+        <h2>Why should you care?</h2>
+        <ol>
+          <li>
+            <strong>The age of "write once, run anywhere" GPU code is over.</strong> FlashAttention-4
+            is written specifically for Blackwell's architectural quirks — TMEM, 2-CTA MMA,
+            asymmetric scaling. Code that ran great on H100 leaves performance on the table on B200.
+          </li>
+          <li>
+            <strong>Python GPU kernels are real.</strong> CuTe-DSL proves you can write
+            peak-performance GPU kernels in Python. The 30× compile time improvement isn't a
+            toy — it fundamentally changes how fast researchers can iterate.
+          </li>
+          <li>
+            <strong>The bottleneck will keep shifting.</strong> Today it's the exponential unit.
+            Tomorrow it might be register bandwidth or L2 cache pressure. The lesson from four
+            FlashAttention papers: the only constant is that something else will always be
+            too slow.
+          </li>
+        </ol>
+
+        <h2>The one-paragraph version</h2>
+        <blockquote>
+          Blackwell GPUs doubled tensor core speed but left everything else the same — making
+          shared memory and exponential operations the new bottleneck. FlashAttention-4 fixes
+          this with software-emulated exponentials (polynomial approximation on FMA units),
+          conditional softmax rescaling that skips unnecessary work, tensor memory to reduce
+          shared memory traffic, and 2-CTA MMA to halve backward pass overhead. Written entirely
+          in Python via CuTe-DSL (30× faster compile times), it reaches 1,613 TFLOPs/s on B200 —
+          a 13× improvement over the original FlashAttention from 2022.
+        </blockquote>
+
+        <h2>The napkin takeaway</h2>
+        <p>
+          The full FlashAttention saga in one metaphor — building a faster kitchen:
+        </p>
+        <ul>
+          <li><strong>FA-1</strong> = stopped walking to the pantry for every ingredient (tiling, kernel fusion)</li>
+          <li><strong>FA-2</strong> = gave every chef their own station instead of sharing one counter (work partitioning)</li>
+          <li><strong>FA-3</strong> = installed a conveyor belt so prep and cooking happen simultaneously (async pipelining)</li>
+          <li><strong>FA-4</strong> = the oven is now so fast that you need faster timers, bigger trays, and a shortcut for measuring spices (asymmetric scaling workarounds)</li>
+        </ul>
+        <p>
+          Four years. Four papers. One idea — make attention respect the hardware it runs on.
+          From 120 TFLOPs/s to 1,613. The math never changed. The engineering changed everything.
+        </p>
+
+        <p style="margin-top:32px;font-style:italic;color:var(--faint)">
+          Paper: "FlashAttention-4: Algorithm and Kernel Pipelining Co-Design for Asymmetric Hardware Scaling"
+          — Ted Zadouri, Markus Hoehnerbach, Jay Shah, Timmy Liu, Vijay Thakkar, Tri Dao.
+          Princeton / Meta / Colfax / NVIDIA / Georgia Tech / Together AI. 2026.
+        </p>
+      </div>
+
+      <div class="post-nav">
+        <a href="flashattention-3-paper-juice.html">← FlashAttention-3 Paper Juice</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+  </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+
+    <div class="vocab-term" data-term="blackwell">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Blackwell (B200/GB200)</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">NVIDIA's 2024/2025 GPU architecture. Doubles tensor core throughput over Hopper, introduces tensor memory (TMEM), 2-CTA MMA mode, and fully asynchronous tensor core operations. The target hardware for FlashAttention-4.</div>
+    </div>
+
+    <div class="vocab-term" data-term="asymmetric">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">asymmetric hardware scaling</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">The trend where tensor core speed doubles each GPU generation but other units (shared memory, exponential, ALU) barely improve. Creates lopsided hardware where matmul is no longer the bottleneck.</div>
+    </div>
+
+    <div class="vocab-term" data-term="tmem">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">tensor memory (TMEM)</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A new 256 KB on-chip memory per SM on Blackwell, directly wired to tensor cores. MMA results go straight to TMEM without touching registers or shared memory. Relieves register pressure and reduces memory traffic.</div>
+    </div>
+
+    <div class="vocab-term" data-term="2cta">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">2-CTA MMA</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A Blackwell feature where two CTAs cooperate on one matrix multiply. Each CTA loads half the operand, halving shared memory traffic. Also halves the atomic reductions needed for gradient accumulation.</div>
+    </div>
+
+    <div class="vocab-term" data-term="cute-dsl">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">CuTe-DSL</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A Python-embedded domain-specific language for GPU kernel development. Full access to PTX and hardware features, but with Python syntax and JIT compilation. Achieves 20–30× faster compile times than C++ templates.</div>
+    </div>
+
+    <div class="vocab-term" data-term="mufu">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">MUFU (Multi-Function Unit)</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">The GPU hardware unit that computes exponentials, logarithms, and trigonometric functions. Only 16 ops/clock/SM on B200 — 512× slower than tensor cores. The bottleneck FlashAttention-4 works around with polynomial emulation.</div>
+    </div>
+
+    <div class="vocab-term" data-term="conditional-rescale">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">conditional rescaling</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Only rescaling the online softmax accumulator when the new maximum differs significantly (by more than log₂(256)). Skips unnecessary work in most iterations while preserving exact final results through end-of-pass correction.</div>
+    </div>
+
+    <div class="vocab-term" data-term="lpt">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">LPT scheduling</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Longest-Processing-Time-First — a scheduling strategy that assigns the biggest work tiles to SMs first. Reduces load imbalance for causal masking where tiles near the diagonal have less work. Gives 4–14% speedup.</div>
+    </div>
+  </aside>
+
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+</body>
+</html>

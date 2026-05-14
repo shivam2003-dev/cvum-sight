@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlashAttention — What If Your GPU Has Been Reading Memory Wrong This Whole Time. — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=2">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">May 11, 2026 · paperjuice · 14 min read · 3100 words</p>
+        <h1>FlashAttention — What If Your GPU Has Been Reading Memory Wrong This Whole Time.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">attention</span>
+          <span class="tag">gpu-optimization</span>
+          <span class="tag">flashattention-series</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          You just trained a transformer. It took 3 days, $4,000 in GPU time, and you're
+          pretty sure at least 40% of that compute was wasted shuffling numbers between
+          two types of memory your GPU has — and you didn't even know it was happening.
+        </p>
+        <p>
+          A Stanford PhD student named Tri Dao knew. And in 2022, he wrote a paper that
+          made every GPU on earth run attention faster — without changing a single thing
+          about the math. Same inputs, same outputs, <em>exact</em> same attention scores.
+          Just… faster. And using way less memory.
+        </p>
+        <p>
+          This is the paper that started a revolution. Four versions later, FlashAttention
+          is inside every major ML framework on the planet. Let me squeeze the juice out of
+          where it all began.
+        </p>
+        <p style="color:var(--faint);font-style:italic;">
+          This is Part 1 of a 4-part series covering the entire FlashAttention evolution — from
+          the original 2022 insight to the 2026 Blackwell-optimized FlashAttention-4.
+        </p>
+
+        <!-- PLACEHOLDER: hero diagram of GPU memory hierarchy — HBM vs SRAM -->
+
+        <h2>The problem: attention treats your GPU like a single box</h2>
+        <p>
+          Standard attention does this: compute Q×K<sup>T</sup> to get scores (an N×N matrix),
+          apply softmax, multiply by V. Simple math. The problem isn't the math — it's
+          <em>where</em> the math happens.
+        </p>
+        <p>
+          Your GPU has two types of memory. HBM (High Bandwidth Memory) is the big one — 40–80 GB
+          on an A100. It's where your tensors live. Then there's SRAM — tiny (about 20 MB total
+          across all streaming multiprocessors), but <em>10x faster</em>.
+        </p>
+        <p>
+          Standard attention computes the full N×N score matrix, writes it to HBM, reads it back
+          for softmax, writes the softmax result to HBM, reads it back again for the V multiply.
+          That's like writing a letter, mailing it to yourself, waiting for the mailman,
+          opening it, then writing another letter with your reply.
+        </p>
+        <p>
+          You live in the same house. Just walk to the other room.
+        </p>
+
+        <blockquote>
+          The bottleneck in attention isn't computation — it's the constant round-trips
+          between fast memory and slow memory. FlashAttention eliminates the trips.
+        </blockquote>
+
+        <h2>FlashAttention's big idea: tiling + IO-awareness</h2>
+        <p>
+          The core insight is almost embarrassingly simple: <em>don't materialize the N×N
+          attention matrix</em>. Instead, compute attention in small tiles that fit entirely
+          in SRAM, and never write the intermediate results to slow HBM.
+        </p>
+        <p>
+          Two ideas make this work:
+        </p>
+
+        <h3>1. Tiling — chunking the unchunkable</h3>
+        <p>
+          Matrix multiplication is easy to tile. You can multiply blocks of A with blocks of B
+          and combine the results. But attention has softmax in the middle — and softmax needs
+          to see <em>all</em> the scores in a row to compute the denominator. You can't just
+          split it into blocks… right?
+        </p>
+        <p>
+          Wrong. This is where the "online softmax" trick comes in. Instead of computing softmax
+          over the entire row at once, you can do it incrementally — processing one block at a time,
+          keeping a running maximum and a running sum of exponentials. After processing all
+          blocks, you have the <em>exact</em> same result as if you'd computed it all at once.
+        </p>
+        <p>
+          Think of it like calculating your class average. You don't need everyone's grade at once.
+          You can keep a running total and a count, updating as each student turns in their exam.
+          Same final answer, but you never need the full list in front of you.
+        </p>
+
+        <!-- PLACEHOLDER: diagram showing tiled attention computation — blocks of Q against blocks of K/V -->
+
+        <h3>2. IO-awareness — respecting the memory hierarchy</h3>
+        <p>
+          Most algorithms are designed to minimize <strong>FLOPs</strong> — the number of
+          arithmetic operations. FlashAttention is designed to minimize <strong>IO</strong> —
+          the number of bytes shuffled between HBM and SRAM.
+        </p>
+        <p>
+          This is the heretical part. FlashAttention actually does <em>more</em> total computation
+          than standard attention (it recomputes some values in the backward pass instead of
+          storing them). But it does far <em>fewer</em> memory accesses. And on modern GPUs,
+          memory access is the bottleneck, not arithmetic.
+        </p>
+        <p>
+          It's like choosing to drive 5 extra miles on the highway instead of sitting in
+          2 miles of stop-and-go traffic. More total distance, less total time.
+        </p>
+
+        <blockquote>
+          FlashAttention's key heresy: doing more math can be faster than doing less,
+          if the extra math avoids slow memory access.
+        </blockquote>
+
+        <h3>3. Kernel fusion — one trip, not five</h3>
+        <p>
+          In standard attention, every operation — matmul, masking, softmax, dropout — is a
+          separate GPU "kernel" (a fancy word for GPU operation). Each kernel reads from HBM,
+          does its thing, writes back to HBM. Five operations means five round-trips.
+        </p>
+        <p>
+          FlashAttention fuses everything into a single kernel. Load Q, K, V blocks into SRAM
+          once. Compute scores, apply mask, do softmax, apply dropout, multiply by V — all in
+          SRAM. Write the final output to HBM once. One trip instead of five.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bg { fill: #ebe3cf; }
+              .box { fill: none; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .box-fill { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .box-accent { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #2a2620; text-anchor: middle; }
+              .label-sm { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .label-white { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #ebe3cf; text-anchor: middle; }
+              .arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+              .arrow-faint { stroke: #948a78; stroke-width: 1; fill: none; marker-end: url(#arrowfaint); stroke-dasharray: 4,3; }
+            </style>
+            <defs>
+              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#2a2620"/></marker>
+              <marker id="arrowfaint" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#948a78"/></marker>
+            </defs>
+            <rect width="680" height="260" class="bg"/>
+            <!-- Standard Attention -->
+            <text x="170" y="22" class="label" font-weight="bold">Standard Attention</text>
+            <rect x="20" y="35" width="70" height="30" class="box-fill"/><text x="55" y="55" class="label">Q×Kᵀ</text>
+            <line x1="90" y1="50" x2="108" y2="50" class="arrow"/>
+            <rect x="110" y="35" width="50" height="30" class="box"/><text x="135" y="55" class="label">HBM</text>
+            <line x1="160" y1="50" x2="178" y2="50" class="arrow"/>
+            <rect x="180" y="35" width="70" height="30" class="box-fill"/><text x="215" y="55" class="label">softmax</text>
+            <line x1="250" y1="50" x2="268" y2="50" class="arrow"/>
+            <rect x="270" y="35" width="50" height="30" class="box"/><text x="295" y="55" class="label">HBM</text>
+            <line x1="90" y1="68" x2="90" y2="78" class="arrow-faint"/>
+            <text x="135" y="87" class="label-sm">write → read → write → read → write → read</text>
+            <!-- 5 round trips label -->
+            <rect x="20" y="100" width="310" height="24" class="box-accent"/><text x="175" y="117" class="label-white">5 HBM round-trips per attention layer</text>
+
+            <!-- FlashAttention -->
+            <text x="520" y="22" class="label" font-weight="bold">FlashAttention</text>
+            <rect x="400" y="35" width="60" height="30" class="box"/><text x="430" y="55" class="label">HBM</text>
+            <line x1="460" y1="50" x2="478" y2="50" class="arrow"/>
+            <rect x="480" y="35" width="160" height="70" class="box-fill"/>
+            <text x="560" y="55" class="label">SRAM: fused</text>
+            <text x="560" y="72" class="label">score+mask+soft</text>
+            <text x="560" y="89" class="label">+drop+V mult</text>
+            <line x1="560" y1="105" x2="560" y2="128" class="arrow"/>
+            <rect x="500" y="130" width="120" height="30" class="box"/><text x="560" y="150" class="label">HBM (output)</text>
+            <!-- 1 round trip label -->
+            <rect x="420" y="175" width="250" height="24" class="box-fill"/><text x="545" y="192" class="label">1 HBM round-trip. Same result.</text>
+
+            <!-- Bottom caption area -->
+            <text x="340" y="240" class="label-sm">Fig 1 — Standard attention vs FlashAttention memory access pattern.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Standard attention does 5 HBM round-trips. FlashAttention does 1.</p>
+        </div>
+
+        <h2>Does it actually work?</h2>
+        <p>
+          The numbers don't whisper. They shout.
+        </p>
+        <ul>
+          <li><strong>15% faster training</strong> on BERT-large (seq length 512), beating the MLPerf 1.1 speed record</li>
+          <li><strong>3× speedup</strong> on GPT-2 (seq length 1K) vs HuggingFace and Megatron-LM baselines</li>
+          <li><strong>2.4× speedup</strong> on long-range arena (seq length 1K–4K)</li>
+          <li><strong>Memory: O(N) instead of O(N²)</strong> — linear in sequence length, not quadratic</li>
+          <li><strong>5–20× fewer HBM accesses</strong> than standard attention</li>
+        </ul>
+        <p>
+          But the most stunning result? FlashAttention enabled sequence lengths that
+          were previously <em>impossible</em>. The Path-X challenge (seq length 16K) had
+          never been solved by any transformer. FlashAttention got <strong>61.4% accuracy</strong>.
+          Path-256 (seq length 64K): <strong>63.1%</strong>. First transformers ever to crack
+          better-than-chance on these benchmarks.
+        </p>
+
+        <h2>The surprise: faster AND better models</h2>
+        <p>
+          Here's what I didn't expect. FlashAttention doesn't just make the same models faster —
+          it makes <em>better</em> models possible.
+        </p>
+        <p>
+          Because it reduces memory from O(N²) to O(N), you can train with much longer context
+          windows. Longer context means the model sees more of the document, more of the
+          conversation, more of the codebase. GPT-2 with FlashAttention got <strong>0.7 better
+          perplexity</strong> just from being able to use longer sequences. Long-document
+          classification improved by <strong>6.4 points</strong>.
+        </p>
+        <p>
+          It's like upgrading from reading one page at a time to reading entire chapters.
+          Of course you understand the book better.
+        </p>
+
+        <h2>Why should you care?</h2>
+        <ol>
+          <li>
+            <strong>Every major framework uses this now.</strong> PyTorch, JAX, Hugging Face — they
+            all ship FlashAttention. If you've trained a model recently, you've probably already
+            benefited from this paper without knowing it.
+          </li>
+          <li>
+            <strong>Sequence length is no longer a hard wall.</strong> Before FlashAttention, 2K
+            tokens was painful and 16K was impossible. This paper is why you can now chat with
+            models that remember your entire conversation.
+          </li>
+          <li>
+            <strong>The insight generalizes beyond attention.</strong> "Respect the memory hierarchy"
+            is a principle that applies to any GPU-bound computation. If your code is slow, the
+            bottleneck might not be math — it might be memory traffic.
+          </li>
+        </ol>
+
+        <h2>The one-paragraph version</h2>
+        <blockquote>
+          Standard attention wastes most of its time shuffling data between fast and slow GPU
+          memory. FlashAttention fixes this by computing attention in small tiles that fit
+          entirely in fast SRAM, using an online softmax trick to get <em>exact</em> results
+          without ever materializing the full N×N attention matrix. The result: 2–4× faster
+          training, linear memory instead of quadratic, and the ability to handle sequence
+          lengths (16K–64K) that were previously impossible for transformers.
+        </blockquote>
+
+        <h2>The napkin takeaway</h2>
+        <p>
+          If attention is a library:
+        </p>
+        <ul>
+          <li><strong>Standard attention</strong> = carrying one book at a time between the shelf and your desk, making a trip for every single page</li>
+          <li><strong>Approximate attention methods</strong> = reading the CliffsNotes instead of the actual books (faster, but you miss things)</li>
+          <li><strong>FlashAttention</strong> = bringing a small stack of books to your desk, reading them all there, and only making one trip back to the shelf when you're done — same books, same words, zero shortcuts</li>
+        </ul>
+        <p>
+          Same library. Same books. Wildly fewer trips.
+        </p>
+
+        <p style="margin-top:32px;font-style:italic;color:var(--faint)">
+          Paper: "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness"
+          — Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, Christopher Ré. Stanford/Berkeley. NeurIPS 2022.
+        </p>
+
+        <p style="margin-top:16px;font-style:italic;color:var(--accent)">
+          Next up: <a href="flashattention-2-paper-juice.html">FlashAttention-2</a> — same guy, working alone,
+          doubles the speed by fixing how GPUs split work between threads.
+        </p>
+      </div>
+
+      <div class="post-nav">
+        <span></span>
+        <a href="flashattention-2-paper-juice.html">FlashAttention-2 Paper Juice →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+  </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+
+    <div class="vocab-term" data-term="hbm">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">HBM (High Bandwidth Memory)</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">The big, slow memory on your GPU (40–80 GB on A100). Where your tensors live. Fast compared to CPU RAM, but slow compared to SRAM. This is what gives you CUDA out-of-memory errors.</div>
+    </div>
+
+    <div class="vocab-term" data-term="sram">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">SRAM</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Tiny, ultra-fast on-chip memory (~20 MB total on A100). About 10× faster than HBM. Each streaming multiprocessor has its own SRAM. FlashAttention's entire trick is keeping data here instead of bouncing to HBM.</div>
+    </div>
+
+    <div class="vocab-term" data-term="tiling">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">tiling</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Breaking a large computation into small blocks (tiles) that fit in fast memory. The key technique in FlashAttention — instead of computing the full N×N attention matrix, compute it in SRAM-sized chunks.</div>
+    </div>
+
+    <div class="vocab-term" data-term="kernel-fusion">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">kernel fusion</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Combining multiple GPU operations into one so you only read/write from slow memory once instead of once per operation. FlashAttention fuses matmul, softmax, masking, and dropout into a single kernel.</div>
+    </div>
+
+    <div class="vocab-term" data-term="online-softmax">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">online softmax</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A trick to compute softmax incrementally, block by block, keeping a running max and running sum. Gives the exact same result as computing over all values at once, but never needs all values in memory simultaneously.</div>
+    </div>
+
+    <div class="vocab-term" data-term="io-awareness">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">IO-awareness</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Designing algorithms that account for the cost of moving data between memory levels, not just the cost of arithmetic. The central principle of FlashAttention: minimize HBM reads/writes, not FLOPs.</div>
+    </div>
+
+    <div class="vocab-term" data-term="materialization">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">materialization</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Actually storing an intermediate result in memory (like the full N×N attention matrix). FlashAttention avoids materializing this matrix — it computes and uses each tile on-the-fly in SRAM, then discards it.</div>
+    </div>
+
+    <div class="vocab-term" data-term="recomputation">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">recomputation</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Instead of storing intermediate values for the backward pass, recompute them from inputs when needed. Trades extra compute for less memory. FlashAttention does this "for free" because the recomputation is faster than the memory access it replaces.</div>
+    </div>
+  </aside>
+
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+</body>
+</html>

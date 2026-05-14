@@ -44,23 +44,54 @@
     const standalone = POSTS.filter(p => !p.series);
     const seriesPosts = POSTS.filter(p => p.series);
     let html = "";
-    // series promo card if there are series posts
-    if (seriesPosts.length > 0) {
-      html += `<a href="series.html" class="post-card series-promo-card">
+
+    // group series posts by series id and render a promo card per series
+    const seriesGroups = {};
+    seriesPosts.forEach(p => {
+      if (!seriesGroups[p.series]) seriesGroups[p.series] = [];
+      seriesGroups[p.series].push(p);
+    });
+
+    const seriesPromos = {
+      deepseek: {
+        href: "series.html",
+        title: "DeepSeek Engineering Blog Series",
+        excerpt: "From Transformer internals to DeepSeek-V4. {count} articles published across 10 planned phases.",
+        tags: ["#deepseek", "#ml", "#transformers"],
+        status: "Ongoing"
+      },
+      flashattention: {
+        href: "paperjuice.html",
+        title: "FlashAttention — The Evolution Series",
+        excerpt: "Four papers. Four years. From IO-aware tiling to Blackwell asymmetric scaling. {count} papers squeezed.",
+        tags: ["#flashattention", "#ml", "#gpu"],
+        status: "Paper Juice"
+      }
+    };
+
+    Object.keys(seriesGroups).forEach(key => {
+      const posts = seriesGroups[key];
+      const promo = seriesPromos[key] || {
+        href: "archive.html",
+        title: key,
+        excerpt: "{count} articles in this series.",
+        tags: [],
+        status: "Series"
+      };
+      html += `<a href="${promo.href}" class="post-card series-promo-card">
         <span class="cat">series</span>
-        <h3>DeepSeek Engineering Blog Series</h3>
-        <p class="card-excerpt">From Transformer internals to DeepSeek-V4. ${seriesPosts.length} articles published across 10 planned phases.</p>
+        <h3>${escapeHtml(promo.title)}</h3>
+        <p class="card-excerpt">${escapeHtml(promo.excerpt.replace("{count}", posts.length))}</p>
         <div style="display:flex;gap:4px;flex-wrap:wrap">
-          <span class="tag">#deepseek</span>
-          <span class="tag">#ml</span>
-          <span class="tag">#transformers</span>
+          ${promo.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("")}
         </div>
         <div class="card-meta">
-          <span>Ongoing</span>
-          <span>· ${seriesPosts.length} articles</span>
+          <span>${escapeHtml(promo.status)}</span>
+          <span>· ${posts.length} articles</span>
         </div>
       </a>`;
-    }
+    });
+
     html += standalone.map(renderPostCard).join("");
     grid.innerHTML = html;
   }

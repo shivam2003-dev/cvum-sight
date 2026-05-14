@@ -23,7 +23,9 @@ const POSTS = [
     tags: ["paperjuice", "ml", "attention", "gpu-optimization", "flashattention-series"],
     time: 15,
     words: 3300,
-    excerpt: "Blackwell GPUs doubled tensor core speed but left everything else the same. FlashAttention-4 fakes exponentials in software to keep up."
+    excerpt: "Blackwell GPUs doubled tensor core speed but left everything else the same. FlashAttention-4 fakes exponentials in software to keep up.",
+    series: "flashattention",
+    seriesNum: "4"
   },
   {
     slug: "flashattention-3-paper-juice",
@@ -33,7 +35,9 @@ const POSTS = [
     tags: ["paperjuice", "ml", "attention", "gpu-optimization", "flashattention-series"],
     time: 13,
     words: 2900,
-    excerpt: "The H100 arrived with async execution and FP8. FlashAttention-3 rewrites attention to exploit both — hitting 75% utilization and crossing petaFLOP territory."
+    excerpt: "The H100 arrived with async execution and FP8. FlashAttention-3 rewrites attention to exploit both — hitting 75% utilization and crossing petaFLOP territory.",
+    series: "flashattention",
+    seriesNum: "3"
   },
   {
     slug: "flashattention-2-paper-juice",
@@ -43,7 +47,9 @@ const POSTS = [
     tags: ["paperjuice", "ml", "attention", "gpu-optimization", "flashattention-series"],
     time: 12,
     words: 2700,
-    excerpt: "Tri Dao, alone, doubled FlashAttention's speed by fixing how GPU threads split work. The algorithm barely changed. The scheduling changed everything."
+    excerpt: "Tri Dao, alone, doubled FlashAttention's speed by fixing how GPU threads split work. The algorithm barely changed. The scheduling changed everything.",
+    series: "flashattention",
+    seriesNum: "2"
   },
   {
     slug: "flashattention-1-paper-juice",
@@ -53,7 +59,9 @@ const POSTS = [
     tags: ["paperjuice", "ml", "attention", "gpu-optimization", "flashattention-series"],
     time: 14,
     words: 3100,
-    excerpt: "The 2022 paper that changed how every transformer runs attention — not by changing the math, but by respecting the GPU memory hierarchy."
+    excerpt: "The 2022 paper that changed how every transformer runs attention — not by changing the math, but by respecting the GPU memory hierarchy.",
+    series: "flashattention",
+    seriesNum: "1"
   },
   {
     slug: "gepa-paper-juice",

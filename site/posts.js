@@ -16,7 +16,7 @@
 
 const POSTS = [
   {
-    slug: "x-algorithm-paper-juice",
+    slug: "x-algorithm-algo",
     title: "X's \"For You\" Algorithm — How 500 Million Feeds Get Built in Under a Second.",
     date: "May 15, 2026",
     cat: "ml",

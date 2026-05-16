@@ -19,8 +19,8 @@ const POSTS = [
     slug: "x-algorithm-paper-juice",
     title: "X's \"For You\" Algorithm — How 500 Million Feeds Get Built in Under a Second.",
     date: "May 15, 2026",
-    cat: "paperjuice",
-    tags: ["paperjuice", "ml", "recommendation-systems", "transformers", "systems-design"],
+    cat: "ml",
+    tags: ["ml", "recommendation-systems", "transformers", "systems-design"],
     time: 18,
     words: 4100,
     excerpt: "xAI open-sourced the algorithm behind X's For You feed. A seven-stage pipeline, a Grok-based transformer predicting 15 engagement types, and zero hand-crafted features. Here's how it works."

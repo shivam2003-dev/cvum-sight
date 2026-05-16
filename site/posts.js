@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "flamingo-paper-juice",
+    title: "Flamingo — What If Your AI Could Learn a New Task Just by Seeing a Few Examples.",
+    date: "May 17, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "vision-language-models", "few-shot-learning"],
+    time: 14,
+    words: 3200,
+    excerpt: "DeepMind's Flamingo learns new vision tasks from just 4 examples — no fine-tuning — by bridging frozen vision and language models with a Perceiver Resampler and gated cross-attention."
+  },
+  {
     slug: "ijepa-paper-juice",
     title: "I-JEPA — What If AI Learned to See by Imagining, Not Copying.",
     date: "May 16, 2026",

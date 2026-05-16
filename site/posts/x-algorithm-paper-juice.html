@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>X's "For You" Algorithm — How 500 Million Feeds Get Built in Under a Second. — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=2">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">May 15, 2026 · paperjuice · 18 min read · 4100 words</p>
+        <h1>X's "For You" Algorithm — How 500 Million Feeds Get Built in Under a Second.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">recommendation-systems</span>
+          <span class="tag">transformers</span>
+          <span class="tag">systems-design</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          You open X. Before your thumb finishes its swipe, a feed appears — 50 posts,
+          ranked, filtered, personalized. One of them is from someone you've never followed.
+          You like it. The algorithm smiles.
+        </p>
+        <p>
+          Behind that one-second experience is a seven-stage pipeline written in Rust and
+          Python, a Grok-based transformer that predicts 15 different things you might do
+          with a post, and an in-memory store that serves your followees' tweets faster
+          than your database can say "SELECT." xAI just open-sourced the whole thing.
+        </p>
+        <p>
+          Let me squeeze the juice out of it.
+        </p>
+
+        <h2>Why does this matter?</h2>
+        <p>
+          Social media algorithms are usually black boxes. You see posts, you don't know
+          why. Regulators have been screaming for transparency. Elon Musk promised to open-source
+          the algorithm. And now, for the first time, we can read every line of the system
+          that decides what 500 million people see every day.
+        </p>
+        <p>
+          The interesting part isn't the politics — it's the engineering. This system replaces
+          <em>every single hand-crafted feature</em> with a transformer that learns relevance
+          end-to-end from your engagement history. No manual rules about "posts with images
+          rank higher" or "replies boost visibility." The model figures all of that out itself.
+        </p>
+        <p>
+          That's a bold bet. Let's see how they pulled it off.
+        </p>
+
+        <h2>The big picture: seven stages, one feed</h2>
+        <p>
+          Every time you pull down to refresh, a request hits <strong>Home Mixer</strong> — the
+          orchestration service written in Rust. It runs your request through seven stages,
+          like an assembly line where each station does exactly one job:
+        </p>
+        <ol>
+          <li><strong>Query Hydration</strong> — Who are you? What have you liked, replied to,
+          reposted recently? Your engagement history gets fetched.</li>
+          <li><strong>Candidate Sourcing</strong> — Two systems run in parallel to find posts
+          you might want to see (more on this below).</li>
+          <li><strong>Candidate Hydration</strong> — Each candidate post gets enriched with
+          metadata: text, media, author info, video duration, subscription labels.</li>
+          <li><strong>Pre-Scoring Filters</strong> — Junk removal. Duplicates, posts older than
+          a day, your own posts, blocked authors, muted keywords — all gone.</li>
+          <li><strong>Scoring</strong> — The ML model predicts how likely you are to engage
+          with each surviving post.</li>
+          <li><strong>Selection</strong> — Sort by score, take the top K.</li>
+          <li><strong>Post-Selection Filters</strong> — Final safety checks. Spam? Violence?
+          Multiple branches of the same thread? Removed.</li>
+        </ol>
+        <p>
+          What comes out the other end is your feed. The whole thing happens in under a second.
+        </p>
+
+        <blockquote>
+          Think of it like a restaurant. Stage 1 reads your preferences. Stage 2 pulls ingredients
+          from two different pantries. Stages 3–4 prep and clean. Stage 5 is the chef cooking.
+          Stages 6–7 plate and do a final taste test. You just see the finished dish.
+        </blockquote>
+
+        <h2>The two pantries: Thunder and Phoenix Retrieval</h2>
+        <p>
+          Stage 2 is where things get interesting. Your feed isn't just posts from people
+          you follow — it's a mix of <strong>in-network</strong> and <strong>out-of-network</strong>
+          content. Two completely different systems fetch these.
+        </p>
+
+        <h3>Thunder — your followees' posts, served from RAM</h3>
+        <p>
+          Thunder is an in-memory store written in Rust. It listens to a Kafka topic that
+          streams every new post, reply, and repost on X. It partitions them by author and
+          keeps them in hashmaps — original tweets in one queue, replies in another, videos
+          in a third — each with a configurable retention window (typically about a day).
+        </p>
+        <p>
+          When your feed request arrives, Thunder looks up every account you follow and
+          returns their recent posts. No database queries. No disk I/O. Pure in-memory
+          lookups, sub-millisecond.
+        </p>
+        <p>
+          It's like having a personal assistant who already knows what your friends said
+          today because they've been listening the entire time. You don't ask a database —
+          you ask someone with perfect short-term memory.
+        </p>
+
+        <h3>Phoenix Retrieval — finding posts from strangers</h3>
+        <p>
+          This is the ML-powered half. Phoenix's retrieval model uses a <strong>two-tower
+          architecture</strong> — one of the most elegant ideas in recommendation systems.
+        </p>
+        <p>
+          Imagine two buildings facing each other across a courtyard. In the left building
+          (the <em>User Tower</em>), your entire engagement history gets compressed into a
+          single vector — a point in 128-dimensional space. A small transformer reads your
+          recent likes, replies, and reposts, and outputs one embedding that represents
+          <em>you</em>.
+        </p>
+        <p>
+          In the right building (the <em>Candidate Tower</em>), every post on X gets
+          compressed into a vector in the same space. This tower uses hash-based embeddings
+          and a 2-layer MLP with SiLU activation — simpler than the user side, because it
+          needs to encode millions of posts efficiently.
+        </p>
+        <p>
+          Finding posts you'd like becomes a geometry problem: which post vectors are closest
+          to your user vector? A dot product measures similarity. Approximate nearest-neighbor
+          search (think FAISS) makes this fast enough to run at scale.
+        </p>
+
+        <blockquote>
+          Two-tower retrieval is like organizing a library where every book and every reader
+          gets a GPS coordinate. Finding your next read means looking for the nearest book
+          to where you're standing. No need to read every title — just check the map.
+        </blockquote>
+
+        <p>
+          Together, Thunder and Phoenix Retrieval produce roughly 1,000–2,000 raw candidates.
+          That's a lot of posts. Most of them won't survive the next four stages.
+        </p>
+
+        <h2>The chef: Phoenix's ranking transformer</h2>
+        <p>
+          Here's where the real magic happens. Those ~1,500 candidates need to be
+          <em>ranked</em> — and this is where xAI pulls out the big guns.
+        </p>
+        <p>
+          The ranking model is a transformer derived from <strong>Grok-1</strong>, xAI's large
+          language model. But instead of generating text, it predicts <em>what you'll do</em>
+          with a post. Specifically, it outputs probabilities for 15+ different actions:
+        </p>
+        <ul>
+          <li>P(like), P(reply), P(repost), P(quote)</li>
+          <li>P(click), P(profile_click), P(share)</li>
+          <li>P(video_view), P(photo_expand), P(dwell)</li>
+          <li>P(follow_author)</li>
+          <li>P(not_interested), P(block_author), P(mute_author), P(report)</li>
+        </ul>
+        <p>
+          Notice the last four. The model doesn't just predict what you'll <em>like</em> —
+          it predicts what you'll <em>hate</em>. Posts that score high on P(block) or
+          P(not_interested) get pushed down hard.
+        </p>
+        <p>
+          The final relevance score is dead simple — a weighted sum:
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 100" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bg { fill: #ebe3cf; }
+              .label { font-family: 'IBM Plex Mono', monospace; font-size: 13px; fill: #2a2620; text-anchor: middle; }
+              .label-sm { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #948a78; text-anchor: middle; }
+              .label-accent { font-family: 'IBM Plex Mono', monospace; font-size: 13px; fill: #c96442; text-anchor: middle; font-weight: bold; }
+            </style>
+            <rect width="680" height="100" class="bg"/>
+            <text x="340" y="35" class="label">FinalScore = Σ (weight_i × P(action_i))</text>
+            <text x="340" y="60" class="label-sm">positive weights: like, repost, share, click, dwell...</text>
+            <text x="340" y="78" class="label-accent">negative weights: block, mute, not_interested, report</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — The scoring formula. Elegantly simple on the surface, brutally effective underneath.</p>
+        </div>
+
+        <p>
+          The weights are manually configured — not learned. That's a deliberate design choice.
+          It lets engineers directly control how much a "like" matters versus a "repost" versus
+          a "block." You can imagine the knob-turning sessions in the xAI office.
+        </p>
+
+        <h2>The trick that makes it all work: candidate isolation</h2>
+        <p>
+          This is the part that made me stop scrolling.
+        </p>
+        <p>
+          In a normal transformer, every token attends to every other token. If you batch 64
+          candidate posts into one forward pass, each post's representation would be influenced
+          by the other 63 posts in the batch. That's a problem — it means a post's score could
+          change depending on what <em>other</em> posts happen to be in the same batch.
+        </p>
+        <p>
+          Phoenix solves this with <strong>candidate isolation</strong> — a custom attention mask
+          that enforces a simple rule:
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bg { fill: #ebe3cf; }
+              .box { fill: none; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .box-fill { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .box-accent { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .box-ok { fill: #4a7c59; stroke: #2a2620; stroke-width: 1.5; rx: 4; }
+              .box-no { fill: #948a78; stroke: #2a2620; stroke-width: 1.2; rx: 4; opacity: 0.3; }
+              .label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; }
+              .label-sm { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: #ebe3cf; text-anchor: middle; }
+              .label-big { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+              .label-side { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: end; }
+              .label-top { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: middle; }
+            </style>
+            <rect width="680" height="260" class="bg"/>
+            <text x="340" y="22" class="label-big">Attention Mask: Candidate Isolation</text>
+
+            <!-- Column headers -->
+            <text x="220" y="50" class="label-top">User</text>
+            <text x="320" y="50" class="label-top">History</text>
+            <text x="480" y="50" class="label-top">Candidates</text>
+
+            <!-- Row labels -->
+            <text x="130" y="82" class="label-side">User</text>
+            <text x="130" y="122" class="label-side">History</text>
+            <text x="130" y="180" class="label-side">Candidate A</text>
+            <text x="130" y="220" class="label-side">Candidate B</text>
+
+            <!-- User row -->
+            <rect x="195" y="65" width="50" height="25" class="box-ok"/>
+            <text x="220" y="82" class="label-sm">✓</text>
+            <rect x="260" y="65" width="120" height="25" class="box-ok"/>
+            <text x="320" y="82" class="label-sm">✓ ✓ ✓</text>
+            <rect x="400" y="65" width="180" height="25" class="box-no"/>
+            <text x="490" y="82" class="label-sm">✗ ✗</text>
+
+            <!-- History row -->
+            <rect x="195" y="105" width="50" height="25" class="box-ok"/>
+            <text x="220" y="122" class="label-sm">✓</text>
+            <rect x="260" y="105" width="120" height="25" class="box-ok"/>
+            <text x="320" y="122" class="label-sm">✓ ✓ ✓</text>
+            <rect x="400" y="105" width="180" height="25" class="box-no"/>
+            <text x="490" y="122" class="label-sm">✗ ✗</text>
+
+            <!-- Separator line -->
+            <line x1="145" y1="145" x2="590" y2="145" stroke="#2a2620" stroke-width="1" stroke-dasharray="4"/>
+
+            <!-- Candidate A row -->
+            <rect x="195" y="165" width="50" height="25" class="box-ok"/>
+            <text x="220" y="182" class="label-sm">✓</text>
+            <rect x="260" y="165" width="120" height="25" class="box-ok"/>
+            <text x="320" y="182" class="label-sm">✓ ✓ ✓</text>
+            <rect x="400" y="165" width="80" height="25" class="box-fill"/>
+            <text x="440" y="182" class="label-sm">✓ self</text>
+            <rect x="490" y="165" width="90" height="25" class="box-no"/>
+            <text x="535" y="182" class="label-sm">✗</text>
+
+            <!-- Candidate B row -->
+            <rect x="195" y="205" width="50" height="25" class="box-ok"/>
+            <text x="220" y="222" class="label-sm">✓</text>
+            <rect x="260" y="205" width="120" height="25" class="box-ok"/>
+            <text x="320" y="222" class="label-sm">✓ ✓ ✓</text>
+            <rect x="400" y="205" width="80" height="25" class="box-no"/>
+            <text x="440" y="222" class="label-sm">✗</text>
+            <rect x="490" y="205" width="90" height="25" class="box-fill"/>
+            <text x="535" y="222" class="label-sm">✓ self</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — Each candidate sees only the user context and itself. Never other candidates.</p>
+        </div>
+
+        <p>
+          Candidates can attend to the user token and the entire engagement history — but
+          they <em>cannot</em> attend to each other. Each candidate only sees itself and your
+          context. The attention mask is block-diagonal below the separator.
+        </p>
+        <p>
+          Why does this matter? Three reasons:
+        </p>
+        <ol>
+          <li><strong>Deterministic scores.</strong> A post's score depends only on its content
+          and your history — never on which other posts happen to be in the batch. Shuffle the
+          candidates, get the same scores.</li>
+          <li><strong>Cacheability.</strong> If a post's score doesn't depend on its neighbors,
+          you can cache it. Score a post once, reuse it across multiple feed requests until the
+          user's history changes.</li>
+          <li><strong>No ordering effects.</strong> Without isolation, putting a controversial
+          post next to a wholesome one could change both their scores. That's unpredictable and
+          hard to debug. Isolation kills that problem entirely.</li>
+        </ol>
+        <p>
+          The trade-off? You lose cross-candidate signals. If showing contrasting posts together
+          would be more engaging, the model can't learn that. But xAI decided stability and
+          cacheability were worth more than whatever marginal signal cross-attention might provide.
+        </p>
+
+        <blockquote>
+          It's like grading exams. If you grade each student's paper in isolation, every score is
+          fair and reproducible. If you grade them side-by-side, the B+ paper next to the A+
+          paper starts looking worse than it is. Candidate isolation is the fair grading policy.
+        </blockquote>
+
+        <h2>No features, no problem?</h2>
+        <p>
+          Traditional recommendation systems are obsessed with <strong>feature engineering</strong>.
+          "This post has an image → boost by 1.2x." "This author has high engagement rate →
+          multiply by 1.5x." "Post was published in the last hour → freshness bonus."
+          Engineers hand-craft hundreds of these signals.
+        </p>
+        <p>
+          X's system throws all of that away.
+        </p>
+        <p>
+          The Grok-based transformer gets raw hash embeddings (author ID hashed into a
+          fixed-size table, post content hashed similarly) and your engagement sequence.
+          That's it. No "this post has a video" feature. No "author follower count" feature.
+          The transformer learns whatever signals matter directly from the data.
+        </p>
+        <p>
+          This is a radical simplification. It means you don't need a team of feature
+          engineers maintaining hundreds of data pipelines. You don't need to argue about
+          whether "time since post" should be linear or logarithmic. The model just…
+          figures it out.
+        </p>
+        <p>
+          The risk? If the model doesn't have enough capacity or data, it might miss signals
+          that a human engineer would have caught. But at X's scale — hundreds of millions
+          of users generating billions of engagement signals daily — data is not the bottleneck.
+        </p>
+
+        <h2>The architecture in numbers</h2>
+        <p>
+          The Phoenix README provides a mini reference configuration for the ranking model:
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bg { fill: #ebe3cf; }
+              .box { fill: none; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .box-fill { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #2a2620; text-anchor: start; }
+              .label-val { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #c96442; text-anchor: end; font-weight: bold; }
+              .label-big { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+            </style>
+            <rect width="680" height="220" class="bg"/>
+            <text x="340" y="25" class="label-big">Phoenix Mini Reference Config</text>
+            <rect x="160" y="40" width="360" height="168" class="box"/>
+
+            <text x="185" y="68" class="label">Embedding dimension</text>
+            <text x="495" y="68" class="label-val">128</text>
+
+            <text x="185" y="92" class="label">Transformer layers</text>
+            <text x="495" y="92" class="label-val">4</text>
+
+            <text x="185" y="116" class="label">Attention heads</text>
+            <text x="495" y="116" class="label-val">4</text>
+
+            <text x="185" y="140" class="label">History sequence length</text>
+            <text x="495" y="140" class="label-val">127</text>
+
+            <text x="185" y="164" class="label">Candidate sequence length</text>
+            <text x="495" y="164" class="label-val">64</text>
+
+            <text x="185" y="188" class="label">Hashes per entity</text>
+            <text x="495" y="188" class="label-val">2</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — The "mini" config ships with the repo. Production likely runs much larger.</p>
+        </div>
+
+        <p>
+          This is the demo configuration. The production model almost certainly uses larger
+          embeddings, more layers, and longer history sequences. But the architecture is the
+          same — what changes is the scale, not the design.
+        </p>
+
+        <h2>The filter gauntlet</h2>
+        <p>
+          Before and after scoring, candidates run through a gauntlet of filters. These aren't
+          glamorous, but they're essential. A recommendation system that surfaces spam, blocked
+          authors, or posts you've already seen is a broken one.
+        </p>
+        <p>
+          <strong>Pre-scoring filters</strong> (applied before the model runs):
+        </p>
+        <ul>
+          <li><code>DropDuplicatesFilter</code> — same post ID appears twice? Kill the duplicate.</li>
+          <li><code>AgeFilter</code> — older than ~24 hours? Out.</li>
+          <li><code>SelfpostFilter</code> — your own post? You already know about it.</li>
+          <li><code>AuthorSocialgraphFilter</code> — blocked or muted author? Gone.</li>
+          <li><code>MutedKeywordFilter</code> — contains a word you muted? Invisible.</li>
+          <li><code>PreviouslySeenPostsFilter</code> — you already scrolled past it? Don't show again.</li>
+          <li><code>IneligibleSubscriptionFilter</code> — paywalled and you're not subscribed? Skip.</li>
+        </ul>
+        <p>
+          <strong>Post-selection filters</strong> (applied after ranking, on the final set):
+        </p>
+        <ul>
+          <li><code>VFFilter</code> — visibility filter catches posts flagged as spam, violence, or gore after they were scored.</li>
+          <li><code>DedupConversationFilter</code> — prevents showing three different branches of the same thread.</li>
+        </ul>
+        <p>
+          The two-phase approach is smart. Running ML scoring is expensive, so you want to
+          eliminate obviously ineligible posts <em>before</em> sending them to the model.
+          But some checks (like visibility flags) might update <em>after</em> scoring, so
+          you need a final safety net.
+        </p>
+
+        <h2>The diversity problem</h2>
+        <p>
+          Without intervention, a pure relevance-ranked feed would show you 10 posts from
+          your favorite account, followed by 10 more from your second favorite. Technically
+          optimal. Practically boring.
+        </p>
+        <p>
+          The <strong>Author Diversity Scorer</strong> handles this. When multiple top-ranked
+          posts come from the same author, it applies an attenuation penalty — each successive
+          post from the same person gets a lower multiplier. Your feed stays varied without
+          sacrificing overall relevance.
+        </p>
+        <p>
+          There's also an <strong>OON (Out-of-Network) Scorer</strong> that can boost or
+          adjust scores for posts from accounts you don't follow. This ensures your feed
+          isn't just an echo chamber of your existing network — it actively injects discovery.
+        </p>
+
+        <h2>The code: Rust + Python, microservices not monolith</h2>
+        <p>
+          The repo is split into five major components:
+        </p>
+        <ul>
+          <li><strong>Home Mixer (Rust)</strong> — the orchestrator. Implements a gRPC server,
+          runs the 7-stage pipeline, plugs together sources/hydrators/filters/scorers using
+          the candidate-pipeline framework.</li>
+          <li><strong>Thunder (Rust)</strong> — the in-memory post store. Kafka consumer,
+          per-author hashmaps, zero database queries at serving time.</li>
+          <li><strong>Phoenix (Python/JAX)</strong> — the ML brain. Two-tower retrieval +
+          Grok-based transformer ranking. Uses JAX and Haiku.</li>
+          <li><strong>Candidate Pipeline (Rust crate)</strong> — the reusable framework.
+          Defines traits for Source, Hydrator, Filter, Scorer, Selector, and SideEffect.
+          Handles parallelism and fault tolerance.</li>
+          <li><strong>GroX (Python)</strong> — content understanding. Classifiers, embedders,
+          spam detection, content categorization. Feeds features into Phoenix's input pipeline.</li>
+        </ul>
+        <p>
+          The language split is deliberate. Rust handles the hot path — serving requests,
+          filtering candidates, orchestrating the pipeline — where latency matters down to
+          microseconds. Python/JAX handles the ML — where expressiveness and GPU acceleration
+          matter more than raw serving speed.
+        </p>
+
+        <h2>Running it yourself</h2>
+        <p>
+          The repo includes a runnable demo. Here's the gist:
+        </p>
+        <ol>
+          <li>Download the pre-trained artifacts via Git LFS (~3 GB — model checkpoints + a
+          sports news corpus of 537k posts with precomputed embeddings).</li>
+          <li>Run the pipeline:
+            <code style="display:block;margin:8px 0;padding:8px 12px;background:var(--ink);color:var(--paper);border-radius:4px;font-size:13px;">
+              uv run run_pipeline.py --artifacts_dir artifacts/oss-phoenix-artifacts
+            </code>
+          </li>
+          <li>It loads the models, takes an example user history, retrieves top-200 posts from
+          the corpus, ranks them, and prints predicted probabilities + final scores.</li>
+        </ol>
+        <p>
+          You can edit <code>example_sequence.json</code> to change the user history, or use
+          <code>--top_k_retrieval</code> and <code>--top_k_display</code> flags to control
+          how many candidates get retrieved and displayed.
+        </p>
+        <p>
+          Fair warning: the Rust components don't ship with a complete Cargo.toml setup, so
+          building the full serving infrastructure requires some manual assembly. This is a
+          reference implementation, not a Docker-compose-and-go deployment.
+        </p>
+
+        <h2>What's missing (and what's honest about that)</h2>
+        <p>
+          Let's be real about the limitations:
+        </p>
+        <ul>
+          <li><strong>No benchmarks.</strong> The repo doesn't publish accuracy, AUC, or any
+          engagement metrics. It's a codebase release, not a research paper. You can run the
+          demo and see ranked outputs, but there's no "we improved CTR by X%."</li>
+          <li><strong>No fairness controls.</strong> There's no explicit debiasing in the code.
+          The model learns from engagement data, which means it can amplify whatever biases
+          exist in how people interact with content.</li>
+          <li><strong>Cold start is cold.</strong> New users with no history and new posts with
+          no engagement signals rely entirely on hash embeddings — which is basically random.
+          There's no specialized cold-start model.</li>
+          <li><strong>Candidate isolation loses signal.</strong> By design, the model can't
+          learn that showing diverse posts <em>together</em> might be more engaging. Cross-post
+          context is sacrificed for determinism.</li>
+          <li><strong>Latency at scale.</strong> Running a Grok-style transformer on hundreds
+          of candidates per request isn't cheap. The mini config is small; production models
+          are almost certainly larger and more expensive.</li>
+        </ul>
+        <p>
+          These aren't criticisms — they're engineering trade-offs. Every system makes them.
+          What's rare is being able to <em>see</em> them.
+        </p>
+
+        <h2>The one-paragraph version</h2>
+        <blockquote>
+          X's "For You" feed is a seven-stage pipeline. Thunder (in-memory Rust store) provides
+          posts from your network; Phoenix Retrieval (two-tower ML model) finds posts from
+          strangers. Both get ranked by a Grok-based transformer that predicts 15 engagement
+          probabilities per post — likes, replies, reposts, but also blocks and mutes. Scores
+          are a weighted sum of those probabilities. A custom attention mask (candidate isolation)
+          ensures each post's score is independent of its batch neighbors. The whole system
+          replaces hand-engineered features with end-to-end learning. No manual rules. Just a
+          transformer, your history, and a lot of Rust.
+        </blockquote>
+
+        <p>
+          The repo is at <a href="https://github.com/xai-org/x-algorithm" target="_blank">
+          github.com/xai-org/x-algorithm</a>. 18.8k stars. Rust + Python. Apache 2.0 license.
+          Go read it.
+        </p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="flashattention-4-paper-juice.html">← FlashAttention-4 Paper Juice</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+  </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+
+    <div class="vocab-term" data-term="two-tower">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">two-tower model</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A retrieval architecture with two separate neural networks — one encodes users, the other encodes items. Both output vectors in the same space. Relevance = dot product between the two vectors. Fast because item embeddings can be precomputed.</div>
+    </div>
+
+    <div class="vocab-term" data-term="candidate-isolation">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">candidate isolation</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">An attention masking strategy where each candidate post can only attend to the user context and itself — never to other candidates. Ensures scores are deterministic, cacheable, and independent of batch composition.</div>
+    </div>
+
+    <div class="vocab-term" data-term="ann">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">ANN (Approximate Nearest Neighbor)</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A search technique that finds "close enough" vectors without checking every single one. Trades a tiny amount of accuracy for massive speed gains. FAISS is the most popular library. Essential for searching millions of embeddings in milliseconds.</div>
+    </div>
+
+    <div class="vocab-term" data-term="hash-embedding">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">hash-based embedding</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Instead of maintaining a unique embedding for every entity (which would be impossibly large), hash the entity ID into a fixed-size table. Multiple entities share slots, but with multiple hash functions the collisions average out. Trades some precision for bounded memory.</div>
+    </div>
+
+    <div class="vocab-term" data-term="grpc">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">gRPC</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Google's Remote Procedure Call framework. Services define methods in protobuf, and gRPC handles serialization, networking, and streaming. Much faster than REST/JSON for internal service-to-service communication.</div>
+    </div>
+
+    <div class="vocab-term" data-term="hydration">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">hydration</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Enriching a lightweight data record with its full details. A "dehydrated" post might just be an ID; a "hydrated" post has its text, author info, media URLs, engagement counts, etc. Common pattern in distributed systems where you fetch IDs first, details later.</div>
+    </div>
+
+    <div class="vocab-term" data-term="multi-task">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">multi-task prediction</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Training one model to predict multiple outputs simultaneously — here, 15+ engagement probabilities. The shared backbone learns general representations, while separate heads specialize for each action type. More efficient than training 15 separate models.</div>
+    </div>
+
+    <div class="vocab-term" data-term="kafka">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Kafka</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A distributed event streaming platform. Producers write events (like "new post created") to topics. Consumers read them in order. Thunder uses Kafka to ingest every post on X in real time. Handles millions of events per second.</div>
+    </div>
+  </aside>
+
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+</body>
+</html>

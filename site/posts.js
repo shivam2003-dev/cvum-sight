@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "ijepa-paper-juice",
+    title: "I-JEPA — What If AI Learned to See by Imagining, Not Copying.",
+    date: "May 16, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "self-supervised-learning", "computer-vision"],
+    time: 14,
+    words: 3100,
+    excerpt: "Meta AI's I-JEPA learns to see by predicting abstract concepts instead of pixels — no data augmentations, 10× cheaper than MAE, and it matches augmentation-heavy methods."
+  },
+  {
     slug: "x-algorithm-algo",
     title: "X's \"For You\" Algorithm — How 500 Million Feeds Get Built in Under a Second.",
     date: "May 15, 2026",

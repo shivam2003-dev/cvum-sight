@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLaVA — One Matrix Multiplication Taught a Language Model to See. — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=2">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">May 18, 2026 · paperjuice · 14 min read · 3100 words</p>
+        <h1>LLaVA — One Matrix Multiplication Taught a Language Model to See.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">vision-language-models</span>
+          <span class="tag">multimodal</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          You paste an image into ChatGPT and ask "what's in this picture?" It answers
+          fluently. You've probably done this a hundred times without wondering — <em>how
+          does a language model, trained on text, suddenly understand pixels?</em>
+        </p>
+        <p>
+          In April 2023, four researchers from UW-Madison, Microsoft Research, and Columbia
+          answered that question with a shockingly simple idea: take a frozen vision encoder,
+          take a frozen language model, and connect them with <em>one linear layer</em>.
+          Then teach it to follow visual instructions using data that GPT-4 wrote.
+        </p>
+        <p>
+          The paper is called <strong>LLaVA</strong> (Large Language and Vision Assistant).
+          It became a NeurIPS 2023 Oral, launched an entire family of multimodal models,
+          and proved that you don't need billions of image-text pairs to build a visual AI
+          assistant. You need the right <em>instructions</em>.
+        </p>
+
+        <h2>The problem: vision models can see, but they can't talk</h2>
+        <p>
+          By 2023, the AI world had two powerful but separate kingdoms. On one side:
+          vision models like CLIP that could recognize anything in an image. On the other:
+          language models like Vicuna that could hold a conversation about anything.
+        </p>
+        <p>
+          But they didn't speak the same language. CLIP outputs a grid of visual features.
+          Vicuna expects word embeddings. Connecting them is like wiring a Japanese outlet
+          to a European plug — the electricity is there, but nothing flows.
+        </p>
+        <p>
+          Previous approaches tried elaborate bridges. Flamingo used gated cross-attention
+          layers. BLIP-2 built a Q-Former — a whole separate transformer acting as
+          translator. These worked, but they were complex, expensive to train, and still
+          couldn't follow open-ended visual instructions the way ChatGPT follows text ones.
+        </p>
+
+        <h2>LLaVA's big idea: one linear layer + instruction data</h2>
+        <p>
+          LLaVA asks the question differently. Instead of building a complex bridge between
+          vision and language, what if you just built a <em>really simple one</em> — and
+          then compensated with better training data?
+        </p>
+
+        <!-- Architecture diagram -->
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .d-box { fill: none; stroke: #2a2620; stroke-width: 1.5; rx: 6; }
+              .d-box-fill { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; rx: 6; opacity: 0.25; }
+              .d-box-accent { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; rx: 6; opacity: 0.2; }
+              .d-box-blue { fill: #4a7a8c; stroke: #2a2620; stroke-width: 1.5; rx: 6; opacity: 0.2; }
+              .d-text { font-family: 'IBM Plex Mono', monospace; font-size: 13px; fill: #2a2620; text-anchor: middle; }
+              .d-text-sm { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: #948a78; text-anchor: middle; }
+              .d-text-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #c96442; text-anchor: middle; font-weight: bold; }
+              .d-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+              .d-arrow-dash { stroke: #948a78; stroke-width: 1.2; fill: none; stroke-dasharray: 4,3; marker-end: url(#arrowhead-faint); }
+              .d-frozen { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: #4a7a8c; text-anchor: middle; font-weight: bold; }
+              .d-trainable { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: #c96442; text-anchor: middle; font-weight: bold; }
+            </style>
+            <defs>
+              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6" fill="none" stroke="#2a2620" stroke-width="1.2"/>
+              </marker>
+              <marker id="arrowhead-faint" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6" fill="none" stroke="#948a78" stroke-width="1.2"/>
+              </marker>
+            </defs>
+
+            <!-- Input image -->
+            <rect x="20" y="110" width="100" height="100" class="d-box" stroke-dasharray="4,3" stroke="#948a78"/>
+            <text x="70" y="155" class="d-text">🖼️</text>
+            <text x="70" y="175" class="d-text-sm">image Xv</text>
+
+            <!-- Arrow: image → CLIP -->
+            <line x1="120" y1="160" x2="155" y2="160" class="d-arrow"/>
+
+            <!-- CLIP encoder -->
+            <rect x="160" y="100" width="120" height="120" class="d-box-blue"/>
+            <text x="220" y="150" class="d-text">CLIP</text>
+            <text x="220" y="168" class="d-text">ViT-L/14</text>
+            <text x="220" y="195" class="d-frozen">❄ FROZEN</text>
+
+            <!-- Arrow: CLIP → features -->
+            <line x1="280" y1="160" x2="315" y2="160" class="d-arrow"/>
+
+            <!-- Visual features -->
+            <text x="345" y="130" class="d-text-sm">Zv</text>
+            <rect x="320" y="135" width="50" height="50" class="d-box" rx="2" ry="2"/>
+            <text x="345" y="165" class="d-text-sm">visual</text>
+            <text x="345" y="177" class="d-text-sm">features</text>
+
+            <!-- Arrow: features → projection -->
+            <line x1="370" y1="160" x2="405" y2="160" class="d-arrow"/>
+
+            <!-- Projection W -->
+            <rect x="410" y="120" width="90" height="80" class="d-box-accent"/>
+            <text x="455" y="155" class="d-text">W</text>
+            <text x="455" y="173" class="d-text-sm">projection</text>
+            <text x="455" y="195" class="d-trainable">🔥 TRAINABLE</text>
+
+            <!-- Arrow: projection → Hv -->
+            <line x1="500" y1="160" x2="535" y2="160" class="d-arrow"/>
+
+            <!-- Visual tokens -->
+            <text x="555" y="130" class="d-text-sm">Hv</text>
+            <rect x="540" y="135" width="30" height="50" class="d-box-fill" rx="2" ry="2"/>
+
+            <!-- Text tokens -->
+            <text x="590" y="130" class="d-text-sm">text</text>
+            <rect x="580" y="135" width="30" height="50" class="d-box" rx="2" ry="2" stroke-dasharray="3,2"/>
+
+            <!-- Concat bracket -->
+            <text x="575" y="210" class="d-text-sm">concat</text>
+
+            <!-- Arrow: concat → LLM -->
+            <line x1="590" y1="160" x2="618" y2="160" class="d-arrow"/>
+
+            <!-- LLM -->
+            <rect x="622" y="100" width="85" height="120" class="d-box-blue"/>
+            <text x="664" y="145" class="d-text">Vicuna</text>
+            <text x="664" y="163" class="d-text-sm">13B LLM</text>
+            <text x="664" y="195" class="d-frozen">❄ / 🔥</text>
+
+            <!-- Output -->
+            <text x="664" y="250" class="d-text-sm">response</text>
+            <line x1="664" y1="220" x2="664" y2="240" class="d-arrow"/>
+
+            <!-- Title -->
+            <text x="360" y="40" class="d-text" font-size="14" font-weight="bold">LLaVA Architecture</text>
+            <text x="360" y="60" class="d-text-sm">Hv = W · Zv — one linear projection connects vision to language</text>
+
+            <!-- Stage labels -->
+            <text x="360" y="290" class="d-text-sm">Stage 1: only W trained (595K pairs) → Stage 2: W + LLM trained (158K instructions)</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — LLaVA's architecture. CLIP encodes the image into visual features Zv. A single
+            trainable projection matrix W maps them into the language model's word embedding space.
+            The visual tokens Hv are concatenated with the text tokens and fed into Vicuna.</p>
+        </div>
+
+        <p>
+          That's the entire architecture. CLIP encodes an image into a grid of visual features.
+          A single linear projection matrix <strong>W</strong> maps those features into the
+          same dimensional space as text token embeddings. Concatenate visual tokens with text
+          tokens. Feed into Vicuna. Done.
+        </p>
+        <p>
+          No cross-attention. No Q-Former. No perceiver. One matrix multiplication.
+        </p>
+
+        <blockquote>
+          Think of it like a translator between two colleagues. Flamingo hired a simultaneous
+          interpreter with years of training. BLIP-2 built a whole translation department.
+          LLaVA handed one person a phrase book — and it turned out that was enough.
+        </blockquote>
+
+        <h2>The data trick: GPT-4 as a teacher</h2>
+        <p>
+          If the architecture is simple, the data has to be smart. And here's where
+          LLaVA gets creative.
+        </p>
+        <p>
+          The problem: there's no large-scale dataset of "look at this image and follow
+          these instructions." Image-caption pairs exist (millions of them), but captions
+          are boring — "a dog on a beach." That's describing, not <em>reasoning</em>.
+        </p>
+        <p>
+          LLaVA's solution: use GPT-4 to <em>generate</em> instruction-following data from
+          existing image-caption pairs. The trick is that GPT-4 never sees the image.
+          Instead, it gets the image's captions and bounding box annotations as text, and
+          generates three types of responses:
+        </p>
+
+        <!-- Data generation diagram -->
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .b-box { fill: none; stroke: #2a2620; stroke-width: 1.5; rx: 8; }
+              .b-fill-y { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; rx: 8; opacity: 0.2; }
+              .b-fill-a { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; rx: 8; opacity: 0.15; }
+              .b-fill-b { fill: #4a7a8c; stroke: #2a2620; stroke-width: 1.5; rx: 8; opacity: 0.15; }
+              .b-text { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #2a2620; text-anchor: middle; }
+              .b-text-sm { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: #948a78; text-anchor: middle; }
+              .b-text-title { font-family: 'IBM Plex Mono', monospace; font-size: 14px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+              .b-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; marker-end: url(#ah2); }
+              .b-num { font-family: 'IBM Plex Mono', monospace; font-size: 18px; fill: #c96442; text-anchor: middle; font-weight: bold; }
+            </style>
+            <defs>
+              <marker id="ah2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6" fill="none" stroke="#2a2620" stroke-width="1.2"/>
+              </marker>
+            </defs>
+
+            <!-- Title -->
+            <text x="360" y="30" class="b-text-title">GPT-4 Generates Instruction Data (Without Seeing Images)</text>
+
+            <!-- Source: COCO image-text pair -->
+            <rect x="30" y="60" width="150" height="90" class="b-fill-b"/>
+            <text x="105" y="90" class="b-text">COCO</text>
+            <text x="105" y="108" class="b-text">image-text</text>
+            <text x="105" y="126" class="b-text">pair</text>
+            <text x="105" y="143" class="b-text-sm">captions + boxes</text>
+
+            <!-- Arrow to GPT-4 -->
+            <line x1="180" y1="105" x2="245" y2="105" class="b-arrow"/>
+            <text x="213" y="95" class="b-text-sm">text only</text>
+
+            <!-- GPT-4 -->
+            <rect x="250" y="60" width="130" height="90" class="b-fill-y"/>
+            <text x="315" y="100" class="b-text">GPT-4</text>
+            <text x="315" y="118" class="b-text">(text-only)</text>
+            <text x="315" y="143" class="b-text-sm">never sees image</text>
+
+            <!-- Three output types -->
+            <!-- Arrow down -->
+            <line x1="315" y1="150" x2="315" y2="180" class="b-arrow"/>
+
+            <!-- Branch lines -->
+            <line x1="315" y1="180" x2="120" y2="180" stroke="#2a2620" stroke-width="1.2"/>
+            <line x1="315" y1="180" x2="600" y2="180" stroke="#2a2620" stroke-width="1.2"/>
+
+            <line x1="120" y1="180" x2="120" y2="200" class="b-arrow"/>
+            <line x1="360" y1="180" x2="360" y2="200" class="b-arrow"/>
+            <line x1="600" y1="180" x2="600" y2="200" class="b-arrow"/>
+
+            <!-- Type 1: Conversation -->
+            <rect x="30" y="205" width="180" height="110" class="b-fill-a"/>
+            <text x="120" y="228" class="b-num">①</text>
+            <text x="120" y="248" class="b-text">Conversation</text>
+            <text x="120" y="268" class="b-text-sm">multi-turn Q&A about</text>
+            <text x="120" y="282" class="b-text-sm">objects, locations,</text>
+            <text x="120" y="296" class="b-text-sm">counts, actions</text>
+
+            <!-- Type 2: Detailed Description -->
+            <rect x="270" y="205" width="180" height="110" class="b-fill-a"/>
+            <text x="360" y="228" class="b-num">②</text>
+            <text x="360" y="248" class="b-text">Detailed</text>
+            <text x="360" y="264" class="b-text">Description</text>
+            <text x="360" y="284" class="b-text-sm">comprehensive scene</text>
+            <text x="360" y="298" class="b-text-sm">narrative</text>
+
+            <!-- Type 3: Complex Reasoning -->
+            <rect x="510" y="205" width="180" height="110" class="b-fill-a"/>
+            <text x="600" y="228" class="b-num">③</text>
+            <text x="600" y="248" class="b-text">Complex</text>
+            <text x="600" y="264" class="b-text">Reasoning</text>
+            <text x="600" y="284" class="b-text-sm">step-by-step logic</text>
+            <text x="600" y="298" class="b-text-sm">and inference</text>
+
+            <!-- Totals -->
+            <text x="120" y="332" class="b-text-sm">58K samples</text>
+            <text x="360" y="332" class="b-text-sm">23K samples</text>
+            <text x="600" y="332" class="b-text-sm">77K samples</text>
+
+            <text x="360" y="355" class="b-text-sm">= 158K total instruction-following samples from COCO images</text>
+
+            <!-- Stats box -->
+            <rect x="490" y="62" width="200" height="85" class="b-box" rx="6" stroke-dasharray="4,3" stroke="#948a78"/>
+            <text x="590" y="82" class="b-text-sm">key insight:</text>
+            <text x="590" y="100" class="b-text" font-size="11">GPT-4 reasons about</text>
+            <text x="590" y="116" class="b-text" font-size="11">images using only</text>
+            <text x="590" y="132" class="b-text" font-size="11">text descriptions</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — The data pipeline. GPT-4 never sees any image. It receives captions and bounding-box
+            annotations as text, then generates three types of instruction-following responses. This
+            produces 158K training samples from COCO images.</p>
+        </div>
+
+        <ol>
+          <li>
+            <strong>Conversations</strong> (58K) — multi-turn Q&A about objects, locations,
+            counts, and actions in the scene
+          </li>
+          <li>
+            <strong>Detailed descriptions</strong> (23K) — rich, comprehensive narratives
+            describing every aspect of the image
+          </li>
+          <li>
+            <strong>Complex reasoning</strong> (77K) — questions requiring step-by-step logical
+            inference based on the visual content
+          </li>
+        </ol>
+        <p>
+          Total: <strong>158K instruction-following samples</strong>. That's tiny by modern
+          standards. LAION has 5 <em>billion</em> image-text pairs. But LLaVA doesn't need
+          volume — it needs variety and depth.
+        </p>
+
+        <h2>Two-stage training: alignment, then instruction</h2>
+        <p>
+          You can't throw a raw projection layer and a language model together and expect
+          magic. LLaVA trains in two careful stages:
+        </p>
+
+        <!-- Training stages diagram -->
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .s-box { fill: none; stroke: #2a2620; stroke-width: 1.5; rx: 8; }
+              .s-fill-1 { fill: #4a7a8c; stroke: #2a2620; stroke-width: 1.5; rx: 8; opacity: 0.15; }
+              .s-fill-2 { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; rx: 8; opacity: 0.15; }
+              .s-text { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #2a2620; text-anchor: middle; }
+              .s-text-sm { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: #948a78; text-anchor: middle; }
+              .s-text-b { font-family: 'IBM Plex Mono', monospace; font-size: 13px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+              .s-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; marker-end: url(#ah3); }
+              .s-icon { font-family: 'IBM Plex Mono', monospace; font-size: 14px; fill: #c96442; text-anchor: middle; }
+            </style>
+            <defs>
+              <marker id="ah3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6" fill="none" stroke="#2a2620" stroke-width="1.2"/>
+              </marker>
+            </defs>
+
+            <!-- Stage 1 -->
+            <rect x="20" y="30" width="320" height="180" class="s-fill-1"/>
+            <text x="180" y="55" class="s-text-b">Stage 1 — Feature Alignment</text>
+
+            <text x="180" y="80" class="s-text-sm">595K filtered CC3M caption pairs</text>
+
+            <!-- Components in stage 1 -->
+            <rect x="40" y="95" width="80" height="40" class="s-box" stroke-dasharray="3,2"/>
+            <text x="80" y="115" class="s-text-sm">CLIP ❄</text>
+            <text x="80" y="128" class="s-text-sm">frozen</text>
+
+            <rect x="140" y="95" width="80" height="40" class="s-fill-2"/>
+            <text x="180" y="115" class="s-text-sm">W 🔥</text>
+            <text x="180" y="128" class="s-text-sm">trained</text>
+
+            <rect x="240" y="95" width="80" height="40" class="s-box" stroke-dasharray="3,2"/>
+            <text x="280" y="115" class="s-text-sm">Vicuna ❄</text>
+            <text x="280" y="128" class="s-text-sm">frozen</text>
+
+            <text x="180" y="160" class="s-text-sm">goal: learn a compatible</text>
+            <text x="180" y="175" class="s-text-sm">visual tokenizer for the LLM</text>
+            <text x="180" y="198" class="s-text-sm">⏱ ~4 hours on 8× A100s</text>
+
+            <!-- Arrow between stages -->
+            <line x1="340" y1="120" x2="380" y2="120" class="s-arrow"/>
+
+            <!-- Stage 2 -->
+            <rect x="385" y="30" width="320" height="180" class="s-fill-2"/>
+            <text x="545" y="55" class="s-text-b">Stage 2 — Instruction Tuning</text>
+
+            <text x="545" y="80" class="s-text-sm">158K GPT-4 generated instructions</text>
+
+            <!-- Components in stage 2 -->
+            <rect x="405" y="95" width="80" height="40" class="s-box" stroke-dasharray="3,2"/>
+            <text x="445" y="115" class="s-text-sm">CLIP ❄</text>
+            <text x="445" y="128" class="s-text-sm">frozen</text>
+
+            <rect x="505" y="95" width="80" height="40" class="s-fill-2"/>
+            <text x="545" y="115" class="s-text-sm">W 🔥</text>
+            <text x="545" y="128" class="s-text-sm">trained</text>
+
+            <rect x="605" y="95" width="80" height="40" class="s-fill-2"/>
+            <text x="645" y="115" class="s-text-sm">Vicuna 🔥</text>
+            <text x="645" y="128" class="s-text-sm">trained</text>
+
+            <text x="545" y="160" class="s-text-sm">goal: teach visual</text>
+            <text x="545" y="175" class="s-text-sm">instruction following</text>
+            <text x="545" y="198" class="s-text-sm">⏱ ~10 hours on 8× A100s</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — Two-stage training. Stage 1 trains only the projection matrix W on 595K caption
+            pairs, aligning vision features with the LLM's word embedding space. Stage 2 unfreezes
+            the LLM and fine-tunes both W and Vicuna on 158K instruction-following samples.</p>
+        </div>
+
+        <h3>Stage 1: feature alignment (the handshake)</h3>
+        <p>
+          Take 595K image-caption pairs from CC3M. Freeze CLIP. Freeze Vicuna. Train
+          <em>only</em> the projection matrix W. The goal: teach W to translate visual
+          features into tokens that Vicuna recognizes. Think of it as calibrating the
+          translator's phrase book.
+        </p>
+        <p>
+          This takes about <strong>4 hours on 8 A100 GPUs</strong>. That's pre-training.
+          For a multimodal model. In 4 hours.
+        </p>
+
+        <h3>Stage 2: instruction tuning (the education)</h3>
+        <p>
+          Now unfreeze Vicuna. Keep CLIP frozen (it already knows how to see). Train both
+          W and the LLM on the 158K instruction-following samples. This teaches the model
+          not just to <em>describe</em> images, but to <em>reason</em> about them, follow
+          complex instructions, and hold multi-turn conversations about visual content.
+        </p>
+        <p>
+          About <strong>10 hours on 8 A100s</strong>. Total training: 14 hours. Total cost:
+          roughly the price of a nice dinner.
+        </p>
+
+        <blockquote>
+          For comparison, training Flamingo required hundreds of TPU-days. LLaVA achieves
+          competitive visual understanding in an afternoon.
+        </blockquote>
+
+        <h2>Okay, but does it actually work?</h2>
+        <p>
+          The authors created two benchmarks to test multimodal instruction following —
+          LLaVA-Bench (COCO) and LLaVA-Bench (In-the-Wild) — and used GPT-4 itself as
+          a judge to score responses on helpfulness, relevance, accuracy, and detail.
+        </p>
+        <p>
+          The results:
+        </p>
+        <ul>
+          <li>
+            <strong>85.1% relative score vs. GPT-4</strong> on LLaVA-Bench (COCO) —
+            and this is compared against a text-only GPT-4 that gets ground-truth
+            descriptions as input
+          </li>
+          <li>
+            <strong>Crushes BLIP-2</strong> — LLaVA scores 67.3% overall on In-the-Wild
+            vs BLIP-2's 38.1% (+29 points) and OpenFlamingo's 19.1% (+48 points)
+          </li>
+          <li>
+            <strong>81.7% on complex reasoning</strong> — nearly matching GPT-4 on questions
+            requiring logical inference about visual scenes
+          </li>
+          <li>
+            <strong>92.53% SoTA on ScienceQA</strong> when combined with GPT-4 as a judge —
+            beating the previous best (MM-CoT) on this multimodal science benchmark
+          </li>
+        </ul>
+
+        <h2>The ScienceQA surprise: when two AI systems think together</h2>
+        <p>
+          The ScienceQA result deserves its own section because the method is clever.
+        </p>
+        <p>
+          LLaVA alone scores 90.92% on ScienceQA — already near SoTA. But some questions
+          don't actually need the image to answer. A text-only GPT-4, using just the question
+          text, scores 82.69%. Different strengths, different weaknesses.
+        </p>
+        <p>
+          So the authors tried something: when LLaVA and GPT-4 disagree, ask GPT-4 to
+          look at both answers and pick a final one. This "GPT-4 as judge" ensemble pushed
+          accuracy to <strong>92.53%</strong> — a new state-of-the-art.
+        </p>
+        <p>
+          A text-only model that can't see images actually <em>improved</em> performance on
+          image-based questions. It knew which questions could be solved by logic alone,
+          and corrected LLaVA's visual errors.
+        </p>
+
+        <h2>What the ablations reveal</h2>
+        <p>
+          The paper's ablation studies are unusually informative:
+        </p>
+        <ul>
+          <li>
+            <strong>Pre-training matters — a lot.</strong> Skipping Stage 1 drops ScienceQA
+            accuracy by 5.1%. The alignment step is not optional.
+          </li>
+          <li>
+            <strong>Use features <em>before</em> CLIP's last layer.</strong> The last layer
+            focuses on abstract global features; the second-to-last retains more spatial
+            detail useful for understanding scenes. +0.96% from this one change.
+          </li>
+          <li>
+            <strong>Data diversity > data volume.</strong> Using all three types of instruction
+            data (conversation + description + reasoning) beats using any subset. The 11.3-point
+            gap between "conversation only" and "full data" shows that variety is critical.
+          </li>
+          <li>
+            <strong>Scale still helps.</strong> The 13B model beats the 7B by 1.08% on ScienceQA.
+          </li>
+        </ul>
+
+        <h2>The emergent behaviors</h2>
+        <p>
+          Some of the most interesting moments aren't in the tables. They're in the examples.
+        </p>
+        <p>
+          LLaVA can identify Elon Musk — in a regular headshot <em>and</em> in a meme where
+          he's dressed as a doge — despite never seeing images of him during training. The
+          CLIP encoder must have seen him during its own pre-training, and LLaVA figured
+          out how to surface that knowledge.
+        </p>
+        <p>
+          It can read text in images (OCR), even though OCR was barely in the training data.
+          It generated working HTML/CSS/JS from a hand-drawn website sketch. It explains
+          memes with genuine understanding of the humor.
+        </p>
+        <p>
+          These aren't planned capabilities. They're emergent — they arise from the
+          combination of a strong vision encoder, a capable language model, and the right
+          training signal.
+        </p>
+
+        <h2>The honest limitations</h2>
+        <p>
+          The authors are refreshingly candid about what LLaVA gets wrong:
+        </p>
+        <ul>
+          <li>
+            <strong>Hallucination.</strong> When asked "is there strawberry-flavored yogurt in
+            the fridge?", LLaVA says yes — because the fridge has both strawberries <em>and</em>
+            yogurt, and LLaVA treats the image as a "bag of patches" instead of understanding
+            the compositional relationship.
+          </li>
+          <li>
+            <strong>Limited resolution.</strong> Fine-grained details (specific brand names,
+            small text) are hard because CLIP processes images at 224×224 pixels.
+          </li>
+          <li>
+            <strong>Knowledge gaps.</strong> Recognizing a specific restaurant requires
+            multilingual knowledge and real-world context that the model lacks.
+          </li>
+        </ul>
+
+        <h2>Why LLaVA matters beyond LLaVA</h2>
+        <p>
+          This paper didn't just build a model. It established a paradigm:
+        </p>
+        <ol>
+          <li>
+            <strong>Simple architecture + smart data beats complex architecture + dumb data.</strong>
+            One linear layer with 158K high-quality instruction samples competes with
+            elaborate multi-billion parameter bridges trained on millions of pairs.
+          </li>
+          <li>
+            <strong>You can bootstrap multimodal data from unimodal models.</strong>
+            GPT-4 never saw a single image, yet it generated training data that taught
+            another model to understand images. The data pipeline is the real innovation.
+          </li>
+          <li>
+            <strong>Multimodal instruction tuning is the key.</strong> Without it, the model
+            scores 21.5%. With it: 85.1%. The same gap that instruction tuning created
+            in text-only models exists in multimodal ones too.
+          </li>
+        </ol>
+
+        <h2>The one-paragraph version</h2>
+        <blockquote>
+          LLaVA connects a frozen CLIP vision encoder to the Vicuna language model using a
+          single trainable linear projection. It trains in two stages: first align visual
+          features to the LLM's word embedding space (4 hours), then instruction-tune on 158K
+          samples generated by GPT-4 from image captions (10 hours). Despite its simplicity,
+          LLaVA matches multimodal GPT-4 on reasoning tasks, crushes BLIP-2 and OpenFlamingo
+          on instruction following, and achieves state-of-the-art on ScienceQA. The insight:
+          you don't need a complex vision-language bridge — you need high-quality instruction data.
+        </blockquote>
+
+        <h2>The napkin takeaway</h2>
+        <p>
+          If multimodal AI is a phone call between vision and language, then:
+        </p>
+        <ul>
+          <li><strong>Flamingo</strong> = hired a professional interpreter with gated cross-attention ears</li>
+          <li><strong>BLIP-2</strong> = built an entire translation department (Q-Former) between them</li>
+          <li><strong>LLaVA</strong> = taught them a shared vocabulary with one linear layer — and it turned out they had more in common than anyone thought</li>
+        </ul>
+        <p>
+          Same phone call. Same information. Wildly different engineering.
+        </p>
+
+        <p style="margin-top:32px;font-style:italic;color:var(--faint)">
+          Paper: "Visual Instruction Tuning" — Haotian Liu, Chunyuan Li, Qingyang Wu, Yong Jae Lee.
+          UW-Madison, Microsoft Research, Columbia. NeurIPS 2023 (Oral).
+        </p>
+      </div>
+
+      <div class="post-nav">
+        <a href="flamingo-paper-juice.html">← Flamingo</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+  </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+
+    <div class="vocab-term" data-term="clip">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">CLIP</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Contrastive Language-Image Pre-training. OpenAI's model that learns to match images with text descriptions. LLaVA uses its ViT-L/14 vision encoder to convert images into feature vectors.</div>
+    </div>
+
+    <div class="vocab-term" data-term="vicuna">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Vicuna</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">An open-source chatbot fine-tuned from LLaMA on user conversations. LLaVA uses it as the language backbone because it had the best instruction-following ability among open models at the time.</div>
+    </div>
+
+    <div class="vocab-term" data-term="projection">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">linear projection</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A single matrix multiplication (Hv = W · Zv) that maps visual features into the word embedding space. No activation function, no layers — just one trainable matrix W.</div>
+    </div>
+
+    <div class="vocab-term" data-term="instruction-tuning">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">instruction tuning</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Training a model on (instruction, response) pairs so it learns to follow human commands. Turned GPT-3 into ChatGPT. LLaVA extends this idea to vision-language tasks.</div>
+    </div>
+
+    <div class="vocab-term" data-term="q-former">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Q-Former</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">BLIP-2's bridge module — a small transformer with learnable query tokens that extracts relevant visual info for the LLM. More complex than LLaVA's linear projection.</div>
+    </div>
+
+    <div class="vocab-term" data-term="lmm">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">LMM</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Large Multimodal Model. Any model that handles multiple input types (text + images, text + audio, etc.). LLaVA is an LMM that processes both visual and text inputs.</div>
+    </div>
+
+    <div class="vocab-term" data-term="feature-alignment">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">feature alignment</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">LLaVA's Stage 1 training goal: make visual features from CLIP "compatible" with Vicuna's word embeddings so the LLM treats image tokens like text tokens.</div>
+    </div>
+
+    <div class="vocab-term" data-term="cc3m">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">CC3M</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Conceptual Captions 3M — a dataset of ~3.3 million image-URL and caption pairs. LLaVA filters it down to 595K pairs for Stage 1 pre-training.</div>
+    </div>
+  </aside>
+
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    // vocab panel interactivity
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        // close all
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        // open clicked if it wasn't already open
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+</body>
+</html>

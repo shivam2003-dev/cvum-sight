@@ -16,6 +16,30 @@
 
 const POSTS = [
   {
+    slug: "ai-tools-4-claude-code",
+    title: "Claude Code — The Ultimate Guide for Developers and DevOps Engineers.",
+    date: "May 18, 2026",
+    cat: "devops",
+    tags: ["devops", "ai-tools", "claude-code", "anthropic", "terminal-agent"],
+    time: 35,
+    words: 8400,
+    excerpt: "Terminal-native, conversational, infinitely extensible. Claude Code's hooks, subagents, agent teams, MCP servers, permission modes, and the Explore→Plan→Code workflow that makes complex refactors reliable.",
+    series: "ai-tools",
+    seriesNum: "4"
+  },
+  {
+    slug: "ai-tools-3-codex",
+    title: "Codex — The Ultimate Guide for Developers and DevOps Engineers.",
+    date: "May 18, 2026",
+    cat: "devops",
+    tags: ["devops", "ai-tools", "codex", "openai", "cloud-agent"],
+    time: 30,
+    words: 7200,
+    excerpt: "Submit a task, walk away, come back to verified code with citations. OpenAI's cloud-native async agent runs in isolated sandboxes with no internet — parallel execution, AGENTS.md configuration, and the Codex CLI.",
+    series: "ai-tools",
+    seriesNum: "3"
+  },
+  {
     slug: "ai-tools-2-github-copilot",
     title: "GitHub Copilot — The Ultimate Guide for Developers and DevOps Engineers.",
     date: "May 18, 2026",

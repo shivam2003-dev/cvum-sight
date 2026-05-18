@@ -301,48 +301,206 @@ Always run the full test suite before committing.
         <h2 id="s6">6. Codex CLI — The Terminal Interface</h2>
 
         <p>
-          While Codex-in-ChatGPT is the cloud agent, <strong>Codex CLI</strong> is a lightweight open-source terminal tool that brings similar capabilities to your local environment. Think of it as a middle ground between Copilot's IDE integration and the full cloud agent.
+          Codex CLI is OpenAI's open-source coding agent you run locally from your terminal. It is <strong>not</strong> a trimmed-down version of the cloud agent — it's a full interactive AI coding environment built in Rust, available on macOS, Windows, and Linux. Source is at <a href="https://github.com/openai/codex" target="_blank">github.com/openai/codex</a>.
         </p>
+
+        <blockquote>
+          Codex CLI is included in ChatGPT Plus, Pro, Business, Edu, and Enterprise plans. No separate billing or API key is required for included plan users — sign in with your ChatGPT account.
+        </blockquote>
 
         <h3>Installation</h3>
-        <pre><code># Install via npm
+        <pre><code># npm (all platforms)
 npm install -g @openai/codex
 
-# Or use directly
-npx @openai/codex</code></pre>
+# Homebrew (macOS/Linux)
+brew install codex
+
+# Upgrade to latest
+npm i -g @openai/codex@latest</code></pre>
 
         <h3>Authentication</h3>
-        <p>
-          As of May 2026, you can sign in with your ChatGPT account directly — no need to manually generate API tokens. Plus and Pro users get free API credits ($5 and $50 respectively).
-        </p>
+        <pre><code># Browser OAuth (opens a tab)
+codex login
 
-        <h3>Usage modes</h3>
+# Device code flow (no browser)
+codex login --device-auth
+
+# API key via stdin
+printenv OPENAI_API_KEY | codex login --with-api-key
+
+# Check current auth status
+codex login status</code></pre>
+
+        <h3>Interactive mode — the full TUI</h3>
         <p>
-          Codex CLI runs locally with different levels of autonomy:
+          Running <code>codex</code> with no subcommand opens a full-screen terminal UI. The agent can inspect your repository, edit files, and run commands as you iterate together in real time.
         </p>
+        <pre><code># Open the TUI in the current directory
+codex
+
+# Start with an initial prompt
+codex "Explain this codebase to me"
+
+# Specify model upfront
+codex --model gpt-5.5
+
+# Set working directory without cd
+codex --cd apps/frontend
+
+# Grant write access to multiple roots
+codex --cd apps/frontend --add-dir ../backend --add-dir ../shared</code></pre>
+
+        <p>Inside the TUI you can:</p>
         <ul>
-          <li><strong>Suggest mode</strong> (default): Read-only. Codex proposes changes but doesn't apply them.</li>
-          <li><strong>Auto-edit mode:</strong> Codex can edit files but needs approval for commands.</li>
-          <li><strong>Full auto mode:</strong> Codex can edit files and run commands without approval.</li>
+          <li>Send prompts, code snippets, or <strong>screenshots</strong> (paste images directly into the composer).</li>
+          <li>Watch Codex explain its plan before making changes — approve or reject steps inline.</li>
+          <li>Press <kbd>Tab</kbd> while Codex is running to <strong>queue</strong> follow-up prompts, slash commands, or <code>!</code> shell commands for the next turn.</li>
+          <li>Type <code>@</code> to open a fuzzy file search and drop any file path into your message.</li>
+          <li>Prefix a line with <code>!</code> to run a local shell command directly (e.g. <code>!git log --oneline -5</code>).</li>
+          <li>Press <kbd>Ctrl+R</kbd> to search your prompt history.</li>
+          <li>Use <code>/theme</code> to preview and save syntax-highlighting themes.</li>
         </ul>
 
-        <h3>Key differences from cloud Codex</h3>
+        <h3>Approval modes</h3>
+        <p>
+          Approval modes define how much Codex can do without stopping for confirmation. Change modes mid-session with <code>/permissions</code>.
+        </p>
         <table>
           <thead>
-            <tr>
-              <th>Feature</th>
-              <th>Codex (Cloud)</th>
-              <th>Codex CLI (Local)</th>
-            </tr>
+            <tr><th>Mode</th><th>What Codex can do</th><th>When to use</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Auto</strong> (default)</td><td>Read, edit files, run commands within the working directory. Asks before touching anything outside scope or using the network.</td><td>Day-to-day coding</td></tr>
+            <tr><td><strong>Read-only</strong></td><td>Browse and explain files only. Won't make changes or run commands until you approve a plan.</td><td>Code review, exploration</td></tr>
+            <tr><td><strong>Full Access</strong></td><td>Work across your machine including network access, without asking.</td><td>Trusted repos, isolated VMs</td></tr>
+          </tbody>
+        </table>
+        <p>
+          The equivalent CLI flags are <code>--sandbox workspace-write</code> (Auto), <code>--sandbox read-only</code> (Read-only), and <code>--sandbox danger-full-access</code> (Full Access). Use <code>--ask-for-approval on-request</code> for interactive runs or <code>never</code> for non-interactive CI runs.
+        </p>
+
+        <h3>Non-interactive mode (scripting and CI)</h3>
+        <p>
+          <code>codex exec</code> (alias: <code>codex e</code>) runs Codex without any UI — streams results to stdout for use in scripts and CI pipelines.
+        </p>
+        <pre><code># Basic non-interactive run
+codex exec "fix the CI failure"
+
+# With sandbox and JSON output for scripting
+codex exec --sandbox workspace-write --json "add docstrings to src/api.py"
+
+# Pipe prompt from stdin
+echo "summarise all TODO comments" | codex exec -
+
+# CI usage: bypass prompts inside a hardened runner
+codex exec --dangerously-bypass-approvals-and-sandbox "run tests and fix failures"
+
+# Resume previous exec session
+codex exec resume --last "implement the plan you proposed"</code></pre>
+
+        <h3>Session management</h3>
+        <p>
+          Codex stores transcripts locally under <code>~/.codex/sessions/</code> so you can resume, fork, or branch conversations.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Command</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>codex resume</code></td><td>Open a picker of recent sessions and continue one.</td></tr>
+            <tr><td><code>codex resume --last</code></td><td>Jump straight to the most recent session.</td></tr>
+            <tr><td><code>codex fork --last</code></td><td>Clone the latest session into a new thread, keeping the original intact — useful for exploring an alternative approach.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Slash commands — quick reference</h3>
+        <p>
+          Type <code>/</code> in the composer to open the slash popup. These are the most useful commands:
+        </p>
+        <table>
+          <thead>
+            <tr><th>Command</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>/model</code></td><td>Switch model mid-session (e.g. gpt-5.5 → gpt-4.1-mini for fast tasks).</td></tr>
+            <tr><td><code>/plan</code></td><td>Enter plan mode — Codex proposes an execution plan before writing code.</td></tr>
+            <tr><td><code>/goal &lt;objective&gt;</code></td><td>Set a persistent goal for a long-running task (experimental; requires <code>features.goals</code>).</td></tr>
+            <tr><td><code>/init</code></td><td>Generate an AGENTS.md scaffold in the current directory.</td></tr>
+            <tr><td><code>/review</code></td><td>Run a dedicated code reviewer on your working tree — reports issues without touching files.</td></tr>
+            <tr><td><code>/diff</code></td><td>Show the full Git diff including untracked files.</td></tr>
+            <tr><td><code>/permissions</code></td><td>Switch approval mode (Auto / Read-only / Full Access) mid-session.</td></tr>
+            <tr><td><code>/compact</code></td><td>Summarise the conversation to free context window tokens.</td></tr>
+            <tr><td><code>/clear</code></td><td>Clear the terminal and start a fresh chat (unlike Ctrl+L which only clears the view).</td></tr>
+            <tr><td><code>/new</code></td><td>Start a fresh conversation in the same CLI session.</td></tr>
+            <tr><td><code>/resume</code></td><td>Reopen a saved session from the picker.</td></tr>
+            <tr><td><code>/fork</code></td><td>Branch the current conversation into a new thread.</td></tr>
+            <tr><td><code>/side</code></td><td>Start an ephemeral side conversation without disrupting the main thread.</td></tr>
+            <tr><td><code>/status</code></td><td>Show active model, approval policy, writable roots, and token usage.</td></tr>
+            <tr><td><code>/mcp</code></td><td>List configured MCP tools available in the session.</td></tr>
+            <tr><td><code>/hooks</code></td><td>Browse and manage lifecycle hooks.</td></tr>
+            <tr><td><code>/copy</code></td><td>Copy the latest completed Codex output to clipboard (also Ctrl+O).</td></tr>
+            <tr><td><code>/fast</code></td><td>Toggle Fast mode on supported models.</td></tr>
+            <tr><td><code>/agent</code></td><td>Switch between active subagent threads.</td></tr>
+            <tr><td><code>/logout</code> / <code>/quit</code></td><td>Sign out / exit the session.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Models</h3>
+        <p>
+          The recommended model is <strong>gpt-5.5</strong> for complex coding, planning, and multi-step tasks. Fall back to <strong>gpt-5.4</strong> if gpt-5.5 is unavailable. ChatGPT Pro subscribers can also access <strong>GPT-5.3-Codex-Spark</strong> (research preview) for speed-critical tasks. Switch mid-session with <code>/model</code> or set a default in <code>~/.codex/config.toml</code>.
+        </p>
+
+        <h3>Image inputs and generation</h3>
+        <p>
+          Paste screenshots directly into the TUI composer or attach them on the command line:
+        </p>
+        <pre><code>codex -i screenshot.png "what's causing this error?"
+codex --image img1.png,img2.jpg "compare these two flows"</code></pre>
+        <p>
+          Codex can also <strong>generate images</strong> (icons, banners, sprite sheets) via built-in <code>gpt-image-2</code>. Include <code>$imagegen</code> in your prompt or just ask in natural language.
+        </p>
+
+        <h3>Web search</h3>
+        <p>
+          Web search is on by default (cached mode — pre-indexed results, lower injection risk). For live results, pass <code>--search</code> or set <code>web_search = "live"</code> in config. Disable with <code>web_search = "disabled"</code>.
+        </p>
+
+        <h3>MCP and subagents</h3>
+        <p>
+          Connect Codex to external tools via MCP servers configured in <code>~/.codex/config.toml</code>. Manage them with <code>codex mcp add/list/remove</code>. Codex can also spawn <strong>subagents</strong> to parallelize tasks — each subagent does its own model and tool work inside the same session.
+        </p>
+
+        <h3>Cloud tasks from the terminal</h3>
+        <p>
+          The <code>codex cloud</code> command lets you submit and manage cloud tasks without opening ChatGPT:
+        </p>
+        <pre><code># Interactive picker for cloud tasks
+codex cloud
+
+# Submit a task directly
+codex cloud exec --env ENV_ID "add input validation to the payment API"
+
+# Best-of-3 attempts
+codex cloud exec --env ENV_ID --attempts 3 "refactor auth service"
+
+# Apply a cloud task diff locally
+codex apply TASK_ID</code></pre>
+
+        <h3>Key differences: CLI vs cloud agent</h3>
+        <table>
+          <thead>
+            <tr><th>Feature</th><th>Codex (Cloud)</th><th>Codex CLI (Local)</th></tr>
           </thead>
           <tbody>
             <tr><td>Where it runs</td><td>OpenAI cloud sandbox</td><td>Your machine</td></tr>
-            <tr><td>Internet access</td><td>Disabled</td><td>Available</td></tr>
-            <tr><td>Model</td><td>codex-1 (o3 variant)</td><td>codex-mini-latest</td></tr>
-            <tr><td>Execution style</td><td>Async (1–30 min)</td><td>Interactive/real-time</td></tr>
-            <tr><td>Parallelism</td><td>Multiple tasks at once</td><td>One task at a time</td></tr>
-            <tr><td>Access method</td><td>ChatGPT sidebar</td><td>Terminal command</td></tr>
-            <tr><td>Cost</td><td>Included in ChatGPT plan</td><td>API usage fees</td></tr>
+            <tr><td>Internet access</td><td>Disabled during task</td><td>Available (cached web search by default)</td></tr>
+            <tr><td>Model</td><td>codex-1 (cloud agent)</td><td>gpt-5.5 / gpt-5.4 (recommended)</td></tr>
+            <tr><td>Interaction style</td><td>Async — submit and check back</td><td>Interactive TUI + non-interactive exec</td></tr>
+            <tr><td>Image support</td><td>Not yet</td><td>Yes — paste or attach images</td></tr>
+            <tr><td>Session history</td><td>Task-based</td><td>Persistent, resumable, forkable</td></tr>
+            <tr><td>MCP servers</td><td>Limited</td><td>Full support via config.toml</td></tr>
+            <tr><td>Parallelism</td><td>Multiple tasks in isolated sandboxes</td><td>Subagents within a session</td></tr>
+            <tr><td>Platform</td><td>ChatGPT sidebar / cloud</td><td>macOS, Windows, Linux</td></tr>
           </tbody>
         </table>
 

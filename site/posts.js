@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "turboquant-paper-juice",
+    title: "TurboQuant — What If Compressing AI Memory Was Just a Random Spin.",
+    date: "May 20, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "quantization", "kv-cache", "vector-search"],
+    time: 15,
+    words: 3400,
+    excerpt: "Randomly rotate, then round each coordinate. TurboQuant achieves near-optimal vector quantization — within 2.7× of the theoretical limit — with zero data dependence, matching full-precision LLM quality at 3.5 bits."
+  },
+  {
     slug: "secondary-private-ips",
     title: "Secondary Private IPs — The Cloud Networking Primitive Nobody Talks About.",
     date: "May 19, 2026",

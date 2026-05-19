@@ -80,13 +80,11 @@
   document.body.appendChild(btn);
   document.body.appendChild(panel);
 
-  // shift button/panel left when fixed panels are present
+  // add class to body so CSS media queries handle responsive positioning
   if (document.querySelector('.vocab-panel')) {
-    btn.style.right = '284px';
-    panel.style.right = '284px';
+    document.body.classList.add('has-vocab');
   } else if (document.querySelector('.toc-panel')) {
-    btn.style.right = '244px';
-    panel.style.right = '244px';
+    document.body.classList.add('has-toc');
   }
 
   btn.addEventListener("click", function () {

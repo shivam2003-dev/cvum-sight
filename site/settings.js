@@ -1,12 +1,11 @@
 /* settings.js — reader settings panel (theme, font size, line width, sans toggle) */
 (function () {
   var THEMES = [
-    { id: "paper",     label: "Paper (default)" },
-    { id: "kindle",    label: "Kindle (warm sepia)" },
-    { id: "dark",      label: "Dark" },
-    { id: "midnight",  label: "Midnight (deep blue)" },
-    { id: "solarized", label: "Solarized" },
-    { id: "matcha",    label: "Matcha (green)" }
+    { id: "paper",    label: "Paper (default)" },
+    { id: "white",    label: "White (clean)" },
+    { id: "dark",     label: "Dark" },
+    { id: "midnight", label: "Midnight (deep blue)" },
+    { id: "matcha",   label: "Matcha (green)" }
   ];
   var SIZES = [
     { id: "text-sm", label: "S" },
@@ -14,14 +13,19 @@
     { id: "text-lg", label: "L" }
   ];
   var WIDTHS = [
-    { id: "lw-narrow", label: "Narrow" },
     { id: "lw-normal", label: "Normal" },
     { id: "lw-wide",   label: "Wide" }
   ];
 
   var savedTheme = localStorage.getItem("cvam-theme") || "paper";
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
-  var savedWidth = localStorage.getItem("cvam-lw")    || "lw-normal";
+  // migrate anyone who had lw-narrow stored → lw-normal
+  var savedWidth = localStorage.getItem("cvam-lw") || "lw-normal";
+  if (savedWidth === "lw-narrow") {
+    savedWidth = "lw-normal";
+    localStorage.setItem("cvam-lw", "lw-normal");
+    document.documentElement.classList.remove("lw-narrow");
+  }
 
   var btn = document.createElement("button");
   btn.className = "settings-btn";
@@ -55,13 +59,13 @@
       '<div class="theme-picker">' + themeSwatches + '</div>' +
     '</div>' +
     '<div class="settings-divider"></div>' +
-    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">' +
-      '<label>Text size</label>' +
-      '<div class="font-size-row">' + sizeBtns + '</div>' +
+    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
+      '<label class="seg-label">Text size</label>' +
+      '<div class="seg-row font-size-row">' + sizeBtns + '</div>' +
     '</div>' +
-    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:6px;">' +
-      '<label>Line width</label>' +
-      '<div class="lw-row">' + lwBtns + '</div>' +
+    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:6px;">' +
+      '<label class="seg-label">Line width</label>' +
+      '<div class="seg-row lw-row">' + lwBtns + '</div>' +
     '</div>' +
     '<div class="settings-divider"></div>' +
     '<div class="settings-row" style="margin-top:4px;">' +

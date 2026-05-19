@@ -1,8 +1,10 @@
 CLAUDE.md
 
-## SVG Diagrams — Text Color Rule
+## SVG Diagrams — Rules
 
-**Always use dark/black text in inline SVGs.** Never use light colors (`#ebe3cf`, `#948a78`, etc.) for SVG text — these are invisible on light backgrounds.
+**Font:** Always use `font-family: 'Kalam', cursive` in SVG text — never `monospace`, `serif`, or any other family. The site uses Kalam/Caveat exclusively; SVGs must match.
+
+**Text color:** Always use dark/black text fills. Never use light colors (`#ebe3cf`, `#948a78`, etc.) — they are invisible on light backgrounds.
 
 Correct palette for SVG text and strokes:
 - Body text: `fill: #1a1a1a`
@@ -13,17 +15,13 @@ Correct palette for SVG text and strokes:
 - Stroke/border: `stroke: #888880`
 - Accent stroke: `stroke: #b8860b`
 
+**Rounded corners:** `rx` does not work as a CSS property on SVG `<rect>`. Always add it as an HTML attribute directly: `<rect rx="6" .../>`. CSS `rx: 6` is ignored.
+
 ## Paper Juice Series
 
 Paper Juice posts live in `site/posts/` with `cat: "paperjuice"` in `posts.js`. They are rendered on `site/paperjuice.html` which has its own inline `<script>` (does NOT use `app.js` for grid rendering).
 
-### FlashAttention Series (4 posts)
-- `flashattention-1-paper-juice.html` → FA-1 (2022, IO-awareness, tiling)
-- `flashattention-2-paper-juice.html` → FA-2 (2023, work partitioning, Tri Dao solo)
-- `flashattention-3-paper-juice.html` → FA-3 (2024, H100, async, FP8)
-- `flashattention-4-paper-juice.html` → FA-4 (2026, Blackwell, asymmetric scaling)
 
-Each has `series: "flashattention"` and `seriesNum: "1"` through `"4"` in `posts.js`.
 
 ### When adding a new Paper Juice series:
 

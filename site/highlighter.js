@@ -42,15 +42,10 @@
       wrap.appendChild(header);
       wrap.insertAdjacentHTML('beforeend', highlighted);
 
-      // Shiki wraps in <pre><code> — make its pre fill the container
+      // Shiki wraps in <pre><code> — CSS handles sizing and scroll
       const shikiPre = wrap.querySelector('pre');
       if (shikiPre) {
-        shikiPre.style.margin = '0';
         shikiPre.style.borderRadius = '0 0 10px 10px';
-        shikiPre.style.padding = '16px 20px';
-        shikiPre.style.fontSize = '12px';
-        shikiPre.style.lineHeight = '1.6';
-        shikiPre.style.overflowX = 'auto';
       }
 
       // Copy handler

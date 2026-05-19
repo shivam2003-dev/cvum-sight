@@ -94,8 +94,8 @@
 
     var hideShare = function () { sharePopover.classList.remove('visible'); };
 
-    document.addEventListener('mouseup', function (e) {
-      if (sharePopover.contains(e.target)) return;
+    var showShare = function (targetEl) {
+      if (targetEl && sharePopover.contains(targetEl)) return;
       setTimeout(function () {
         var sel = window.getSelection();
         var text = sel && sel.toString().trim();
@@ -104,17 +104,40 @@
           var range = sel.getRangeAt(0);
           if (!postBody.contains(range.commonAncestorContainer)) { hideShare(); return; }
           var rect = range.getBoundingClientRect();
-          var left = Math.min(rect.left + window.scrollX, window.innerWidth - 210);
-          sharePopover.style.left = Math.max(8, left) + 'px';
-          sharePopover.style.top = (rect.top + window.scrollY - 50) + 'px';
+          var popW = 210;
+          var left = rect.left + window.scrollX + (rect.width / 2) - (popW / 2);
+          sharePopover.style.left = Math.max(8, Math.min(left, window.innerWidth - popW - 8)) + 'px';
+          sharePopover.style.top = (rect.top + window.scrollY - 54) + 'px';
           sharePopover.classList.add('visible');
         } catch (ex) { hideShare(); }
       }, 10);
-    });
+    };
 
+    // Desktop
+    document.addEventListener('mouseup', function (e) { showShare(e.target); });
     document.addEventListener('mousedown', function (e) {
       if (!sharePopover.contains(e.target)) hideShare();
     });
+
+    // Android / touch — selectionchange fires after user lifts finger
+    var selChangeTimer;
+    document.addEventListener('selectionchange', function () {
+      clearTimeout(selChangeTimer);
+      selChangeTimer = setTimeout(function () {
+        var sel = window.getSelection();
+        var text = sel && sel.toString().trim();
+        if (text && text.length >= 15) {
+          showShare(null);
+        } else {
+          hideShare();
+        }
+      }, 300);
+    });
+
+    document.addEventListener('touchend', function (e) {
+      if (sharePopover.contains(e.target)) return;
+      showShare(e.target);
+    }, { passive: true });
 
     document.getElementById('cvam-copy').addEventListener('click', function () {
       var text = window.getSelection().toString().trim();

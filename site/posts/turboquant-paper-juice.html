@@ -33,7 +33,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">May 20, 2026 · paperjuice · 15 min read · 3400 words</p>
+        <p class="meta">May 20, 2026 · paperjuice · 25 min read · 5800 words</p>
         <h1>TurboQuant — What If Compressing AI Memory Was Just a Random Spin.</h1>
         <div class="tag-row">
           <span class="tag fill">paperjuice</span>
@@ -67,25 +67,50 @@
 
         <h2>The problem: compression that doesn't destroy geometry.</h2>
         <p>
-          Vector quantization has been around since Shannon. The goal: take a high-dimensional
-          vector (like a 128-number embedding) and represent it with far fewer bits — while
-          keeping the important relationships intact.
+          Vector quantization has been around since Shannon's 1948 source coding theory. The
+          goal: take a high-dimensional vector (like a 1536-number embedding) and represent it
+          with far fewer bits — while keeping the important relationships intact.
         </p>
         <p>
-          "Important relationships" means two things: the vectors should look similar after
-          decompression (low MSE), and the dot products between vectors should stay accurate
-          (inner product preservation). That second one is critical — every attention layer in
-          a transformer is literally computing dot products between queries and keys.
+          "Important relationships" means two things. First, the vectors should look similar
+          after decompression — this is <strong>MSE distortion</strong>, the average squared
+          difference between original and reconstructed vectors. Second, the dot products
+          between vectors should stay accurate — this is <strong>inner product distortion</strong>.
+          That second one is critical. Every attention layer in a transformer is literally
+          computing dot products between queries and keys. Every vector database ranks results
+          by cosine similarity, which is just a normalized dot product.
+        </p>
+        <p>
+          Formally, given a quantization map $Q: \mathbb{R}^d \to \{0,1\}^B$ and its inverse
+          $Q^{-1}$, we want to minimize:
+        </p>
+        <ul>
+          <li><strong>MSE:</strong> $\mathbb{E}[\|x - Q^{-1}(Q(x))\|^2]$</li>
+          <li><strong>Inner product error:</strong> $\mathbb{E}[|\langle y, x \rangle - \langle y, Q^{-1}(Q(x)) \rangle|^2]$</li>
+        </ul>
+        <p>
+          And for inner product quantizers, we also want <strong>unbiasedness</strong>:
+          $\mathbb{E}[\langle y, Q^{-1}(Q(x)) \rangle] = \langle y, x \rangle$. The expected
+          dot product with the quantized vector should equal the true dot product.
         </p>
         <p>
           Existing methods fall into two camps. <strong>Offline methods</strong> like GPTQ and
-          AWQ study your data, compute Hessians, and calibrate quantization maps. They work
-          well but need heavy preprocessing — useless when new data streams in token by token.
-          <strong>Online methods</strong> work instantly but their compression quality is
-          suboptimal — they leave performance on the table at every bit-width.
+          AWQ study your data, compute second-order Hessian information, and calibrate quantization
+          maps. They work well but need heavy preprocessing — some even require post-processing.
+          Useless when new data streams in token by token during generation.
+          <strong>Online methods</strong> like KIVI work instantly but use simple scalar
+          quantization with suboptimal distortion bounds. They leave performance on the table at
+          every bit-width.
         </p>
         <p>
-          That's not engineering. That's picking between slow-and-good or fast-and-sloppy.
+          Then there are methods like RabitQ that project onto a grid on the unit sphere and
+          binary-search for the nearest projection — theoretically sound but computationally
+          slow, impossible to vectorize on GPUs, and practically unusable for real-time
+          applications like KV cache compression.
+        </p>
+        <p>
+          That's not engineering. That's picking between slow-and-good, fast-and-sloppy, or
+          clever-but-undeployable.
         </p>
 
         <h2>The big idea: spin your vector, then round each number.</h2>
@@ -94,20 +119,36 @@
           quantize each coordinate independently with a precomputed optimal scalar quantizer.</em>
         </p>
         <p>
-          That's it. That's the core algorithm. But why does something so simple work so well?
+          That's it. That's the core algorithm. But the reason it works requires understanding
+          three deep mathematical facts about high-dimensional geometry.
         </p>
 
         <h3>1. Random rotation makes any vector look the same.</h3>
         <p>
           Imagine you have a vector that's "spiky" — most of its energy is concentrated in a few
           coordinates. If you try to quantize each coordinate independently, the big values get
-          crushed and the small values waste their bits on near-zero numbers.
+          crushed and the small values waste their bits on near-zero numbers. Outliers ruin
+          everything.
         </p>
         <p>
-          Now multiply that vector by a random rotation matrix. The result is a vector that's
-          uniformly spread across the unit sphere. Every coordinate follows the same Beta
-          distribution (which looks like a Gaussian bell curve in high dimensions). No spikes.
-          No wasted bits. Every coordinate carries roughly the same amount of information.
+          Now multiply that vector by a random orthogonal rotation matrix $\Pi \in \mathbb{R}^{d \times d}$
+          (generated by QR-decomposing a matrix of i.i.d. Gaussian entries). The result,
+          $\Pi \cdot x$, is uniformly distributed on the unit hypersphere $\mathbb{S}^{d-1}$
+          — regardless of what $x$ looked like originally.
+        </p>
+        <p>
+          Here's the key mathematical fact. For a point uniformly distributed on
+          $\mathbb{S}^{d-1}$, each coordinate $j$ follows a scaled Beta distribution:
+        </p>
+        <p style="text-align:center;font-style:italic;margin:16px 0;">
+          $f_X(x) = \frac{\Gamma(d/2)}{\sqrt{\pi} \cdot \Gamma((d-1)/2)} \cdot (1-x^2)^{(d-3)/2}$
+          &nbsp;&nbsp; for $x \in [-1, 1]$
+        </p>
+        <p>
+          In high dimensions (and $d = 128$ or $d = 1536$ is plenty high), this Beta
+          distribution concentrates and converges to $\mathcal{N}(0, 1/d)$ — a tight Gaussian.
+          Every coordinate looks like a draw from the same narrow bell curve. No spikes. No
+          outliers. No wasted bits.
         </p>
 
         <blockquote>
@@ -117,38 +158,101 @@
 
         <!-- PLACEHOLDER: diagram showing a spiky vector before rotation and a smooth spread-out vector after rotation -->
 
-        <h3>2. Independent coordinates = embarrassingly simple quantization.</h3>
+        <h3>2. Near-independence unlocks coordinate-wise quantization.</h3>
         <p>
-          Here's the beautiful consequence. After rotation, the coordinates are nearly
-          independent in high dimensions. That means you can quantize each one separately —
-          just round it to the nearest value in a precomputed codebook — without worrying about
-          correlations between coordinates.
+          Here's the beautiful consequence that goes beyond just "same distribution." In high
+          dimensions, distinct coordinates of a randomly rotated vector become <em>nearly
+          independent</em> — not just uncorrelated, but approximately statistically independent.
+          This is a deep result from high-dimensional probability theory, stronger than what
+          mere decorrelation gives you.
         </p>
         <p>
-          The codebook itself comes from solving a 1D k-means problem (the classic Lloyd-Max
-          algorithm) against the Beta distribution. You solve this once, store the centroids, and
-          reuse them forever. No per-data calibration. No learning. No gradient descent.
+          Why does this matter? Because if coordinates are independent, the <em>optimal</em>
+          vector quantizer decomposes into $d$ independent scalar quantizers. You don't need
+          to jointly optimize how you round 1536 numbers — you can round each one separately,
+          using the same codebook, and the total error is just the sum of individual errors.
         </p>
         <p>
-          To dequantize, you look up the centroids and reverse-rotate. Done.
+          The codebook itself comes from solving a continuous 1D k-means problem against the
+          known Beta distribution $f_X$:
+        </p>
+        <p style="text-align:center;font-style:italic;margin:16px 0;">
+          $\mathcal{C}(f_X, b) = \min_{c_1 \leq \cdots \leq c_{2^b}} \sum_{i=1}^{2^b} \int |x - c_i|^2 \cdot f_X(x) \, dx$
+        </p>
+        <p>
+          This is the classic Lloyd-Max optimization. You solve it numerically once for each
+          bit-width $b$, store the resulting centroids, and reuse them forever. For example, at
+          $b = 1$ with large $d$, the optimal centroids are $\{\pm\sqrt{2/\pi d}\}$. At $b = 2$,
+          they're $\{\pm 0.453/\sqrt{d}, \pm 1.51/\sqrt{d}\}$.
+        </p>
+        <p>
+          To dequantize, you look up the centroids from the stored indices, reconstruct the
+          rotated vector, then multiply by $\Pi^\top$ (the inverse rotation) to get back to the
+          original coordinate system.
         </p>
 
-        <h3>3. Two-stage trick for unbiased inner products.</h3>
+        <h3>3. Why MSE quantizers lie about inner products.</h3>
         <p>
-          Here's where the paper gets clever. MSE-optimal quantization — the kind that minimizes
-          reconstruction error — introduces <em>bias</em> when you use the quantized vectors for
-          dot products. At low bit-widths, this bias is significant.
+          Here's where most quantization papers stop. But TurboQuant goes further, and this
+          section is why.
         </p>
         <p>
-          TurboQuant's fix: a two-stage pipeline. First, apply the MSE quantizer with one fewer
-          bit than your budget. Then take the residual (the error between original and quantized
-          vector), and compress <em>that</em> with a 1-bit quantizer called QJL (Quantized
-          Johnson-Lindenstrauss transform).
+          At $b = 1$ (one bit per coordinate), the MSE-optimal quantizer boils down to:
+          $Q_\text{mse}(x) = \text{sign}(\Pi \cdot x)$. The dequantized version is
+          $\frac{\sqrt{2/\pi d}} \cdot \Pi^\top \cdot \text{sign}(\Pi \cdot x)$.
         </p>
         <p>
-          The QJL part is provably unbiased for inner products. So the combination gives you:
-          MSE-optimal compression from stage one, plus unbiased inner product estimation from
-          stage two. Both for the price of one extra bit per coordinate.
+          Check if the inner product is unbiased:
+        </p>
+        <p style="text-align:center;font-style:italic;margin:16px 0;">
+          $\mathbb{E}[\langle y, Q^{-1}_\text{mse}(Q_\text{mse}(x)) \rangle] = \frac{2}{\pi} \cdot \langle y, x \rangle$
+        </p>
+        <p>
+          That factor of $2/\pi \approx 0.637$ means every inner product is systematically
+          underestimated by 36%. That's not noise — it's <em>bias</em>. And bias doesn't average
+          out. If you use these quantized vectors for attention scores or nearest neighbor
+          ranking, you'll get systematically wrong results.
+        </p>
+        <p>
+          At higher bit-widths ($b = 2, 3, 4$), the bias shrinks but never fully disappears.
+          The fundamental issue: MSE quantizers are designed to minimize reconstruction error,
+          not to preserve dot products. These are different objectives.
+        </p>
+
+        <h3>4. The two-stage fix: MSE + QJL residual.</h3>
+        <p>
+          TurboQuant's inner product variant ($Q_\text{prod}$) solves this with an elegant
+          two-stage composition:
+        </p>
+        <p>
+          <strong>Stage 1:</strong> Apply $Q_\text{mse}$ with bit-width $b - 1$ (one bit fewer
+          than the target budget). This gives you a reconstructed vector $\tilde{x}_\text{mse}$
+          that's close to $x$ in MSE, and a residual $r = x - \tilde{x}_\text{mse}$ that has
+          small $L_2$ norm.
+        </p>
+        <p>
+          <strong>Stage 2:</strong> Apply the QJL (Quantized Johnson-Lindenstrauss) transform to
+          the residual: $\text{sign}(S \cdot r/\|r\|)$ where $S$ is a random Gaussian matrix.
+          Store the sign vector (1 bit per coordinate) and the scalar $\gamma = \|r\|_2$.
+        </p>
+        <p>
+          The final inner product estimate combines both stages:
+        </p>
+        <p style="text-align:center;font-style:italic;margin:16px 0;">
+          $\langle y, \tilde{x}_\text{mse} \rangle + \gamma \cdot \langle y, Q^{-1}_\text{qjl}(Q_\text{qjl}(r/\gamma)) \rangle$
+        </p>
+        <p>
+          The QJL estimator is provably unbiased: $\mathbb{E}[\langle y, Q^{-1}_\text{qjl}(Q_\text{qjl}(r)) \rangle] = \langle y, r \rangle$.
+          So the total estimate is unbiased too — by the law of total expectation:
+        </p>
+        <p style="text-align:center;font-style:italic;margin:16px 0;">
+          $\mathbb{E}[\langle y, \tilde{x} \rangle] = \langle y, \tilde{x}_\text{mse} \rangle + \langle y, r \rangle = \langle y, x \rangle$ ✓
+        </p>
+        <p>
+          The variance of the inner product error is bounded by $\frac{\pi}{2d} \|y\|^2 \cdot D_\text{mse}$,
+          where $D_\text{mse}$ is the MSE distortion from Stage 1. Because Stage 1 does most
+          of the heavy lifting (shrinking the residual), the QJL correction only needs to handle
+          a small residual — keeping variance low.
         </p>
 
         <blockquote>
@@ -159,57 +263,318 @@
         <!-- PLACEHOLDER: pipeline diagram showing vector → random rotation → scalar quantize → residual → QJL 1-bit → final output -->
 
         <h2>The method: step by step.</h2>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .box { fill: #2a2620; stroke: #948a78; stroke-width: 1.5; rx: 6; }
+              .box-accent { fill: #c96442; stroke: none; rx: 6; }
+              .box-yellow { fill: #f0c040; stroke: none; rx: 6; }
+              .label { font-family: monospace; font-size: 11px; fill: #ebe3cf; text-anchor: middle; }
+              .label-dark { font-family: monospace; font-size: 11px; fill: #2a2620; text-anchor: middle; }
+              .label-sm { font-family: monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .arrow { stroke: #948a78; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+              .arrow-accent { stroke: #c96442; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead-accent); }
+              .brace { stroke: #948a78; stroke-width: 1; fill: none; stroke-dasharray: 4,3; }
+            </style>
+            <defs>
+              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#948a78"/>
+              </marker>
+              <marker id="arrowhead-accent" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#c96442"/>
+              </marker>
+            </defs>
+
+            <!-- Row 1: MSE pipeline -->
+            <text x="350" y="20" class="label-sm" style="font-size:12px;fill:#ebe3cf;">TurboQuant<tspan style="font-size:9px;baseline-shift:sub;">mse</tspan> — MSE-optimal quantization</text>
+
+            <rect x="20" y="35" width="90" height="40" class="box"/>
+            <text x="65" y="58" class="label">x ∈ ℝᵈ</text>
+            <text x="65" y="70" class="label-sm">input</text>
+
+            <line x1="110" y1="55" x2="140" y2="55" class="arrow"/>
+
+            <rect x="140" y="35" width="100" height="40" class="box-accent"/>
+            <text x="190" y="58" class="label" style="fill:#ebe3cf;">Π · x</text>
+            <text x="190" y="70" class="label-sm" style="fill:#ebe3cf;">random rotate</text>
+
+            <line x1="240" y1="55" x2="270" y2="55" class="arrow"/>
+
+            <rect x="270" y="35" width="120" height="40" class="box"/>
+            <text x="330" y="58" class="label">scalar quantize</text>
+            <text x="330" y="70" class="label-sm">nearest centroid</text>
+
+            <line x1="390" y1="55" x2="420" y2="55" class="arrow"/>
+
+            <rect x="420" y="35" width="100" height="40" class="box"/>
+            <text x="470" y="58" class="label">idx ∈ [2ᵇ]ᵈ</text>
+            <text x="470" y="70" class="label-sm">b bits/coord</text>
+
+            <line x1="520" y1="55" x2="550" y2="55" class="arrow"/>
+
+            <rect x="550" y="35" width="120" height="40" class="box-accent"/>
+            <text x="610" y="58" class="label" style="fill:#ebe3cf;">Πᵀ · lookup</text>
+            <text x="610" y="70" class="label-sm" style="fill:#ebe3cf;">dequantize</text>
+
+            <!-- Row 2: Inner product pipeline -->
+            <text x="350" y="120" class="label-sm" style="font-size:12px;fill:#ebe3cf;">TurboQuant<tspan style="font-size:9px;baseline-shift:sub;">prod</tspan> — unbiased inner product</text>
+
+            <rect x="20" y="135" width="90" height="40" class="box"/>
+            <text x="65" y="158" class="label">x ∈ ℝᵈ</text>
+
+            <line x1="110" y1="155" x2="140" y2="155" class="arrow"/>
+
+            <rect x="140" y="135" width="120" height="40" class="box-accent"/>
+            <text x="200" y="153" class="label" style="fill:#ebe3cf;">Q<tspan style="font-size:9px;baseline-shift:sub;">mse</tspan>(x)</text>
+            <text x="200" y="167" class="label-sm" style="fill:#ebe3cf;">bit-width b−1</text>
+
+            <line x1="260" y1="155" x2="290" y2="155" class="arrow"/>
+
+            <rect x="290" y="135" width="120" height="40" class="box"/>
+            <text x="350" y="153" class="label">r = x − x̃</text>
+            <text x="350" y="167" class="label-sm">residual</text>
+
+            <line x1="410" y1="155" x2="440" y2="155" class="arrow"/>
+
+            <rect x="440" y="135" width="100" height="40" class="box-yellow"/>
+            <text x="490" y="153" class="label-dark">QJL(r)</text>
+            <text x="490" y="167" class="label-sm" style="fill:#2a2620;">1-bit sign</text>
+
+            <line x1="540" y1="155" x2="570" y2="155" class="arrow"/>
+
+            <rect x="570" y="135" width="110" height="40" class="box"/>
+            <text x="625" y="153" class="label">x̃ + γ·QJL⁻¹</text>
+            <text x="625" y="167" class="label-sm">unbiased</text>
+
+            <!-- Row 3: Distortion bounds table -->
+            <text x="350" y="210" class="label-sm" style="font-size:12px;fill:#ebe3cf;">distortion bounds by bit-width</text>
+
+            <rect x="70" y="222" width="560" height="80" class="box" style="stroke-dasharray:4,3;"/>
+
+            <!-- Table header -->
+            <text x="150" y="242" class="label-sm" style="font-size:10px;fill:#f0c040;">bit-width b</text>
+            <text x="270" y="242" class="label-sm" style="font-size:10px;fill:#f0c040;">1</text>
+            <text x="350" y="242" class="label-sm" style="font-size:10px;fill:#f0c040;">2</text>
+            <text x="430" y="242" class="label-sm" style="font-size:10px;fill:#f0c040;">3</text>
+            <text x="510" y="242" class="label-sm" style="font-size:10px;fill:#f0c040;">4</text>
+
+            <!-- MSE row -->
+            <text x="150" y="262" class="label-sm" style="font-size:10px;">D_mse</text>
+            <text x="270" y="262" class="label" style="font-size:10px;">0.360</text>
+            <text x="350" y="262" class="label" style="font-size:10px;">0.117</text>
+            <text x="430" y="262" class="label" style="font-size:10px;">0.030</text>
+            <text x="510" y="262" class="label" style="font-size:10px;">0.009</text>
+
+            <!-- Inner product row -->
+            <text x="150" y="280" class="label-sm" style="font-size:10px;">D_prod · d</text>
+            <text x="270" y="280" class="label" style="font-size:10px;">1.570</text>
+            <text x="350" y="280" class="label" style="font-size:10px;">0.560</text>
+            <text x="430" y="280" class="label" style="font-size:10px;">0.180</text>
+            <text x="510" y="280" class="label" style="font-size:10px;">0.047</text>
+
+            <!-- Lower bound row -->
+            <text x="150" y="296" class="label-sm" style="font-size:10px;fill:#c96442;">lower bound</text>
+            <text x="270" y="296" class="label" style="font-size:10px;fill:#c96442;">0.250</text>
+            <text x="350" y="296" class="label" style="font-size:10px;fill:#c96442;">0.063</text>
+            <text x="430" y="296" class="label" style="font-size:10px;fill:#c96442;">0.016</text>
+            <text x="510" y="296" class="label" style="font-size:10px;fill:#c96442;">0.004</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — TurboQuant pipeline: MSE-optimal (top), inner-product-optimal (middle), and distortion bounds vs. information-theoretic lower bounds (bottom).</p>
+        </div>
+
         <p>
           Here's the full TurboQuant pipeline, broken down:
         </p>
         <ol>
-          <li><strong>Normalize</strong> the input vector to unit length. Store the norm separately.</li>
-          <li><strong>Randomly rotate</strong> using a shared rotation matrix (generated once via QR decomposition of a random Gaussian matrix).</li>
-          <li><strong>Quantize each coordinate</strong> independently: find the nearest centroid in the precomputed codebook. Store the index (b bits per coordinate).</li>
-          <li><strong>(For inner product mode)</strong> Compute the residual, apply QJL (a 1-bit sign-based sketch), and store the sign vector.</li>
-          <li><strong>Dequantize</strong>: look up centroids, reverse-rotate, rescale by stored norm.</li>
+          <li><strong>Normalize</strong> the input vector to unit length $\|x\| = 1$. Store the norm separately in floating point — this is a standard trick, not restrictive.</li>
+          <li><strong>Randomly rotate</strong> using a shared rotation matrix $\Pi$ (generated once via QR decomposition of a random Gaussian matrix). This is a single matrix-vector multiply.</li>
+          <li><strong>Quantize each coordinate</strong> independently: find the nearest centroid in the precomputed codebook. Store the index ($b$ bits per coordinate). This is a table lookup — no search, no iteration.</li>
+          <li><strong>(For inner product mode only)</strong> Compute the residual $r = x - \tilde{x}_\text{mse}$, apply QJL (multiply by random matrix $S$, take signs), and store the sign vector (1 bit/coord) plus $\gamma = \|r\|_2$.</li>
+          <li><strong>Dequantize</strong>: look up centroids from indices, multiply by $\Pi^\top$ (reverse rotation), rescale by stored norm.</li>
         </ol>
         <p>
           Every step is a matrix multiply or a table lookup. No loops over data. No iterative
-          optimization. Fully vectorizable on GPUs. The paper calls it "data-oblivious" — it
-          doesn't need to see your data before compressing it.
+          optimization. Fully vectorizable on GPUs — the entire quantization is a GEMM (general
+          matrix multiply) followed by a nearest-neighbor lookup in a table of $2^b$ entries.
+          The paper calls this "data-oblivious" — it doesn't need to see your data before
+          compressing it.
         </p>
+
+        <h2>The theoretical guarantee: within 2.7× of perfection.</h2>
+        <p>
+          This is where TurboQuant separates itself from "works well in practice" methods. The
+          authors don't just test it — they <em>prove</em> exactly how close it is to the best
+          possible quantizer, and they prove that floor exists.
+        </p>
+
+        <h3>The upper bound (what TurboQuant achieves).</h3>
+        <p>
+          For any unit vector $x$ and any bit-width $b \geq 1$:
+        </p>
+        <p style="text-align:center;font-style:italic;margin:16px 0;">
+          $D_\text{mse} \leq \frac{3\sqrt{\pi}}{2} \cdot \frac{1}{4^b}$
+        </p>
+        <p>
+          The proof is elegant. Since $\Pi$ is orthogonal, $\|x - \tilde{x}\|^2 = \|\Pi x - \tilde{y}\|^2$.
+          Each coordinate of $\Pi x$ follows the same Beta distribution and they're nearly
+          independent. So the total MSE is $d$ times the optimal scalar quantization cost
+          $\mathcal{C}(f_X, b)$. For high bit-widths, the Panter-Dite formula gives
+          $\mathcal{C}(f_X, b) \leq \frac{3\sqrt{\pi}}{2d} \cdot \frac{1}{4^b}$.
+          For low bit-widths ($b = 1, 2, 3, 4$), you solve the Lloyd-Max problem numerically
+          and get tighter constants: $0.36, 0.117, 0.03, 0.009$.
+        </p>
+
+        <h3>The lower bound (what no algorithm can beat).</h3>
+        <p>
+          The proof uses two heavyweight tools. First, <strong>Yao's minimax principle</strong>:
+          the worst-case expected error for a randomized quantizer equals the expected error of
+          the best deterministic quantizer against the hardest input distribution. This lets them
+          switch from "for all inputs" to "against uniform inputs on the sphere."
+        </p>
+        <p>
+          Second, <strong>Shannon's lower bound (SLB)</strong>: for any source with differential
+          entropy $h(x)$ compressed to $B$ bits, the distortion must satisfy:
+        </p>
+        <p style="text-align:center;font-style:italic;margin:16px 0;">
+          $D(B) \geq \frac{d}{2\pi e} \cdot 2^{(2/d)(h(x) - B)}$
+        </p>
+        <p>
+          For uniform distribution on $\mathbb{S}^{d-1}$, the entropy is $\log_2 A_d$ (the
+          surface area of the hypersphere). Plugging this in and applying Stirling's
+          approximation to the Gamma function gives:
+        </p>
+        <p style="text-align:center;font-style:italic;margin:16px 0;">
+          $D_\text{mse} \geq \frac{1}{4^b}$
+        </p>
+        <p>
+          Compare: TurboQuant achieves $\frac{3\sqrt{\pi}}{2} \cdot \frac{1}{4^b}$ vs. the
+          absolute floor of $\frac{1}{4^b}$. The ratio is $\frac{3\sqrt{\pi}}{2} \approx 2.66$.
+          At $b = 1$, the actual gap is even tighter — TurboQuant achieves $0.36$ vs. the lower
+          bound of $0.25$, a factor of only $1.44$.
+        </p>
+
+        <blockquote>
+          No algorithm — no matter how clever, how much data it sees, how long it runs — can
+          beat TurboQuant by more than 2.7×. And TurboQuant runs in microseconds with zero
+          data dependence.
+        </blockquote>
 
         <h2>The results: quality neutrality at 3.5 bits.</h2>
         <p>
-          This is where TurboQuant stops being elegant math and starts being practical.
-        </p>
-        <ul>
-          <li><strong>Needle-in-a-Haystack test:</strong> TurboQuant at 4× compression scores <strong>0.997</strong> — identical to the full-precision model (also 0.997). SnapKV scores 0.858. KIVI scores 0.981.</li>
-          <li><strong>LongBench generation:</strong> At 3.5 bits per channel, TurboQuant achieves <strong>"absolute quality neutrality"</strong> — performance indistinguishable from the uncompressed model.</li>
-          <li><strong>At 2.5 bits:</strong> Only <strong>marginal degradation</strong> while compressing by more than <strong>4.5×</strong>.</li>
-          <li><strong>Nearest neighbor search:</strong> TurboQuant outperforms Product Quantization in recall across all dimensions (200, 1536, 3072) — and here's the kicker — with <strong>indexing time near zero</strong>.</li>
-        </ul>
-        <p>
-          Read that last point again. Product Quantization takes 240 seconds to index 100K
-          vectors in 1536 dimensions. RabitQ takes 2,268 seconds. TurboQuant? <strong>0.0013
-          seconds.</strong> That's not a typo. Five orders of magnitude faster.
+          Enough theory. Does it actually work on real models?
         </p>
 
-        <h2>The surprise: it's provably close to the theoretical limit.</h2>
+        <h3>Needle-in-a-Haystack: perfect retrieval at 4× compression.</h3>
         <p>
-          Here's something I didn't expect from a method this simple.
+          The Needle-in-a-Haystack test hides a specific sentence inside a long document (4K to
+          104K tokens) and checks if the model can find it. It's the gold standard for testing
+          whether KV cache compression destroys the model's ability to attend to distant tokens.
         </p>
         <p>
-          The authors prove an information-theoretic lower bound on the best distortion any
-          quantizer can achieve — using Shannon's source coding theory and Yao's minimax
-          principle. Then they show TurboQuant's distortion is within a factor of
-          <strong>≈ 2.7×</strong> of this absolute floor. At 1-bit width, the gap shrinks to
-          just <strong>1.45×</strong>.
+          Results on Llama-3.1-8B-Instruct with a memory compression ratio of 0.25 (only 25%
+          of the full KV cache):
+        </p>
+        <ul>
+          <li><strong>Full precision:</strong> 0.997 recall</li>
+          <li><strong>TurboQuant:</strong> <strong>0.997</strong> — identical</li>
+          <li>PolarQuant: 0.995</li>
+          <li>KIVI: 0.981</li>
+          <li>PyramidKV: 0.895</li>
+          <li>SnapKV: 0.858</li>
+        </ul>
+        <p>
+          TurboQuant doesn't just beat the baselines — it matches full precision exactly. Token
+          pruning methods (SnapKV, PyramidKV) and simple scalar quantization (KIVI) all lose
+          information. TurboQuant and PolarQuant, both with theoretical guarantees, are the only
+          ones that preserve it.
+        </p>
+
+        <h3>LongBench-E: the full downstream evaluation.</h3>
+        <p>
+          LongBench-E covers single-document QA, multi-document QA, summarization, few-shot
+          learning, synthetic tasks, and code completion. Tested on both Llama-3.1-8B-Instruct
+          and Ministral-7B-Instruct.
         </p>
         <p>
-          For context: this means no algorithm — no matter how clever, how much data it sees,
-          how long it runs — can be more than 2.7× better than TurboQuant at any bit-width.
-          And TurboQuant runs in microseconds with zero data dependence.
+          Key detail most papers skip: unlike KIVI and PolarQuant, which leave generated tokens
+          unquantized, <strong>TurboQuant quantizes even during streaming generation</strong>.
+          It's truly online — no special treatment for new tokens.
         </p>
         <p>
-          The math community calls this "near-optimal." I'd call it "suspiciously close to
-          perfect for something that's basically just random rotation plus rounding."
+          The outlier handling strategy: split channels into outlier and non-outlier sets. For
+          the 2.5-bit configuration: 32 outlier channels get 3 bits, the remaining 96 channels
+          get 2 bits → effective precision of $(32 \times 3 + 96 \times 2)/128 = 2.5$ bits.
+          For 3.5-bit, a different ratio achieves higher effective precision.
+        </p>
+        <p>
+          At <strong>3.5 bits</strong>: absolute quality neutrality — indistinguishable from
+          uncompressed on every task category. At <strong>2.5 bits</strong>: marginal degradation
+          while achieving <strong>&gt;4.5× compression</strong>. Both configurations outperform
+          KIVI (at 2-bit and 4-bit) and PolarQuant.
+        </p>
+
+        <h3>Nearest neighbor search: five orders of magnitude faster indexing.</h3>
+        <p>
+          For vector database applications, TurboQuant was tested on OpenAI embeddings
+          (1536-d and 3072-d) and GloVe embeddings (200-d). The metric: recall@k — how often
+          the true top-1 nearest neighbor appears in the top-k results from quantized search.
+        </p>
+        <p>
+          <strong>Quantization time for 100K vectors at 4-bit, d=1536:</strong>
+        </p>
+        <ul>
+          <li>Product Quantization: <strong>239.75 seconds</strong> (k-means codebook training)</li>
+          <li>RabitQ: <strong>2267.59 seconds</strong> (grid projection + binary search)</li>
+          <li>TurboQuant: <strong>0.0013 seconds</strong></li>
+        </ul>
+        <p>
+          Read that again. Product Quantization needs 4 minutes. RabitQ needs 38 minutes.
+          TurboQuant needs 1.3 milliseconds. That's not an improvement — that's a different
+          universe.
+        </p>
+        <p>
+          And TurboQuant doesn't sacrifice recall for speed. Across all three dimensionalities,
+          it consistently matches or outperforms PQ in recall — despite PQ having the advantage
+          of training on the exact same dataset it's evaluated on. TurboQuant has never seen the
+          data.
+        </p>
+
+        <h3>Empirical distortion validation.</h3>
+        <p>
+          On the DBpedia dataset (1536-d OpenAI embeddings), the measured distortion closely
+          matches the theoretical predictions. The inner product error for $Q_\text{prod}$
+          remains constant regardless of the actual inner product value — confirming
+          unbiasedness. In contrast, $Q_\text{mse}$'s inner product error increases with the
+          true inner product magnitude — confirming the bias analysis from the theory section.
+        </p>
+        <p>
+          At higher bit-widths, $Q_\text{mse}$'s bias shrinks enough that it eventually
+          outperforms $Q_\text{prod}$ for inner products. The crossover happens around $b = 3$.
+          This is exactly what the theory predicts.
+        </p>
+
+        <h2>The surprise: a trick hidden in the entropy.</h2>
+        <p>
+          Here's something buried in Section 3.1 that the paper doesn't make a big deal about
+          but I think is fascinating.
+        </p>
+        <p>
+          After quantization, the codebook indices aren't uniformly distributed — some centroids
+          are hit more often than others (because the Beta distribution isn't uniform). You can
+          compute the exact probability of each index: $p_\ell = \int f_X(x) \, dx$ over the
+          corresponding Voronoi cell.
+        </p>
+        <p>
+          This means you could apply entropy coding (Huffman or arithmetic coding) to the
+          indices and get <strong>free compression</strong> — reducing the average bit-width
+          without any additional distortion. At $b = 4$, the entropy is approximately 3.8 bits
+          — a 5% reduction for free.
+        </p>
+        <p>
+          The authors chose <em>not</em> to do this, prioritizing simplicity and speed. But the
+          option is there. If you're storage-constrained rather than compute-constrained, you
+          could squeeze out another 5% without touching the algorithm's core.
         </p>
 
         <h2>Why should you care?</h2>
@@ -217,29 +582,35 @@
           <li>
             <strong>Longer conversations, less memory.</strong> If you're serving LLMs with long
             context windows, TurboQuant lets you compress the KV cache by 4.5× with negligible
-            quality loss. That's the difference between running on one GPU and needing two.
+            quality loss. For Llama-3.1-8B with 128K context, that could save gigabytes of HBM
+            per request. That's the difference between running on one GPU and needing two.
           </li>
           <li>
-            <strong>Vector search gets free compression.</strong> For RAG pipelines and vector
-            databases, TurboQuant replaces Product Quantization with better recall and
-            essentially zero indexing time. No codebook training. No k-means. Just rotate and round.
+            <strong>Vector search gets instant compression.</strong> For RAG pipelines and vector
+            databases (Pinecone, Qdrant, pgvector), TurboQuant replaces Product Quantization with
+            better recall and indexing in milliseconds instead of minutes. No codebook training.
+            No k-means. New vectors are quantized the instant they arrive — perfect for dynamic
+            collections.
           </li>
           <li>
-            <strong>Online quantization is now solved.</strong> TurboQuant works on streaming data —
-            each vector is compressed independently the moment it arrives. No calibration sets, no
-            offline preprocessing, no second pass over the data.
+            <strong>Theoretical soundness matters.</strong> Unlike heuristic quantization methods
+            that "seem to work" on benchmarks, TurboQuant comes with proven distortion bounds.
+            You know in advance — mathematically — how much error you'll get at any bit-width.
+            No surprises in production. No "works on my benchmark but fails on your data."
           </li>
         </ol>
 
         <h2>The one-paragraph version.</h2>
         <blockquote>
           TurboQuant compresses high-dimensional vectors by randomly rotating them (so every
-          coordinate follows the same known distribution), then applying precomputed optimal
-          scalar quantizers to each coordinate independently. For inner product tasks, it adds
-          a 1-bit correction on the residual to remove bias. The result is a data-oblivious,
-          online, GPU-friendly quantizer that achieves near-optimal distortion at every bit-width —
-          within 2.7× of the information-theoretic lower bound — while matching full-precision
-          LLM performance at just 3.5 bits per channel.
+          coordinate follows the same known Beta distribution), then applying precomputed optimal
+          Lloyd-Max scalar quantizers to each coordinate independently. For inner product tasks,
+          it uses one fewer bit for MSE quantization and spends the last bit on a QJL correction
+          of the residual, making the estimator unbiased. The result is a data-oblivious, online,
+          GPU-friendly quantizer that achieves near-optimal distortion at every bit-width — within
+          2.7× of Shannon's information-theoretic lower bound — while matching full-precision LLM
+          performance at 3.5 bits and reducing vector database indexing time by five orders of
+          magnitude.
         </blockquote>
 
         <h2>The napkin takeaway.</h2>
@@ -339,6 +710,38 @@
         <span class="vocab-term-arrow">▶</span>
       </div>
       <div class="vocab-term-def">A theoretical floor on how much distortion any compression scheme must introduce for a given bit budget. Derived from information theory. No algorithm can beat it — only approach it.</div>
+    </div>
+
+    <div class="vocab-term" data-term="yao-minimax">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Yao's minimax principle</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A technique that converts "worst-case for randomized algorithms" problems into "average-case for deterministic algorithms" problems. Makes proving lower bounds tractable by letting you pick the hardest input distribution.</div>
+    </div>
+
+    <div class="vocab-term" data-term="panter-dite">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Panter-Dite formula</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A 1951 high-resolution approximation for the distortion of an optimal fixed-rate scalar quantizer. Gives a closed-form upper bound on quantization error as a function of the source distribution and bit-width.</div>
+    </div>
+
+    <div class="vocab-term" data-term="voronoi">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Voronoi tessellation</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A partition of space where each region contains all points closest to a given centroid. In scalar quantization, boundaries are midpoints between consecutive centroids. The "nearest centroid" step is a Voronoi assignment.</div>
+    </div>
+
+    <div class="vocab-term" data-term="entropy-coding">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">entropy coding</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Lossless compression that assigns shorter codes to more frequent symbols. Huffman and arithmetic coding are examples. Can squeeze out extra bits when quantized indices aren't uniformly distributed.</div>
     </div>
   </aside>
 

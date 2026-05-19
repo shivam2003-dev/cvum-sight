@@ -21,8 +21,8 @@ const POSTS = [
     date: "May 20, 2026",
     cat: "paperjuice",
     tags: ["paperjuice", "ml", "quantization", "kv-cache", "vector-search"],
-    time: 15,
-    words: 3400,
+    time: 25,
+    words: 5800,
     excerpt: "Randomly rotate, then round each coordinate. TurboQuant achieves near-optimal vector quantization — within 2.7× of the theoretical limit — with zero data dependence, matching full-precision LLM quality at 3.5 bits."
   },
   {

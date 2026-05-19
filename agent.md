@@ -1,5 +1,18 @@
 CLAUDE.md
 
+## SVG Diagrams — Text Color Rule
+
+**Always use dark/black text in inline SVGs.** Never use light colors (`#ebe3cf`, `#948a78`, etc.) for SVG text — these are invisible on light backgrounds.
+
+Correct palette for SVG text and strokes:
+- Body text: `fill: #1a1a1a`
+- Secondary/small text: `fill: #444444`
+- Dimmed/footnote text: `fill: #555555`
+- Accent text (highlights): `fill: #b8860b`
+- Box fills: `fill: #f5f5f0` (neutral) or `fill: #fffdf0` (accent/highlighted)
+- Stroke/border: `stroke: #888880`
+- Accent stroke: `stroke: #b8860b`
+
 ## Paper Juice Series
 
 Paper Juice posts live in `site/posts/` with `cat: "paperjuice"` in `posts.js`. They are rendered on `site/paperjuice.html` which has its own inline `<script>` (does NOT use `app.js` for grid rendering).

@@ -135,29 +135,7 @@
   }
 
   // ─────────────────────────────────────────────
-  // 5. FOCUS MODE
-  // ─────────────────────────────────────────────
-  var focusBtn = document.createElement('button');
-  focusBtn.className = 'focus-btn';
-  focusBtn.setAttribute('aria-label', 'Toggle focus mode');
-  focusBtn.title = 'Focus mode (F)';
-  focusBtn.innerHTML = '⊞';
-  document.body.appendChild(focusBtn);
-
-  var focusActive = localStorage.getItem('cvam-focus') === '1';
-  function applyFocus(on) {
-    focusActive = on;
-    document.body.classList.toggle('focus-mode', on);
-    focusBtn.innerHTML = on ? '⊟' : '⊞';
-    focusBtn.classList.toggle('active', on);
-    localStorage.setItem('cvam-focus', on ? '1' : '0');
-  }
-  if (focusActive) applyFocus(true);
-
-  focusBtn.addEventListener('click', function () { applyFocus(!focusActive); });
-
-  // ─────────────────────────────────────────────
-  // 6. KEYBOARD SHORTCUTS
+  // 5. KEYBOARD SHORTCUTS
   // ─────────────────────────────────────────────
   var kbOverlay = document.createElement('div');
   kbOverlay.className = 'kb-overlay';
@@ -166,7 +144,6 @@
       '<p class="kb-title">// keyboard shortcuts</p>' +
       '<div class="kb-grid">' +
         '<kbd>T</kbd><span>Open theme picker</span>' +
-        '<kbd>F</kbd><span>Toggle focus mode</span>' +
         '<kbd>+</kbd><span>Larger text</span>' +
         '<kbd>−</kbd><span>Smaller text</span>' +
         '<kbd>Alt ↑</kbd><span>Scroll to top</span>' +
@@ -188,9 +165,6 @@
       case 't': case 'T':
         var panel = document.querySelector('.settings-panel');
         if (panel) panel.classList.toggle('open');
-        break;
-      case 'f': case 'F':
-        applyFocus(!focusActive);
         break;
       case '+': case '=':
         cycleSize(1); break;

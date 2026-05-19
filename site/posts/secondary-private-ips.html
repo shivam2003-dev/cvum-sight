@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Secondary Private IPs — The Cloud Networking Primitive Nobody Talks About. — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=2">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">May 19, 2026 · devops · 28 min read · 6800 words</p>
+        <h1>Secondary Private IPs — The Cloud Networking Primitive Nobody Talks About.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">networking</span>
+          <span class="tag">aws</span>
+          <span class="tag">oci</span>
+          <span class="tag">gcp</span>
+          <span class="tag">cloud-architecture</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          Last week, I was setting up a high-availability Nginx pair on OCI and needed a floating
+          IP that could jump between two instances in under 5 seconds. Not a load balancer —
+          those add latency and cost. Not a DNS failover — those are slow and cached. A raw IP
+          address that moves from machine A to machine B the moment a heartbeat stops.
+        </p>
+        <p>
+          The answer was a secondary private IP. And once I understood it, I started seeing it
+          everywhere — multi-tenant hosting, zero-downtime migrations, container networking,
+          database failover. It's one of those infrastructure primitives that's been sitting in
+          every cloud console since day one, buried three clicks deep, while everyone reaches
+          for more expensive solutions.
+        </p>
+        <p>
+          This article is the deep reference I wish I had. We'll cover what secondary private IPs
+          actually are at the network level, why they exist, how to set them up on AWS, OCI, and
+          GCP, the OS-level configuration that 80% of guides skip, and the limits you'll hit when
+          you scale.
+        </p>
+
+        <!-- ============================================================ -->
+        <h2>What Are Secondary Private IPs?</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Every cloud instance gets a <strong>primary private IP</strong> when it launches. It's
+          assigned to the instance's virtual NIC (VNIC), it stays for the lifetime of the instance,
+          and it can't be removed. This is the IP your instance uses to talk to other instances in
+          the same VCN/VPC.
+        </p>
+        <p>
+          A <strong>secondary private IP</strong> is an additional IP address assigned to the same
+          VNIC — same network interface, same subnet, same security rules. The cloud provider's
+          networking layer knows this IP belongs to your instance. Traffic destined for it gets
+          routed to your NIC, just like the primary.
+        </p>
+        <p>
+          The critical difference: secondary IPs can be <strong>moved</strong>. You can detach a
+          secondary IP from one instance and attach it to another instance in the same subnet,
+          typically in under a second. The primary IP is welded to the instance. Secondary IPs
+          are portable.
+        </p>
+
+        <blockquote>
+          Think of it like phone numbers. Your phone has a built-in hardware number (primary IP) that
+          dies with the device. But you can also have a virtual number (secondary IP) that you port
+          to a new phone whenever you want. Same calls, same texts — different hardware underneath.
+        </blockquote>
+
+        <h3>How it works at the network level</h3>
+        <p>
+          Under the hood, cloud networking is software-defined. When you assign a secondary IP,
+          the cloud provider updates its internal routing tables and ARP/NDP responders to say
+          "packets for 10.0.1.42 should be delivered to VNIC-xyz." No physical NIC change happens.
+          No cable gets unplugged. It's a metadata update in the cloud's virtual networking layer.
+        </p>
+        <p>
+          On the instance itself, the guest OS needs to be told about the new IP. The cloud
+          assigns it at the infrastructure level (the hypervisor/virtual switch knows about it),
+          but the OS kernel also needs a matching IP configuration on the interface — otherwise
+          the kernel sees packets arriving for an address it doesn't own and silently drops them.
+          This two-layer requirement — cloud API + OS config — is where most people trip up.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .box { fill: #2a2620; stroke: #948a78; stroke-width: 1.5; rx: 6; }
+              .box-accent { fill: #2a2620; stroke: #f0c040; stroke-width: 2; rx: 6; }
+              .label { fill: #ebe3cf; font-family: monospace; font-size: 13px; }
+              .label-sm { fill: #948a78; font-family: monospace; font-size: 11px; }
+              .label-accent { fill: #f0c040; font-family: monospace; font-size: 13px; }
+              .arrow { stroke: #948a78; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+              .arrow-move { stroke: #c96442; stroke-width: 2; stroke-dasharray: 6,4; fill: none; marker-end: url(#arrowhead-red); }
+            </style>
+            <defs>
+              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#948a78"/>
+              </marker>
+              <marker id="arrowhead-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#c96442"/>
+              </marker>
+            </defs>
+            <!-- Instance A -->
+            <rect x="30" y="30" width="240" height="100" class="box-accent"/>
+            <text x="150" y="55" text-anchor="middle" class="label">Instance A (active)</text>
+            <text x="150" y="80" text-anchor="middle" class="label-sm">Primary: 10.0.1.10</text>
+            <text x="150" y="100" text-anchor="middle" class="label-accent">Secondary: 10.0.1.42 (VIP)</text>
+            <text x="150" y="120" text-anchor="middle" class="label-sm">VNIC-abc</text>
+
+            <!-- Instance B -->
+            <rect x="410" y="30" width="240" height="100" class="box"/>
+            <text x="530" y="55" text-anchor="middle" class="label">Instance B (standby)</text>
+            <text x="530" y="80" text-anchor="middle" class="label-sm">Primary: 10.0.1.11</text>
+            <text x="530" y="100" text-anchor="middle" class="label-sm">No secondary IP</text>
+            <text x="530" y="120" text-anchor="middle" class="label-sm">VNIC-def</text>
+
+            <!-- Move arrow -->
+            <path d="M 200 140 C 200 200, 480 200, 480 140" class="arrow-move"/>
+            <text x="340" y="210" text-anchor="middle" class="label-accent" font-size="12">failover: move VIP →</text>
+
+            <!-- Subnet box -->
+            <rect x="10" y="230" width="660" height="24" rx="4" fill="none" stroke="#948a78" stroke-width="1" stroke-dasharray="4,3"/>
+            <text x="340" y="247" text-anchor="middle" class="label-sm">Subnet: 10.0.1.0/24</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — A secondary IP (VIP) attached to Instance A can be moved to Instance B during failover.</p>
+        </div>
+
+        <!-- ============================================================ -->
+        <h2>Why Use Secondary Private IPs?</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Before I list the use cases, let me frame this: secondary IPs solve problems where you
+          need <strong>IP-level identity that outlives a single instance</strong>. If you don't need
+          that, a load balancer or DNS is probably simpler. But when you do need it, nothing else
+          works as cleanly.
+        </p>
+
+        <h3>1. High availability with floating VIPs</h3>
+        <p>
+          The classic use case. Two instances running Keepalived, Pacemaker, or a custom heartbeat.
+          The secondary IP is the "virtual IP" (VIP) that clients connect to. When the active node
+          dies, the standby node calls the cloud API to reassign the secondary IP to its own VNIC,
+          configures it on the OS, and starts serving — all in under 5 seconds, no DNS propagation
+          needed.
+        </p>
+        <p>
+          This is how you build active-passive HA for databases (PostgreSQL, MySQL), reverse proxies
+          (Nginx, HAProxy), and legacy apps that can't sit behind a cloud LB. The VIP doesn't change.
+          Clients don't reconfigure. The IP just moves.
+        </p>
+
+        <h3>2. Multi-tenant hosting / SNI-less TLS</h3>
+        <p>
+          If you're hosting multiple websites on a single server and each customer needs a dedicated
+          IP (for SSL certificates without SNI, custom PTR records, or IP-based whitelisting), you
+          assign each customer a secondary IP. One server, one NIC, 20 IPs, 20 independent websites.
+          Apache and Nginx can bind specific virtual hosts to specific IPs.
+        </p>
+
+        <h3>3. Zero-downtime instance migration</h3>
+        <p>
+          Need to move a workload to a bigger instance without changing IPs? Assign the service IP as
+          a secondary on the old instance, spin up the new instance in the same subnet, stop the
+          service on the old instance, move the secondary IP, start the service on the new instance.
+          Total downtime: the time between API calls. No DNS changes, no LB reconfiguration, no
+          client-side updates.
+        </p>
+
+        <h3>4. Running multiple services with distinct IPs</h3>
+        <p>
+          Sometimes services need their own IP addresses — for audit trails, firewall rules that
+          reference source IPs, or compliance requirements. Rather than spinning up N instances,
+          assign N secondary IPs to one instance and bind each service to its own address.
+        </p>
+
+        <h3>5. Container and pod networking</h3>
+        <p>
+          AWS EKS uses secondary IPs under the hood. The <code>aws-node</code> DaemonSet (VPC CNI
+          plugin) pre-allocates secondary IPs on each node's ENI and assigns them to pods directly.
+          Each pod gets a real VPC-routable IP — no overlay network, no NAT. This is why EKS pods
+          can talk to RDS instances, Lambda functions, and other VPC resources without any special
+          configuration.
+        </p>
+
+        <h3>6. Network appliance / firewall hosting</h3>
+        <p>
+          Virtual firewalls, NAT gateways, VPN concentrators, and proxy servers often need multiple
+          IPs — one for management, one for each interface they're proxying. Secondary IPs let you
+          build these without multiple VNICs (which have their own limits and complexity).
+        </p>
+
+        <h3>7. Oracle RAC and clustered databases</h3>
+        <p>
+          Oracle Real Application Clusters use VIPs for client connections and SCAN IPs for load
+          balancing. These are secondary IPs that float between cluster nodes. On OCI, this is a
+          first-class use case — the documentation explicitly covers RAC VIP configuration with
+          secondary private IPs.
+        </p>
+
+        <blockquote>
+          The pattern is always the same: decouple the IP identity from the instance identity.
+          The instance is cattle. The IP is the pet.
+        </blockquote>
+
+        <!-- ============================================================ -->
+        <h2>How It Works at the Cloud Level</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Each cloud provider implements secondary IPs slightly differently, but the core model
+          is the same. Let's look at the architecture in each.
+        </p>
+
+        <h3>AWS — Elastic Network Interfaces (ENIs)</h3>
+        <p>
+          In AWS, secondary IPs are assigned to an <strong>ENI</strong> (Elastic Network Interface).
+          Every EC2 instance has at least one ENI (the primary). You can assign secondary private IPs
+          to the primary ENI or create additional ENIs with their own secondary IPs.
+        </p>
+        <p>
+          Key details:
+        </p>
+        <ul>
+          <li>Secondary IPs can optionally be associated with an Elastic IP (public) for internet-facing VIPs</li>
+          <li>Security groups apply at the ENI level — all IPs on the same ENI share the same security groups</li>
+          <li>Source/destination check must be disabled if you're doing IP failover between instances</li>
+          <li>The ENI itself can be detached from one instance and attached to another (taking all its secondary IPs with it)</li>
+        </ul>
+
+        <h3>OCI — Virtual Network Interface Cards (VNICs)</h3>
+        <p>
+          OCI uses <strong>VNICs</strong>. Each instance has a primary VNIC, and you can add secondary
+          VNICs in different subnets. Secondary private IPs are assigned to a specific VNIC.
+        </p>
+        <p>
+          Key details:
+        </p>
+        <ul>
+          <li>You can assign a secondary IP from a different subnet than the VNIC — but only if that subnet is in the same VCN</li>
+          <li>Reserved public IPs (OCI's version of Elastic IPs) can be mapped to secondary private IPs</li>
+          <li>Security lists and NSGs both apply — NSGs attach to the VNIC, security lists attach to the subnet</li>
+          <li>OCI lets you explicitly choose the IP address or auto-assign from the subnet's CIDR</li>
+          <li>Moving a secondary IP between VNICs is a single API call: <code>oci network vnic assign-private-ip --unassign-if-already-assigned</code></li>
+        </ul>
+
+        <h3>GCP — Alias IP Ranges</h3>
+        <p>
+          GCP doesn't call them "secondary IPs." It calls them <strong>alias IP ranges</strong>.
+          Functionally identical, but with one powerful difference: you can assign an entire CIDR
+          range, not just individual IPs.
+        </p>
+        <p>
+          Key details:
+        </p>
+        <ul>
+          <li>Alias IPs can come from the primary subnet range or from a <strong>secondary range</strong> configured on the subnet</li>
+          <li>GKE uses alias IPs for pod networking — each node gets a /24 alias range and assigns individual IPs to pods</li>
+          <li>Alias IPs are automatically routable within the VPC — no additional route configuration needed</li>
+          <li>Firewall rules can target alias IPs just like primary IPs</li>
+          <li>Moving alias IPs requires removing from one instance and adding to another (not a single atomic move)</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 280" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .hdr { fill: #ebe3cf; font-family: monospace; font-size: 14px; font-weight: bold; }
+              .cell { fill: #ebe3cf; font-family: monospace; font-size: 11px; }
+              .cell-dim { fill: #948a78; font-family: monospace; font-size: 11px; }
+              .line { stroke: #948a78; stroke-width: 0.8; }
+            </style>
+            <!-- Headers -->
+            <text x="20" y="30" class="hdr">Feature</text>
+            <text x="220" y="30" class="hdr">AWS</text>
+            <text x="380" y="30" class="hdr">OCI</text>
+            <text x="540" y="30" class="hdr">GCP</text>
+            <line x1="10" y1="40" x2="670" y2="40" class="line"/>
+
+            <!-- Row 1 -->
+            <text x="20" y="60" class="cell">Terminology</text>
+            <text x="220" y="60" class="cell">Secondary IP</text>
+            <text x="380" y="60" class="cell">Secondary IP</text>
+            <text x="540" y="60" class="cell">Alias IP Range</text>
+            <line x1="10" y1="70" x2="670" y2="70" class="line" stroke-dasharray="3,3"/>
+
+            <!-- Row 2 -->
+            <text x="20" y="90" class="cell">Attached to</text>
+            <text x="220" y="90" class="cell">ENI</text>
+            <text x="380" y="90" class="cell">VNIC</text>
+            <text x="540" y="90" class="cell">NIC</text>
+            <line x1="10" y1="100" x2="670" y2="100" class="line" stroke-dasharray="3,3"/>
+
+            <!-- Row 3 -->
+            <text x="20" y="120" class="cell">CIDR ranges?</text>
+            <text x="220" y="120" class="cell">IP prefix (v2)</text>
+            <text x="380" y="120" class="cell">Individual IPs</text>
+            <text x="540" y="120" class="cell">Yes, native</text>
+            <line x1="10" y1="130" x2="670" y2="130" class="line" stroke-dasharray="3,3"/>
+
+            <!-- Row 4 -->
+            <text x="20" y="150" class="cell">Atomic move?</text>
+            <text x="220" y="150" class="cell">No*</text>
+            <text x="380" y="150" class="cell">Yes</text>
+            <text x="540" y="150" class="cell">No</text>
+            <line x1="10" y1="160" x2="670" y2="160" class="line" stroke-dasharray="3,3"/>
+
+            <!-- Row 5 -->
+            <text x="20" y="180" class="cell">Public IP mapping</text>
+            <text x="220" y="180" class="cell">Elastic IP</text>
+            <text x="380" y="180" class="cell">Reserved Public</text>
+            <text x="540" y="180" class="cell">External IP</text>
+            <line x1="10" y1="190" x2="670" y2="190" class="line" stroke-dasharray="3,3"/>
+
+            <!-- Row 6 -->
+            <text x="20" y="210" class="cell">K8s pod networking</text>
+            <text x="220" y="210" class="cell">VPC CNI plugin</text>
+            <text x="380" y="210" class="cell">OCI CNI</text>
+            <text x="540" y="210" class="cell">Alias IP native</text>
+            <line x1="10" y1="220" x2="670" y2="220" class="line" stroke-dasharray="3,3"/>
+
+            <!-- Row 7 -->
+            <text x="20" y="240" class="cell">OS config needed?</text>
+            <text x="220" y="240" class="cell">Yes (most AMIs)</text>
+            <text x="380" y="240" class="cell">Yes (always)</text>
+            <text x="540" y="240" class="cell">Auto (agent)</text>
+
+            <!-- Footnote -->
+            <text x="20" y="270" class="cell-dim">* AWS: move ENI between instances, or unassign + reassign secondary IP</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — Comparison of secondary IP implementations across AWS, OCI, and GCP.</p>
+        </div>
+
+        <!-- ============================================================ -->
+        <h2>Step-by-Step: Creating Secondary IPs</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Let's get hands-on. I'll show the CLI for each cloud provider because that's what you'll
+          script in your automation. Console steps are nice for learning, but you'll be doing this
+          in Terraform or a failover script.
+        </p>
+
+        <h3>AWS — Assign a Secondary IP to an ENI</h3>
+
+        <p><strong>Step 1: Find your ENI</strong></p>
+        <pre>aws ec2 describe-instances \
+  --instance-ids i-0abc123def456 \
+  --query 'Reservations[].Instances[].NetworkInterfaces[].NetworkInterfaceId' \
+  --output text</pre>
+
+        <p><strong>Step 2: Assign a secondary IP</strong></p>
+        <pre># Auto-assign from subnet CIDR
+aws ec2 assign-private-ip-addresses \
+  --network-interface-id eni-0abc123 \
+  --secondary-private-ip-address-count 1
+
+# Or specify the exact IP
+aws ec2 assign-private-ip-addresses \
+  --network-interface-id eni-0abc123 \
+  --private-ip-addresses 10.0.1.42</pre>
+
+        <p><strong>Step 3: Verify</strong></p>
+        <pre>aws ec2 describe-network-interfaces \
+  --network-interface-ids eni-0abc123 \
+  --query 'NetworkInterfaces[].PrivateIpAddresses'</pre>
+
+        <p><strong>Step 4: (Optional) Associate an Elastic IP</strong></p>
+        <pre>aws ec2 associate-address \
+  --allocation-id eipalloc-0abc123 \
+  --network-interface-id eni-0abc123 \
+  --private-ip-address 10.0.1.42</pre>
+
+        <h3>OCI — Assign a Secondary Private IP to a VNIC</h3>
+
+        <p><strong>Step 1: Find your VNIC</strong></p>
+        <pre>oci compute instance list-vnics \
+  --instance-id ocid1.instance.oc1.iad.xxx \
+  --query 'data[].id'</pre>
+
+        <p><strong>Step 2: Assign a secondary IP</strong></p>
+        <pre># Auto-assign
+oci network vnic assign-private-ip \
+  --vnic-id ocid1.vnic.oc1.iad.xxx
+
+# Specify the IP
+oci network vnic assign-private-ip \
+  --vnic-id ocid1.vnic.oc1.iad.xxx \
+  --ip-address 10.0.1.42</pre>
+
+        <p><strong>Step 3: Verify</strong></p>
+        <pre>oci network private-ip list \
+  --vnic-id ocid1.vnic.oc1.iad.xxx</pre>
+
+        <p><strong>Step 4: Move to another VNIC (failover)</strong></p>
+        <pre># This single command moves it atomically
+oci network vnic assign-private-ip \
+  --vnic-id ocid1.vnic.oc1.iad.NEW-VNIC \
+  --ip-address 10.0.1.42 \
+  --unassign-if-already-assigned</pre>
+        <p>
+          That <code>--unassign-if-already-assigned</code> flag is gold. One API call to move an IP
+          between VNICs. AWS and GCP both require two operations (unassign, then assign), which means
+          a brief window where the IP belongs to nobody. OCI's atomic move eliminates that gap.
+        </p>
+
+        <h3>GCP — Add an Alias IP Range</h3>
+
+        <p><strong>Step 1: Add alias IP to an instance</strong></p>
+        <pre># Single IP (use /32)
+gcloud compute instances network-interfaces update my-instance \
+  --zone us-central1-a \
+  --aliases "10.128.0.42/32"
+
+# Or a CIDR range for pods/containers
+gcloud compute instances network-interfaces update my-instance \
+  --zone us-central1-a \
+  --aliases "10.128.1.0/24"</pre>
+
+        <p><strong>Step 2: Verify</strong></p>
+        <pre>gcloud compute instances describe my-instance \
+  --zone us-central1-a \
+  --format="get(networkInterfaces[0].aliasIpRanges)"</pre>
+
+        <p><strong>Step 3: Move to another instance (two-step)</strong></p>
+        <pre># Remove from old instance
+gcloud compute instances network-interfaces update old-instance \
+  --zone us-central1-a \
+  --aliases ""
+
+# Add to new instance
+gcloud compute instances network-interfaces update new-instance \
+  --zone us-central1-a \
+  --aliases "10.128.0.42/32"</pre>
+
+        <p>
+          GCP's approach is the least graceful for failover — you clear all alias IPs (or carefully
+          manage the list) and then re-add. For HA use cases, GCP's own recommendation is to use
+          internal TCP/UDP load balancers instead of floating IPs.
+        </p>
+
+        <!-- ============================================================ -->
+        <h2>OS-Level Configuration (The Critical Step)</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          This is where guides fail and engineers rage-quit. You've assigned the secondary IP in the
+          cloud console or CLI. The cloud's virtual network knows about it. Traffic is being routed
+          to your instance's NIC. But the instance returns nothing. <code>curl</code> hangs. SSH times out.
+        </p>
+        <p>
+          The reason: <strong>your OS doesn't know the IP exists yet.</strong>
+        </p>
+        <p>
+          The cloud infrastructure delivers packets to the hypervisor-level NIC. The hypervisor hands
+          them to the guest OS. The guest OS kernel checks if the destination IP matches any address
+          configured on its interfaces. If it doesn't match — <code>DROP</code>. The kernel doesn't
+          even send an ICMP unreachable. It just silently eats the packet.
+        </p>
+
+        <h3>Linux — The Quick Way (Non-Persistent)</h3>
+        <pre># Add the secondary IP to the interface
+sudo ip addr add 10.0.1.42/24 dev ens3
+
+# Verify
+ip addr show dev ens3</pre>
+        <p>
+          This works immediately. But it's gone after a reboot. Fine for testing, not for production.
+        </p>
+
+        <h3>Linux — Persistent Configuration (Netplan / Ubuntu 20.04+)</h3>
+        <pre># /etc/netplan/51-secondary-ip.yaml
+network:
+  version: 2
+  ethernets:
+    ens3:
+      addresses:
+        - 10.0.1.42/24</pre>
+        <pre>sudo netplan apply</pre>
+        <p>
+          Important: don't modify the existing netplan config that cloud-init manages. Create a
+          new file with a higher number prefix (51+). Netplan merges configs in alphabetical order.
+        </p>
+
+        <h3>Linux — Persistent Configuration (NetworkManager / RHEL, Amazon Linux)</h3>
+        <pre># Using nmcli
+sudo nmcli connection modify "System ens3" \
+  +ipv4.addresses "10.0.1.42/24"
+sudo nmcli connection up "System ens3"</pre>
+        <p>
+          Or for Amazon Linux 2 with the older network-scripts:
+        </p>
+        <pre># /etc/sysconfig/network-scripts/ifcfg-ens3:1
+DEVICE=ens3:1
+BOOTPROTO=static
+IPADDR=10.0.1.42
+NETMASK=255.255.255.0
+ONBOOT=yes</pre>
+
+        <h3>Linux — Cloud-Specific Helpers</h3>
+        <p>
+          Some cloud images come with helpers that auto-configure secondary IPs:
+        </p>
+        <ul>
+          <li><strong>AWS:</strong> <code>ec2-net-utils</code> on Amazon Linux handles secondary IPs automatically. On Ubuntu, you need to do it manually or use the <code>ec2-utils</code> package.</li>
+          <li><strong>OCI:</strong> Oracle Linux includes <code>oci-network-config</code> which can auto-configure secondary VNICs and IPs. Run <code>sudo /usr/local/bin/secondary_vnic_all_configure.sh -c</code> to configure all secondaries.</li>
+          <li><strong>GCP:</strong> The <code>google-guest-agent</code> automatically configures alias IPs on most GCP images. This is the one cloud where you usually don't need to do anything at the OS level.</li>
+        </ul>
+
+        <blockquote>
+          GCP's auto-configuration is the exception, not the rule. On AWS and OCI, assume you need
+          to configure the OS yourself unless you've explicitly verified the helper is installed and running.
+        </blockquote>
+
+        <h3>Windows Server</h3>
+        <pre># PowerShell
+New-NetIPAddress -InterfaceAlias "Ethernet" `
+  -IPAddress 10.0.1.42 `
+  -PrefixLength 24</pre>
+        <p>
+          Or through the GUI: Network adapter properties → IPv4 → Advanced → Add.
+        </p>
+
+        <h3>The Routing Gotcha — Multiple IPs, One Default Gateway</h3>
+        <p>
+          When you have multiple IPs on one interface, all outbound traffic still uses the
+          <strong>primary IP as the source</strong> by default. If a client connects to your
+          secondary IP 10.0.1.42, and your application responds, the response packet goes out
+          with source IP 10.0.1.10 (the primary). The client sees a packet from an IP it didn't
+          talk to and drops it. Connection fails.
+        </p>
+        <p>
+          Fix: <strong>policy-based routing</strong> (also called source-based routing). Create a
+          separate routing table that uses the secondary IP as the source for responses:
+        </p>
+        <pre># Create a routing table
+echo "100 secondary" | sudo tee -a /etc/iproute2/rt_tables
+
+# Add rules
+sudo ip rule add from 10.0.1.42 table secondary
+sudo ip route add default via 10.0.1.1 dev ens3 table secondary
+sudo ip route add 10.0.1.0/24 dev ens3 src 10.0.1.42 table secondary</pre>
+        <p>
+          Now traffic originating from the secondary IP uses the correct source address. This is
+          especially critical when the secondary IP has an associated public IP (Elastic IP / Reserved
+          Public IP) — without policy routing, return traffic will use the primary's public IP instead.
+        </p>
+        <p>
+          Most HA setups (Keepalived, Pacemaker) handle this automatically as part of their
+          failover scripts. But if you're doing manual VIP management, this is the thing that makes
+          you question your career choices at 2 AM.
+        </p>
+
+        <!-- ============================================================ -->
+        <h2>Terraform: Because You're Not Doing This by Hand</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          In production, secondary IPs are managed through IaC. Here's the Terraform for all three clouds.
+        </p>
+
+        <h3>AWS</h3>
+        <pre>resource "aws_network_interface" "primary" {
+  subnet_id       = aws_subnet.main.id
+  security_groups = [aws_security_group.main.id]
+
+  # Assign secondary IPs inline
+  private_ips     = ["10.0.1.10", "10.0.1.42"]
+  private_ips_count = 0  # don't auto-assign additional
+
+  tags = {
+    Name = "primary-eni"
+  }
+}
+
+# Or manage secondary IPs separately
+resource "aws_network_interface_sg_attachment" "main" {
+  # ...
+}
+
+# Associate Elastic IP with secondary
+resource "aws_eip_association" "secondary" {
+  network_interface_id = aws_network_interface.primary.id
+  allocation_id        = aws_eip.vip.id
+  private_ip_address   = "10.0.1.42"
+}</pre>
+
+        <h3>OCI</h3>
+        <pre>resource "oci_core_private_ip" "secondary" {
+  vnic_id        = data.oci_core_vnic.primary.id
+  display_name   = "ha-vip"
+  ip_address     = "10.0.1.42"
+  hostname_label = "vip"
+}
+
+# Optional: map a reserved public IP
+resource "oci_core_public_ip" "vip_public" {
+  compartment_id = var.compartment_id
+  lifetime       = "RESERVED"
+  display_name   = "vip-public"
+  private_ip_id  = oci_core_private_ip.secondary.id
+}</pre>
+
+        <h3>GCP</h3>
+        <pre>resource "google_compute_instance" "main" {
+  name         = "web-server"
+  machine_type = "e2-medium"
+  zone         = "us-central1-a"
+
+  network_interface {
+    subnetwork = google_compute_subnetwork.main.id
+
+    alias_ip_range {
+      ip_cidr_range = "10.128.0.42/32"
+    }
+  }
+
+  # ...
+}</pre>
+
+        <!-- ============================================================ -->
+        <h2>Building HA Failover with Keepalived</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Let me walk through a real-world example: active-passive HA with Keepalived and a floating
+          VIP on OCI. This pattern works almost identically on AWS (swap the OCI CLI calls for AWS CLI).
+        </p>
+
+        <h3>The architecture</h3>
+        <p>
+          Two instances in the same subnet. A secondary IP (10.0.1.42) starts on Instance A.
+          Keepalived runs on both, using VRRP for health checking. When Instance A's Keepalived
+          detects failure (or Instance A dies entirely), Instance B runs a notify script that:
+        </p>
+        <ol>
+          <li>Calls the cloud API to move the secondary IP to its own VNIC</li>
+          <li>Configures the IP on the OS</li>
+          <li>Sends a gratuitous ARP to update the local network</li>
+        </ol>
+
+        <h3>Keepalived config (Instance A — MASTER)</h3>
+        <pre>vrrp_instance VIP_1 {
+    state MASTER
+    interface ens3
+    virtual_router_id 51
+    priority 100
+    advert_int 1
+    
+    authentication {
+        auth_type PASS
+        auth_pass secretpass
+    }
+    
+    virtual_ipaddress {
+        10.0.1.42/24
+    }
+    
+    notify_master "/etc/keepalived/notify.sh MASTER"
+    notify_backup "/etc/keepalived/notify.sh BACKUP"
+    notify_fault  "/etc/keepalived/notify.sh FAULT"
+}</pre>
+
+        <h3>Notify script (the cloud-aware part)</h3>
+        <pre>#!/bin/bash
+# /etc/keepalived/notify.sh
+STATE=$1
+VIP="10.0.1.42"
+MY_VNIC="ocid1.vnic.oc1.iad.MY_VNIC_ID"
+
+case $STATE in
+  MASTER)
+    # Claim the VIP at the cloud level
+    oci network vnic assign-private-ip \
+      --vnic-id "$MY_VNIC" \
+      --ip-address "$VIP" \
+      --unassign-if-already-assigned \
+      --auth instance_principal
+    
+    # Configure on the OS
+    ip addr add ${VIP}/24 dev ens3 2>/dev/null
+    
+    # Gratuitous ARP to update switches
+    arping -c 3 -A -I ens3 "$VIP"
+    
+    logger "VIP $VIP claimed — now MASTER"
+    ;;
+  BACKUP|FAULT)
+    # Release the VIP from the OS
+    ip addr del ${VIP}/24 dev ens3 2>/dev/null
+    logger "VIP $VIP released — now $STATE"
+    ;;
+esac</pre>
+        <p>
+          The <code>--auth instance_principal</code> flag uses OCI instance principal authentication —
+          no API keys on the instance. The instance needs an IAM policy that grants
+          <code>manage private-ips</code> in the compartment.
+        </p>
+
+        <!-- ============================================================ -->
+        <h2>Limits and Constraints</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Every cloud has hard limits on secondary IPs. Hit them, and your automation fails silently.
+          Know them before you design.
+        </p>
+
+        <h3>AWS Limits</h3>
+        <ul>
+          <li><strong>Per-ENI limit depends on instance type.</strong> A <code>t3.micro</code> gets 2 IPs per ENI (1 primary + 1 secondary). A <code>c5.18xlarge</code> gets 50. Check the <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI" target="_blank">AWS docs table</a> — it's tied to instance size.</li>
+          <li><strong>ENIs per instance also varies.</strong> <code>t3.micro</code>: 2 ENIs. <code>m5.24xlarge</code>: 15 ENIs. More ENIs × more IPs per ENI = total capacity.</li>
+          <li><strong>IPv4 prefix delegation:</strong> Newer instances support /28 prefix assignment (16 IPs per prefix), which is more efficient for container networking.</li>
+          <li><strong>Cross-AZ limitation:</strong> ENIs (and their secondary IPs) are AZ-scoped. You cannot move an ENI to an instance in a different AZ.</li>
+        </ul>
+
+        <h3>OCI Limits</h3>
+        <ul>
+          <li><strong>VNICs per instance:</strong> Depends on shape. BM (bare metal) shapes support many more VNICs than VMs. A <code>VM.Standard.E4.Flex</code> supports up to 24 VNICs total.</li>
+          <li><strong>Secondary IPs per VNIC:</strong> Default limit is 31 secondary IPs per VNIC (32 total including primary). Can be increased via service limit request.</li>
+          <li><strong>Cross-subnet:</strong> Secondary IPs must be from the same subnet as the VNIC. Unlike some expectations, you can't mix subnets on a single VNIC.</li>
+          <li><strong>Same VCN only:</strong> IP movement is limited to VNICs within the same VCN and subnet.</li>
+        </ul>
+
+        <h3>GCP Limits</h3>
+        <ul>
+          <li><strong>Alias IP ranges per NIC:</strong> Up to 100 alias IP ranges per network interface.</li>
+          <li><strong>IPs per range:</strong> Each range can contain many IPs (a /24 = 256 IPs), but total IPs are bounded by the subnet size.</li>
+          <li><strong>Secondary ranges:</strong> A subnet can have up to 30 secondary ranges.</li>
+          <li><strong>No atomic move:</strong> GCP doesn't support moving an alias IP atomically. You must remove + add, which creates a brief window of downtime.</li>
+          <li><strong>Auto-mode VPCs:</strong> Have predefined secondary ranges. Custom-mode gives you full control.</li>
+        </ul>
+
+        <h3>Universal constraints</h3>
+        <ul>
+          <li><strong>Same subnet only.</strong> You cannot move a secondary IP to an instance in a different subnet (all three clouds).</li>
+          <li><strong>AZ/AD scoping.</strong> On AWS, ENIs are AZ-bound. On OCI, subnets can be regional (span ADs) — but the VNIC is still AD-local. GCP subnets are regional, which gives more flexibility.</li>
+          <li><strong>Propagation delay.</strong> Even though the API call returns immediately, it can take 1–5 seconds for the cloud networking layer to update all routing tables. Don't assume instant convergence.</li>
+          <li><strong>DHCP won't help.</strong> Cloud DHCP servers only assign the primary IP. Secondary IPs must be configured statically or via cloud-specific agents.</li>
+        </ul>
+
+        <!-- ============================================================ -->
+        <h2>Secondary IPs vs. Other Solutions</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          When should you reach for secondary IPs instead of the dozen other networking tools
+          available? Here's my decision framework.
+        </p>
+
+        <h3>Secondary IP vs. Load Balancer</h3>
+        <p>
+          Use a <strong>load balancer</strong> when you need active-active distribution, health
+          checks with automatic backend management, TLS termination, or connection draining.
+          Use <strong>secondary IPs</strong> when you need sub-second failover without the LB's
+          latency overhead, or when your application protocol doesn't play well with proxies
+          (custom TCP protocols, UDP, database wire protocols).
+        </p>
+
+        <h3>Secondary IP vs. DNS Failover</h3>
+        <p>
+          DNS failover has TTL lag. Even with a 30-second TTL, clients cache aggressively, and some
+          don't respect TTL at all. A secondary IP move is instant at the network layer. Use DNS
+          failover for cross-region HA where IPs can't move. Use secondary IPs for same-subnet,
+          same-region failover.
+        </p>
+
+        <h3>Secondary IP vs. Multiple NICs</h3>
+        <p>
+          Multiple NICs (secondary VNICs on OCI, additional ENIs on AWS) give you interfaces in
+          <strong>different subnets</strong>. Secondary IPs give you multiple addresses in the
+          <strong>same subnet</strong>. If you need cross-subnet networking (management + data plane),
+          use multiple NICs. If you need multiple identities in one subnet, use secondary IPs.
+        </p>
+
+        <h3>Secondary IP vs. Service Mesh / Overlay Networks</h3>
+        <p>
+          Service meshes (Istio, Linkerd) and overlay networks (Calico, Flannel) operate at a higher
+          layer and solve different problems (service discovery, mTLS, traffic splitting). Secondary
+          IPs are L3 networking — raw IP addresses. They're complementary, not competitive.
+        </p>
+
+        <!-- ============================================================ -->
+        <h2>Debugging Checklist</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          When your secondary IP isn't working, run through this in order. I've wasted hours on
+          each of these.
+        </p>
+
+        <ol>
+          <li>
+            <strong>Is the IP assigned in the cloud console/API?</strong>
+            Check the VNIC/ENI details. If it's not there, nothing else matters.
+          </li>
+          <li>
+            <strong>Is the IP configured on the OS?</strong>
+            Run <code>ip addr show</code>. If the IP doesn't appear, the kernel is dropping
+            inbound packets silently.
+          </li>
+          <li>
+            <strong>Is the subnet mask correct?</strong>
+            Adding <code>10.0.1.42</code> without <code>/24</code> creates a /32 — the OS thinks
+            it's a point-to-point link. Make sure the prefix length matches the subnet.
+          </li>
+          <li>
+            <strong>Are security groups / NSGs / firewalls allowing traffic?</strong>
+            Secondary IPs inherit the NIC's security groups, but verify the rules allow the
+            traffic you're testing.
+          </li>
+          <li>
+            <strong>Is source/dest check disabled? (AWS)</strong>
+            If you're moving IPs between instances, the destination instance needs source/dest
+            check disabled on its ENI.
+          </li>
+          <li>
+            <strong>Is the application binding to the right address?</strong>
+            Apps binding to <code>0.0.0.0</code> will work. Apps binding to the primary IP won't
+            respond on the secondary. Check your <code>bind_address</code> config.
+          </li>
+          <li>
+            <strong>Are responses going out with the correct source IP?</strong>
+            If not, you need policy-based routing (see the routing gotcha section above).
+          </li>
+          <li>
+            <strong>ARP cache stale?</strong>
+            After moving an IP, nearby instances may still have the old MAC in their ARP cache.
+            Send gratuitous ARPs: <code>arping -c 3 -A -I ens3 10.0.1.42</code>.
+          </li>
+        </ol>
+
+        <!-- ============================================================ -->
+        <h2>Real-World Architecture Patterns</h2>
+        <!-- ============================================================ -->
+
+        <h3>Pattern 1: Database HA without a Load Balancer</h3>
+        <p>
+          PostgreSQL primary + standby with streaming replication. The VIP (secondary IP) always
+          points to the current primary. Patroni or repmgr handles promotion and calls the cloud
+          API to move the VIP. Application connection strings use the VIP and never change.
+        </p>
+
+        <h3>Pattern 2: Blue-Green Deployment for Legacy Apps</h3>
+        <p>
+          The "blue" instance runs the current version. You deploy the new version to a "green"
+          instance in the same subnet. Test on the green instance's primary IP. When satisfied,
+          move the service's secondary IP from blue to green. Instant cutover, instant rollback
+          (move the IP back).
+        </p>
+
+        <h3>Pattern 3: Multi-Tenant Reverse Proxy</h3>
+        <p>
+          A single Nginx instance with 15 secondary IPs, one per customer. Each IP has its own
+          SSL certificate (via separate <code>server</code> blocks that <code>listen</code> on
+          specific IPs). Each IP has its own public IP for dedicated DNS records. One box, full
+          tenant isolation at the IP level.
+        </p>
+
+        <h3>Pattern 4: Network Appliance with Multiple Identities</h3>
+        <p>
+          A NAT gateway or forward proxy that needs to spread outbound traffic across multiple
+          source IPs (to avoid rate limiting or for compliance). Assign 10 secondary IPs, each
+          with its own public IP. Use iptables SNAT rules to round-robin outbound connections
+          across them.
+        </p>
+
+        <!-- ============================================================ -->
+        <h2>Takeaway</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Secondary private IPs are a foundational cloud networking primitive. They're not sexy.
+          They don't have a fancy marketing page. But they solve a specific class of problems —
+          IP portability within a subnet — with zero dependencies, zero additional cost, and
+          sub-second failover times.
+        </p>
+        <p>
+          The two things most people get wrong: forgetting the OS-level configuration (the cloud
+          assigns the IP, but the kernel needs it too), and not handling policy-based routing for
+          response traffic. Get those two right and secondary IPs become one of the most reliable
+          tools in your infrastructure toolkit.
+        </p>
+        <p>
+          If you're architecting HA and someone immediately suggests a load balancer — pause.
+          Ask whether a floating VIP on a secondary IP is simpler. Sometimes the primitives are
+          the answer.
+        </p>
+
+      </div>
+
+      <div class="post-nav">
+        <span></span>
+        <a href="ai-tools-4-claude-code.html">Claude Code →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+  </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">VNIC / ENI</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Virtual Network Interface Card (OCI) / Elastic Network Interface (AWS). The software-defined network adapter attached to a cloud instance. All IPs — primary and secondary — are assigned to one of these.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">VIP (Virtual IP)</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">An IP address that isn't tied to a specific machine. It "floats" between instances and always points to the active one. Implemented using secondary private IPs.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">alias IP range</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">GCP's name for secondary IPs. Can be a single IP (/32) or a CIDR range (/24). Used heavily by GKE for pod networking.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">VRRP</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Virtual Router Redundancy Protocol. Used by Keepalived to elect a master node and detect failures. The master "owns" the VIP; when it dies, the backup takes over.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">gratuitous ARP</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">An ARP broadcast that says "hey, this IP now lives at THIS MAC address." Sent after moving a VIP so other machines update their ARP caches immediately.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">policy-based routing</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Choosing the route for a packet based on its source IP rather than just its destination. Essential when a server has multiple IPs and needs to respond from the correct one.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">source/dest check</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">AWS security feature that drops packets if the source or destination doesn't match the ENI's assigned IPs. Must be disabled for NAT instances, VPN gateways, and floating IP setups.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">instance principal</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">OCI's way of letting an instance authenticate to cloud APIs without storing credentials. The instance itself is the identity. Similar to AWS instance profiles / IAM roles.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Keepalived</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Open-source HA software that uses VRRP to manage a floating VIP between servers. Detects failures via heartbeat and triggers failover scripts.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">ENI prefix delegation</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">AWS feature that assigns a /28 CIDR block (16 IPs) to an ENI instead of individual IPs. More efficient for container networking where each pod needs its own IP.</div>
+    </div>
+  </aside>
+
+  </div>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    // vocab panel interactivity
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        // close all
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        // open clicked if it wasn't already open
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+</body>
+</html>

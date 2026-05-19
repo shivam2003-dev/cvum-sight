@@ -66,6 +66,13 @@
         excerpt: "Four papers. Four years. From IO-aware tiling to Blackwell asymmetric scaling. {count} papers squeezed.",
         tags: ["#flashattention", "#ml", "#gpu"],
         status: "Paper Juice"
+      },
+      "ai-tools": {
+        href: "series-ai-tools.html",
+        title: "AI Coding Tools — The Ultimate Guide",
+        excerpt: "Fundamentals, GitHub Copilot, Codex, Claude Code. {count} guides covering every AI coding tool a developer needs.",
+        tags: ["#ai-tools", "#devops", "#developer-productivity"],
+        status: "Complete"
       }
     };
 
@@ -107,7 +114,7 @@
     const seenSeries = {};
     const collapsed = [];
     filtered.forEach(p => {
-      if (p.series && p.series === "deepseek") {
+      if (p.series && (p.series === "deepseek" || p.series === "ai-tools")) {
         if (!seenSeries[p.series]) {
           seenSeries[p.series] = { post: p, count: 1 };
           collapsed.push({ type: "series", data: seenSeries[p.series] });

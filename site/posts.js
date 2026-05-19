@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "secondary-private-ips",
+    title: "Secondary Private IPs — The Cloud Networking Primitive Nobody Talks About.",
+    date: "May 19, 2026",
+    cat: "devops",
+    tags: ["devops", "networking", "aws", "oci", "gcp", "cloud-architecture"],
+    time: 28,
+    words: 6800,
+    excerpt: "One NIC, multiple IPs. High availability, zero-downtime migrations, multi-tenant hosting, floating VIPs — all from a feature buried three clicks deep in every cloud console. Full teardown across AWS, OCI, and GCP."
+  },
+  {
     slug: "ai-tools-4-claude-code",
     title: "Claude Code — The Ultimate Guide for Developers and DevOps Engineers.",
     date: "May 18, 2026",

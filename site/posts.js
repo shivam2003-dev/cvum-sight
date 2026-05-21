@@ -16,6 +16,26 @@
 
 const POSTS = [
   {
+    slug: "how-to-write-a-paper",
+    title: "How to Write a Research Paper — From Blank Page to Camera-Ready.",
+    date: "May 21, 2026",
+    cat: "resources",
+    tags: ["resources", "research", "academic-writing", "paper-writing"],
+    time: 26,
+    words: 6400,
+    excerpt: "Don't write the paper in reading order. Start with results, end with the title. Schulzrinne's structure, Peyton Jones' golden rules, Roscoe's reviewer perspective — everything you need to write a paper that gets accepted."
+  },
+  {
+    slug: "how-to-read-a-paper",
+    title: "How to Read a Research Paper — The Three-Pass Method That Actually Works.",
+    date: "May 21, 2026",
+    cat: "resources",
+    tags: ["resources", "research", "academic-skills", "paper-reading"],
+    time: 22,
+    words: 5200,
+    excerpt: "Most people read papers wrong. Keshav's three-pass method — bird's-eye scan, content grasp, virtual re-creation — is the systematic approach that researchers worldwide treat as gospel. Plus: literature surveys, reviewing, and the tools that make it easier."
+  },
+  {
     slug: "turboquant-paper-juice",
     title: "TurboQuant — What If Compressing AI Memory Was Just a Random Spin.",
     date: "May 20, 2026",

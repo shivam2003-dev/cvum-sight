@@ -1,11 +1,11 @@
 /* settings.js — reader settings panel (theme, font size, line width, sans toggle) */
 (function () {
   var THEMES = [
-    { id: "paper",    label: "Paper (default)" },
+    { id: "paper",    label: "Paper" },
     { id: "white",    label: "White (clean)" },
     { id: "dark",     label: "Dark" },
     { id: "midnight", label: "Midnight (deep blue)" },
-    { id: "matcha",   label: "Matcha (green)" }
+    { id: "matcha",   label: "Matcha (default)" }
   ];
   var SIZES = [
     { id: "text-sm", label: "S" },
@@ -16,8 +16,14 @@
     { id: "lw-normal", label: "Normal" },
     { id: "lw-wide",   label: "Wide" }
   ];
+  var FONTS = [
+    { id: "font-sans", label: "Sans" },
+    { id: "font-serif", label: "Serif" },
+    { id: "font-mono", label: "Mono" },
+    { id: "font-cursive", label: "Cursive" }
+  ];
 
-  var savedTheme = localStorage.getItem("cvam-theme") || "paper";
+  var savedTheme = localStorage.getItem("cvam-theme") || "matcha";
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
   // migrate anyone who had lw-narrow stored → lw-normal
   var savedWidth = localStorage.getItem("cvam-lw") || "lw-normal";
@@ -35,7 +41,14 @@
   var panel = document.createElement("div");
   panel.className = "settings-panel";
 
-  var isOn = document.documentElement.classList.contains("sans-serif");
+  var savedFont = localStorage.getItem("cvam-font");
+  if (!savedFont) {
+    savedFont = localStorage.getItem("cvam-sans") === "0" ? "font-serif" : "font-sans";
+  }
+  FONTS.forEach(function (f) { document.documentElement.classList.remove(f.id); });
+  if (savedFont !== "font-sans") {
+    document.documentElement.classList.add(savedFont);
+  }
 
   var themeSwatches = THEMES.map(function (t) {
     var active = t.id === savedTheme ? " active" : "";
@@ -50,6 +63,11 @@
   var lwBtns = WIDTHS.map(function (w) {
     var active = w.id === savedWidth ? " active" : "";
     return '<button class="lw-btn' + active + '" data-lw="' + w.id + '">' + w.label + '</button>';
+  }).join("");
+
+  var fontBtns = FONTS.map(function (f) {
+    var active = f.id === savedFont ? " active" : "";
+    return '<button class="font-btn' + active + '" data-font="' + f.id + '">' + f.label + '</button>';
   }).join("");
 
   panel.innerHTML =
@@ -68,14 +86,11 @@
       '<div class="seg-row lw-row">' + lwBtns + '</div>' +
     '</div>' +
     '<div class="settings-divider"></div>' +
-    '<div class="settings-row" style="margin-top:4px;">' +
-      '<label for="sans-toggle">Sans-serif font</label>' +
-      '<label class="settings-toggle">' +
-        '<input type="checkbox" id="sans-toggle"' + (isOn ? ' checked' : '') + '>' +
-        '<span class="slider"></span>' +
-      '</label>' +
+    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
+      '<label class="seg-label">Text style</label>' +
+      '<div class="seg-row font-row">' + fontBtns + '</div>' +
     '</div>' +
-    '<p style="font-family:monospace;font-size:10px;color:var(--ink-faint);margin:8px 0 0;text-align:center;">press ? for keyboard shortcuts</p>';
+    '<p style="font-family:var(--font-body);font-size:10px;color:var(--ink-faint);margin:8px 0 0;text-align:center;">press ? for keyboard shortcuts</p>';
 
   document.body.appendChild(btn);
   document.body.appendChild(panel);
@@ -97,14 +112,19 @@
     }
   });
 
-  document.getElementById("sans-toggle").addEventListener("change", function () {
-    if (this.checked) {
-      document.documentElement.classList.add("sans-serif");
-      localStorage.setItem("cvam-sans", "1");
-    } else {
-      document.documentElement.classList.remove("sans-serif");
-      localStorage.removeItem("cvam-sans");
-    }
+  var fontBtnEls = panel.querySelectorAll(".font-btn");
+  fontBtnEls.forEach(function (fontBtn) {
+    fontBtn.addEventListener("click", function () {
+      var font = this.getAttribute("data-font");
+      FONTS.forEach(function (f) { document.documentElement.classList.remove(f.id); });
+      if (font !== "font-sans") {
+        document.documentElement.classList.add(font);
+      }
+      localStorage.setItem("cvam-font", font);
+      localStorage.setItem("cvam-sans", font === "font-sans" ? "1" : "0");
+      fontBtnEls.forEach(function (b) { b.classList.remove("active"); });
+      this.classList.add("active");
+    });
   });
 
   var swatches = panel.querySelectorAll(".theme-swatch");

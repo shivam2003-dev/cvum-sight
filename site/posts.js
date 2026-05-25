@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "ai-jobs-or-prosperity",
+    title: "Will AI Destroy Jobs or Create Prosperity? — What the Math Actually Says.",
+    date: "May 25, 2026",
+    cat: "resources",
+    tags: ["resources", "ai", "economics", "future-of-work", "macroeconomics"],
+    time: 24,
+    words: 5800,
+    excerpt: "I asked AI to run the numbers on itself. 7 scenarios, 10K Monte Carlo draws, task-based labor models, Hulten aggregation. The verdict: not catastrophic, but structurally disruptive. GDP +10% by 2045, labor share down 4.5 pp, top 10% income share up 4.2 pp — and the strongest counterargument gets 30% weight."
+  },
+  {
     slug: "how-to-write-a-paper",
     title: "How to Write a Research Paper — From Blank Page to Camera-Ready.",
     date: "May 21, 2026",

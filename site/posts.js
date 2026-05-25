@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "dependency-security-devops",
+    title: "Dependency Management Security in Modern DevOps Pipelines.",
+    date: "May 26, 2026",
+    cat: "security",
+    tags: ["security", "devops", "supply-chain", "sbom", "ci-cd", "devsecops"],
+    time: 52,
+    words: 12400,
+    excerpt: "From XZ Utils to SolarWinds — dependency management evolved into the largest attack surface in modern software delivery. Dependency confusion, typosquatting, malicious maintainers, build-time RCE, CI/CD pipeline compromise. SBOM generation, SLSA provenance, Sigstore signing, hermetic builds, and enterprise governance models."
+  },
+  {
     slug: "ai-jobs-or-prosperity",
     title: "Will AI Destroy Jobs or Create Prosperity? — What the Math Actually Says.",
     date: "May 25, 2026",

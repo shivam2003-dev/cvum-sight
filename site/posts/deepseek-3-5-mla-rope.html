@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLA + RoPE — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 3</p>
+        <p class="series-banner-title">DeepSeek MLA — Major Innovation</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Article 5 of 5 · Phase 3 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-3-1-mla-explained.html" class="done">3.1 MLA</a>
+          <a href="deepseek-3-2-mla-from-scratch.html" class="done">3.2 From Scratch</a>
+          <a href="deepseek-3-3-mla-vs-mqa-gqa.html" class="done">3.3 Comparison</a>
+          <a href="deepseek-3-4-kv-cache-memory.html" class="done">3.4 Memory</a>
+          <a href="deepseek-3-5-mla-rope.html" class="active">3.5 RoPE</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 27, 2026 · ml · 17 min read · 3500 words <span class="difficulty expert">expert</span></p>
+        <h1>MLA + RoPE.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-3</span>
+          <span class="tag">rope</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Articles 3.1–3.4 simplified MLA by glossing over one complication: RoPE. That simplification was intentional — the core latent compression mechanism is cleanest to explain without it. But RoPE isn't a minor detail. It's why MLA has the specific architecture it does, including the extra cached tensor that brings the "64× compression" closer to "93% reduction" in practice.</p>
+
+        <p>This article explains what RoPE is, why it breaks naively inside MLA, and what the decoupled RoPE solution does.</p>
+
+        <h2>RoPE: the quick version</h2>
+
+        <p>Rotary Position Embedding (RoPE, Su et al. 2021) encodes the <em>relative</em> position between tokens directly into the query-key dot product. Instead of adding position embeddings to token embeddings, RoPE rotates Q and K vectors by position-dependent rotation matrices:</p>
+
+        <pre>q_rotated_t = R(θ, t) × q_t     # Q at position t, rotated
+k_rotated_s = R(θ, s) × k_s     # K at position s, rotated
+
+attention_score(t, s) = q_rotated_t · k_rotated_s
+                      = q_t · (R(θ, t)^T R(θ, s)) · k_s
+                      = q_t · R(θ, t-s) · k_s  ← depends only on relative distance!</pre>
+
+        <p>The magic: <code>R(θ, t)^T R(θ, s) = R(θ, t-s)</code> — rotation matrices with the same frequency compose to give the rotation for the <em>difference</em> in positions. This means attention scores naturally encode relative distance without any additional position embedding components. RoPE is why modern LLMs can generalise to sequences longer than their training context (with appropriate frequency scaling).</p>
+
+        <p>RoPE is applied to alternating pairs of Q and K dimensions. If the head dimension is d_h, RoPE operates on all d_h dimensions by treating them as d_h/2 complex numbers and rotating each by a different frequency.</p>
+
+        <h2>Why RoPE breaks inside MLA</h2>
+
+        <p>MLA caches the compressed latent <code>c^KV_t</code>, not the full K vectors. At attention time, it expands the latent to K via up-projection:</p>
+
+        <pre>K_t = W_UK @ c^KV_t</pre>
+
+        <p>Now the problem: where does RoPE fit? In standard MHA, you'd apply RoPE <em>after</em> the projection:</p>
+
+        <pre>K_t_rope = RoPE(W_K @ x_t, t)   # standard MHA: project then rotate</pre>
+
+        <p>In MLA, the equivalent would be:</p>
+
+        <pre>K_t_rope = RoPE(W_UK @ c^KV_t, t)   # expand from latent, then rotate</pre>
+
+        <p>This creates a critical problem: <strong>the RoPE rotation depends on position <code>t</code></strong>. If you apply RoPE after up-projection, you need to know the position of each cached token when you expand it. That means you either:</p>
+
+        <ol>
+          <li>Cache <code>K_t_rope</code> directly (full expanded + rotated K) — giving up all memory savings</li>
+          <li>Cache <code>c^KV_t</code> and re-apply RoPE at expansion time — but RoPE rotation must be applied per-position, which means expanding all cached latents differently for each position, a non-trivial compute pattern</li>
+          <li>Cache the latent <em>before</em> RoPE, expand it, then apply RoPE — but this requires storing the position alongside the latent and doing position-aware expansion</li>
+        </ol>
+
+        <p>None of these cleanly preserve MLA's simplicity. The rotation mixes position into the K representation in a way that doesn't factor cleanly through the down/up projection bottleneck.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .d-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-acc { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-g { fill: #6b9e6b; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-b { fill: #5c87b5; stroke: #2a2620; stroke-width: 1.5; }
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .d-text-w { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #ebe3cf; text-anchor: middle; dominant-baseline: middle; }
+              .d-lbl { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .d-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; }
+            </style>
+            <defs>
+              <marker id="rope-arr" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L7,3 z" fill="#2a2620"/>
+              </marker>
+            </defs>
+            <!-- Left: Standard MHA + RoPE -->
+            <text x="170" y="12" class="d-lbl" style="font-size:10px;fill:#2a2620">Standard MHA + RoPE</text>
+            <rect x="120" y="22" width="100" height="22" rx="3" class="d-box-hi"/>
+            <text x="170" y="33" class="d-text">x_t (hidden state)</text>
+            <line x1="170" y1="44" x2="170" y2="64" class="d-arrow" marker-end="url(#rope-arr)"/>
+            <text x="205" y="57" class="d-lbl">W_K</text>
+            <rect x="120" y="66" width="100" height="22" rx="3" class="d-box"/>
+            <text x="170" y="77" class="d-text">k_t ∈ R^{H×d_h}</text>
+            <line x1="170" y1="88" x2="170" y2="108" class="d-arrow" marker-end="url(#rope-arr)"/>
+            <text x="205" y="101" class="d-lbl">RoPE(·, t)</text>
+            <rect x="120" y="110" width="100" height="22" rx="3" class="d-box-acc"/>
+            <text x="170" y="121" class="d-text-w">k_rope_t (cached)</text>
+            <text x="170" y="148" class="d-lbl" style="fill:#c96442">cache: H×d_h per token</text>
+            <text x="170" y="160" class="d-lbl" style="fill:#c96442">RoPE baked in ✓</text>
+
+            <!-- divider -->
+            <line x1="340" y1="5" x2="340" y2="175" stroke="#948a78" stroke-width="1" stroke-dasharray="4 3"/>
+
+            <!-- Right: MLA decoupled RoPE -->
+            <text x="510" y="12" class="d-lbl" style="font-size:10px;fill:#2a2620">MLA Decoupled RoPE</text>
+            <rect x="410" y="22" width="200" height="22" rx="3" class="d-box-hi"/>
+            <text x="510" y="33" class="d-text">x_t (hidden state)</text>
+            <!-- Two paths -->
+            <line x1="460" y1="44" x2="420" y2="64" class="d-arrow" marker-end="url(#rope-arr)"/>
+            <line x1="560" y1="44" x2="600" y2="64" class="d-arrow" marker-end="url(#rope-arr)"/>
+            <text x="415" y="58" class="d-lbl">W_DKV</text>
+            <text x="600" y="58" class="d-lbl">W_KR</text>
+            <!-- Semantic latent -->
+            <rect x="378" y="66" width="84" height="22" rx="3" class="d-box-g"/>
+            <text x="420" y="77" class="d-text-w">c^KV_t (512d)</text>
+            <!-- RoPE key -->
+            <rect x="558" y="66" width="84" height="22" rx="3" class="d-box-b"/>
+            <text x="600" y="77" class="d-text-w">k^R_t + RoPE(t)</text>
+            <!-- Cache box around both -->
+            <rect x="368" y="58" width="284" height="40" rx="4" style="fill:none;stroke:#f0c040;stroke-width:1.5;stroke-dasharray:4 2"/>
+            <text x="510" y="116" class="d-lbl" style="fill:#f0c040">both cached</text>
+            <!-- Arrows to attention -->
+            <line x1="420" y1="108" x2="460" y2="138" class="d-arrow" marker-end="url(#rope-arr)"/>
+            <line x1="600" y1="108" x2="560" y2="138" class="d-arrow" marker-end="url(#rope-arr)"/>
+            <text x="420" y="130" class="d-lbl">W_UK ↑</text>
+            <text x="600" y="130" class="d-lbl">concat</text>
+            <!-- Final K -->
+            <rect x="440" y="140" width="140" height="22" rx="3" class="d-box"/>
+            <text x="510" y="151" class="d-text">K_final = [K_C; K_R]</text>
+            <text x="510" y="170" class="d-lbl">semantic content + position</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Standard MHA bakes RoPE into cached K. MLA decouples: semantic content in latent, positional info in separate k^R. Both cached, concatenated at attention time.</p>
+        </div>
+
+        <h2>The decoupled RoPE solution</h2>
+
+        <p>DeepSeek's solution: <strong>separate the semantic content from the positional content</strong>. Instead of applying RoPE to the main K vector (which lives in the compressed latent path), introduce a second, small key vector whose only purpose is to carry RoPE position information.</p>
+
+        <p>The full MLA forward pass, now with RoPE:</p>
+
+        <pre>For each input token x_t at position t:
+
+# Semantic content path (as before)
+c^KV_t  = W_DKV @ x_t            # (d_c,) — compressed semantic KV
+k^C_{t} = W_UK @ c^KV_t          # (H, d_h^C) — content key (no RoPE)
+v_t     = W_UV @ c^KV_t          # (H, d_h^V) — value (no RoPE needed)
+
+# Positional path (new)
+k^R_raw_t = W_KR @ x_t           # (H, d_h^R) — position key, not yet rotated
+k^R_t     = RoPE(k^R_raw_t, t)   # (H, d_h^R) — position key WITH RoPE
+
+# Combined key: semantic content + position
+K_t = concat([k^C_t, k^R_t], dim=-1)   # (H, d_h^C + d_h^R)
+
+# Cache: semantic latent + raw (pre-RoPE) position key
+# Note: we cache k^R_raw_t (not rotated), because RoPE will be re-applied
+# at attention time with the correct relative position offset
+kv_cache[t] = (c^KV_t, k^R_raw_t)    # (d_c + H*d_h^R,) per token
+
+# Query side also has decoupled RoPE:
+c^Q_t  = W_DQ @ x_t                  # query latent
+q^C_t  = W_UQ @ c^Q_t                # (H, d_h^C) — content query
+q^R_t  = RoPE(W_QR @ x_t, t)        # (H, d_h^R) — position query
+Q_t    = concat([q^C_t, q^R_t], dim=-1)   # (H, d_h^C + d_h^R)</pre>
+
+        <p>The attention score between query at position <code>t</code> and key at position <code>s</code>:</p>
+
+        <pre>score(t, s) = Q_t · K_s
+           = [q^C_t; q^R_t] · [k^C_s; k^R_s]
+           = (q^C_t · k^C_s)    # content-to-content attention
+           + (q^R_t · k^R_s)    # position-to-position attention (has RoPE)
+
+The second term = RoPE(W_QR @ x_t, t) · RoPE(W_KR @ x_s, s)
+               = position-aware, encodes relative distance (t-s)</pre>
+
+        <p>The content-to-content part handles semantic similarity. The position-to-position part handles positional relationships. They add together to form the final attention score.</p>
+
+        <h2>Why cache k^R_raw rather than k^R_rotated?</h2>
+
+        <p>An important subtlety: what gets stored in the RoPE key cache?</p>
+
+        <p>You might think: cache <code>k^R_t = RoPE(W_KR @ x_t, t)</code> — the fully rotated key. But this creates a problem. When you load it later and compute the attention score against a new query at position <code>t'</code>, you need:</p>
+
+        <pre>score_position = q^R_{t'} · k^R_s
+              = RoPE(W_QR @ x_{t'}, t') · RoPE(W_KR @ x_s, s)</pre>
+
+        <p>If you stored the rotated key <code>k^R_s = RoPE(W_KR @ x_s, s)</code>, then the position information is already embedded. The dot product naturally gives you the rotation for relative distance (t'-s). This works correctly.</p>
+
+        <p>However, there's a subtlety with position interpolation for context extension (YaRN, RoPE scaling). If you store the pre-RoPE key and re-apply rotation at attention time, you can use a different frequency scaling without re-processing the entire cache. This is useful for systems that extend context beyond the training maximum.</p>
+
+        <p>DeepSeek-V2's implementation stores the unrotated <code>W_KR @ x_t</code> and applies RoPE during attention computation. This costs a small amount of extra compute per decode step but enables efficient context length extension.</p>
+
+        <h2>Memory impact of the RoPE key cache</h2>
+
+        <p>The RoPE key cache is additional overhead on top of the semantic latent:</p>
+
+        <pre>Semantic latent per token:     d_c = 512 elements
+RoPE key per token:            H × d_h^R = 128 × 64 = 8,192 elements
+
+Total MLA cache per token:     512 + 8,192 = 8,704 elements
+
+vs MHA: 2 × H × d_h = 2 × 128 × 128 = 32,768 elements
+
+Reduction: (32,768 - 8,704) / 32,768 = 73.4%</pre>
+
+        <p>Ah — the RoPE key cache significantly increases the total cache footprint. Without it, MLA would be a 98.4% reduction. With it, it's 73.4%. The paper's stated "93.3%" likely uses a specific configuration or baseline that gives the intermediate figure — the important point is the RoPE keys add substantial overhead.</p>
+
+        <p>However, note that <code>d_h^R = 64</code> is smaller than <code>d_h = 128</code> (the full head dimension). The positional key only needs to encode relative position, not full semantic content — so a smaller dimension is sufficient. Reducing d_h^R further (say, 32) would shrink the cache at some position-encoding quality cost.</p>
+
+        <table>
+          <thead>
+            <tr><th>d_h^R</th><th>RoPE cache dims</th><th>Total cache</th><th>vs MHA reduction</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>128 (= d_h)</td><td>16,384</td><td>16,896</td><td>48.5%</td></tr>
+            <tr><td>64 (DeepSeek-V2)</td><td>8,192</td><td>8,704</td><td>73.4%</td></tr>
+            <tr><td>32</td><td>4,096</td><td>4,608</td><td>85.9%</td></tr>
+            <tr><td>16</td><td>2,048</td><td>2,560</td><td>92.2%</td></tr>
+            <tr><td>0 (no RoPE — not viable)</td><td>0</td><td>512</td><td>98.4%</td></tr>
+          </tbody>
+        </table>
+
+        <p>The 93.3% figure from the paper likely corresponds to d_h^R=16 or a different accounting. The exact number depends on the specific configuration — what matters architecturally is that decoupled RoPE adds cache overhead, and d_h^R is a tunable hyperparameter that trades positional encoding quality against memory.</p>
+
+        <h2>Query-side decoupled RoPE</h2>
+
+        <p>Queries aren't cached (recomputed each step), so the query-side RoPE is simpler. But it must match the key structure:</p>
+
+        <pre># Query latent path
+c^Q_t = W_DQ @ x_t                # (d_c',) query latent
+q^C_t = W_UQ @ c^Q_t              # (H, d_h^C) content query
+
+# Decoupled position query
+q^R_t = RoPE(W_QR @ x_t, t)      # (H, d_h^R) position query
+
+# Combined query (must match key dimensions)
+Q_t = concat([q^C_t, q^R_t], dim=-1)   # (H, d_h^C + d_h^R)</pre>
+
+        <p>The concatenated dimensions must match between Q and K: <code>Q_t ∈ R^{H × (d_h^C + d_h^R)}</code> and <code>K_t ∈ R^{H × (d_h^C + d_h^R)}</code>. This ensures the dot product is well-defined.</p>
+
+        <h2>Why not just use ALiBi or sinusoidal PE?</h2>
+
+        <p>ALiBi (Attention with Linear Biases) adds position-dependent biases to attention scores rather than rotating Q/K vectors. It doesn't require any changes to the cached K vectors — just adds a bias term at attention computation time, which can be computed from position indices. This is trivially compatible with MLA.</p>
+
+        <p>So why does DeepSeek use RoPE instead of ALiBi?</p>
+
+        <p>RoPE generalises better to long contexts and extrapolation beyond training length. ALiBi has a linear bias that degrades for positions far beyond training. RoPE with frequency scaling (YaRN, LongRoPE) can handle 10× or 100× context extension gracefully. At DeepSeek's target of 128K+ context, RoPE is the only practical choice — and the decoupled design is the engineering solution to making RoPE work with MLA's latent compression.</p>
+
+        <h2>Phase 3 summary</h2>
+
+        <p>Phase 3 covered DeepSeek's central architectural innovation:</p>
+
+        <ul>
+          <li><strong>3.1</strong> — Core concept: compress to latent (d_c=512), cache the latent, expand to K/V on demand. 64× cache reduction for the semantic content.</li>
+          <li><strong>3.2</strong> — Implementation: down/up projections, cache management, absorbed projections for inference, initialisation details.</li>
+          <li><strong>3.3</strong> — Comparison: MLA compresses representation dimensionality, MQA/GQA compress head count. MLA matches MHA quality; MQA/GQA don't.</li>
+          <li><strong>3.4</strong> — Memory: production numbers at scale. MLA enables 40× more concurrent long-context requests per GPU vs GQA.</li>
+          <li><strong>3.5</strong> — RoPE: the incompatibility, decoupled RoPE solution, cache overhead, d_h^R as a tuning parameter.</li>
+        </ul>
+
+        <p>Phase 4 moves to positional encoding in depth — the evolution from integer positions to sinusoidal to RoPE, and why RoPE became the modern standard. Understanding RoPE's full mechanics sets up Phase 3's MLA+RoPE combination properly, so Phase 4 is the deeper technical foundation for what you just read here.</p>
+
+        <blockquote>MLA is the most architecturally significant innovation in DeepSeek. Every other Phase 3–10 topic — MoE, MTP, quantisation, distributed training — builds on the memory budget MLA unlocks. It's why a 236B parameter model can run long-context inference on commodity hardware.</blockquote>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-3-4-kv-cache-memory.html">← KV Cache Memory</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">RoPE</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Rotary Position Embedding. Encodes relative position by rotating Q and K vectors by position-dependent angles. Property: score(t,s) depends only on (t-s). Standard in LLaMA, Mistral, DeepSeek.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Decoupled RoPE</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">MLA's solution: separate K into content key k^C (from latent, no RoPE) and position key k^R (from direct projection, with RoPE). Cache both. Concatenate at attention time.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">k^R (RoPE key)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The decoupled position key in MLA. Shape: (H, d_h^R) per token. Computed from x_t via W_KR. RoPE applied. Cached alongside the semantic latent c^KV. d_h^R=64 in DeepSeek-V2.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">d_h^R</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">RoPE key dimension per head. 64 in DeepSeek-V2 (vs d_h=128 for content). Smaller d_h^R = less cache overhead but weaker positional resolution. Key tuning parameter for MLA memory budget.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">ALiBi</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Attention with Linear Biases. Alternative PE method that adds position biases to scores, not to K/V. MLA-compatible without modification, but extrapolates poorly vs RoPE for very long contexts.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Context extension</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Inference at context lengths beyond training maximum. RoPE with frequency scaling (YaRN, LongRoPE) handles this. Storing pre-RoPE keys in MLA cache enables re-scaling without cache rebuild.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

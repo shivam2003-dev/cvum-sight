@@ -16,6 +16,66 @@
 
 const POSTS = [
   {
+    slug: "deepseek-3-5-mla-rope",
+    title: "MLA + RoPE.",
+    date: "May 27, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-3", "rope"],
+    time: 17,
+    words: 3500,
+    excerpt: "Why RoPE breaks inside MLA's latent compression, and how decoupled RoPE solves it. The d_h^R hyperparameter, the real memory cost of the RoPE key cache, and why pre-RoPE key storage enables context extension.",
+    series: "deepseek",
+    seriesNum: "3.5"
+  },
+  {
+    slug: "deepseek-3-4-kv-cache-memory",
+    title: "KV Cache Memory Deep Dive.",
+    date: "May 27, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-3", "kv-cache"],
+    time: 16,
+    words: 3300,
+    excerpt: "Exact memory budgets for LLaMA-3-8B, LLaMA-3-70B, and DeepSeek-V2-236B across realistic serving scenarios. Why MLA enables 40× more concurrent requests than GQA at 128K context.",
+    series: "deepseek",
+    seriesNum: "3.4"
+  },
+  {
+    slug: "deepseek-3-3-mla-vs-mqa-gqa",
+    title: "MLA vs MQA vs GQA.",
+    date: "May 27, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-3", "mla"],
+    time: 16,
+    words: 3200,
+    excerpt: "Side-by-side: MQA and GQA compress head count, MLA compresses representation dimensionality. Architecture diagrams, memory tables, quality comparisons, and which to use when.",
+    series: "deepseek",
+    seriesNum: "3.3"
+  },
+  {
+    slug: "deepseek-3-2-mla-from-scratch",
+    title: "MLA From Scratch.",
+    date: "May 27, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-3", "mla"],
+    time: 22,
+    words: 4500,
+    excerpt: "Full PyTorch implementation: down/up projections, KV latent cache management, absorbed projections for inference, and shape tracing. Every tensor, every line.",
+    series: "deepseek",
+    seriesNum: "3.2"
+  },
+  {
+    slug: "deepseek-3-1-mla-explained",
+    title: "MLA Explained.",
+    date: "May 27, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-3", "mla"],
+    time: 19,
+    words: 3800,
+    excerpt: "DeepSeek's centrepiece innovation: compress K,V to a 512-dim latent, cache the latent, expand to full attention on demand. 64× cache compression, MHA-level quality. How and why it works.",
+    series: "deepseek",
+    seriesNum: "3.1"
+  },
+  {
     slug: "deepseek-2-4-attention-scaling",
     title: "Why Attention Scaling Breaks.",
     date: "May 27, 2026",

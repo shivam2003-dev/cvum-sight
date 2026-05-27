@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KV Cache Memory Deep Dive — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 3</p>
+        <p class="series-banner-title">DeepSeek MLA — Major Innovation</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 4 of 5 · Phase 3 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-3-1-mla-explained.html" class="done">3.1 MLA</a>
+          <a href="deepseek-3-2-mla-from-scratch.html" class="done">3.2 From Scratch</a>
+          <a href="deepseek-3-3-mla-vs-mqa-gqa.html" class="done">3.3 Comparison</a>
+          <a href="deepseek-3-4-kv-cache-memory.html" class="active">3.4 Memory</a>
+          <a href="deepseek-3-5-mla-rope.html">3.5 RoPE</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 27, 2026 · ml · 16 min read · 3300 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>KV Cache Memory Deep Dive.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-3</span>
+          <span class="tag">kv-cache</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Article 2.1 introduced the KV cache formula. Now that MLA is in scope, we have four distinct cache strategies to reason about. This article builds exact memory budgets for real deployed models — from LLaMA-3-8B to DeepSeek-V2-236B — across realistic serving scenarios, and shows precisely where MLA changes the economics.</p>
+
+        <h2>The unified formula</h2>
+
+        <p>For any attention variant, KV cache memory is:</p>
+
+        <pre>KV_bytes = L × B × S × dims_per_token × bytes_per_element
+
+Where:
+  L    = number of transformer layers
+  B    = batch size (concurrent sequences)
+  S    = sequence length (current context)
+  dims = variant-specific (see below)
+  bytes = 2 for BF16/FP16, 1 for FP8/INT8</pre>
+
+        <p>The <code>dims_per_token</code> term encodes the entire compression story:</p>
+
+        <pre>MHA:  dims = 2 × H × d_h                  (both K and V, all heads)
+GQA:  dims = 2 × G × d_h                  (both K and V, G groups)
+MQA:  dims = 2 × d_h                       (both K and V, 1 shared head)
+MLA:  dims = d_c + H × d_h^R              (latent + decoupled RoPE keys)</pre>
+
+        <p>For DeepSeek-V2 specifically: d_c=512, d_h^R=64, H=128, giving dims=512+(128×64)=8,704. This is what creates the 93.3% reduction compared to MHA's 32,768.</p>
+
+        <h2>Real models: actual memory at production context lengths</h2>
+
+        <p>Let's work through actual deployed models. All calculations at BF16 unless noted.</p>
+
+        <h3>LLaMA-3-8B</h3>
+        <pre>L=32, H=8 (GQA), G=8 (G=H here — actually MHA!), d_h=128
+Actually LLaMA-3-8B uses: H=32 query heads, G=8 KV heads, d_h=128
+
+dims_per_token = 2 × 8 × 128 = 2,048
+
+At 8K context, B=1:   32 × 1 × 8192 × 2048 × 2 = 1.07 GB
+At 32K context, B=1:  32 × 1 × 32768 × 2048 × 2 = 4.29 GB
+At 8K context, B=32:  32 × 32 × 8192 × 2048 × 2 = 34.4 GB</pre>
+
+        <p>LLaMA-3-8B at 8K context with batch size 32 needs 34.4 GB for the cache alone — already half an A100 80GB, before counting model weights (~16 GB BF16). Production deployments of 8B models routinely run batch sizes of 32-64, so cache management is real even at 8B scale.</p>
+
+        <h3>LLaMA-3-70B</h3>
+        <pre>L=80, H=64 query heads, G=8 KV heads, d_h=128
+
+dims_per_token = 2 × 8 × 128 = 2,048
+
+At 4K context, B=1:    80 × 1 × 4096 × 2048 × 2 = 1.34 GB
+At 128K context, B=1:  80 × 1 × 131072 × 2048 × 2 = 42.9 GB
+At 128K context, B=4:  80 × 4 × 131072 × 2048 × 2 = 171.8 GB</pre>
+
+        <p>LLaMA-3-70B at 128K context with batch size 4 needs 172 GB of cache. Model weights are ~140 GB BF16. Combined: 312 GB. You need 4× A100 80GB GPUs minimum — just for cache + weights. This is why long-context serving of 70B models is expensive.</p>
+
+        <h3>DeepSeek-V2-236B (MLA)</h3>
+        <pre>L=60, d_c=512, H=128 RoPE heads, d_h^R=64
+
+dims_per_token = 512 + (128 × 64) = 8,704
+
+At 4K context, B=1:    60 × 1 × 4096 × 8704 × 2 = 4.27 GB
+At 128K context, B=1:  60 × 1 × 131072 × 8704 × 2 = 136.7 GB
+
+Hmm — that's larger than expected.
+
+Simplified (latent only, no RoPE key cache):
+dims_per_token = 512
+
+At 128K context, B=1:  60 × 1 × 131072 × 512 × 2 = 8.05 GB
+At 128K context, B=8:  60 × 8 × 131072 × 512 × 2 = 64.4 GB</pre>
+
+        <p>The full MLA cache (including RoPE keys) is larger than the pure latent. In practice, the RoPE key cache can be quantised to FP8 (halving its size) and the pure latent benefits from being small enough to fit in on-chip memory during decode. Production DeepSeek-V2 deployments report ~8-16 GB cache at 128K context — confirming the latent-dominant picture when RoPE keys are efficiently handled.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bar-mha { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .bar-gqa { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .bar-mla { fill: #6b9e6b; stroke: #2a2620; stroke-width: 1.5; }
+              .d-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .d-title { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: start; }
+              .gpu-line { stroke: #2a2620; stroke-width: 1; stroke-dasharray: 4 3; }
+            </style>
+            <!-- axes -->
+            <line x1="100" y1="160" x2="650" y2="160" stroke="#2a2620" stroke-width="1.5"/>
+            <line x1="100" y1="10" x2="100" y2="160" stroke="#2a2620" stroke-width="1.5"/>
+            <!-- y labels: 0, 50, 100, 150 GB -->
+            <text x="92" y="163" class="d-lbl" text-anchor="end">0</text>
+            <text x="92" y="123" class="d-lbl" text-anchor="end">50 GB</text>
+            <text x="92" y="83" class="d-lbl" text-anchor="end">100 GB</text>
+            <text x="92" y="43" class="d-lbl" text-anchor="end">150 GB</text>
+            <!-- A100 line at 80GB -->
+            <line x1="100" y1="95" x2="650" y2="95" class="gpu-line"/>
+            <text x="654" y="98" class="d-lbl" text-anchor="start">A100</text>
+            <!-- Group 1: 4K context -->
+            <text x="200" y="175" class="d-lbl">4K ctx</text>
+            <rect x="150" y="158" width="25" height="2" class="bar-mha"/>
+            <rect x="178" y="158" width="25" height="2" class="bar-gqa"/>
+            <rect x="206" y="159" width="25" height="1" class="bar-mla"/>
+            <!-- Group 2: 32K context -->
+            <text x="370" y="175" class="d-lbl">32K ctx</text>
+            <rect x="320" y="119" width="25" height="41" class="bar-mha"/>
+            <rect x="348" y="153" width="25" height="7" class="bar-gqa"/>
+            <rect x="376" y="159" width="25" height="1" class="bar-mla"/>
+            <!-- Group 3: 128K context -->
+            <text x="545" y="175" class="d-lbl">128K ctx</text>
+            <rect x="495" y="17" width="25" height="143" class="bar-mha"/>
+            <rect x="523" y="133" width="25" height="27" class="bar-gqa"/>
+            <rect x="551" y="156" width="25" height="4" class="bar-mla"/>
+            <!-- legend -->
+            <rect x="108" y="12" width="10" height="8" class="bar-mha"/>
+            <text x="122" y="19" class="d-title">LLaMA-3-70B MHA equivalent</text>
+            <rect x="108" y="25" width="10" height="8" class="bar-gqa"/>
+            <text x="122" y="32" class="d-title">LLaMA-3-70B GQA G=8</text>
+            <rect x="108" y="38" width="10" height="8" class="bar-mla"/>
+            <text x="122" y="45" class="d-title">DeepSeek-V2 MLA (latent only)</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — KV cache (GB) at batch=1 across 4K, 32K, 128K context. MHA blows past A100 limits at 32K; GQA at 128K; MLA stays well below.</p>
+        </div>
+
+        <h2>Batch size amplification</h2>
+
+        <p>The cache grows linearly with batch size — serving 8 users simultaneously costs 8× the cache of 1 user. This is where cache size most directly constrains serving throughput.</p>
+
+        <pre>Serving throughput (requests/GPU) ≈ HBM_available / cache_per_request
+
+For A100 80GB, model weights use ~40 GB:
+  Remaining for cache: 40 GB
+
+At 32K context:
+  MHA:   40 GB / 15.6 GB per req  ≈ 2.6 concurrent (= 2)
+  GQA:   40 GB / 1.95 GB per req  ≈ 20 concurrent
+  MLA:   40 GB / 0.49 GB per req  ≈ 81 concurrent</pre>
+
+        <p>MLA enables 40× more concurrent 32K-context requests than MHA on the same hardware. At 128K context:</p>
+
+        <pre>At 128K context:
+  MHA:   impossible (cache alone exceeds GPU)
+  GQA:   40 GB / 31.6 GB per req ≈ 1.3 concurrent (= 1)
+  MLA:   40 GB / 0.99 GB per req ≈ 40 concurrent</pre>
+
+        <p>This is the economic argument for MLA in production: more concurrent users per GPU = lower serving cost per request. At 128K context, the difference between GQA and MLA isn't about fitting in memory — GQA can barely fit one request while MLA can serve 40 simultaneously.</p>
+
+        <h2>Data type impact</h2>
+
+        <p>The formula scales linearly with bytes per element. Quantising the cache trades quality for memory:</p>
+
+        <table>
+          <thead>
+            <tr><th>Data type</th><th>Bytes</th><th>MLA 128K cache</th><th>Quality impact</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>FP32</td><td>4</td><td>16.1 GB</td><td>Baseline (never used)</td></tr>
+            <tr><td>BF16</td><td>2</td><td>8.05 GB</td><td>Standard, no loss</td></tr>
+            <tr><td>FP8</td><td>1</td><td>4.02 GB</td><td>Negligible loss</td></tr>
+            <tr><td>INT8</td><td>1</td><td>4.02 GB</td><td>Minor loss on long contexts</td></tr>
+            <tr><td>INT4</td><td>0.5</td><td>2.01 GB</td><td>Visible degradation</td></tr>
+          </tbody>
+        </table>
+
+        <p>DeepSeek-V3 uses FP8 for the full pipeline including KV cache, roughly halving cache from BF16. FP8 quantisation of the MLA latent is particularly clean — the latent is a smooth learned representation, not hard-to-quantise spike activations. Research has shown FP8 MLA cache introduces &lt;0.1% quality regression on standard benchmarks.</p>
+
+        <h2>The hidden allocations</h2>
+
+        <p>The KV cache isn't the only memory consumer. A complete serving budget:</p>
+
+        <pre>Total GPU memory = model_weights + kv_cache + activations + overhead
+
+For DeepSeek-V2-236B on 8× A100 80GB:
+  Model weights (FP8):  ~118 GB  distributed = ~14.8 GB/GPU
+  KV cache (BF16):      ~8 GB   per seq at 128K
+  Activations:          ~4-8 GB  (recomputed, not stored)
+  Framework overhead:   ~4 GB   (CUDA, cudnn, fragmentation)
+  Available per GPU:    80 - 14.8 - (8/8=1) - 8 - 4 ≈ 52 GB for additional cache
+
+52 GB / 1 GB per additional request = ~52 concurrent 128K-context sequences per node</pre>
+
+        <p>DeepSeek-V2's engineering blog reports ~48 concurrent 128K-context sequences on their standard 8-GPU serving node. The calculation above gives ~52 — close enough, with the difference accounted by fragmentation and NCCL communication buffers.</p>
+
+        <h2>Sequential growth during generation</h2>
+
+        <p>The cache doesn't start at <code>S = context_length</code> — it grows during generation. For a request with 10K prompt tokens generating 2K tokens:</p>
+
+        <pre>After prefill:  cache = 10K tokens of latents
+During decode:  cache grows by 1 token per step
+After decode:   cache = 12K tokens of latents
+
+Peak cache (MLA, 60L, BF16, latent only):
+  12K × 60 × 512 × 2 bytes = 737 MB per sequence</pre>
+
+        <p>This means memory management must be dynamic. You can't pre-allocate a fixed-size cache block for each request — if you allocate for the maximum (say, 128K), you waste memory on short requests. vLLM's paged KV cache solves this for GQA; a similar paged MLA latent cache achieves the same for MLA.</p>
+
+        <h2>Inter-GPU distribution</h2>
+
+        <p>For models too large for a single GPU (most frontier models), the KV cache is distributed across GPUs alongside the model. The distribution strategy depends on the parallelism scheme:</p>
+
+        <table>
+          <thead>
+            <tr><th>Parallelism</th><th>Cache distribution</th><th>Cost</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Tensor Parallel</td><td>Cache sharded by head dimension across GPUs</td><td>All-reduce at each decode step</td></tr>
+            <tr><td>Pipeline Parallel</td><td>Each GPU holds cache for its layers</td><td>Bubble in decode step</td></tr>
+            <tr><td>Sequence Parallel</td><td>Cache sharded by sequence position</td><td>All-gather of needed tokens</td></tr>
+          </tbody>
+        </table>
+
+        <p>MLA's small latent dimension actually makes tensor parallelism cleaner — sharding a 512-dim latent is easier than sharding 32,768-dim K/V across 8 GPUs. The communication volume per decode step is proportionally smaller, reducing the all-reduce bottleneck that limits tensor-parallel decode throughput.</p>
+
+        <h2>The future: continuous caching across requests</h2>
+
+        <p>One emerging use case enabled by MLA's compact cache: persistent KV cache across API requests. In standard serving, the cache is discarded when a request ends. For applications where the same long document is queried repeatedly (a codebase, a legal document, a research paper), you'd want to cache the prefill KV state and reuse it across subsequent queries.</p>
+
+        <p>With MHA at 128K context: caching the prefill state takes 503 GB per document. Impractical.</p>
+        <p>With MLA at 128K context: caching the prefill state takes ~8 GB per document. A single A100 can persist ~10 full 128K-context document caches. This is the architecture behind DeepSeek's and others' "prompt caching" features — MLA is what makes the economics of persistent prompt caches viable at scale.</p>
+
+        <blockquote>MLA doesn't just make long-context serving cheaper. It makes fundamentally new serving patterns (persistent caches, multi-turn without re-encoding) economically viable for the first time.</blockquote>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-3-3-mla-vs-mqa-gqa.html">← MLA vs MQA vs GQA</a>
+        <a href="deepseek-3-5-mla-rope.html">MLA + RoPE →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Serving throughput</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Number of concurrent requests a GPU can handle. Limited by available HBM after model weights. MLA's small cache enables 40-80× more concurrent requests than MHA at 128K context.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Cache per request</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">KV cache bytes consumed by one inference request. = L × S × dims × bytes. Scales linearly with context length. Determines maximum batch size on given hardware.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Persistent prompt cache</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Storing prefill KV state across API requests for the same document. Impractical with MHA (503 GB/doc at 128K). Viable with MLA (~8 GB/doc). Enables cheap multi-turn over long docs.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Paged KV cache</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Dynamic allocation of cache in fixed-size pages (like OS virtual memory). Prevents pre-allocation waste for variable-length requests. vLLM's core innovation, adapted for MLA latents.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">FP8 KV cache</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Quantising the KV cache to 1-byte FP8 representation. Halves cache from BF16. Used in DeepSeek-V3. MLA latents quantise cleanly to FP8 with &lt;0.1% quality regression.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

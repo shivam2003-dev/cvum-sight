@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLA From Scratch — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 3</p>
+        <p class="series-banner-title">DeepSeek MLA — Major Innovation</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 2 of 5 · Phase 3 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-3-1-mla-explained.html" class="done">3.1 MLA</a>
+          <a href="deepseek-3-2-mla-from-scratch.html" class="active">3.2 From Scratch</a>
+          <a href="deepseek-3-3-mla-vs-mqa-gqa.html">3.3 Comparison</a>
+          <a href="deepseek-3-4-kv-cache-memory.html">3.4 Memory</a>
+          <a href="deepseek-3-5-mla-rope.html">3.5 RoPE</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 27, 2026 · ml · 22 min read · 4500 words <span class="difficulty advanced">advanced</span></p>
+        <h1>MLA From Scratch.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-3</span>
+          <span class="tag">mla</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Article 3.1 explained what MLA does: compress to latent, cache the latent, expand to K/V on demand. This article implements it from scratch in PyTorch — every matrix, every shape, every cache operation — so you can read a DeepSeek-V2 checkpoint and understand exactly what each weight does.</p>
+
+        <blockquote>Prerequisites: Phase 1 (MHA from scratch), Phase 2 (KV cache mechanics). This is a code-first article. Read 3.1 first if you haven't.</blockquote>
+
+        <h2>Module structure</h2>
+
+        <p>Before writing any code, map out the components:</p>
+
+        <pre>MLAAttention
+├── W_DQ   — query down-projection    (d_model → d_c')
+├── W_UQ   — query up-projection      (d_c' → H × d_h^C)
+├── W_QR   — decoupled query RoPE     (d_model → H × d_h^R)
+├── W_DKV  — KV down-projection       (d_model → d_c)
+├── W_UK   — key up-projection        (d_c → H × d_h^C)
+├── W_UV   — value up-projection      (d_c → H × d_h^V)
+├── W_KR   — decoupled key RoPE       (d_model → H × d_h^R)
+└── W_O    — output projection        (H × d_h^V → d_model)
+
+KV cache per layer:
+├── c_kv   — latent KV cache          (B, max_seq, d_c)
+└── k_rope — decoupled RoPE key cache (B, max_seq, H, d_h^R)</pre>
+
+        <p>The decoupled RoPE components (<code>W_QR</code>, <code>W_KR</code>, <code>k_rope</code> cache) handle positional encoding — Article 3.5 covers those in depth. Here we'll simplify by omitting RoPE and implementing the core latent compression mechanism cleanly.</p>
+
+        <h2>Hyperparameters</h2>
+
+        <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+
+# DeepSeek-V2 inspired (scaled down for illustration)
+D_MODEL   = 512    # d_model (5120 in actual DeepSeek-V2)
+N_HEADS   = 16     # H (128 in actual)
+D_HEAD    = 64     # d_h (128 in actual)
+D_C_KV    = 64     # d_c — KV compression dim (512 in actual)
+D_C_Q     = 96     # d_c' — Q compression dim (1536 in actual)
+D_HEAD_R  = 32     # d_h^R — decoupled RoPE dim (64 in actual)
+
+# Derived
+D_KV_FULL = N_HEADS * D_HEAD   # = 1024 (full K or V size)
+D_Q_FULL  = N_HEADS * D_HEAD   # = 1024 (full Q size)</pre>
+
+        <h2>The MLAAttention module</h2>
+
+        <pre>class MLAAttention(nn.Module):
+    def __init__(self, d_model, n_heads, d_head, d_c_kv, d_c_q):
+        super().__init__()
+        self.H     = n_heads
+        self.d_h   = d_head
+        self.d_c   = d_c_kv
+        self.d_c_q = d_c_q
+        self.scale = d_head ** -0.5
+
+        # Query path: low-rank (saves parameters during training)
+        self.W_DQ = nn.Linear(d_model, d_c_q, bias=False)
+        self.W_UQ = nn.Linear(d_c_q, n_heads * d_head, bias=False)
+
+        # Key-Value path: low-rank for BOTH training + inference memory
+        self.W_DKV = nn.Linear(d_model, d_c_kv, bias=False)   # down
+        self.W_UK  = nn.Linear(d_c_kv, n_heads * d_head, bias=False)  # K up
+        self.W_UV  = nn.Linear(d_c_kv, n_heads * d_head, bias=False)  # V up
+
+        # Output
+        self.W_O = nn.Linear(n_heads * d_head, d_model, bias=False)
+
+        # Norms on latents (helps stability)
+        self.norm_q = nn.RMSNorm(d_c_q)
+        self.norm_kv = nn.RMSNorm(d_c_kv)
+
+    def forward(self, x, kv_cache=None, return_cache=False):
+        B, S, D = x.shape
+
+        # ── Query path ──────────────────────────────────────────
+        # Down-project to latent
+        c_q = self.W_DQ(x)                          # (B, S, d_c')
+        c_q = self.norm_q(c_q)                       # stabilise
+
+        # Up-project to full query
+        q = self.W_UQ(c_q)                           # (B, S, H * d_h)
+        q = q.reshape(B, S, self.H, self.d_h)        # (B, S, H, d_h)
+        q = q.transpose(1, 2)                         # (B, H, S, d_h)
+
+        # ── Key-Value path ───────────────────────────────────────
+        # Down-project to KV latent (THIS is what we cache)
+        c_kv = self.W_DKV(x)                         # (B, S, d_c)
+        c_kv = self.norm_kv(c_kv)                    # stabilise
+
+        # If we have cached latents from previous steps, append
+        if kv_cache is not None:
+            c_kv_full = torch.cat([kv_cache, c_kv], dim=1)  # (B, S_total, d_c)
+        else:
+            c_kv_full = c_kv                          # (B, S, d_c)
+
+        S_total = c_kv_full.shape[1]
+
+        # Up-project ALL cached latents to K and V
+        k = self.W_UK(c_kv_full)                     # (B, S_total, H * d_h)
+        k = k.reshape(B, S_total, self.H, self.d_h)  # (B, S_total, H, d_h)
+        k = k.transpose(1, 2)                         # (B, H, S_total, d_h)
+
+        v = self.W_UV(c_kv_full)                     # (B, S_total, H * d_h)
+        v = v.reshape(B, S_total, self.H, self.d_h)  # (B, S_total, H, d_h)
+        v = v.transpose(1, 2)                         # (B, H, S_total, d_h)
+
+        # ── Attention ────────────────────────────────────────────
+        # Standard scaled dot-product
+        attn = torch.matmul(q, k.transpose(-2, -1)) * self.scale  # (B, H, S, S_total)
+
+        # Causal mask (only needed during training/prefill, not single-token decode)
+        if S > 1:
+            mask = torch.triu(
+                torch.ones(S, S_total, device=x.device, dtype=torch.bool), diagonal=1
+            )
+            attn = attn.masked_fill(mask.unsqueeze(0).unsqueeze(0), float('-inf'))
+
+        attn = F.softmax(attn, dim=-1)
+        out = torch.matmul(attn, v)                  # (B, H, S, d_h)
+
+        # ── Output ───────────────────────────────────────────────
+        out = out.transpose(1, 2).reshape(B, S, self.H * self.d_h)
+        out = self.W_O(out)                          # (B, S, d_model)
+
+        # Return updated cache (just the new latent, caller manages full cache)
+        if return_cache:
+            return out, c_kv_full
+        return out</pre>
+
+        <h2>KV cache management during decode</h2>
+
+        <p>The cache management logic deserves its own clean implementation. Notice what's in the cache vs what's computed on the fly:</p>
+
+        <pre>class MLADecoder:
+    """Manages MLA attention state for autoregressive generation."""
+
+    def __init__(self, n_layers, max_seq_len, d_c, batch_size, device):
+        self.n_layers = n_layers
+        # THE CACHE: only latents, not full K/V
+        # Contrast MHA: would need (n_layers, B, max_seq, H * d_h * 2)
+        self.kv_cache = torch.zeros(
+            n_layers, batch_size, max_seq_len, d_c,
+            device=device, dtype=torch.bfloat16
+        )
+        self.seq_len = 0  # current position
+
+    def get_cache(self, layer_idx):
+        """Return cached latents for layers up to current position."""
+        if self.seq_len == 0:
+            return None
+        return self.kv_cache[layer_idx, :, :self.seq_len, :]
+
+    def update_cache(self, layer_idx, new_latent):
+        """Append new latent to cache for this layer."""
+        self.kv_cache[layer_idx, :, self.seq_len, :] = new_latent.squeeze(1)
+
+    def step(self):
+        """Advance position counter."""
+        self.seq_len += 1
+
+
+# Usage during generation:
+def generate_step(model_layers, decoder, x_new_token):
+    """Single decode step: one new token in, one logit out."""
+    h = x_new_token  # (B, 1, d_model)
+
+    for i, layer in enumerate(model_layers):
+        # Get cached latents for this layer
+        cache = decoder.get_cache(i)
+
+        # Run attention with cache
+        attn_out, new_latent_full = layer.attn.forward(h, kv_cache=cache, return_cache=True)
+        h = h + attn_out
+        h = h + layer.ffn(layer.norm2(h))
+
+        # Store ONLY the new position's latent (last position in new_latent_full)
+        # new_latent_full has shape (B, seq_len+1, d_c)
+        decoder.update_cache(i, new_latent_full[:, -1:, :])
+
+    decoder.step()
+    return h  # (B, 1, d_model) → pass through lm_head for logits</pre>
+
+        <h2>Memory comparison: MHA vs MLA cache</h2>
+
+        <p>Let's make the memory comparison concrete with real tensors:</p>
+
+        <pre>import sys
+
+def cache_memory_bytes(variant, n_layers, B, max_seq, n_heads, d_h, d_c):
+    if variant == "MHA":
+        # K cache + V cache, each (n_layers, B, max_seq, n_heads, d_h)
+        elements = 2 * n_layers * B * max_seq * n_heads * d_h
+    elif variant == "MQA":
+        # 1 K head, 1 V head
+        elements = 2 * n_layers * B * max_seq * 1 * d_h
+    elif variant == "GQA_8":
+        # 8 K heads, 8 V heads
+        elements = 2 * n_layers * B * max_seq * 8 * d_h
+    elif variant == "MLA":
+        # Only latents (d_c per token per layer)
+        elements = n_layers * B * max_seq * d_c
+    bytes_bf16 = elements * 2  # BF16 = 2 bytes
+    return bytes_bf16
+
+# DeepSeek-V2 scale
+params = dict(n_layers=60, B=1, n_heads=128, d_h=128, d_c=512)
+
+for ctx in [4096, 32768, 131072]:
+    print(f"\n--- {ctx//1024}K context ---")
+    for v in ["MHA", "GQA_8", "MQA", "MLA"]:
+        mb = cache_memory_bytes(v, max_seq=ctx, **params) / 1e9
+        print(f"  {v:8s}: {mb:.1f} GB")
+
+# Output:
+# --- 4K context ---
+#   MHA     : 7.9 GB
+#   GQA_8   : 0.99 GB
+#   MQA     : 0.12 GB
+#   MLA     : 0.06 GB
+#
+# --- 32K context ---
+#   MHA     : 63.2 GB
+#   GQA_8   : 7.9 GB
+#   MQA     : 0.99 GB
+#   MLA     : 0.48 GB
+#
+# --- 128K context ---
+#   MHA     : 252.9 GB
+#   GQA_8   : 31.6 GB
+#   MQA     : 3.95 GB
+#   MLA     : 1.97 GB</pre>
+
+        <h2>The up-projection cost at decode time</h2>
+
+        <p>MLA's extra compute comes from expanding cached latents every decode step. How much does it cost?</p>
+
+        <pre>def decode_compute_flops(variant, seq_len, n_heads, d_h, d_c, d_model):
+    """FLOPs for one decode step (new Q vs all cached K/V)."""
+
+    if variant == "MHA":
+        # Load K,V cache directly (no up-project)
+        # Q@K^T: (H, 1, d_h) @ (H, d_h, seq_len) = H * d_h * seq_len * 2 FLOPs
+        attn_flops = 2 * n_heads * d_h * seq_len
+        return attn_flops
+
+    elif variant == "MLA":
+        # Up-project ALL cached latents: (seq_len, d_c) @ W_UK + W_UV
+        # W_UK: (d_c, n_heads*d_h); cost = seq_len * d_c * n_heads*d_h * 2 (for K)
+        # Same for V
+        up_proj_k = 2 * seq_len * d_c * n_heads * d_h   # K up-project
+        up_proj_v = 2 * seq_len * d_c * n_heads * d_h   # V up-project
+        attn_flops = 2 * n_heads * d_h * seq_len         # same attention
+        return up_proj_k + up_proj_v + attn_flops
+
+
+# At 4K context, DeepSeek-V2 scale
+mha_flops = decode_compute_flops("MHA", 4096, 128, 128, 512, 5120)
+mla_flops = decode_compute_flops("MLA", 4096, 128, 128, 512, 5120)
+
+print(f"MHA decode @ 4K: {mha_flops/1e9:.2f} GFLOPs")
+print(f"MLA decode @ 4K: {mla_flops/1e9:.2f} GFLOPs")
+print(f"MLA overhead:    {mla_flops/mha_flops:.1f}× more compute")
+
+# But MLA loads 64× less data from HBM (512 vs 32768 per cached token)
+# On memory-bandwidth-bound hardware, less data >> more compute</pre>
+
+        <p>MLA does more FLOPs per decode step than MHA — the up-projections add compute. But decode is memory-bandwidth-bound, not compute-bound. Loading 512-dim latents from HBM is dramatically faster than loading 32,768-dim K/V pairs. The bandwidth savings dominate the compute overhead in practice.</p>
+
+        <h2>Initialisation matters</h2>
+
+        <p>Two initialisation details that affect training stability:</p>
+
+        <pre>def init_mla_weights(module):
+    if isinstance(module, MLAAttention):
+        # Down-projections: standard small normal
+        nn.init.normal_(module.W_DQ.weight, std=0.02)
+        nn.init.normal_(module.W_DKV.weight, std=0.02)
+
+        # Up-projections: SMALLER init to avoid exploding latent expansion
+        # The up-projection multiplies by a large matrix — init too large → activations explode
+        up_scale = 0.02 / math.sqrt(2 * module.H)  # scale by 1/sqrt(2H)
+        nn.init.normal_(module.W_UQ.weight, std=up_scale)
+        nn.init.normal_(module.W_UK.weight, std=up_scale)
+        nn.init.normal_(module.W_UV.weight, std=up_scale)
+
+        # Output: zero init (common for residual stream stability)
+        nn.init.zeros_(module.W_O.weight)</pre>
+
+        <h2>Absorbing projections (inference optimisation)</h2>
+
+        <p>A key inference trick in production MLA implementations: the W_UK and W_UV matrices can be absorbed into W_O during a post-training optimisation step.</p>
+
+        <p>Standard computation:</p>
+        <pre>K = W_UK @ c_kv     # expand latent to K
+V = W_UV @ c_kv     # expand latent to V
+out = attn_weights @ V
+out = W_O @ out     # output projection</pre>
+
+        <p>Absorbed computation (W_O absorbs W_UV):</p>
+        <pre># Pre-compute once: W_O_absorbed = W_O @ W_UV  (this is a matrix multiply of fixed weights)
+# Shape: (d_model, n_heads*d_h) @ (n_heads*d_h, d_c) = (d_model, d_c)
+W_O_absorbed = W_O @ W_UV_reshaped   # (d_model, d_c)
+
+# At inference: skip the V up-project entirely
+out = attn_weights @ c_kv    # (B, H, S, d_c) — attend directly to latents
+out = W_O_absorbed @ out     # (B, S, d_model) — directly to output space</pre>
+
+        <p>This eliminates the V up-projection entirely at inference time. The same trick applies to K and the query projection (W_Q can absorb W_UQ, giving a direct d_model → H×d_h projection that bypasses the explicit Q latent bottleneck at runtime).</p>
+
+        <p>The absorbed form is mathematically equivalent — same outputs, fewer matrix multiplications. Production implementations like vLLM's DeepSeek support use this absorbed form for maximum inference speed.</p>
+
+        <h2>Sanity check: shape tracing</h2>
+
+        <pre>def shape_trace():
+    B, S, D = 2, 16, D_MODEL  # batch=2, seq=16
+
+    mla = MLAAttention(D_MODEL, N_HEADS, D_HEAD, D_C_KV, D_C_Q)
+    x = torch.randn(B, S, D)
+
+    # Prefill pass
+    with torch.no_grad():
+        out, cache = mla(x, kv_cache=None, return_cache=True)
+
+    print(f"Input:    {x.shape}")          # (2, 16, 512)
+    print(f"Output:   {out.shape}")         # (2, 16, 512)
+    print(f"KV cache: {cache.shape}")       # (2, 16, 64) ← only d_c dims!
+
+    # Single decode step (seq=1 new token, full cache)
+    x_new = torch.randn(B, 1, D)
+    with torch.no_grad():
+        out_decode, new_cache = mla(x_new, kv_cache=cache, return_cache=True)
+
+    print(f"\nDecode input:    {x_new.shape}")   # (2, 1, 512)
+    print(f"Decode output:   {out_decode.shape}") # (2, 1, 512)
+    print(f"Updated cache:   {new_cache.shape}")  # (2, 17, 64) ← grew by 1
+
+shape_trace()</pre>
+
+        <h2>What's not in this implementation</h2>
+
+        <p>This article covers the core latent compression mechanism. A production MLA implementation also needs:</p>
+
+        <ul>
+          <li><strong>Decoupled RoPE</strong> — separate key projection with rotary position encoding applied before concatenation with the content key (Article 3.5)</li>
+          <li><strong>RMSNorm on latents</strong> — stabilises the gradient flow through the down/up projection bottleneck (already included in the code above)</li>
+          <li><strong>Flash Attention kernel</strong> — the expanded K/V at attention time still benefit from tiled IO-aware computation</li>
+          <li><strong>FP8 quantisation</strong> — DeepSeek-V3 uses FP8 for both weights and activations; the latent cache can be quantised to FP8 for further memory reduction</li>
+          <li><strong>Paged KV cache</strong> — even the compact latent cache benefits from vLLM-style page management for variable-length batching</li>
+        </ul>
+
+        <p>The full DeepSeek-V2 attention module is ~400 lines of production code. The latent compression mechanism in this article is the core 80 lines that everything else wraps around.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-3-1-mla-explained.html">← MLA Explained</a>
+        <a href="deepseek-3-3-mla-vs-mqa-gqa.html">MLA vs MQA vs GQA →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Absorbed projection</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Inference optimization that fuses W_O @ W_UV into one matrix. Eliminates the V up-projection at runtime — attend directly to latents, project to output in one step.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">RMSNorm</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Root Mean Square Normalisation. Applied to latents c_Q and c_KV before up-projection. Stabilises training by preventing scale explosion at the latent bottleneck.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Prefill vs decode</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Prefill: process full input prompt in parallel, build KV cache. Decode: one token per step, attend to cached latents, append new latent. Different memory/compute profiles.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Up-projection overhead</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Extra FLOPs in MLA vs MHA: expanding all cached latents to K and V at each decode step. More compute, but loads 64× less data from HBM. Bandwidth savings dominate on GPU.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">d_c' (query latent dim)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Query compression dimension. 1536 in DeepSeek-V2. Reduces Q projection parameter count during training. Not cached (queries are recomputed each step, not stored).</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

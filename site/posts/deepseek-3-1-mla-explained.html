@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLA Explained — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 3</p>
+        <p class="series-banner-title">DeepSeek MLA — Major Innovation</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 1 of 5 · Phase 3 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-3-1-mla-explained.html" class="active">3.1 MLA</a>
+          <a href="deepseek-3-2-mla-from-scratch.html">3.2 From Scratch</a>
+          <a href="deepseek-3-3-mla-vs-mqa-gqa.html">3.3 Comparison</a>
+          <a href="deepseek-3-4-kv-cache-memory.html">3.4 Memory</a>
+          <a href="deepseek-3-5-mla-rope.html">3.5 RoPE</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 27, 2026 · ml · 19 min read · 3800 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>MLA Explained.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-3</span>
+          <span class="tag">mla</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Phase 2 traced the evolution of KV cache compression: MQA reduced head count to 1, GQA settled at G=8 as a quality-memory compromise, and Flash Attention made the computation IO-efficient. But even GQA still stores full-dimensional key and value vectors — it just stores fewer of them. Nobody asked whether the vectors themselves needed to be full-dimensional.</p>
+
+        <p>DeepSeek-V2 asked that question. The answer — Multi-Head Latent Attention (MLA) — was published in May 2024 (arXiv:2405.04434). This is Phase 3: the centrepiece architectural innovation that makes DeepSeek-V2 and V3 possible at their scale.</p>
+
+        <blockquote>MQA and GQA compressed the KV cache by reducing the number of heads. MLA compresses it by reducing the dimensionality of what's stored per head. Same number of full query heads. Dramatically smaller cached representation. 93.3% KV cache reduction vs standard MHA — with comparable or better quality.</blockquote>
+
+        <h2>The key insight: low-rank projection</h2>
+
+        <p>Standard MHA stores, for each token at each layer, the key and value vectors for all H heads:</p>
+        <pre>Cache[token t, layer l] = K_t ∈ R^{H × d_h}  +  V_t ∈ R^{H × d_h}
+                         = 2 × H × d_h elements per token</pre>
+
+        <p>For DeepSeek-V2 (H=128, d_h=128): <code>2 × 128 × 128 = 32,768 elements per token per layer</code>. Across 60 layers at 128K context: 32,768 × 60 × 128K ≈ 240 billion elements. At BF16, that's ~480 GB — physically impossible on any single GPU.</p>
+
+        <p>MLA's insight: K and V are computed by linear projections from the same source — the token's hidden state <code>x_t ∈ R^{d_model}</code>. Because these projections are linear, they define a subspace. You don't need to store the full K and V vectors if you can store a compact representation from which K and V can be reconstructed. That compact representation is the latent.</p>
+
+        <p>MLA adds a down-projection that compresses <code>x_t</code> into a low-dimensional latent vector <code>c^KV_t ∈ R^{d_c}</code>, where <code>d_c ≪ H × d_h</code>. At inference, only <code>c^KV_t</code> is cached. When a new token generates a query and needs to attend to previous tokens, K and V are reconstructed from the cached latents on-the-fly via up-projections.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .d-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-acc { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-g { fill: #6b9e6b; stroke: #2a2620; stroke-width: 1.5; }
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .d-text-w { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #ebe3cf; text-anchor: middle; dominant-baseline: middle; }
+              .d-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .d-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; }
+            </style>
+            <defs>
+              <marker id="mla-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="#2a2620"/>
+              </marker>
+              <marker id="mla-arr-g" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="#6b9e6b"/>
+              </marker>
+            </defs>
+            <!-- Input token -->
+            <rect x="280" y="10" width="120" height="28" rx="4" class="d-box-hi"/>
+            <text x="340" y="24" class="d-text">x_t (d_model=5120)</text>
+            <!-- Down projection arrow -->
+            <line x1="340" y1="38" x2="340" y2="68" class="d-arrow" marker-end="url(#mla-arr)"/>
+            <text x="385" y="55" class="d-lbl">W_DKV ↓ compress</text>
+            <!-- Latent -->
+            <rect x="295" y="70" width="90" height="28" rx="4" class="d-box-acc"/>
+            <text x="340" y="84" class="d-text-w">c^KV_t (d_c=512)</text>
+            <!-- Cache box -->
+            <rect x="272" y="112" width="136" height="22" rx="4" style="fill:none;stroke:#f0c040;stroke-width:2;stroke-dasharray:5 3"/>
+            <text x="340" y="123" class="d-lbl" style="fill:#f0c040">▶ ONLY THIS IS CACHED ◀</text>
+            <!-- Up projection arrows -->
+            <line x1="310" y1="98" x2="170" y2="148" class="d-arrow" marker-end="url(#mla-arr)"/>
+            <line x1="370" y1="98" x2="510" y2="148" class="d-arrow" marker-end="url(#mla-arr)"/>
+            <text x="200" y="130" class="d-lbl">W_UK ↑ expand</text>
+            <text x="490" y="130" class="d-lbl">W_UV ↑ expand</text>
+            <!-- K and V boxes -->
+            <rect x="100" y="150" width="140" height="28" rx="4" class="d-box"/>
+            <text x="170" y="164" class="d-text">K_t ∈ R^{H × d_h^C}</text>
+            <rect x="440" y="150" width="140" height="28" rx="4" class="d-box"/>
+            <text x="510" y="164" class="d-text">V_t ∈ R^{H × d_h^V}</text>
+            <!-- Labels -->
+            <text x="170" y="196" class="d-lbl" style="fill:#c96442">computed at attention time</text>
+            <text x="510" y="196" class="d-lbl" style="fill:#c96442">computed at attention time</text>
+            <text x="170" y="208" class="d-lbl" style="fill:#c96442">then discarded</text>
+            <text x="510" y="208" class="d-lbl" style="fill:#c96442">then discarded</text>
+            <!-- Comparison -->
+            <text x="340" y="240" class="d-lbl" style="font-size:10px;fill:#2a2620">MHA caches K + V = 32,768 dims/token/layer</text>
+            <text x="340" y="255" class="d-lbl" style="font-size:10px;fill:#c96442">MLA caches c^KV only = 512 dims/token/layer</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — MLA's core loop: compress to latent c^KV_t on the way in, cache it, reconstruct K and V on demand, discard reconstructed tensors after use.</p>
+        </div>
+
+        <h2>The four matrices of MLA</h2>
+
+        <p>Standard MHA has two projection matrices per layer: <code>W_K</code> and <code>W_V</code>. MLA replaces them with four:</p>
+
+        <table>
+          <thead>
+            <tr><th>Matrix</th><th>Shape</th><th>Role</th><th>Used when</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>W_DKV</code></td><td>d_model × d_c</td><td>Down-projection — compress hidden state to KV latent</td><td>Every forward pass (input token)</td></tr>
+            <tr><td><code>W_UK</code></td><td>d_c × (H × d_h^C)</td><td>Up-projection — expand latent to all K heads</td><td>Every attention computation</td></tr>
+            <tr><td><code>W_UV</code></td><td>d_c × (H × d_h^V)</td><td>Up-projection — expand latent to all V heads</td><td>Every attention computation</td></tr>
+            <tr><td><code>W_KR</code></td><td>d_model × (H × d_h^R)</td><td>Separate RoPE key projection (decoupled)</td><td>Every forward pass (positional)</td></tr>
+          </tbody>
+        </table>
+
+        <p>The down-projection <code>W_DKV</code> runs once when the token is processed. The up-projections <code>W_UK</code> and <code>W_UV</code> run every time any future token attends to the cached position. <code>W_KR</code> handles rotary positional encoding — that complication is covered in Article 3.5.</p>
+
+        <h2>Why this works: the rank assumption</h2>
+
+        <p>This only makes sense if there's a low-rank structure in the key-value subspace. Is there?</p>
+
+        <p>Empirically: yes. This isn't a DeepSeek-specific finding — low-rank approximations of weight matrices and activations have been observed broadly in large neural networks (LoRA exploits this for fine-tuning, for example). The key insight is that the actual information content relevant for attention computation occupies a much smaller subspace than the nominal dimensionality suggests.</p>
+
+        <p>Theoretically: the down-projection <code>W_DKV</code> has rank at most <code>min(d_model, d_c) = d_c = 512</code>. The up-projections then map this 512-dimensional space to the full K and V spaces. If the original K and V information really fits in 512 dimensions, you lose nothing. If it doesn't, you've introduced an approximation error — which manifests as quality degradation.</p>
+
+        <p>The DeepSeek-V2 paper reports that the quality degradation from MLA vs MHA is negligible — in fact, MLA often <em>outperforms</em> comparable MHA models because the compression acts as a regulariser. The latent representation learns to encode the most attention-relevant features of each token, dropping noise.</p>
+
+        <h2>Forward pass step by step</h2>
+
+        <p>During training and prefill (processing input tokens), for each token at position <code>t</code>:</p>
+
+        <pre>Step 1 — Compute KV latent:
+c^KV_t = W_DKV @ x_t          # (d_c,) = (d_c, d_model) @ (d_model,)
+
+Step 2 — Compute Q normally:
+q_t = W_Q @ x_t               # (H × d_h,) — queries unchanged
+
+Step 3 — Expand K from latent (at attention time):
+K_t = W_UK @ c^KV_t           # (H × d_h^C,)
+
+Step 4 — Expand V from latent (at attention time):
+V_t = W_UV @ c^KV_t           # (H × d_h^V,)
+
+Step 5 — Standard attention:
+scores = Q @ K^T / sqrt(d_h)  # (H, S, S)
+weights = softmax(scores)
+out = weights @ V             # (H, S, d_h^V)
+
+Step 6 — Cache only the latent:
+kv_cache[t] = c^KV_t          # (d_c,) NOT (H × d_h × 2)</pre>
+
+        <p>During decode (generating new tokens), for each new token:</p>
+
+        <pre>Step 1 — Compute Q for new token only (one row)
+Step 2 — Load entire KV cache: c^KV_[0..t-1], each shape (d_c,)
+Step 3 — Expand ALL cached latents to K and V via W_UK, W_UV
+Step 4 — Run attention (new Q attends to all cached K, V)
+Step 5 — Append new latent c^KV_t to cache
+Step 6 — Discard expanded K and V (don't need them again)</pre>
+
+        <p>The up-projection (Step 3) is extra compute that MHA doesn't have. But it's a simple matrix multiplication of shape <code>(H × d_h^C, d_c)</code> applied to each cached latent — and it runs on contiguous memory that loads cleanly. In practice the overhead is small relative to the memory bandwidth savings from loading a 512-dim cache instead of a 32,768-dim cache.</p>
+
+        <h2>Memory: the concrete numbers</h2>
+
+        <p>DeepSeek-V2 architecture (from the paper):</p>
+        <ul>
+          <li>d_model = 5120</li>
+          <li>H = 128 attention heads</li>
+          <li>d_h = 128 head dimension</li>
+          <li>d_c = 512 KV compression dimension</li>
+          <li>60 transformer layers</li>
+        </ul>
+
+        <p>KV cache per token per layer:</p>
+        <pre>MHA:  2 × 128 × 128 = 32,768 elements
+MLA:  512 elements (latent only)
+
+Compression ratio: 32,768 / 512 = 64×
+Cache reduction: (32,768 - 512) / 32,768 = 98.4%</pre>
+
+        <p>At 128K context, BF16, batch size 1:</p>
+        <pre>MHA:  32,768 × 60 × 128,000 × 2 bytes = 503 GB
+MLA:  512   × 60 × 128,000 × 2 bytes = 7.9 GB</pre>
+
+        <p>MHA at 128K context requires 503 GB of KV cache — six A100s just for the cache. MLA at the same context fits in 7.9 GB. That's what makes long-context DeepSeek-V2 serving physically possible on commodity hardware.</p>
+
+        <p><em>Note: the paper's stated "93.3% reduction" accounts for the decoupled RoPE keys (see Article 3.5) that are also cached alongside the latent. The pure latent compression is higher; the effective cache with RoPE keys is still dramatically smaller than MHA.</em></p>
+
+        <h2>Parameter count: does MLA cost more weights?</h2>
+
+        <p>MLA adds matrices that MHA doesn't have. Is there a weight cost?</p>
+
+        <table>
+          <thead>
+            <tr><th>Component</th><th>MHA params</th><th>MLA params</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Key projection</td><td>d_model × (H × d_h) = 655,360</td><td>W_DKV: d_model × d_c = 2,621,440<br>W_UK: d_c × (H × d_h) = 8,388,608</td></tr>
+            <tr><td>Value projection</td><td>d_model × (H × d_h) = 655,360</td><td>W_UV: d_c × (H × d_h) = 8,388,608</td></tr>
+            <tr><td>Total KV projection</td><td>~1.3M params</td><td>~19.4M params (15× more)</td></tr>
+          </tbody>
+        </table>
+
+        <p>MLA uses significantly more projection parameters. But this doesn't dominate the total parameter count — the MoE (Mixture of Experts) FFN layers in DeepSeek-V2 account for the vast majority of parameters, and the attention projection overhead is a small fraction of 236B total parameters.</p>
+
+        <p>More importantly: at inference, the extra parameters in W_UK and W_UV aren't free — they add compute to the up-projection step. But they're used on the already-compact latent vectors (512-dim inputs), so the matrix multiplications are small. The compute tradeoff is strongly worth the memory savings at long contexts.</p>
+
+        <h2>Query compression: an optional bonus</h2>
+
+        <p>MLA also compresses the query side during training (but not for caching, since Q is computed fresh each step). A query down-projection creates a query latent:</p>
+
+        <pre>c^Q_t = W_DQ @ x_t           # (d_c',) where d_c' = 1536
+q_t = W_UQ @ c^Q_t           # (H × d_h,) expanded at attention time</pre>
+
+        <p>This reduces the parameter count of the query projection (W_DQ + W_UQ is fewer total parameters than full W_Q for large H). It also adds a regularisation effect. Since queries aren't cached, this doesn't affect inference memory — it's a training efficiency feature.</p>
+
+        <p>The low-rank structure on both sides (query compression for training efficiency, KV compression for inference memory) is what makes MLA feel like a coherent architectural choice rather than an ad-hoc patch.</p>
+
+        <h2>Why MHA can't match this</h2>
+
+        <p>Could you get the same effect in MHA by just using smaller head dimensions? Reduce d_h from 128 to 4, and cache the same 512 elements as MLA (128 heads × 4 dims = 512)?</p>
+
+        <p>No. The issue is expressiveness during attention. When computing attention scores <code>Q @ K^T</code>, the inner product quality depends on d_h. With d_h=4, queries and keys only have 4 dimensions to express attention patterns — far too compressed for the nuanced patterns that enable strong language model performance.</p>
+
+        <p>MLA avoids this by separating the storage dimension from the computation dimension. The cache stores 512-dim latents. The attention computation operates in the full (H × d_h^C)-dimensional space after up-projection. You get compact storage AND full-dimensional attention. MHA can't decouple these.</p>
+
+        <blockquote>The MLA trick: the bottleneck happens at rest (storage), not at work (computation). Store small. Expand to think. Discard after.</blockquote>
+
+        <h2>Training stability</h2>
+
+        <p>Adding projection layers between the hidden state and the final K/V vectors raises training stability questions. Do the gradients flow cleanly through down-projection → latent → up-projection?</p>
+
+        <p>The DeepSeek team reports stable training with standard AdamW and no special initialisation beyond the usual scaled initialisation for deep networks. The up-projections in particular need careful initialisation — the paper uses small normal initialisation for W_UK and W_UV to avoid exploding the latent-to-full-space expansion at the start of training.</p>
+
+        <p>One practical consideration: the latent vector c^KV is the only gradient path for both K and V supervision signals. This shared bottleneck could, in theory, cause the latent to specialise toward either K or V at the expense of the other. The DeepSeek paper doesn't report this as an issue — the shared compression appears to work well, and the quality results back this up.</p>
+
+        <h2>What comes next in Phase 3</h2>
+
+        <p>Article 3.1 has given you the conceptual picture: compress to latent on the way in, cache the latent, expand to K and V on demand, discard expanded tensors. The cache is 64× smaller per token. The attention quality is preserved.</p>
+
+        <p>The remaining Phase 3 articles build on this:</p>
+        <ul>
+          <li><strong>3.2</strong> — Full PyTorch implementation. Projections, KV cache management, inference loop, with line-by-line explanation of each operation.</li>
+          <li><strong>3.3</strong> — MLA vs MQA vs GQA side-by-side. Architecture diagrams, memory comparison tables, quality vs compression tradeoff analysis.</li>
+          <li><strong>3.4</strong> — KV cache memory deep dive. Exact numbers across all variants at production-scale batch sizes and context lengths.</li>
+          <li><strong>3.5</strong> — MLA + RoPE. Why RoPE breaks inside MLA, the decoupled RoPE solution, and how it affects the cache slightly.</li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-2-4-attention-scaling.html">← Why Attention Scaling Breaks</a>
+        <a href="deepseek-3-2-mla-from-scratch.html">MLA From Scratch →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">MLA</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Multi-Head Latent Attention. DeepSeek-V2's key innovation. Compresses K,V to a low-rank latent (d_c=512), caches the latent, expands to full K,V on demand. 93% KV cache reduction.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">KV latent (c^KV)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The compressed representation cached in MLA. Shape: (d_c,) = (512,) per token per layer. Computed via down-projection W_DKV from the hidden state x_t. All K and V information is reconstructed from this.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Down-projection (W_DKV)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The matrix that compresses x_t (d_model=5120) to the KV latent c^KV_t (d_c=512). Shape: (d_c, d_model). Runs once per token when it's first processed.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Up-projection (W_UK, W_UV)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Matrices that expand c^KV_t back to full K and V heads at attention time. Shape: (H×d_h, d_c). Runs every decode step for every cached position. Compute overhead vs MHA.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Low-rank structure</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The empirical observation that K,V information lives in a much smaller subspace than nominal dimension suggests. MLA exploits this — 512 dims captures what 32,768 dims would store, with negligible loss.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Decoupled RoPE</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">MLA's solution to RoPE incompatibility. A separate small key vector k^R carries positional encoding; the main latent carries semantic content. Covered in detail in Article 3.5.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

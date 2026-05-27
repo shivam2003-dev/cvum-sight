@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Why Attention Scaling Breaks — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 2</p>
+        <p class="series-banner-title">KV Cache &amp; Efficient Attention</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Article 4 of 4 · Phase 2 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-2-1-kv-cache.html" class="done">2.1 KV Cache</a>
+          <a href="deepseek-2-2-mqa.html" class="done">2.2 MQA</a>
+          <a href="deepseek-2-3-gqa.html" class="done">2.3 GQA</a>
+          <a href="deepseek-2-4-attention-scaling.html" class="active">2.4 Scaling</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 27, 2026 · ml · 18 min read · 3700 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Why Attention Scaling Breaks.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-2</span>
+          <span class="tag">flashattention</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Phase 2 so far has been about memory: the KV cache costs too much, MQA and GQA compress it. But there's a second wall that attention hits as sequences grow longer — a computational wall. It's separate from the memory problem, and it breaks in a different way.</p>
+
+        <p>This article covers the O(n²) scaling problem, why it's a hardware problem as much as an algorithmic one, how Flash Attention solved it without changing the mathematics, and what this means for the path to MLA in Phase 3.</p>
+
+        <blockquote>Flash Attention (Dao et al., 2022, arXiv:2205.14135) is one of the most influential engineering papers in the LLM era. It didn't change what attention computes — it changed where the computation happens. The result was 2–4× faster attention with constant instead of linear memory, enabling context lengths that were previously impossible.</blockquote>
+
+        <h2>The O(n²) problem</h2>
+
+        <p>Standard scaled dot-product attention computes:</p>
+
+        <pre>S = Q @ K^T          # (S, S) attention scores matrix
+A = softmax(S / √d)  # (S, S) attention weights
+O = A @ V            # (S, d) output</pre>
+
+        <p>The score matrix <code>S</code> is <code>S × S</code> — where <code>S</code> is the sequence length. At 1K tokens, that's 1 million entries. At 32K tokens, that's over 1 billion entries. At 128K tokens, that's over 16 billion entries.</p>
+
+        <p>This is the O(n²) problem. Attention compute scales as the square of sequence length. The memory required to store the score matrix scales the same way.</p>
+
+        <table>
+          <thead>
+            <tr><th>Sequence length</th><th>Score matrix size (FP16)</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>2K tokens</td><td>16 MB</td><td>Fine — fits in L2 cache fragments</td></tr>
+            <tr><td>8K tokens</td><td>256 MB</td><td>Uncomfortable — many HBM reads</td></tr>
+            <tr><td>32K tokens</td><td>4 GB</td><td>Significant HBM allocation per layer</td></tr>
+            <tr><td>128K tokens</td><td>64 GB</td><td>Exceeds A100 entirely — per layer</td></tr>
+          </tbody>
+        </table>
+
+        <p>The 128K row is the breaking point: a single attention layer at 128K sequence length would need a 64 GB score matrix in FP16. An A100 has 80 GB total HBM. You can't fit even one layer's attention scores, let alone the KV cache and model weights alongside them.</p>
+
+        <h2>Why it's a memory hierarchy problem</h2>
+
+        <p>The O(n²) memory cost isn't just about capacity — it's about where the computation happens. Modern GPU memory is a hierarchy:</p>
+
+        <ul>
+          <li><strong>Registers:</strong> ~256 KB per SM — fastest, private to each thread</li>
+          <li><strong>SRAM (shared memory):</strong> ~20 MB total across 108 SMs — fast, shared within a threadblock</li>
+          <li><strong>HBM (high-bandwidth memory):</strong> 80 GB — slow relative to SRAM, 2 TB/s bandwidth</li>
+        </ul>
+
+        <p>The SRAM-to-HBM bandwidth gap is roughly 100×. Moving data from HBM to SRAM costs approximately 100× more time per byte than keeping it in SRAM.</p>
+
+        <p>Standard attention loads Q, K, V from HBM, computes the full score matrix S in SRAM/registers, writes S back to HBM, then loads it again to compute softmax, writes again, loads again for the V multiplication. Each step is a separate kernel that writes to and reads from HBM.</p>
+
+        <p>The number of HBM read/write operations in naive attention is O(n²) — the score matrix must be written and read in its entirety multiple times. At 128K tokens, this is not just impractically large to store — it's impractically slow to move back and forth.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .d-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-acc { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-sram { fill: #6b9e6b; stroke: #2a2620; stroke-width: 1.5; }
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .d-text-w { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #ebe3cf; text-anchor: middle; dominant-baseline: middle; }
+              .d-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .d-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; }
+              .d-arrow-slow { stroke: #c96442; stroke-width: 1.5; fill: none; stroke-dasharray: 5 3; }
+              .d-arrow-fast { stroke: #6b9e6b; stroke-width: 1.5; fill: none; }
+            </style>
+            <defs>
+              <marker id="arr-slow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="#c96442"/>
+              </marker>
+              <marker id="arr-fast" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="#6b9e6b"/>
+              </marker>
+            </defs>
+            <!-- Naive attention: left side -->
+            <text x="160" y="14" class="d-lbl" style="font-size:11px;fill:#2a2620">NAIVE ATTENTION</text>
+            <!-- HBM box -->
+            <rect x="20" y="25" width="280" height="60" rx="4" class="d-box-acc"/>
+            <text x="160" y="45" class="d-text-w">HBM (80 GB)</text>
+            <text x="160" y="62" class="d-text-w" style="font-size:9px">Q, K, V, S matrix (n²), softmax(S), output</text>
+            <!-- GPU box -->
+            <rect x="60" y="120" width="200" height="40" rx="4" class="d-box-sram"/>
+            <text x="160" y="140" class="d-text-w">SRAM / Registers</text>
+            <!-- arrows - multiple HBM↔SRAM -->
+            <line x1="100" y1="85" x2="100" y2="118" class="d-arrow-slow" marker-end="url(#arr-slow)"/>
+            <line x1="130" y1="85" x2="130" y2="118" class="d-arrow-slow" marker-end="url(#arr-slow)"/>
+            <line x1="160" y1="118" x2="160" y2="87" class="d-arrow-slow" marker-end="url(#arr-slow)"/>
+            <line x1="190" y1="118" x2="190" y2="87" class="d-arrow-slow" marker-end="url(#arr-slow)"/>
+            <line x1="220" y1="85" x2="220" y2="118" class="d-arrow-slow" marker-end="url(#arr-slow)"/>
+            <text x="160" y="175" class="d-lbl" style="fill:#c96442">O(n²) HBM reads/writes</text>
+            <text x="160" y="190" class="d-lbl" style="fill:#c96442">score matrix lives in HBM between kernels</text>
+
+            <!-- Flash Attention: right side -->
+            <text x="510" y="14" class="d-lbl" style="font-size:11px;fill:#2a2620">FLASH ATTENTION</text>
+            <!-- HBM box -->
+            <rect x="370" y="25" width="280" height="60" rx="4" class="d-box"/>
+            <text x="510" y="45" class="d-text">HBM (80 GB)</text>
+            <text x="510" y="62" class="d-text" style="font-size:9px">Q, K, V tiles, output only</text>
+            <!-- GPU box -->
+            <rect x="410" y="120" width="200" height="40" rx="4" class="d-box-sram"/>
+            <text x="510" y="140" class="d-text-w">SRAM: tile computation</text>
+            <!-- arrows - minimal -->
+            <line x1="460" y1="85" x2="460" y2="118" class="d-arrow-fast" marker-end="url(#arr-fast)"/>
+            <line x1="510" y1="160" x2="510" y2="87" class="d-arrow-fast" marker-end="url(#arr-fast)"/>
+            <text x="510" y="175" class="d-lbl" style="fill:#6b9e6b">O(n) HBM reads/writes</text>
+            <text x="510" y="190" class="d-lbl" style="fill:#6b9e6b">score matrix never leaves SRAM</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Naive attention writes the full n² score matrix to HBM between kernels. Flash Attention tiles the computation so the score matrix never leaves SRAM.</p>
+        </div>
+
+        <h2>Flash Attention: the tiling insight</h2>
+
+        <p>Tri Dao et al.'s key insight in the 2022 Flash Attention paper: you don't need to materialise the full score matrix in HBM. Attention is mathematically equivalent to a sequential tiled computation that stays in SRAM.</p>
+
+        <p>The algorithm divides Q, K, V into blocks that fit in SRAM (say, 64 × d_h each). For each tile of Q, it iterates over tiles of K and V, computing a partial softmax and accumulating the output:</p>
+
+        <pre>for q_block in split(Q, block_size):
+    acc = 0, running_max = -inf, running_sum = 0
+    for k_block, v_block in zip(split(K, block_size), split(V, block_size)):
+        # Load tile from HBM to SRAM (small!)
+        S_tile = q_block @ k_block.T / sqrt(d_h)
+
+        # Online softmax: update running max and sum
+        new_max = max(running_max, S_tile.max())
+        acc = acc * exp(running_max - new_max) + exp(S_tile - new_max) @ v_block
+        running_sum = running_sum * exp(running_max - new_max) + exp(S_tile - new_max).sum()
+        running_max = new_max
+
+    output_block = acc / running_sum  # normalise by final sum</pre>
+
+        <p>The "online softmax" trick (derived from earlier work by Milakov &amp; Gimelshein) is what makes tiling work. Softmax requires dividing by the sum of exponentials over the full row — you can't do it per-tile without knowing the full sum. The online variant maintains a running max and running sum that get updated as new tiles are processed. The final output after all tiles equals the standard softmax output exactly.</p>
+
+        <p>No approximation. Same result. But the <code>S × S</code> score matrix never exists as a full HBM allocation — it's computed tile by tile entirely within SRAM, then discarded.</p>
+
+        <h2>The memory complexity win</h2>
+
+        <p>Standard attention: O(n²) memory for the score matrix.<br>
+        Flash Attention: O(n) memory — only Q, K, V, and the output, each of size S × d.</p>
+
+        <p>In concrete terms:</p>
+
+        <table>
+          <thead>
+            <tr><th>Sequence length</th><th>Naive S matrix</th><th>Flash Attention memory</th><th>Saving</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>4K</td><td>64 MB</td><td>~6 MB</td><td>10×</td></tr>
+            <tr><td>32K</td><td>4 GB</td><td>~48 MB</td><td>83×</td></tr>
+            <tr><td>128K</td><td>64 GB</td><td>~192 MB</td><td>333×</td></tr>
+            <tr><td>1M</td><td>4 TB (impossible)</td><td>~1.5 GB</td><td>makes it possible</td></tr>
+          </tbody>
+        </table>
+
+        <p>At 128K tokens, naive attention requires 64 GB for the score matrix alone — more than an A100's entire HBM. Flash Attention reduces this to 192 MB, making 128K context sequences feasible on a single GPU.</p>
+
+        <h2>The speed win: IO-awareness</h2>
+
+        <p>Flash Attention is described as "IO-aware" because its primary optimisation target is HBM bandwidth, not raw FLOPs. Compute (FLOPs) has become cheap relative to memory movement. Modern GPUs can perform far more floating-point operations per second than they can move bytes per second.</p>
+
+        <p>The roofline model makes this concrete. An A100 SXM has:</p>
+        <ul>
+          <li>312 TFLOPS (FP16 tensor cores)</li>
+          <li>2 TB/s HBM bandwidth</li>
+        </ul>
+
+        <p>Compute roof: 312 TFLOPS × 2 bytes/element = 624 TB/s effective if perfectly compute-bound.<br>
+        Memory roof: 2 TB/s — the ceiling for memory-bound operations.</p>
+
+        <p>Naive attention is memory-bound at most sequence lengths. It doesn't use the tensor cores efficiently because it spends most time moving data between HBM and SRAM rather than computing. Flash Attention dramatically increases arithmetic intensity — more computation per byte loaded from HBM — and pushes attention operations closer to the compute roof.</p>
+
+        <p>In the original paper, this yielded 2–4× wall-clock speedup for attention on A100 GPUs. More importantly, it enabled exact attention at sequence lengths where naive attention would OOM or become impossibly slow.</p>
+
+        <h2>Flash Attention 2 and 3</h2>
+
+        <p>The original Flash Attention used software pipelining and careful SRAM management but didn't fully exploit tensor core utilization. Flash Attention 2 (Dao, 2023) improved by:</p>
+
+        <ul>
+          <li>Reducing non-matmul FLOPs (the online softmax overhead)</li>
+          <li>Better parallelism — splitting work across Q blocks as well as K/V blocks</li>
+          <li>Optimized warp partitioning to avoid cross-warp communication</li>
+        </ul>
+
+        <p>Flash Attention 2 achieved ~2× additional speedup over FA1, reaching 72% of the theoretical A100 FP16 MFU (Model FLOP Utilization) for attention.</p>
+
+        <p>Flash Attention 3 (Shah et al., 2024) targeted the H100's Hopper architecture with asynchronous Tensor Memory Accelerator (TMA) and warp specialisation. On H100 it achieves 1.5–2.0 PFLOPS attention throughput — within 85-90% of the theoretical hardware limit.</p>
+
+        <h2>The remaining problem: representation compression</h2>
+
+        <p>Flash Attention solves the compute and memory access problem of attention at long sequences. But it doesn't address the KV cache size problem we've been tracking through Phase 2.</p>
+
+        <p>Flash Attention tiles the attention computation during the forward pass. During inference (decode), you still need the K and V vectors for all previous tokens to be available for new queries. The KV cache contains the materialised K and V tensors — Flash Attention's tiling doesn't reduce how much you store.</p>
+
+        <p>MQA and GQA reduced the KV cache by reducing the number of heads. Flash Attention reduced the compute cost and peak memory of the attention kernel itself. They solve different problems and are typically used together.</p>
+
+        <blockquote>Flash Attention = cheaper to compute attention per forward pass. MQA/GQA = cheaper to store the KV cache across decode steps. These are orthogonal optimisations. Production systems use both.</blockquote>
+
+        <h2>The combined picture</h2>
+
+        <p>Let's put all the Phase 2 insights together for a concrete serving scenario:</p>
+
+        <p><strong>Model:</strong> LLaMA-3-70B, H=64 query heads, G=8 KV heads, 80 layers, d_h=128</p>
+        <p><strong>Request:</strong> 100K token context, generating 1K tokens, batch size 4</p>
+
+        <p><strong>Without Flash Attention + GQA (naive MHA):</strong></p>
+        <ul>
+          <li>Score matrix per layer: 100K × 100K × 2 bytes ≈ 20 GB per layer (OOM)</li>
+          <li>KV cache: 2 × 80 × 64 × 128 × 100K × 4 × 2 bytes ≈ 262 GB (OOM)</li>
+        </ul>
+
+        <p><strong>With Flash Attention + GQA (production):</strong></p>
+        <ul>
+          <li>Score matrix memory: O(n) tiles in SRAM only — negligible HBM allocation</li>
+          <li>KV cache: 2 × 80 × 8 × 128 × 100K × 4 × 2 bytes ≈ 32.8 GB — fits on 2× A100s</li>
+        </ul>
+
+        <p>The 100K context serving scenario that was physically impossible with naive MHA becomes routinely achievable in production with Flash Attention + GQA.</p>
+
+        <h2>Why even this isn't enough for DeepSeek</h2>
+
+        <p>GQA at G=8 gives 8× KV cache compression on H=64 models. Flash Attention brings the compute cost under control. But DeepSeek-V2 operates at 128K native context with plans for 1M+ token contexts, and at 671B parameters (DeepSeek-V3). At that scale, even 8× compression leaves a cache that requires expensive multi-GPU allocation.</p>
+
+        <p>More fundamentally: GQA reduces the number of KV head tensors but doesn't change the information content of each tensor. Each KV vector still lives in the full d_h dimensional space. The representation itself hasn't been compressed — just the count of representations.</p>
+
+        <p>DeepSeek's MLA (Multi-Head Latent Attention, introduced in DeepSeek-V2) takes a different approach. Instead of asking "how many KV heads do we need?", it asks "how many dimensions do we actually need to represent the KV information?"</p>
+
+        <p>The answer, in DeepSeek's architecture, is 512 dimensions — regardless of d_model (which is 5120 for DeepSeek-V2) and d_h × H_kv (which is 128 × 128 = 16,384 for full MHA). MLA compresses the KV representation into a 512-dimensional latent vector, achieving ~93% KV cache reduction compared to MHA while maintaining quality that GQA at equivalent compression ratios cannot match.</p>
+
+        <p>That's Phase 3. The setup from Phase 2:</p>
+
+        <ol>
+          <li>KV cache is the bottleneck (2.1)</li>
+          <li>Head count reduction works but has quality limits — MQA (2.2), GQA (2.3)</li>
+          <li>Compute scaling is solvable with IO-aware tiling — Flash Attention (2.4)</li>
+          <li>Representation compression is the next frontier — MLA (Phase 3)</li>
+        </ol>
+
+        <h2>Summary: Phase 2 complete</h2>
+
+        <p>Phase 2 started with a bottleneck and traced the engineering response to it:</p>
+
+        <p><strong>The bottleneck:</strong> The KV cache grows as O(n × L × H × d_h). At long contexts, it dominates GPU memory and decode bandwidth.</p>
+
+        <p><strong>The first response — head count reduction (MQA, GQA):</strong> Reduce H_kv from H down to 1 (MQA) or G (GQA). Works. Adds quality tradeoffs that worsen with compression ratio. The G=8 sweet spot (LLaMA-2/3, Mistral) is now industry standard.</p>
+
+        <p><strong>The second response — IO-aware computation (Flash Attention):</strong> Tile the attention kernel to keep the score matrix in SRAM. Reduces compute memory from O(n²) to O(n). 2–4× speedup. Enables sequence lengths that naive attention physically cannot support.</p>
+
+        <p><strong>The gap both responses leave:</strong> Neither reduces the dimensionality of what's stored. The KV representation is still full-precision, full-dimension vectors. There's more compression available — DeepSeek found it.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-2-3-gqa.html">← Grouped-Query Attention</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">O(n²) scaling</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Attention score matrix is S×S — scales quadratically with sequence length. At 128K tokens, a single layer's score matrix is 64 GB in FP16. The core compute wall.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Flash Attention</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">IO-aware exact attention by Tri Dao (2022). Tiles Q,K,V into SRAM blocks and uses online softmax. Score matrix never materialises in HBM. Same result, O(n) memory, 2-4× faster.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Online softmax</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Running-max-and-sum softmax variant that processes tiles sequentially. Produces identical output to full softmax without seeing the full row simultaneously. What makes FA tiling exact.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Roofline model</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Performance model comparing compute roof (FLOPS) vs memory roof (bandwidth). Operations below the ridge are memory-bound; above are compute-bound. FA increases arithmetic intensity.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">IO-aware</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Algorithms that explicitly account for memory hierarchy costs (HBM vs SRAM vs registers). Flash Attention minimizes HBM reads/writes, not raw FLOPs.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Arithmetic intensity</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">FLOPs per byte loaded from memory. Higher is better (more compute per data movement). Flash Attention raises this by keeping intermediate results in SRAM.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">MFU</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Model FLOP Utilization — fraction of theoretical peak FLOPS actually used. Flash Attention 2 reaches ~72% MFU for attention on A100. Naive attention is ~20-30%.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../app.js?v=2"></script>
+</body>
+</html>

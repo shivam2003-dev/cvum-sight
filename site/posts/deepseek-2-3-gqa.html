@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grouped-Query Attention — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 2</p>
+        <p class="series-banner-title">KV Cache &amp; Efficient Attention</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 3 of 4 · Phase 2 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-2-1-kv-cache.html" class="done">2.1 KV Cache</a>
+          <a href="deepseek-2-2-mqa.html" class="done">2.2 MQA</a>
+          <a href="deepseek-2-3-gqa.html" class="active">2.3 GQA</a>
+          <a href="deepseek-2-4-attention-scaling.html">2.4 Scaling</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 27, 2026 · ml · 17 min read · 3500 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Grouped-Query Attention.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-2</span>
+          <span class="tag">gqa</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Article 2.2 showed that MQA is a 32× KV cache reduction at the cost of noticeable quality degradation on complex tasks. The ML community needed a middle ground — something more compressed than MHA but more expressive than MQA.</p>
+
+        <p>Grouped-Query Attention (GQA) is that middle ground. Published by Ainslie et al. at Google Research in 2023 (arXiv:2305.13245, "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints"), it introduced a single parameter <code>G</code> — the number of KV groups — that interpolates continuously between MQA and MHA. Set G=1 and you get MQA. Set G=H and you get MHA. Set G=8 and you get LLaMA-2.</p>
+
+        <blockquote>GQA is now the de facto standard for production LLMs. LLaMA-2, LLaMA-3, Mistral, Mixtral, Qwen, and most 2023-2025 models use GQA with G=8. Understanding GQA is understanding how 90% of deployed open-source models handle attention.</blockquote>
+
+        <h2>The G parameter</h2>
+
+        <p>In GQA, query heads are divided into G groups of <code>H/G</code> heads each. Each group shares a single K head and a single V head. Heads within the same group see the same keys and values; heads in different groups have independent key-value projections.</p>
+
+        <p>The weight matrices:</p>
+        <ul>
+          <li>Query: <code>W_Q ∈ R^{d_model × (H × d_h)}</code> — H query heads, unchanged</li>
+          <li>Keys: <code>W_K ∈ R^{d_model × (G × d_h)}</code> — G key heads instead of H</li>
+          <li>Values: <code>W_V ∈ R^{d_model × (G × d_h)}</code> — G value heads instead of H</li>
+        </ul>
+
+        <p>KV cache reduction: <code>H_kv = G</code>, so the formula from 2.1 becomes:</p>
+        <pre>KV_bytes = 2 × L × G × d_h × S × B × bytes_per_element</pre>
+
+        <p>Compression ratio vs MHA: <code>H/G</code>. With H=32 and G=8, compression is 32/8 = 4×. That's less dramatic than MQA's 32×, but the quality retention is much better.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .d-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-g1 { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-g2 { fill: #6b9e6b; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-g3 { fill: #5c87b5; stroke: #2a2620; stroke-width: 1.5; }
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .d-text-w { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #ebe3cf; text-anchor: middle; dominant-baseline: middle; }
+              .d-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .d-arrow { stroke: #2a2620; stroke-width: 1; fill: none; }
+            </style>
+            <defs>
+              <marker id="gqa-arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L6,3 z" fill="#2a2620"/>
+              </marker>
+            </defs>
+            <!-- H=6, G=3 example for clarity -->
+            <text x="340" y="12" class="d-lbl" style="font-size:11px;fill:#2a2620">GQA example: H=6 query heads, G=3 KV groups (2 queries per group)</text>
+            <!-- Query heads row -->
+            <text x="340" y="32" class="d-lbl">QUERY HEADS</text>
+            <rect x="40" y="40" width="80" height="24" rx="3" class="d-box-g1"/><text x="80" y="52" class="d-text-w">Q₁</text>
+            <rect x="126" y="40" width="80" height="24" rx="3" class="d-box-g1"/><text x="166" y="52" class="d-text-w">Q₂</text>
+            <rect x="248" y="40" width="80" height="24" rx="3" class="d-box-g2"/><text x="288" y="52" class="d-text" style="fill:#ebe3cf">Q₃</text>
+            <rect x="334" y="40" width="80" height="24" rx="3" class="d-box-g2"/><text x="374" y="52" class="d-text" style="fill:#ebe3cf">Q₄</text>
+            <rect x="456" y="40" width="80" height="24" rx="3" class="d-box-g3"/><text x="496" y="52" class="d-text-w">Q₅</text>
+            <rect x="542" y="40" width="80" height="24" rx="3" class="d-box-g3"/><text x="582" y="52" class="d-text-w">Q₆</text>
+            <!-- group brackets -->
+            <text x="103" y="76" class="d-lbl" style="fill:#c96442">── group 1 ──</text>
+            <text x="311" y="76" class="d-lbl" style="fill:#6b9e6b">── group 2 ──</text>
+            <text x="519" y="76" class="d-lbl" style="fill:#5c87b5">── group 3 ──</text>
+            <!-- KV heads row -->
+            <text x="340" y="100" class="d-lbl">KV HEADS (G=3)</text>
+            <rect x="83" y="108" width="80" height="24" rx="3" class="d-box-g1"/><text x="123" y="120" class="d-text-w">K₁, V₁</text>
+            <rect x="291" y="108" width="80" height="24" rx="3" class="d-box-g2"/><text x="331" y="120" class="d-text" style="fill:#ebe3cf">K₂, V₂</text>
+            <rect x="499" y="108" width="80" height="24" rx="3" class="d-box-g3"/><text x="539" y="120" class="d-text-w">K₃, V₃</text>
+            <!-- arrows Q→KV -->
+            <line x1="80" y1="64" x2="112" y2="106" class="d-arrow" marker-end="url(#gqa-arr)"/>
+            <line x1="166" y1="64" x2="134" y2="106" class="d-arrow" marker-end="url(#gqa-arr)"/>
+            <line x1="288" y1="64" x2="320" y2="106" class="d-arrow" marker-end="url(#gqa-arr)"/>
+            <line x1="374" y1="64" x2="342" y2="106" class="d-arrow" marker-end="url(#gqa-arr)"/>
+            <line x1="496" y1="64" x2="528" y2="106" class="d-arrow" marker-end="url(#gqa-arr)"/>
+            <line x1="582" y1="64" x2="550" y2="106" class="d-arrow" marker-end="url(#gqa-arr)"/>
+            <!-- KV cache label -->
+            <text x="340" y="150" class="d-lbl" style="fill:#2a2620">KV cache stores: G=3 heads (vs H=6 for MHA, vs 1 for MQA)</text>
+            <text x="340" y="165" class="d-lbl">compression: H/G = 6/3 = 2×</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — GQA with H=6 query heads, G=3 KV groups. Each group of 2 query heads shares one K,V pair. Compression is H/G = 2×.</p>
+        </div>
+
+        <h2>The spectrum from MHA to MQA</h2>
+
+        <p>GQA is a generalisation that subsumes both MHA and MQA as special cases:</p>
+
+        <table>
+          <thead>
+            <tr><th>Variant</th><th>KV heads</th><th>Compression</th><th>Quality</th><th>Example</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>MHA</td><td>G = H (32)</td><td>1× (none)</td><td>Full</td><td>GPT-3, original Llama</td></tr>
+            <tr><td>GQA G=8</td><td>G = 8</td><td>4×</td><td>Near-MHA</td><td>LLaMA-2/3, Mistral</td></tr>
+            <tr><td>GQA G=4</td><td>G = 4</td><td>8×</td><td>Slightly degraded</td><td>Some Qwen variants</td></tr>
+            <tr><td>MQA</td><td>G = 1</td><td>H× (32×)</td><td>Noticeable regression</td><td>PaLM, Falcon</td></tr>
+          </tbody>
+        </table>
+
+        <p>The GQA paper ran systematic ablations across G values on T5-style encoder-decoder models. The result: quality degrades smoothly as G decreases, with a notably larger drop going from G=2 to G=1 (MQA) compared to from G=H to G=H/2. The marginal quality cost of the first compression halving is low; the last halving (to G=1) is disproportionately expensive.</p>
+
+        <p>G=8 specifically was chosen by the LLaMA-2 team as the sweet spot: 4× cache reduction, with quality indistinguishable from MHA on standard benchmarks including MMLU, HellaSwag, and WinoGrande.</p>
+
+        <h2>PyTorch implementation</h2>
+
+        <p>The implementation extends MQA: instead of broadcasting 1 head to H, you broadcast G heads to H by repeating each group's K,V for <code>H/G</code> heads:</p>
+
+        <pre>def gqa_forward(x, W_Q, W_K, W_V, W_O, H, G, d_h):
+    B, S, D = x.shape
+    heads_per_group = H // G
+
+    # Q: (B, H, S, d_h)
+    Q = W_Q(x).reshape(B, S, H, d_h).transpose(1, 2)
+
+    # K, V: (B, G, S, d_h) → expand to (B, H, S, d_h)
+    K = W_K(x).reshape(B, S, G, d_h).transpose(1, 2)
+    V = W_V(x).reshape(B, S, G, d_h).transpose(1, 2)
+
+    # Each of G KV heads repeated for heads_per_group queries
+    # (B, G, S, d_h) → (B, G, 1, S, d_h) → (B, G, H/G, S, d_h) → (B, H, S, d_h)
+    K = K.unsqueeze(2).expand(B, G, heads_per_group, S, d_h)
+    K = K.reshape(B, H, S, d_h)
+    V = V.unsqueeze(2).expand(B, G, heads_per_group, S, d_h)
+    V = V.reshape(B, H, S, d_h)
+
+    # Standard attention from here (same as MHA)
+    scale = d_h ** -0.5
+    attn = (Q @ K.transpose(-2, -1)) * scale
+    attn = attn.softmax(dim=-1)
+    out = (attn @ V).transpose(1, 2).reshape(B, S, H * d_h)
+    return W_O(out)</pre>
+
+        <p>The KV cache stores <code>G</code> heads per layer (not H, not 1). During decode, you append 1 row to each of the G cached tensors, then expand to H at attention time.</p>
+
+        <h2>The LLaMA-2 and Mistral numbers</h2>
+
+        <p>LLaMA-2-70B uses H=64 query heads and G=8 KV heads. Let's trace the concrete memory savings:</p>
+
+        <ul>
+          <li>d_model = 8192, d_h = 128</li>
+          <li>80 transformer layers</li>
+          <li>BF16 inference</li>
+        </ul>
+
+        <p>At 4K context, batch size 1:</p>
+        <pre>MHA:  2 × 80 × 64 × 128 × 4096 × 1 × 2 ≈ 10.7 GB
+GQA:  2 × 80 × 8  × 128 × 4096 × 1 × 2 ≈ 1.3 GB  (8.2× less)</pre>
+
+        <p>At 32K context (LLaMA-2 max):</p>
+        <pre>MHA:  2 × 80 × 64 × 128 × 32768 × 1 × 2 ≈ 85.9 GB  (exceeds A100!)
+GQA:  2 × 80 × 8  × 128 × 32768 × 1 × 2 ≈ 10.7 GB</pre>
+
+        <p>Without GQA, LLaMA-2-70B at 32K context would be physically impossible on an A100 80GB — the KV cache alone exceeds the GPU's capacity. GQA makes it work.</p>
+
+        <p>Mistral-7B uses H=32 query heads and G=8 KV heads. Slightly more aggressive compression (4× vs LLaMA-2's 8×) on a much smaller model. Mistral also uses sliding window attention (SWA) for even longer contexts, but GQA handles the KV budget for the attention heads that are present.</p>
+
+        <h2>Training from scratch vs checkpoint conversion</h2>
+
+        <p>The GQA paper demonstrated two valid approaches:</p>
+
+        <p><strong>Training from scratch:</strong> Initialize W_K and W_V as G-head projections and train normally. This is what LLaMA-2 and Mistral did. The model learns to use G KV heads optimally from the start — it doesn't need to approximate H-head behaviour, it develops G-head behaviour natively.</p>
+
+        <p><strong>Converting from MHA:</strong> Take a trained MHA checkpoint, and for each of the G groups, mean-pool the <code>H/G</code> MHA key/value heads that map to that group. Then run a short "uptrained" fine-tuning pass (5% of original training tokens) to recover quality. The GQA paper showed this achieves 99%+ quality recovery compared to training GQA from scratch.</p>
+
+        <pre># Conversion: MHA checkpoint (H heads) → GQA (G groups)
+def convert_mha_to_gqa(W_K_mha, W_V_mha, H, G, d_h, d_model):
+    heads_per_group = H // G
+
+    # W_K_mha: (H * d_h, d_model)
+    W_K = W_K_mha.reshape(G, heads_per_group, d_h, d_model)
+    W_K_gqa = W_K.mean(dim=1)   # (G, d_h, d_model)
+    W_K_gqa = W_K_gqa.reshape(G * d_h, d_model)
+
+    W_V = W_V_mha.reshape(G, heads_per_group, d_h, d_model)
+    W_V_gqa = W_V.mean(dim=1)
+    W_V_gqa = W_V_gqa.reshape(G * d_h, d_model)
+
+    return W_K_gqa, W_V_gqa</pre>
+
+        <p>The mean-pooling preserves the average representation of the grouped heads — it's a principled way to compress rather than just discarding heads or picking one arbitrarily.</p>
+
+        <h2>Why G=8 became the standard</h2>
+
+        <p>G=8 appears in LLaMA-2/3, Mistral, Mixtral, and many others. It's not arbitrary — it corresponds to specific hardware realities.</p>
+
+        <p>A100 GPUs have 108 streaming multiprocessors (SMs). The optimal attention kernel tile sizes on CUDA hardware tend to align with powers of 2, and G=8 fits naturally into memory access patterns that maximize L2 cache reuse. G=8 also means that for H=64 query heads, each group contains exactly 8 queries — a tidy SIMD-width-aligned number.</p>
+
+        <p>Beyond hardware, G=8 on H=64 gives 8× compression. With LLaMA-3-70B (H=64, G=8), this means:</p>
+        <pre>MHA at 128K ctx:  2 × 80 × 64 × 128 × 131072 × 1 × 2 ≈ 343 GB  (impossible)
+GQA at 128K ctx:  2 × 80 × 8  × 128 × 131072 × 1 × 2 ≈ 43 GB   (fits on 2× A100s)</pre>
+
+        <p>GQA is what makes the 128K context window in LLaMA-3 physically achievable on accessible hardware.</p>
+
+        <h2>GQA vs MQA: the quality argument</h2>
+
+        <p>The GQA paper ran a careful quality comparison using the T5 1.1 XXL (11B parameters) model across translation (WMT), question answering (Natural Questions), and summarization (CNN/DailyMail). Key findings:</p>
+
+        <ul>
+          <li>GQA G=8 matched MHA quality within statistical noise on all benchmarks</li>
+          <li>MQA (G=1) showed consistent 1-2 BLEU degradation on translation tasks</li>
+          <li>GQA G=2 provided a partial recovery — better than MQA, not as good as G=8</li>
+          <li>The quality loss from MHA → GQA (G=H/8) was indistinguishable in the uptrain setting</li>
+        </ul>
+
+        <p>This is why the community converged on GQA rather than MQA: the quality retention at 4×-8× compression is genuine, not just a claimed approximation. Models that use G=8 do not visibly regress on downstream tasks compared to their MHA equivalents.</p>
+
+        <h2>The sliding window interaction</h2>
+
+        <p>Mistral-7B combines GQA with sliding window attention (SWA). SWA limits how far back each attention head can look — instead of attending to all S previous tokens, each head attends to a window of W tokens. This caps the KV cache size at <code>W</code> regardless of sequence length.</p>
+
+        <p>GQA and SWA are complementary. GQA reduces the number of KV head tensors stored per token position. SWA limits the number of token positions kept in cache. Together they let Mistral-7B handle 32K+ sequences on a single GPU that would be impractical with vanilla MHA and full context.</p>
+
+        <h2>Where GQA falls short</h2>
+
+        <p>GQA is still linear in sequence length. A 4× compression ratio is real, but the KV cache still grows as O(S). At 1 million context tokens (Google Gemini territory), even G=8 GQA produces a cache that's enormous.</p>
+
+        <p>The other limitation: all of MHA, MQA, and GQA represent the KV cache as full-precision vectors at the original embedding dimension. There's no compression of the representation itself — just reduction in the number of heads. The actual content being stored per head is unmodified.</p>
+
+        <p>This is the gap that DeepSeek-V2's Multi-Head Latent Attention (MLA) addresses. Instead of reducing the number of KV heads, MLA compresses the representation itself into a low-rank latent space. A 512-dimension latent replaces 128 × 16 = 2048 dimensions of full KV heads. That's the Phase 3 story — and the reason DeepSeek-V2 achieves 93% KV cache reduction while maintaining MHA-level quality that GQA at G=8 can't match for the same compression budget.</p>
+
+        <blockquote>GQA chose to reduce head count. MLA chose to compress the representation. The latter is a fundamentally different approach — and it's why understanding GQA is necessary context for understanding why MLA is remarkable.</blockquote>
+
+        <h2>Summary: the attention compression hierarchy</h2>
+
+        <p>Phase 2 has built up a clear picture of how the field approached KV cache compression:</p>
+
+        <ol>
+          <li><strong>Article 2.1</strong> — KV cache is the bottleneck: grows linearly, dominates long-context memory, bottlenecks decode bandwidth</li>
+          <li><strong>Article 2.2</strong> — MQA: compress H KV heads to 1, get H× memory reduction, accept quality regression</li>
+          <li><strong>Article 2.3 (this)</strong> — GQA: compress H KV heads to G, get H/G× reduction, recover most quality</li>
+          <li><strong>Article 2.4</strong> — Why even GQA isn't enough at scale: the O(n²) compute wall and Flash Attention's answer to it</li>
+        </ol>
+
+        <p>Then Phase 3 introduces MLA — DeepSeek's architectural innovation that compresses not the head count but the head content, achieving far greater reduction ratios without the quality tradeoff that limits GQA.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-2-2-mqa.html">← Multi-Query Attention</a>
+        <a href="deepseek-2-4-attention-scaling.html">Why Attention Scaling Breaks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">GQA</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Grouped-Query Attention. H query heads divided into G groups, each group sharing one K,V pair. Generalises MHA (G=H) and MQA (G=1). Standard in LLaMA-2/3, Mistral.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">G (groups)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Number of KV groups in GQA. Compression ratio is H/G. G=8 on H=64 (LLaMA-2-70B) gives 8× KV cache reduction. G=H is MHA; G=1 is MQA.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Uptrain</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Short fine-tuning pass after checkpoint conversion. GQA paper showed ~5% of original training tokens is sufficient to recover MHA quality after converting to GQA via mean-pooling.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Mean-pool conversion</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Collapsing H MHA key/value heads to G GQA groups by averaging the H/G heads in each group. Principled way to initialize GQA weights from an MHA checkpoint.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Sliding Window Attention</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Limits each attention head to attend only to the last W tokens. Used by Mistral alongside GQA. Caps KV cache size at W tokens regardless of total sequence length.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">MLA</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Multi-Head Latent Attention — DeepSeek's approach covered in Phase 3. Compresses the KV representation into a low-rank latent space (512 dims) instead of just reducing head count.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../app.js?v=2"></script>
+</body>
+</html>

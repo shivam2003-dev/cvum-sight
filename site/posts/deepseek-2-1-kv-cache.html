@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KV Cache Internals — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 2</p>
+        <p class="series-banner-title">KV Cache &amp; Efficient Attention</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 1 of 4 · Phase 2 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-2-1-kv-cache.html" class="active">2.1 KV Cache</a>
+          <a href="deepseek-2-2-mqa.html">2.2 MQA</a>
+          <a href="deepseek-2-3-gqa.html">2.3 GQA</a>
+          <a href="deepseek-2-4-attention-scaling.html">2.4 Scaling</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 27, 2026 · ml · 20 min read · 4200 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>KV Cache Internals.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-2</span>
+          <span class="tag">kv-cache</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Phase 1 covered how attention works: queries, keys, values, the scaled dot-product, multi-head splitting. You can now trace a token through the full attention computation. Phase 2 starts with a problem you didn't have to think about in Phase 1 — because Phase 1 was about understanding, not deploying.</p>
+
+        <p>This is article 1 of 4 in Phase 2: <strong>KV Cache &amp; Efficient Attention</strong>. The focus shifts from "how does attention work" to "how do we run it fast enough to ship."</p>
+
+        <blockquote>The KV cache is the #1 memory bottleneck in LLM inference. Understanding it — exactly what's stored, why, and how much it costs — is the prerequisite for everything in Phase 2.</blockquote>
+
+        <h2>The decode loop problem</h2>
+
+        <p>When an LLM generates text, it doesn't generate all tokens simultaneously. It generates one token at a time, in a loop. Each iteration takes the entire history of tokens generated so far and produces one more.</p>
+
+        <p>In attention terms, this means: at step <code>t</code>, the model computes attention between the new token (query) and all previous tokens (keys and values). At step <code>t+1</code>, it does the same thing, but now with one more token in the history.</p>
+
+        <p>The naive approach is to recompute everything from scratch on each step. For a sequence of length <code>n</code>, that means recomputing <code>K</code> and <code>V</code> for all <code>n</code> tokens, every single decode step. The total work becomes O(n²) — worse, it grows with each generated token.</p>
+
+        <p>The KV cache solves this with a simple observation: <strong>the keys and values for previous tokens don't change.</strong> Once computed, they can be stored and reused. Only the new token requires fresh computation.</p>
+
+        <h2>Why K and V — but not Q?</h2>
+
+        <p>Three matrices come out of attention: Q (queries), K (keys), V (values). We cache K and V. We never cache Q. The asymmetry is worth understanding.</p>
+
+        <p>In the decode loop, the query is always the <em>current</em> token — the one we're generating right now. It represents "what am I looking for?" and it's different for every step. Caching it would give you nothing; you'd replace it on the next step anyway.</p>
+
+        <p>Keys and values represent the existing context — all the tokens that came before. At decode step <code>t</code>, K and V encode tokens 1 through <code>t−1</code>. At step <code>t+1</code>, they encode tokens 1 through <code>t</code>. The entries for tokens 1 through <code>t−1</code> are identical in both cases. Those don't need to be recomputed.</p>
+
+        <p>So: Q is fresh every step (compute it). K and V for previous tokens are unchanged (cache them, append the new one).</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .d-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-acc { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .d-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .d-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; }
+              .d-arr-head { fill: #2a2620; }
+              .d-faint { fill: #ebe3cf; stroke: #948a78; stroke-width: 1; stroke-dasharray: 4 3; }
+            </style>
+            <defs>
+              <marker id="kv-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" class="d-arr-head"/>
+              </marker>
+            </defs>
+            <!-- Step t-1 -->
+            <text x="120" y="18" class="d-label">DECODE STEP t-1</text>
+            <rect x="20" y="30" width="50" height="28" rx="4" class="d-faint"/>
+            <text x="45" y="44" class="d-text" font-size="9">tok 1</text>
+            <rect x="76" y="30" width="50" height="28" rx="4" class="d-faint"/>
+            <text x="101" y="44" class="d-text" font-size="9">tok 2</text>
+            <rect x="132" y="30" width="50" height="28" rx="4" class="d-box-hi"/>
+            <text x="157" y="44" class="d-text" font-size="9">new Q</text>
+            <!-- KV cache box -->
+            <rect x="20" y="75" width="106" height="28" rx="4" class="d-box"/>
+            <text x="73" y="89" class="d-text" font-size="9">K,V cache [1..t-2]</text>
+            <rect x="132" y="75" width="50" height="28" rx="4" class="d-box-hi"/>
+            <text x="157" y="89" class="d-text" font-size="9">append</text>
+            <line x1="157" y1="58" x2="157" y2="73" class="d-arrow" marker-end="url(#kv-arr)"/>
+            <text x="120" y="122" class="d-label">cache grows by 1 K,V row per step</text>
+            <!-- Step t -->
+            <text x="500" y="18" class="d-label">DECODE STEP t</text>
+            <rect x="360" y="30" width="50" height="28" rx="4" class="d-faint"/>
+            <text x="385" y="44" class="d-text" font-size="9">tok 1</text>
+            <rect x="416" y="30" width="50" height="28" rx="4" class="d-faint"/>
+            <text x="441" y="44" class="d-text" font-size="9">tok 2</text>
+            <rect x="472" y="30" width="50" height="28" rx="4" class="d-faint"/>
+            <text x="497" y="44" class="d-text" font-size="9">tok t-1</text>
+            <rect x="528" y="30" width="50" height="28" rx="4" class="d-box-hi"/>
+            <text x="553" y="44" class="d-text" font-size="9">new Q</text>
+            <rect x="360" y="75" width="162" height="28" rx="4" class="d-box"/>
+            <text x="441" y="89" class="d-text" font-size="9">K,V cache [1..t-1]  ← reused</text>
+            <rect x="528" y="75" width="50" height="28" rx="4" class="d-box-hi"/>
+            <text x="553" y="89" class="d-text" font-size="9">append</text>
+            <line x1="553" y1="58" x2="553" y2="73" class="d-arrow" marker-end="url(#kv-arr)"/>
+            <!-- separator -->
+            <line x1="320" y1="20" x2="320" y2="120" stroke="#948a78" stroke-width="1" stroke-dasharray="4 3"/>
+            <text x="340" y="130" class="d-label" text-anchor="start">Q recomputed · K,V reused from cache</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — The KV cache grows by one row each decode step. Q is fresh; K and V are accumulated.</p>
+        </div>
+
+        <h2>The memory formula</h2>
+
+        <p>Knowing what's cached, we can calculate exactly how much memory it consumes. The formula is:</p>
+
+        <pre>KV_bytes = 2 × L × H_kv × d_h × S × B × bytes_per_element</pre>
+
+        <p>Where:</p>
+        <ul>
+          <li><code>2</code> — one tensor for K, one for V</li>
+          <li><code>L</code> — number of transformer layers</li>
+          <li><code>H_kv</code> — number of KV heads (equals H for MHA; less for GQA/MQA)</li>
+          <li><code>d_h</code> — head dimension (typically d_model / H)</li>
+          <li><code>S</code> — sequence length (current position during decode)</li>
+          <li><code>B</code> — batch size</li>
+          <li><code>bytes_per_element</code> — 2 for BF16/FP16, 4 for FP32, 1 for FP8/INT8</li>
+        </ul>
+
+        <h2>Concrete numbers: LLaMA-3-70B</h2>
+
+        <p>Let's plug in real numbers. LLaMA-3-70B specs:</p>
+        <ul>
+          <li>80 transformer layers</li>
+          <li>8 KV heads (uses GQA, not full MHA)</li>
+          <li>128 head dimension</li>
+          <li>BF16 inference (2 bytes per element)</li>
+        </ul>
+
+        <p>At 4,096 token context, batch size 1:</p>
+        <pre>2 × 80 × 8 × 128 × 4,096 × 1 × 2 = 1,342,177,280 bytes ≈ <strong>1.25 GB</strong></pre>
+
+        <p>At 128K token context (max for LLaMA-3):</p>
+        <pre>2 × 80 × 8 × 128 × 131,072 × 1 × 2 = 42,949,672,960 bytes ≈ <strong>40 GB</strong></pre>
+
+        <p>At 4K context with batch size 8 (serving 8 users simultaneously):</p>
+        <pre>2 × 80 × 8 × 128 × 4,096 × 8 × 2 = 10,737,418,240 bytes ≈ <strong>10 GB</strong></pre>
+
+        <p>The 40 GB case is striking. LLaMA-3-70B in BF16 weighs about 140 GB. An A100 80GB can't even fit the model weights alone — you'd need at least 2 GPUs. Add 40 GB of KV cache and you need a third. That's the memory bottleneck in concrete terms.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bar-kv { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .bar-wt { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .d-lbl { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; }
+              .d-sub { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .gpu-line { stroke: #c96442; stroke-width: 1.5; stroke-dasharray: 5 3; }
+            </style>
+            <!-- axes -->
+            <line x1="80" y1="140" x2="640" y2="140" stroke="#2a2620" stroke-width="1.5"/>
+            <line x1="80" y1="20" x2="80" y2="140" stroke="#2a2620" stroke-width="1.5"/>
+            <!-- y axis labels -->
+            <text x="70" y="143" class="d-sub" text-anchor="end">0</text>
+            <text x="70" y="110" class="d-sub" text-anchor="end">20</text>
+            <text x="70" y="80" class="d-sub" text-anchor="end">40</text>
+            <text x="70" y="50" class="d-sub" text-anchor="end">60</text>
+            <text x="70" y="20" class="d-sub" text-anchor="end">80 GB</text>
+            <!-- A100 limit line at 80GB -->
+            <line x1="80" y1="20" x2="640" y2="20" class="gpu-line"/>
+            <text x="645" y="23" style="font-family:'JetBrains Mono',monospace;font-size:9px;fill:#c96442">A100 80GB</text>
+            <!-- Bar 1: 4K context -->
+            <rect x="110" y="138" width="60" height="2" class="bar-kv"/>
+            <text x="140" y="155" class="d-sub">4K ctx</text>
+            <text x="140" y="165" class="d-sub">1.25 GB KV</text>
+            <!-- Bar 2: 16K context -->
+            <rect x="230" y="133" width="60" height="7" class="bar-kv"/>
+            <text x="260" y="155" class="d-sub">16K ctx</text>
+            <text x="260" y="165" class="d-sub">5 GB KV</text>
+            <!-- Bar 3: 64K context -->
+            <rect x="350" y="120" width="60" height="20" class="bar-kv"/>
+            <text x="380" y="155" class="d-sub">64K ctx</text>
+            <text x="380" y="165" class="d-sub">20 GB KV</text>
+            <!-- Bar 4: 128K context -->
+            <rect x="470" y="100" width="60" height="40" class="bar-kv"/>
+            <text x="500" y="155" class="d-sub">128K ctx</text>
+            <text x="500" y="165" class="d-sub">40 GB KV</text>
+            <!-- title -->
+            <text x="360" y="12" class="d-lbl">LLaMA-3-70B KV cache size vs context length (BF16, batch=1)</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — KV cache grows linearly with context length. At 128K tokens, the cache alone approaches the A100's full 80 GB.</p>
+        </div>
+
+        <h2>Prefill vs decode: two very different phases</h2>
+
+        <p>LLM inference has two distinct phases with very different compute and memory profiles.</p>
+
+        <h3>Prefill</h3>
+
+        <p>The model processes the entire input prompt in parallel. All tokens are present simultaneously, so Q, K, and V are computed for all of them at once. This is a large, parallel matrix operation — it's compute-bound. The GPU's tensor cores run close to peak utilization. Memory is not yet the concern; the KV cache is being built, not queried.</p>
+
+        <p>Prefill is fast. A 2,000-token prompt might take 200ms. The parallelism across tokens makes it efficient regardless of prompt length (up to hardware limits).</p>
+
+        <h3>Decode</h3>
+
+        <p>One token at a time. Each step: compute Q for the new token (a tiny matrix), load the entire KV cache from GPU memory, run attention, predict one token. Then repeat.</p>
+
+        <p>This is memory-bandwidth-bound. The GPU is mostly waiting for data to be loaded from HBM (high-bandwidth memory) rather than doing useful compute. Modern A100s have ~2 TB/s of HBM bandwidth — but a 40 GB KV cache still takes ~20ms to fully load. With a 50ms target for 20 tokens/second, that's most of your budget.</p>
+
+        <p>The arithmetic intensity (FLOPs per byte loaded) during decode is very low. You load the entire KV cache to do a relatively small amount of compute per token. This is the root cause of slow decode speeds, and it's exactly why reducing KV cache size (MQA, GQA, MLA) has such outsized impact on serving performance.</p>
+
+        <h2>What's actually stored in memory</h2>
+
+        <p>The KV cache is a pair of 4-dimensional tensors per layer. For a standard MHA model:</p>
+
+        <pre>K_cache[layer]: [batch_size, num_heads, max_seq_len, head_dim]
+V_cache[layer]: [batch_size, num_heads, max_seq_len, head_dim]</pre>
+
+        <p>In practice, these are pre-allocated at the maximum sequence length. If your max context is 4,096 tokens and you're generating a 10-token response to a 50-token prompt, the cache still holds 4,096 slots — most of them empty. This avoids reallocation overhead during the decode loop but wastes memory for short sequences.</p>
+
+        <p>Production serving engines like vLLM use <strong>paged attention</strong>: the KV cache is divided into fixed-size pages (like OS virtual memory). Pages are allocated on demand and freed when sequences complete. This dramatically improves GPU memory utilization when serving mixed-length requests.</p>
+
+        <h2>Data types in practice</h2>
+
+        <p>The bytes_per_element in the formula makes a large difference:</p>
+
+        <table>
+          <thead>
+            <tr><th>Format</th><th>Bytes</th><th>Cache at 128K (70B)</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>FP32</td><td>4</td><td>~80 GB</td><td>Full precision — never used for inference</td></tr>
+            <tr><td>BF16</td><td>2</td><td>~40 GB</td><td>Standard for modern inference</td></tr>
+            <tr><td>FP16</td><td>2</td><td>~40 GB</td><td>Slightly less stable numerically</td></tr>
+            <tr><td>FP8</td><td>1</td><td>~20 GB</td><td>Emerging standard for KV cache compression</td></tr>
+            <tr><td>INT8</td><td>1</td><td>~20 GB</td><td>KV quantization with minor quality loss</td></tr>
+            <tr><td>INT4</td><td>0.5</td><td>~10 GB</td><td>Aggressive; visible quality degradation</td></tr>
+          </tbody>
+        </table>
+
+        <p>FP8 KV cache quantization is increasingly common in production — halving cache size with minimal quality loss. DeepSeek-V3 uses FP8 quantization both for weights and activations.</p>
+
+        <h2>The bottleneck hierarchy</h2>
+
+        <p>Put it all together and you get a clear picture of where inference memory goes:</p>
+
+        <ol>
+          <li><strong>Model weights</strong> — fixed cost, loaded once (70B model ≈ 140 GB BF16)</li>
+          <li><strong>KV cache</strong> — grows with sequence length and batch size; the variable cost</li>
+          <li><strong>Activations</strong> — temporary tensors during the forward pass; much smaller</li>
+        </ol>
+
+        <p>For short-context single-request inference, weights dominate. For long-context or high-throughput serving (large batch sizes), the KV cache becomes the binding constraint. At 128K context with batch size 8, you need 320 GB just for the KV cache — more than the model itself.</p>
+
+        <blockquote>This is why MQA, GQA, and MLA exist. They're not attention variants. They're KV cache compression strategies expressed as changes to the attention architecture.</blockquote>
+
+        <h2>What comes next</h2>
+
+        <p>Phase 1 gave you MHA: <code>H</code> query heads, <code>H</code> key heads, <code>H</code> value heads. The KV cache stores all <code>H×2</code> head tensors per layer.</p>
+
+        <p>Article 2.2 introduces Multi-Query Attention (MQA): <code>H</code> query heads, but only <code>1</code> key head and <code>1</code> value head — shared across all queries. One line change in the architecture, <code>H</code>-times reduction in KV cache size. The obvious question is what this costs in quality. That's what we'll measure.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-1-7-mha-implementation.html">← MHA Implementation</a>
+        <a href="deepseek-2-2-mqa.html">Multi-Query Attention →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">KV Cache</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Stored key and value tensors for all previous tokens. Avoids recomputing K and V on every decode step. Grows by one row per generated token per layer.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Prefill</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The initial phase where the full prompt is processed in parallel. Compute-bound. Builds the initial KV cache. Fast because tokens are processed simultaneously.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Decode</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The generation phase. One token per step. Memory-bandwidth-bound — the GPU spends most of its time loading the KV cache from HBM, not computing.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">HBM</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">High-Bandwidth Memory — the DRAM on a GPU (not SRAM/registers). Where the KV cache lives. Fast compared to CPU RAM, but loading large tensors still dominates decode latency.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">BF16</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Brain Float 16. 2-byte floating point with the same exponent range as FP32 but reduced mantissa precision. Standard for LLM inference — half the memory of FP32, numerically stable.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Paged Attention</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">vLLM's technique of dividing the KV cache into fixed-size pages. Allocates memory on demand. Eliminates fragmentation when serving multiple sequences of varying lengths.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Memory bandwidth bound</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">When a GPU computation is limited by how fast data can be loaded from memory — not by raw compute. Decode is memory-bandwidth-bound: GPU waits for the KV cache to load.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../app.js?v=2"></script>
+</body>
+</html>

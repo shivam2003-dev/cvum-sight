@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Query Attention — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 2</p>
+        <p class="series-banner-title">KV Cache &amp; Efficient Attention</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 2 of 4 · Phase 2 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-2-1-kv-cache.html" class="done">2.1 KV Cache</a>
+          <a href="deepseek-2-2-mqa.html" class="active">2.2 MQA</a>
+          <a href="deepseek-2-3-gqa.html">2.3 GQA</a>
+          <a href="deepseek-2-4-attention-scaling.html">2.4 Scaling</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 27, 2026 · ml · 17 min read · 3500 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Multi-Query Attention.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-2</span>
+          <span class="tag">mqa</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Article 2.1 established the problem: the KV cache grows linearly with sequence length, and at 128K context it can outweigh the model itself. The obvious engineering question is — what's the minimum information we actually need to store?</p>
+
+        <p>Multi-Query Attention (MQA) was Noam Shazeer's answer in 2019. The paper is titled "Fast Transformer Decoding: One Write-Head is All You Need" (arXiv:1911.02150). The title is a deliberate riff on "Attention Is All You Need" — and the claim is as bold as the original. You can share a single key-value head across all query heads and barely lose anything in quality.</p>
+
+        <blockquote>MQA is not a new idea that appeared in DeepSeek. It's a 2019 paper that was largely ignored, then adopted by PaLM (2022), Falcon, and StarCoder when serving costs became real. Understanding MQA is step 1 in understanding why GQA and MLA exist.</blockquote>
+
+        <h2>The MHA baseline</h2>
+
+        <p>Standard Multi-Head Attention (MHA) from Phase 1 has <code>H</code> query heads, <code>H</code> key heads, and <code>H</code> value heads. Each head operates in its own <code>d_h = d_model / H</code> dimensional subspace.</p>
+
+        <p>For a model with <code>d_model = 4096</code> and <code>H = 32</code> heads:</p>
+        <ul>
+          <li>Each head dimension: <code>d_h = 128</code></li>
+          <li>Query projection: <code>W_Q ∈ R^{4096 × 4096}</code> (32 heads × 128 dims)</li>
+          <li>Key projection: <code>W_K ∈ R^{4096 × 4096}</code></li>
+          <li>Value projection: <code>W_V ∈ R^{4096 × 4096}</code></li>
+        </ul>
+
+        <p>The KV cache stores all 32 key heads and all 32 value heads. For every token in the context, at every layer, you're storing 64 vectors of dimension 128. That's what you calculated in 2.1.</p>
+
+        <h2>The MQA insight</h2>
+
+        <p>Shazeer's observation: the query heads benefit from specialisation. You want 32 different questions being asked of the context — that's the diversity that makes multi-head attention powerful. But the keys and values? They're just answering those questions. You don't necessarily need a different key-value pair for each head.</p>
+
+        <p>MQA keeps H query heads but collapses to a single K head and a single V head, shared across all H queries:</p>
+
+        <ul>
+          <li>Query projection: <code>W_Q ∈ R^{d_model × (H × d_h)}</code> — same as MHA</li>
+          <li>Key projection: <code>W_K ∈ R^{d_model × d_h}</code> — one head only</li>
+          <li>Value projection: <code>W_V ∈ R^{d_model × d_h}</code> — one head only</li>
+        </ul>
+
+        <p>The KV cache now stores 1 key head and 1 value head instead of H of each. At H=32, that's a 32× reduction in KV cache memory.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .d-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-acc { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-faint { fill: #ebe3cf; stroke: #948a78; stroke-width: 1; stroke-dasharray: 3 2; }
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .d-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .d-arrow { stroke: #2a2620; stroke-width: 1.5; fill: none; }
+              .d-arr-head { fill: #2a2620; }
+            </style>
+            <defs>
+              <marker id="mqa-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="#2a2620"/>
+              </marker>
+            </defs>
+            <!-- MHA left -->
+            <text x="160" y="14" class="d-lbl" style="font-size:11px;fill:#2a2620">MHA</text>
+            <!-- Q heads -->
+            <rect x="30" y="28" width="38" height="22" rx="3" class="d-box-hi"/>
+            <text x="49" y="39" class="d-text" font-size="9">Q₁</text>
+            <rect x="72" y="28" width="38" height="22" rx="3" class="d-box-hi"/>
+            <text x="91" y="39" class="d-text" font-size="9">Q₂</text>
+            <text x="136" y="39" class="d-lbl">...</text>
+            <rect x="154" y="28" width="38" height="22" rx="3" class="d-box-hi"/>
+            <text x="173" y="39" class="d-text" font-size="9">Q_H</text>
+            <text x="105" y="24" class="d-lbl">H query heads</text>
+            <!-- K heads -->
+            <rect x="30" y="68" width="38" height="22" rx="3" class="d-box"/>
+            <text x="49" y="79" class="d-text" font-size="9">K₁</text>
+            <rect x="72" y="68" width="38" height="22" rx="3" class="d-box"/>
+            <text x="91" y="79" class="d-text" font-size="9">K₂</text>
+            <text x="136" y="79" class="d-lbl">...</text>
+            <rect x="154" y="68" width="38" height="22" rx="3" class="d-box"/>
+            <text x="173" y="79" class="d-text" font-size="9">K_H</text>
+            <text x="105" y="64" class="d-lbl">H key heads</text>
+            <!-- V heads -->
+            <rect x="30" y="108" width="38" height="22" rx="3" class="d-box"/>
+            <text x="49" y="119" class="d-text" font-size="9">V₁</text>
+            <rect x="72" y="108" width="38" height="22" rx="3" class="d-box"/>
+            <text x="91" y="119" class="d-text" font-size="9">V₂</text>
+            <text x="136" y="119" class="d-lbl">...</text>
+            <rect x="154" y="108" width="38" height="22" rx="3" class="d-box"/>
+            <text x="173" y="119" class="d-text" font-size="9">V_H</text>
+            <text x="105" y="104" class="d-lbl">H value heads</text>
+            <!-- MHA cache label -->
+            <rect x="20" y="60" width="170" height="80" rx="4" style="fill:none;stroke:#c96442;stroke-width:1.5;stroke-dasharray:4 2"/>
+            <text x="20" y="152" class="d-lbl" text-anchor="start" style="fill:#c96442">KV cache: 2H vectors/token/layer</text>
+
+            <!-- divider -->
+            <line x1="220" y1="20" x2="220" y2="165" stroke="#948a78" stroke-width="1" stroke-dasharray="4 3"/>
+
+            <!-- MQA right -->
+            <text x="470" y="14" class="d-lbl" style="font-size:11px;fill:#2a2620">MQA</text>
+            <!-- Q heads -->
+            <rect x="340" y="28" width="38" height="22" rx="3" class="d-box-hi"/>
+            <text x="359" y="39" class="d-text" font-size="9">Q₁</text>
+            <rect x="382" y="28" width="38" height="22" rx="3" class="d-box-hi"/>
+            <text x="401" y="39" class="d-text" font-size="9">Q₂</text>
+            <text x="446" y="39" class="d-lbl">...</text>
+            <rect x="464" y="28" width="38" height="22" rx="3" class="d-box-hi"/>
+            <text x="483" y="39" class="d-text" font-size="9">Q_H</text>
+            <text x="415" y="24" class="d-lbl">H query heads (unchanged)</text>
+            <!-- single K -->
+            <rect x="390" y="78" width="50" height="22" rx="3" class="d-box-acc"/>
+            <text x="415" y="89" class="d-text" font-size="9" style="fill:#ebe3cf">K (shared)</text>
+            <text x="415" y="70" class="d-lbl">1 shared key head</text>
+            <!-- single V -->
+            <rect x="390" y="118" width="50" height="22" rx="3" class="d-box-acc"/>
+            <text x="415" y="129" class="d-text" font-size="9" style="fill:#ebe3cf">V (shared)</text>
+            <text x="415" y="112" class="d-lbl">1 shared value head</text>
+            <!-- arrows from Q heads to shared K -->
+            <line x1="359" y1="50" x2="400" y2="76" class="d-arrow" marker-end="url(#mqa-arr)"/>
+            <line x1="401" y1="50" x2="410" y2="76" class="d-arrow" marker-end="url(#mqa-arr)"/>
+            <line x1="483" y1="50" x2="425" y2="76" class="d-arrow" marker-end="url(#mqa-arr)"/>
+            <!-- MQA cache label -->
+            <rect x="330" y="70" width="170" height="80" rx="4" style="fill:none;stroke:#f0c040;stroke-width:1.5;stroke-dasharray:4 2"/>
+            <text x="330" y="162" class="d-lbl" text-anchor="start" style="fill:#f0c040">KV cache: 2 vectors/token/layer (÷H)</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — MHA stores H separate K,V heads per token. MQA collapses to a single shared K and V — same query diversity, H× less cache.</p>
+        </div>
+
+        <h2>The attention computation with shared KV</h2>
+
+        <p>In MHA, head <code>i</code> computes:</p>
+        <pre>head_i = softmax(Q_i @ K_i^T / sqrt(d_h)) @ V_i</pre>
+
+        <p>In MQA, all heads share the same K and V:</p>
+        <pre>head_i = softmax(Q_i @ K_shared^T / sqrt(d_h)) @ V_shared</pre>
+
+        <p>The output of each head still has dimension <code>d_h</code>. They still get concatenated and projected by <code>W_O</code>. The interface to the rest of the transformer is identical. The only change is inside the attention computation: queries remain diverse, keys and values are singular.</p>
+
+        <p>In PyTorch terms, the difference is surgical:</p>
+
+        <pre># MHA
+W_Q = nn.Linear(d_model, H * d_h, bias=False)
+W_K = nn.Linear(d_model, H * d_h, bias=False)  # H heads
+W_V = nn.Linear(d_model, H * d_h, bias=False)  # H heads
+
+# MQA — only K and V change
+W_Q = nn.Linear(d_model, H * d_h, bias=False)
+W_K = nn.Linear(d_model, d_h, bias=False)       # 1 head
+W_V = nn.Linear(d_model, d_h, bias=False)       # 1 head</pre>
+
+        <p>During the forward pass, the single K and V head gets broadcast across all H queries before the dot product:</p>
+
+        <pre>def mqa_forward(x, W_Q, W_K, W_V, W_O, H, d_h):
+    B, S, D = x.shape
+
+    # Q: (B, S, H, d_h)
+    Q = W_Q(x).reshape(B, S, H, d_h).transpose(1, 2)
+
+    # K, V: (B, S, d_h) → broadcast to (B, 1, S, d_h) → (B, H, S, d_h)
+    K = W_K(x).reshape(B, S, 1, d_h).transpose(1, 2).expand(B, H, S, d_h)
+    V = W_V(x).reshape(B, S, 1, d_h).transpose(1, 2).expand(B, H, S, d_h)
+
+    # Standard scaled dot-product attention from here
+    scale = d_h ** -0.5
+    attn = (Q @ K.transpose(-2, -1)) * scale
+    attn = attn.softmax(dim=-1)
+    out = attn @ V  # (B, H, S, d_h)
+
+    out = out.transpose(1, 2).reshape(B, S, H * d_h)
+    return W_O(out)</pre>
+
+        <p>The KV cache stores only <code>K_shared</code> and <code>V_shared</code> — one tensor per layer, not H. At decode step <code>t</code>, you append one row to each. The broadcast to H query heads happens at attention computation time, not at storage time.</p>
+
+        <h2>Memory reduction: the numbers</h2>
+
+        <p>Applying the formula from 2.1 with <code>H_kv = 1</code> instead of <code>H_kv = H</code>:</p>
+
+        <p>For a model with H=32 heads, same 70B-class architecture:</p>
+        <ul>
+          <li>MHA at 128K context: ~40 GB KV cache</li>
+          <li>MQA at 128K context: ~40 GB / 32 = ~1.25 GB KV cache</li>
+        </ul>
+
+        <p>That's not a typo. 32× reduction in KV cache memory. The entire 128K context fits in the cache budget that MHA would spend on a 4K context.</p>
+
+        <p>This is why PaLM used MQA when they scaled to 540B parameters and trillion-token context. At that scale, the KV cache isn't just a concern — it's the binding constraint on how many users you can serve simultaneously.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bar-mha { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .bar-mqa { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .d-lbl { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; }
+              .d-sub { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+            </style>
+            <line x1="80" y1="140" x2="640" y2="140" stroke="#2a2620" stroke-width="1.5"/>
+            <line x1="80" y1="20" x2="80" y2="140" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="70" y="143" class="d-sub" text-anchor="end">0</text>
+            <text x="70" y="93" class="d-sub" text-anchor="end">20 GB</text>
+            <text x="70" y="43" class="d-sub" text-anchor="end">40 GB</text>
+            <!-- MHA bars -->
+            <rect x="110" y="43" width="60" height="97" class="bar-mha"/>
+            <text x="140" y="35" class="d-lbl" style="fill:#c96442">MHA</text>
+            <text x="140" y="155" class="d-sub">128K ctx</text>
+            <text x="140" y="165" class="d-sub">H=32 heads</text>
+            <!-- MQA bar -->
+            <rect x="230" y="137" width="60" height="3" class="bar-mqa"/>
+            <text x="260" y="129" class="d-lbl" style="fill:#2a2620">MQA</text>
+            <text x="260" y="155" class="d-sub">128K ctx</text>
+            <text x="260" y="165" class="d-sub">1 KV head</text>
+            <!-- annotation -->
+            <line x1="175" y1="90" x2="225" y2="90" stroke="#948a78" stroke-width="1" stroke-dasharray="3 2"/>
+            <text x="320" y="93" class="d-lbl" style="fill:#948a78">32× reduction</text>
+            <!-- MQA 128K -->
+            <rect x="380" y="139" width="60" height="1" class="bar-mqa"/>
+            <text x="410" y="130" class="d-lbl">≈ 1.25 GB</text>
+            <text x="410" y="155" class="d-sub">same 128K ctx</text>
+            <text x="410" y="165" class="d-sub">MQA</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — MQA KV cache at 128K context (1.25 GB) vs MHA (40 GB) for a 70B-class model with H=32.</p>
+        </div>
+
+        <h2>What you actually lose</h2>
+
+        <p>Shazeer's paper measured quality degradation and found it acceptable for autoregressive language modelling. But "acceptable" deserves scrutiny.</p>
+
+        <p>The original MQA paper reported perplexity degradation of roughly 0.1-0.3 perplexity points on language modelling benchmarks — statistically significant but not catastrophic. Later studies (and the GQA paper from Google, 2023) found that the degradation is task-dependent. On tasks that require precise cross-head information aggregation — complex reasoning, structured generation — MQA's quality loss is more noticeable.</p>
+
+        <p>The intuition: when all H query heads attend to the same K and V, they can no longer develop fully independent attention patterns. Head 1 might want to focus on syntactic dependencies while head 8 focuses on coreference — but they're both asking slightly different questions of the same keys. With MHA, each head has its own key projections, so the question-answer pairings are truly independent. MQA forces all queries to look at the same "representation" of the context, just from different query angles.</p>
+
+        <p>In practice, this manifests as degraded performance on tasks requiring diverse, independent attention patterns. Factual recall, code generation, and mathematical reasoning all show measurable but small regressions in systematic benchmarks comparing MHA-equivalent and MQA-equivalent models of the same size.</p>
+
+        <h2>Training tricks for quality recovery</h2>
+
+        <p>Shazeer's paper also noted that MQA benefits from somewhat different training hyperparameters — specifically, the K and V projections should be initialized and tuned carefully because they carry more load (all H query heads are counting on them). Some practitioners find that increasing the K and V hidden dimension slightly (e.g., <code>d_h × 1.5</code> for the shared heads) partially recovers quality at modest memory cost.</p>
+
+        <p>The other approach is converting existing MHA models to MQA. The GQA paper showed that you can take a fully trained MHA checkpoint and upcast it to MQA by mean-pooling the H key and value heads into one. Then fine-tune for a small number of steps to recover performance. This is cheaper than training MQA from scratch and enables you to experiment with the quality tradeoff without full retraining.</p>
+
+        <pre># Mean-pool H KV heads into 1 (for checkpoint conversion)
+# W_K_mha: (H * d_h, d_model) → reshape to (H, d_h, d_model) → mean over H
+W_K_mha = checkpoint["W_K"].reshape(H, d_h, d_model)
+W_K_mqa = W_K_mha.mean(dim=0)  # (d_h, d_model)
+
+W_V_mha = checkpoint["W_V"].reshape(H, d_h, d_model)
+W_V_mqa = W_V_mha.mean(dim=0)  # (d_h, d_model)</pre>
+
+        <h2>Where MQA is used</h2>
+
+        <p>MQA appears in several major models:</p>
+
+        <table>
+          <thead>
+            <tr><th>Model</th><th>Released</th><th>Architecture</th><th>Why MQA</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>PaLM</td><td>2022</td><td>MQA</td><td>540B model, trillion tokens — KV cache was prohibitive</td></tr>
+            <tr><td>Falcon-7B/40B</td><td>2023</td><td>MQA</td><td>Inference efficiency, commercial serving</td></tr>
+            <tr><td>StarCoder</td><td>2023</td><td>MQA</td><td>Fast inference for code completion use case</td></tr>
+            <tr><td>GPT-J, CodeGen</td><td>2021-22</td><td>MHA</td><td>Pre-MQA awareness; full KV heads</td></tr>
+            <tr><td>LLaMA-2/3</td><td>2023-24</td><td>GQA (not MQA)</td><td>G=8 groups — quality-memory compromise</td></tr>
+          </tbody>
+        </table>
+
+        <p>Notice that the LLaMA family doesn't use MQA — it uses GQA with G=8 groups. That's the story in the next article: the ML community found that MQA was too aggressive a compression, and GQA (Grouped-Query Attention) offers a better tradeoff.</p>
+
+        <h2>The bandwidth argument for MQA</h2>
+
+        <p>Beyond raw memory, MQA has a bandwidth advantage that's easy to overlook. During decode, the GPU must load the KV cache from HBM on every step. With MQA, you're loading 1/H as much data. For an H=32 model, the decode step goes from loading 40 GB (at 128K context) to loading 1.25 GB. At A100's 2 TB/s bandwidth:</p>
+
+        <ul>
+          <li>MHA: 40 GB / 2 TB/s = 20 ms just to load the KV cache</li>
+          <li>MQA: 1.25 GB / 2 TB/s = 0.625 ms for the same operation</li>
+        </ul>
+
+        <p>That's a 32× bandwidth saving translating to 32× faster KV cache reads per decode step. This is why MQA wasn't just about fitting models on fewer GPUs — it was about making long-context generation usably fast.</p>
+
+        <blockquote>The KV cache bottleneck is a bandwidth problem, not just a memory problem. MQA solves both simultaneously: less data to store, less data to load on every decode step.</blockquote>
+
+        <h2>The limitation MQA left unsolved</h2>
+
+        <p>MQA's 32× compression comes with a quality floor. For models being deployed as general-purpose assistants or in reasoning-heavy applications, the quality regression at extreme compression ratios is unacceptable. The practitioners needed something in between.</p>
+
+        <p>Grouped-Query Attention (GQA), published by Google Research in 2023, provides exactly that. Instead of collapsing to 1 KV head, GQA uses G groups — each group shares a K and V head, and G can be tuned to trade off memory against quality. LLaMA-2 uses G=8, which means 8 shared KV heads instead of 32 (4× compression) and 1 (32× compression). Article 2.3 covers how this works and why it became the dominant approach.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-2-1-kv-cache.html">← KV Cache Internals</a>
+        <a href="deepseek-2-3-gqa.html">Grouped-Query Attention →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">MQA</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Multi-Query Attention. H query heads share a single key head and a single value head. Proposed by Shazeer (2019). Reduces KV cache by factor H. Used in PaLM, Falcon, StarCoder.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Shared KV head</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">In MQA, all H query heads attend to the same single key and value projection. The K and V are broadcast across heads at attention time, not stored H times.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Broadcast</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Expanding a tensor along a dimension without copying data (PyTorch expand). Used in MQA to make 1 KV head appear as H heads for the dot product computation.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Arithmetic intensity</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">FLOPs per byte of memory loaded. Decode is low-arithmetic-intensity — loads lots of data (KV cache) for little compute. MQA raises this ratio by reducing the data load.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Perplexity</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The standard LM quality metric. Lower perplexity = better predictions. MQA increases perplexity by ~0.1-0.3 points — measurable but small in language modelling benchmarks.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">MHA → MQA conversion</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Taking a trained MHA checkpoint and converting to MQA by mean-pooling K and V heads, then fine-tuning. Cheaper than training MQA from scratch — validated in the GQA paper.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../app.js?v=2"></script>
+</body>
+</html>

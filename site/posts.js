@@ -16,6 +16,54 @@
 
 const POSTS = [
   {
+    slug: "deepseek-2-4-attention-scaling",
+    title: "Why Attention Scaling Breaks.",
+    date: "May 27, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-2", "flashattention"],
+    time: 18,
+    words: 3700,
+    excerpt: "The O(n²) compute wall, the memory hierarchy problem, and Flash Attention's IO-aware tiling solution. How the score matrix moves from HBM to SRAM — and why that enables 128K context sequences.",
+    series: "deepseek",
+    seriesNum: "2.4"
+  },
+  {
+    slug: "deepseek-2-3-gqa",
+    title: "Grouped-Query Attention.",
+    date: "May 27, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-2", "gqa"],
+    time: 17,
+    words: 3500,
+    excerpt: "G groups of shared KV heads — the middle ground between MHA and MQA. How G=8 became the production standard in LLaMA-2/3 and Mistral, what it costs in quality, and why it's not enough for DeepSeek's scale.",
+    series: "deepseek",
+    seriesNum: "2.3"
+  },
+  {
+    slug: "deepseek-2-2-mqa",
+    title: "Multi-Query Attention.",
+    date: "May 27, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-2", "mqa"],
+    time: 17,
+    words: 3500,
+    excerpt: "Shazeer's 2019 paper that collapsed H KV heads to 1. How a single shared key-value head for all queries delivers H× memory reduction — and what you lose in quality.",
+    series: "deepseek",
+    seriesNum: "2.2"
+  },
+  {
+    slug: "deepseek-2-1-kv-cache",
+    title: "KV Cache Internals.",
+    date: "May 27, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-2", "kv-cache"],
+    time: 20,
+    words: 4200,
+    excerpt: "The #1 memory bottleneck in LLM inference — exactly what the KV cache stores, why it grows linearly with context, and the concrete numbers that make it a hard constraint for production systems.",
+    series: "deepseek",
+    seriesNum: "2.1"
+  },
+  {
     slug: "ai-threat-modelling",
     title: "AI Threat Modelling — How to Assess the Attack Surface Traditional Frameworks Miss.",
     date: "May 27, 2026",

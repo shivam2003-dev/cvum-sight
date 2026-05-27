@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "on-policy-distillation-paper-juice",
+    title: "Rethinking On-Policy Distillation — When Copying the Teacher Stops Working.",
+    date: "May 27, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "distillation", "llm-training", "post-training"],
+    time: 24,
+    words: 5400,
+    excerpt: "Why OPD sometimes silently fails. Two conditions: student and teacher must share compatible thinking patterns, AND the teacher must offer genuinely new capabilities. Token-level mechanism reveals 97-99% shared probability mass — and why long-horizon reasoning may break the recipe."
+  },
+  {
     slug: "deepseek-3-5-mla-rope",
     title: "MLA + RoPE.",
     date: "May 27, 2026",

@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rethinking On-Policy Distillation — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  details.math-optional {
+    border-left: 3px solid #141413;
+    padding: 12px 16px;
+    margin: 16px 0;
+    background: rgba(42,38,32,0.35);
+    border-radius: 0 6px 6px 0;
+  }
+  details.math-optional summary {
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-style: italic;
+    color: #262625;
+    font-size: 0.95rem;
+    list-style: none;
+    user-select: none;
+  }
+  details.math-optional summary::-webkit-details-marker { display: none; }
+  details.math-optional summary::before {
+    content: '▸ ';
+    font-style: normal;
+  }
+  details.math-optional[open] summary::before {
+    content: '▾ ';
+  }
+  details.math-optional .math-inner {
+    margin-top: 12px;
+  }
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]})"></script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">May 27, 2026 · paperjuice · 24 min read · 5400 words</p>
+        <h1>Rethinking On-Policy Distillation — When Copying the Teacher Stops Working.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">distillation</span>
+          <span class="tag">llm-training</span>
+          <span class="tag">post-training</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          Imagine you're a smart student. You want to learn a new skill, so you find a teacher who's
+          slightly better than you. You watch them work, and try to copy what they'd do. You make
+          mistakes. The teacher corrects you in real-time, telling you the probability they would
+          have placed on each move you just made.
+        </p>
+        <p>
+          That's <strong>on-policy distillation (OPD)</strong> — the most popular method for training
+          smaller language models from larger ones in 2024–2026. Everyone from DeepSeek to Anthropic
+          uses some variant. It usually works beautifully.
+        </p>
+        <p>
+          But sometimes it doesn't. Sometimes the student gets <em>worse</em>. Sometimes a "better" teacher
+          produces no improvement at all. And nobody has been able to explain why — until this paper.
+        </p>
+        <p>
+          <strong>"Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism,
+          and Recipe"</strong> (arXiv:2604.13016) is the first systematic dissection of when OPD works,
+          when it breaks, and what to do about it. The answer turns out to be deceptively simple — and
+          uncomfortable for anyone hoping OPD will scale to longer reasoning horizons.
+        </p>
+
+        <h2>The problem the paper opens with</h2>
+
+        <p>
+          On-policy distillation is the de-facto post-training recipe for compact LLMs. The student
+          generates its own rollouts, and at each token the teacher provides a probability distribution
+          over the next-token possibilities. The student's loss is the KL divergence between its
+          distribution and the teacher's.
+        </p>
+
+        <details class="math-optional">
+          <summary>optional read — the OPD objective</summary>
+          <div class="math-inner">
+          <p>
+            For a student policy $\pi_\theta$ and teacher policy $\pi_T$, on-policy distillation
+            minimises:
+          </p>
+          <p>
+            $$\mathcal{L}_{OPD}(\theta) = \mathbb{E}_{x \sim \pi_\theta} \left[ \sum_{t} D_{KL}\left(\pi_\theta(\cdot|x_{<t}) \,\|\, \pi_T(\cdot|x_{<t})\right) \right]$$
+          </p>
+          <p>
+            Note the expectation is over rollouts from the student — that's what makes it
+            <em>on-policy</em>. The student sees its own mistakes and gets per-token correction signal
+            from the teacher. This contrasts with <em>off-policy</em> distillation (also called supervised
+            fine-tuning on teacher rollouts) which samples from the teacher distribution instead.
+          </p>
+          </div>
+        </details>
+
+        <p>
+          The result has been a flood of strong compact models. LLaMA-3-8B distilled from LLaMA-3-70B.
+          Phi-3 from GPT-4. DeepSeek-R1's distilled series. The recipe seemed bulletproof: bigger
+          teacher + on-policy training = better student.
+        </p>
+
+        <p>
+          But the paper opens with three uncomfortable observations:
+        </p>
+
+        <ol>
+          <li>Some "better" teachers produce <em>no</em> improvement when used for OPD on the same student.</li>
+          <li>OPD sometimes makes the student strictly worse than before training.</li>
+          <li>The standard explanation ("the teacher is too far ahead") doesn't predict which pairings will fail.</li>
+        </ol>
+
+        <p>
+          The authors then run a campaign of controlled experiments to figure out what's actually going on.
+          The conclusions reshape how we should think about teacher-student selection.
+        </p>
+
+        <h2>The two-condition phenomenology</h2>
+
+        <p>
+          The paper's central empirical claim is that successful OPD requires <strong>two</strong>
+          conditions, both of which must hold simultaneously:
+        </p>
+
+        <blockquote>
+          <strong>Condition 1 (Compatibility):</strong> The student and teacher must share compatible
+          thinking patterns — meaning their token distributions must be close enough that the student
+          can plausibly reproduce the teacher's reasoning trajectories.
+          <br><br>
+          <strong>Condition 2 (Headroom):</strong> The teacher must offer capabilities genuinely beyond
+          the student's existing distribution — meaning there has to be something <em>new</em> to learn.
+        </blockquote>
+
+        <p>
+          Each condition alone is obvious in hindsight. Together, they exclude a surprising chunk of the
+          teacher-student pairings that practitioners assume should work.
+        </p>
+
+        <h3>When Condition 1 fails: distributional mismatch</h3>
+
+        <p>
+          The authors run reverse distillation experiments — taking a smaller, weaker model and using it
+          as the teacher for a larger model from a different family. Conventional wisdom says this should
+          fail (weak teacher, strong student). And it does fail, but not for the reason you'd guess.
+        </p>
+
+        <p>
+          The student's rollouts traverse a probability landscape that the small teacher has never
+          modelled well. The teacher's KL signal is therefore mostly noise. The student gets pulled
+          toward a distribution the teacher can't accurately describe, and quality collapses. Even
+          though the student is more capable in absolute terms, the gap in <em>where they live</em> in
+          token space breaks the learning signal.
+        </p>
+
+        <h3>When Condition 2 fails: distributional indistinguishability</h3>
+
+        <p>
+          This is the more surprising failure mode. The authors compare same-family models of different
+          sizes — Qwen-1.5B as student, Qwen-7B as teacher. Both trained on the same corpus, same
+          tokeniser, same architectural family.
+        </p>
+
+        <p>
+          The finding: from the student's perspective, the 7B teacher is <strong>distributionally
+          indistinguishable</strong> from the 1.5B student. The 7B model knows more facts and reasons
+          better in absolute terms, but token-by-token its predictions overlap with the 1.5B student's
+          predictions almost entirely. There's no genuinely new signal to extract.
+        </p>
+
+        <p>
+          OPD on this pair produces near-zero improvement. The student finishes training looking almost
+          identical to where it started. The teacher's superior capabilities don't manifest in the
+          per-token distribution because both models share the same training data — and 1B+ parameter
+          models with the same training data converge to similar per-token distributions on that data.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .d-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-acc { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .d-box-g { fill: #6b9e6b; stroke: #2a2620; stroke-width: 1.5; }
+              .d-text { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: middle; }
+              .d-text-w { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #ebe3cf; text-anchor: middle; }
+              .d-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .d-title { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+            </style>
+            <!-- Three regimes -->
+            <text x="113" y="14" class="d-title">OPD SUCCEEDS</text>
+            <text x="340" y="14" class="d-title">CONDITION 1 FAILS</text>
+            <text x="567" y="14" class="d-title">CONDITION 2 FAILS</text>
+
+            <!-- regime 1: compatible + headroom -->
+            <circle cx="113" cy="80" r="40" fill="#f0c040" stroke="#2a2620" stroke-width="1.5" opacity="0.55"/>
+            <circle cx="135" cy="80" r="55" fill="#c96442" stroke="#2a2620" stroke-width="1.5" opacity="0.45"/>
+            <text x="95" y="83" class="d-text">student</text>
+            <text x="155" y="83" class="d-text-w">teacher</text>
+            <text x="113" y="160" class="d-lbl">overlap + new signal</text>
+            <text x="113" y="172" class="d-lbl">→ student improves</text>
+
+            <!-- regime 2: incompatible -->
+            <circle cx="320" cy="70" r="30" fill="#f0c040" stroke="#2a2620" stroke-width="1.5" opacity="0.6"/>
+            <circle cx="395" cy="95" r="40" fill="#c96442" stroke="#2a2620" stroke-width="1.5" opacity="0.5"/>
+            <text x="320" y="73" class="d-text">student</text>
+            <text x="395" y="98" class="d-text-w">teacher</text>
+            <text x="340" y="160" class="d-lbl">no overlap</text>
+            <text x="340" y="172" class="d-lbl">→ student degrades / collapses</text>
+
+            <!-- regime 3: indistinguishable -->
+            <circle cx="567" cy="80" r="50" fill="#f0c040" stroke="#2a2620" stroke-width="1.5" opacity="0.6"/>
+            <circle cx="567" cy="80" r="48" fill="#c96442" stroke="#2a2620" stroke-width="1.5" opacity="0.4"/>
+            <text x="567" y="83" class="d-text">overlap</text>
+            <text x="567" y="160" class="d-lbl">teacher ≈ student</text>
+            <text x="567" y="172" class="d-lbl">→ no improvement</text>
+
+            <!-- axis -->
+            <line x1="50" y1="210" x2="630" y2="210" stroke="#2a2620" stroke-width="1"/>
+            <text x="50" y="225" class="d-lbl" text-anchor="start">distributional overlap →</text>
+            <text x="340" y="225" class="d-lbl">SWEET SPOT</text>
+            <text x="630" y="225" class="d-lbl" text-anchor="end">→ full overlap</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Three regimes for teacher-student token distribution overlap. OPD only works in the sweet spot: enough overlap for the signal to be informative, enough gap for there to be something to learn.</p>
+        </div>
+
+        <h2>The mechanism: token-level probability mass</h2>
+
+        <p>
+          The phenomenology is interesting. The mechanism is the paper's biggest contribution.
+        </p>
+
+        <p>
+          The authors probe what's happening at every step of a successful OPD run by examining the
+          per-token probability distributions for both student and teacher. The headline finding:
+        </p>
+
+        <blockquote>
+          Successful OPD exhibits <strong>progressive alignment on high-probability tokens</strong>,
+          with the shared top-k token sets concentrating <strong>97%–99% of probability mass</strong>
+          throughout training.
+        </blockquote>
+
+        <p>
+          In plain language: at every generation step, both the student and teacher agree on roughly
+          which 10-20 tokens are plausible candidates. That shared top-k set contains nearly all the
+          probability. They might disagree on the ranking <em>within</em> that set — and that's
+          where the learning signal lives — but the set itself is almost identical.
+        </p>
+
+        <h3>Why this matters: KL divergence on shared support</h3>
+
+        <p>
+          KL divergence has a critical property: it's only well-defined where both distributions
+          place non-trivial probability. When the teacher places 0.001 probability on a token that
+          the student places 0.5 probability on, KL blows up. When the teacher places 0.5 on a token
+          the student places 0.001 on, KL is also large.
+        </p>
+
+        <p>
+          Successful OPD operates in the regime where the student and teacher's high-probability
+          tokens overlap heavily. The KL signal becomes a fine-tuning signal: <em>among the tokens
+          we both think are plausible, which one is most likely?</em> That's a sharp, learnable
+          signal.
+        </p>
+
+        <p>
+          Failed OPD operates outside this regime. Either the student's top tokens have near-zero
+          probability under the teacher (Condition 1 failure — the student is making moves the
+          teacher can't even rate), or the teacher's top tokens fully overlap with the student's
+          top tokens at near-equal probabilities (Condition 2 failure — there's no new ordering
+          to learn).
+        </p>
+
+        <details class="math-optional">
+          <summary>optional read — the probability mass concentration argument</summary>
+          <div class="math-inner">
+          <p>
+            Let $S_t = \text{top-}k(\pi_\theta(\cdot|x_{<t}))$ be the student's top-$k$ tokens at
+            step $t$, and $T_t$ the teacher's. Define the shared support as $S_t \cap T_t$.
+          </p>
+          <p>
+            The paper observes empirically that for successful OPD:
+            $$\sum_{w \in S_t \cap T_t} \pi_\theta(w|x_{<t}) \approx 0.97-0.99 \quad \forall t$$
+            and similarly for the teacher's mass. The KL on the shared support dominates the total
+            KL, making the signal informative and bounded.
+          </p>
+          <p>
+            For failing OPD (Condition 1 broken), $|S_t \cap T_t|$ becomes small early in training,
+            and the marginalised KL behaves chaotically — gradients become high-variance, and the
+            student's policy collapses toward a teacher distribution it cannot match.
+          </p>
+          </div>
+        </details>
+
+        <h3>Visualising the convergence</h3>
+
+        <p>
+          The authors track this concentration metric across training. For successful runs, it stays
+          stable in the 97-99% band the entire time. For failing runs, it drops below 90% within the
+          first few thousand steps and never recovers.
+        </p>
+
+        <p>
+          This gives you something operationally useful: <em>measure the shared top-k mass during the
+          first few thousand steps of OPD</em>. If it drops below 95%, kill the run and pick a
+          different teacher. You don't need to wait for downstream eval to know things are broken.
+        </p>
+
+        <h2>The recipe: two recovery strategies</h2>
+
+        <p>
+          The paper proposes two concrete interventions for the failure modes it identifies. Both
+          target Condition 1 failures — the distributional mismatch case. (Condition 2 failures have
+          no fix — if there's nothing to learn, no amount of clever training will produce it.)
+        </p>
+
+        <h3>Recovery strategy 1: off-policy cold start</h3>
+
+        <p>
+          Before starting OPD, do a brief phase of <strong>off-policy</strong> distillation on
+          teacher-generated rollouts. The student samples from the teacher's distribution (not its
+          own), and learns to imitate the teacher's outputs directly. This is just supervised
+          fine-tuning on teacher samples.
+        </p>
+
+        <p>
+          The purpose: pull the student's distribution close enough to the teacher's that on-policy
+          rollouts will subsequently land in regions the teacher can rate sensibly. Once the
+          distributions are warmed-up to be compatible, switch to OPD for the bulk of training.
+        </p>
+
+        <pre># Phase 1: off-policy cold start (compact, just enough to align distributions)
+for batch in teacher_rollouts:
+    student_logits = student(batch.tokens)
+    loss = cross_entropy(student_logits, batch.teacher_targets)
+    loss.backward()
+
+# Phase 2: on-policy distillation (the main event)
+for prompt in prompts:
+    student_rollout = student.generate(prompt)
+    teacher_logits = teacher(student_rollout)        # teacher rates student moves
+    student_logits = student(student_rollout)
+    loss = kl_divergence(student_logits, teacher_logits)
+    loss.backward()</pre>
+
+        <p>
+          This is the "warm up before sparring" strategy. The off-policy cold start doesn't have to
+          be long — the paper shows that even 500-2000 steps of off-policy SFT is often enough to
+          unlock subsequent OPD. It just has to be enough to drag the student's distribution into
+          the teacher's evaluable range.
+        </p>
+
+        <h3>Recovery strategy 2: teacher-aligned prompt selection</h3>
+
+        <p>
+          The second strategy doesn't change the student's distribution. It changes which prompts the
+          student rolls out on during OPD. The idea: pick prompts where the student's rollouts will
+          naturally land in regions the teacher knows well.
+        </p>
+
+        <p>
+          Concretely: filter or rank the prompt pool by a teacher-aligned metric (e.g., teacher
+          perplexity on student rollouts from a similar prompt). Prompts that produce student
+          rollouts the teacher can rate confidently are kept; prompts that produce teacher-confused
+          rollouts are dropped.
+        </p>
+
+        <pre># Score each prompt by teacher confidence on student rollouts
+def teacher_alignment(prompt, student, teacher, n=4):
+    rollouts = [student.generate(prompt) for _ in range(n)]
+    confidences = [teacher.confidence(r) for r in rollouts]
+    return mean(confidences)
+
+# Curate the prompt set
+aligned_prompts = [p for p in all_prompts
+                   if teacher_alignment(p, student, teacher) &gt; threshold]
+
+# Run OPD only on aligned prompts
+for prompt in aligned_prompts:
+    # ... standard OPD loop
+    pass</pre>
+
+        <p>
+          This is cheaper than the first strategy if you have many prompts available and don't want
+          to spend compute on a cold start phase. It also preserves the student's original
+          distribution outside the rated regions — useful if you care about not changing behaviour
+          on prompts the teacher would have hated anyway.
+        </p>
+
+        <h2>The uncomfortable scaling concern</h2>
+
+        <p>
+          The paper closes with what is probably its most important section, despite getting less
+          attention than the recipes. The question: can OPD scale to longer horizons?
+        </p>
+
+        <p>
+          "Long horizon" here means tasks where the student's rollout is hundreds or thousands of
+          tokens before the teacher's signal becomes meaningful. Mathematical reasoning chains. Code
+          generation with multi-step refactoring. Agentic tool-use trajectories. These are exactly
+          the workloads that frontier post-training is targeting.
+        </p>
+
+        <p>
+          The concern: the probability mass concentration property (Section 3) is observed on
+          short-horizon, single-token decisions. As the horizon grows, the student's rollout
+          accumulates compounding distributional drift. Even if the per-token student-teacher overlap
+          starts at 99%, after 500 tokens of student-driven generation, the student is in a region of
+          rollout space that the teacher has never seen and cannot rate.
+        </p>
+
+        <blockquote>
+          The compatibility condition holds at the token level but degrades at the trajectory level.
+          OPD's per-token correction signal cannot fix accumulated trajectory-level drift.
+        </blockquote>
+
+        <p>
+          This isn't an academic worry. The authors show explicit experiments where short-horizon OPD
+          gives strong improvements on the same task that long-horizon OPD fails to improve on. The
+          mechanism is the same in both cases — but on long rollouts, the student spends most of its
+          tokens in regions where the teacher's signal is uninformative.
+        </p>
+
+        <h3>What this means for current practice</h3>
+
+        <p>
+          A lot of current frontier post-training assumes OPD will continue to deliver gains as we
+          scale to longer reasoning horizons. The paper's analysis suggests this assumption needs
+          empirical verification. The token-level mechanism that made OPD work in 2023-2025 may not
+          extend to the 2026+ regime where reasoning chains are 10-100× longer.
+        </p>
+
+        <p>
+          The authors don't claim OPD is broken for long horizons — just that the mechanism they
+          identified doesn't obviously extend, and the field needs new thinking for that regime.
+          This is actually the most honest part of the paper. They name the limitation explicitly
+          rather than papering over it.
+        </p>
+
+        <h2>The diagnostic toolkit</h2>
+
+        <p>
+          Combining the paper's insights gives you a practical diagnostic protocol for any OPD setup:
+        </p>
+
+        <ol>
+          <li>
+            <strong>Pre-flight check:</strong> Measure shared top-k probability mass between student
+            and teacher on a sample of prompts before training. If it's already &gt;99% with little
+            ranking disagreement, you have a Condition 2 failure waiting to happen — the teacher
+            offers no genuine signal.
+          </li>
+          <li>
+            <strong>Mismatch check:</strong> Generate student rollouts and measure teacher
+            perplexity on them. High perplexity = teacher can't rate the student's moves =
+            Condition 1 failure imminent. Use off-policy cold start.
+          </li>
+          <li>
+            <strong>Training-time monitoring:</strong> Track shared top-k mass during the first few
+            thousand steps. Stable in 97-99% band = healthy OPD. Drifting below 95% = abort and
+            diagnose.
+          </li>
+          <li>
+            <strong>Horizon check:</strong> For long-horizon tasks, measure shared mass at multiple
+            depths in the rollout (token 50, 200, 500, etc.). Drift across positions reveals the
+            trajectory-level breakdown the paper warns about.
+          </li>
+        </ol>
+
+        <h2>What I find compelling about this paper</h2>
+
+        <p>
+          Most ML papers in 2024-2026 propose a new method and claim wins on a benchmark. This paper
+          does something rarer and more useful: it explains <em>why</em> an existing method works
+          when it works, and <em>fails</em> when it fails. It doesn't propose a new training
+          algorithm. It proposes a sharper understanding of the algorithm we already use.
+        </p>
+
+        <p>
+          The probability mass concentration finding is the kind of empirical observation that
+          changes practice. Once you've seen it, you can't unsee it. Every OPD setup becomes
+          something you can diagnose with a few minutes of measurement rather than days of training
+          and downstream eval.
+        </p>
+
+        <p>
+          The scaling concern is also intellectually honest in a way that's rare. The authors
+          could've stopped at "here are two recovery strategies" and let everyone go home happy. They
+          chose instead to flag that even with the recoveries, the underlying mechanism may not
+          extend to longer horizons. That's the kind of forward-looking caution that distinguishes
+          serious research from hype.
+        </p>
+
+        <h2>What I'd want to see next</h2>
+
+        <p>
+          A few open questions the paper raises but doesn't fully resolve:
+        </p>
+
+        <ol>
+          <li>
+            <strong>Is there a teacher-student selection metric we can compute before training?</strong>
+            The shared top-k mass is the obvious candidate, but the paper doesn't propose a clean
+            threshold. A robust pre-flight test would save many failed runs.
+          </li>
+          <li>
+            <strong>How does this interact with RL-style methods like GRPO?</strong> DeepSeek-R1 uses
+            GRPO (Group Relative Policy Optimisation), which is on-policy in spirit but uses reward
+            signals rather than teacher KL. Does the same compatibility/headroom phenomenology apply?
+            The paper hints yes but doesn't run the experiment.
+          </li>
+          <li>
+            <strong>Can the off-policy cold start be replaced by something cheaper?</strong> If the
+            goal is just to drag the student's distribution into the teacher's evaluable range, are
+            there lighter touch interventions (LoRA adapters, prompt prefix tuning, intermediate-layer
+            alignment) that achieve the same effect?
+          </li>
+          <li>
+            <strong>What about teacher ensembles?</strong> If a single teacher provides insufficient
+            headroom, do multiple complementary teachers (each strong on different regions) provide
+            more learnable signal collectively?
+          </li>
+        </ol>
+
+        <h2>The honest summary</h2>
+
+        <p>
+          On-policy distillation has been the workhorse of LLM post-training for two years, but the
+          field has been treating it as a black box. This paper opens the box and finds something
+          striking: OPD works because student and teacher agree on which tokens are plausible 97-99%
+          of the time, and the learning signal lives in the residual disagreement.
+        </p>
+
+        <p>
+          When that agreement breaks, OPD fails — either because student and teacher don't share a
+          token distribution (Condition 1), or because they share <em>too much</em> and there's
+          nothing to learn (Condition 2). The recovery strategies (off-policy cold start, prompt
+          curation) address Condition 1. Condition 2 is unfixable — you need a different teacher.
+        </p>
+
+        <p>
+          And on the horizon: long-rollout reasoning may not benefit from OPD the way short-token
+          tasks have. The compatibility property is a per-token phenomenon. Trajectories accumulate
+          drift. The field will probably need new approaches for that regime, and the paper is
+          honest enough to say so without claiming to have the answer.
+        </p>
+
+        <p>
+          For practitioners: measure shared top-k mass. Use it as a pre-flight check and
+          training-time signal. Don't burn compute on OPD runs that are doomed by distributional
+          incompatibility.
+        </p>
+
+        <p>
+          For researchers: the next big idea in LLM distillation will likely be a method that works
+          at the trajectory level, not the token level. Until then, OPD remains useful — but only
+          inside the regime where its mechanism actually operates.
+        </p>
+
+        <p>
+          <a href="https://arxiv.org/abs/2604.13016" target="_blank">arXiv:2604.13016</a> —
+          <em>Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism,
+          and Recipe</em>. Worth reading in full if you're doing any kind of LLM post-training in
+          production.
+        </p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="turboquant-paper-juice.html">← prev: TurboQuant</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">OPD</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">On-Policy Distillation. Student generates rollouts; teacher provides per-token probability distributions; loss is the KL between student and teacher distributions on the student's own rollouts.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Off-policy distillation</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Student trains on teacher-generated rollouts (sampled from teacher's distribution). Equivalent to SFT on teacher outputs. Used as cold start to align distributions before OPD.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Compatibility</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The paper's Condition 1. Student and teacher must share a sufficiently overlapping token distribution that the teacher can rate the student's moves meaningfully. KL signal degrades when this breaks.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Headroom</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The paper's Condition 2. The teacher must offer capabilities genuinely beyond the student's existing distribution. Same-family models often fail this — distributionally indistinguishable from the student's view.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Shared top-k mass</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Probability concentrated on tokens that appear in both the student's and teacher's top-k predictions. Successful OPD has 97-99% shared mass throughout training. Drop below 95% = run is dying.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Distributional indistinguishability</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Phenomenon where same-family models (e.g., Qwen-1.5B and Qwen-7B) have near-identical per-token distributions despite different absolute capabilities. Kills OPD signal — nothing to learn.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Trajectory drift</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Accumulated divergence between student rollout and teacher-rateable space over long sequences. Per-token compatibility doesn't prevent this. Why OPD may not scale to long-horizon reasoning.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Off-policy cold start</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Recovery strategy 1. Brief phase of SFT on teacher rollouts before OPD. Aligns student distribution with teacher's evaluable range. 500-2000 steps often sufficient.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Teacher-aligned prompt selection</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Recovery strategy 2. Filter prompts by teacher confidence on student rollouts. Keep prompts where teacher can rate student moves; drop the rest. Cheaper than cold start when prompts are plentiful.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

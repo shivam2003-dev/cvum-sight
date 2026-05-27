@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "ai-threat-modelling",
+    title: "AI Threat Modelling — How to Assess the Attack Surface Traditional Frameworks Miss.",
+    date: "May 27, 2026",
+    cat: "security",
+    tags: ["security", "ai", "threat-modelling", "mitre-atlas", "owasp", "adversarial-ml"],
+    time: 38,
+    words: 9200,
+    excerpt: "AI systems carry an attack surface most security teams were never trained to assess. This guide walks through adapting STRIDE for AI, using MITRE ATLAS technique IDs, and mapping OWASP LLM Top 10 risks directly to architectural components — so your threat models evolve alongside your deployments."
+  },
+  {
     slug: "dependency-security-devops",
     title: "Dependency Management Security in Modern DevOps Pipelines.",
     date: "May 26, 2026",

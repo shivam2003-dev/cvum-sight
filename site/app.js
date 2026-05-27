@@ -187,4 +187,36 @@
       }
     }, { passive: true });
   }
+
+  // ── table of contents (post pages with #toc-nav) ──
+  const tocNav = document.getElementById("toc-nav");
+  if (tocNav) {
+    const headings = document.querySelectorAll(".post-body h2");
+    if (headings.length) {
+      headings.forEach(function (h, i) {
+        if (!h.id) {
+          h.id = "s-" + h.textContent.trim().toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + i;
+        }
+        const a = document.createElement("a");
+        a.className = "toc-link";
+        a.href = "#" + h.id;
+        a.textContent = h.textContent.replace(/^Step \d+ — /, "");
+        tocNav.appendChild(a);
+      });
+
+      const links = tocNav.querySelectorAll(".toc-link");
+      const observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            links.forEach(function (l) { l.classList.remove("active"); });
+            const active = tocNav.querySelector('a[href="#' + entry.target.id + '"]');
+            if (active) active.classList.add("active");
+          }
+        });
+      }, { rootMargin: "-10% 0px -80% 0px" });
+
+      headings.forEach(function (h) { observer.observe(h); });
+    }
+  }
 })();

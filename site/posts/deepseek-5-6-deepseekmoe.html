@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeekMoE Architecture — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=25">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 5</p>
+        <p class="series-banner-title">Mixture of Experts (MoE)</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 6 of 7 · Phase 5 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-5-1-intro-moe.html" class="done">5.1 Intro</a>
+          <a href="deepseek-5-2-routing.html" class="done">5.2 Routing</a>
+          <a href="deepseek-5-3-visualizing-experts.html" class="done">5.3 Visualizing</a>
+          <a href="deepseek-5-4-aux-loss.html" class="done">5.4 Aux Loss</a>
+          <a href="deepseek-5-5-capacity-factor.html" class="done">5.5 Capacity</a>
+          <a href="deepseek-5-6-deepseekmoe.html" class="active">5.6 DeepSeekMoE</a>
+          <a href="deepseek-5-7-moe-code.html">5.7 Code</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 18 min read · 3700 words <span class="difficulty advanced">advanced</span></p>
+        <h1>The DeepSeekMoE Architecture.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">moe</span>
+          <span class="tag">phase-5</span>
+          <span class="tag">architecture</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Everything so far — routing, distributed specialisation, balancing, capacity — was setup. DeepSeekMoE is the synthesis: two architectural changes to the classic MoE block that take the messy empirical reality of 5.3 and design <em>around</em> it instead of fighting it. Those two ideas — <strong>fine-grained expert segmentation</strong> and <strong>shared expert isolation</strong> — are why DeepSeek's MoE works at 671B parameters with only 37B active.</p>
+
+        <h2>Where conventional MoE leaves value on the table</h2>
+
+        <p>A classic MoE block (GShard, Switch) has <code>N</code> experts, each a full-size FFN, and routes each token to top-<code>k</code> (often k=1 or 2). Two inefficiencies, both visible in 5.3's findings:</p>
+
+        <ul>
+          <li><strong>Knowledge redundancy.</strong> Every routed expert ends up re-learning the same common patterns (syntax, frequent tokens) because every token needs them regardless of which expert it lands on. Capacity is wasted storing the same basics in many experts.</li>
+          <li><strong>Coarse routing.</strong> With few large experts, the router's choice is blunt. Real specialisation is distributed and combinatorial (5.3), but top-2-of-8 gives only 28 possible expert combinations — far too coarse to express fine distinctions.</li>
+        </ul>
+
+        <h2>Idea 1 — Fine-grained expert segmentation</h2>
+
+        <p>Split each expert into <code>m</code> smaller ones. Take the <code>N</code> experts of hidden size <code>d_ff</code> and replace them with <code>mN</code> experts of hidden size <code>d_ff/m</code>, while routing to <code>mk</code> of them. Total parameters and active FLOPs are <strong>unchanged</strong> — you just sliced the same compute into finer pieces — but the routing flexibility explodes.</p>
+
+        <pre>conventional:   N experts,  top-k
+fine-grained:   mN experts, top-(mk),  each expert 1/m the size
+
+# active params identical:  mk * (d_ff/m) = k * d_ff
+# but the number of expert COMBINATIONS the router can form:</pre>
+
+        <pre>conventional combinations:  C(N, k)      e.g. C(16, 2)   = 120
+fine-grained  combinations:  C(mN, mk)    e.g. C(64, 8)   = 4,426,165,368</pre>
+
+        <p>Same compute, ~37 million× more ways to combine experts. The router gets a vastly finer palette — exactly what 5.3 said it needs, since specialisation is distributed and combinatorial rather than one-expert-per-topic. Fine-grained experts let the model assemble a bespoke combination per token from many small specialists.</p>
+
+        <h2>Idea 2 — Shared expert isolation</h2>
+
+        <p>Carve off <code>K_s</code> experts that are <strong>always on</strong> — every token goes through them, no routing decision. The remaining experts are routed as usual. The shared experts absorb the common knowledge that 5.3 showed gets smeared across everything; the routed experts are then freed to capture only the distinctions that actually differ between tokens.</p>
+
+        <pre>output = sum over shared experts s of   FFN_s(x)              # always applied
+       + sum over routed top-k experts r of  g_r * FFN_r(x)   # gated, selected
+       + x                                                    # residual</pre>
+
+        <p>This directly removes the redundancy problem: common patterns are learned <em>once</em>, in the shared experts, instead of redundantly in every routed expert. Each routed expert now carries less duplicated baseline and more genuine specialisation — making the (still distributed) specialisation more meaningful per parameter.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .d-h { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+              .d-l { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .d-b { stroke: #2a2620; stroke-width: 1; }
+              .d-arr { stroke: #2a2620; stroke-width: 1; fill:none; marker-end:url(#da); }
+              .d-arrg { stroke: #5a9e3a; stroke-width: 1.2; fill:none; marker-end:url(#dag); }
+            </style>
+            <defs>
+              <marker id="da" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2a2620"/></marker>
+              <marker id="dag" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#5a9e3a"/></marker>
+            </defs>
+            <text x="60" y="120" class="d-h">token x</text>
+            <circle cx="55" cy="135" r="6" fill="#2a2620"/>
+            <!-- router -->
+            <rect class="d-b" x="110" y="115" width="70" height="40" fill="#ebe3cf"/>
+            <text x="145" y="132" class="d-l">router</text>
+            <text x="145" y="145" class="d-l">+ bias</text>
+            <line class="d-arr" x1="70" y1="135" x2="108" y2="135"/>
+            <!-- shared experts (always on) -->
+            <text x="300" y="34" class="d-h">shared experts (always on)</text>
+            <rect class="d-b" x="240" y="42" width="55" height="30" fill="#f0c040"/>
+            <text x="267" y="61" class="d-l">S1</text>
+            <line class="d-arrg" x1="180" y1="125" x2="240" y2="60"/>
+            <!-- routed experts -->
+            <text x="380" y="100" class="d-h">routed experts — top-k of many small (fine-grained)</text>
+            <g>
+              <rect class="d-b" x="240" y="110" width="34" height="26" fill="#d4e4d4"/>
+              <rect class="d-b" x="280" y="110" width="34" height="26" fill="#6b9e6b"/>
+              <rect class="d-b" x="320" y="110" width="34" height="26" fill="#d4e4d4"/>
+              <rect class="d-b" x="360" y="110" width="34" height="26" fill="#6b9e6b"/>
+              <rect class="d-b" x="400" y="110" width="34" height="26" fill="#d4e4d4"/>
+              <rect class="d-b" x="440" y="110" width="34" height="26" fill="#6b9e6b"/>
+              <rect class="d-b" x="480" y="110" width="34" height="26" fill="#d4e4d4"/>
+              <rect class="d-b" x="520" y="110" width="34" height="26" fill="#6b9e6b"/>
+              <rect class="d-b" x="560" y="110" width="34" height="26" fill="#d4e4d4"/>
+              <rect class="d-b" x="600" y="110" width="34" height="26" fill="#d4e4d4"/>
+            </g>
+            <text x="430" y="152" class="d-l">green = selected (gated) · grey = not selected this token</text>
+            <line class="d-arrg" x1="180" y1="135" x2="278" y2="123"/>
+            <line class="d-arrg" x1="180" y1="140" x2="358" y2="123"/>
+            <!-- sum -->
+            <rect class="d-b" x="300" y="185" width="90" height="30" fill="#ebe3cf"/>
+            <text x="345" y="204" class="d-l">+ residual → out</text>
+            <line class="d-arr" x1="267" y1="72" x2="320" y2="184"/>
+            <line class="d-arrg" x1="297" y1="136" x2="335" y2="184"/>
+            <line class="d-arrg" x1="377" y1="136" x2="360" y2="184"/>
+            <text x="345" y="238" class="d-l">out = Σ shared + Σ (gate · routed) + x</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — DeepSeekMoE block: shared experts process every token; many fine-grained routed experts are gated top-k; outputs sum with the residual.</p>
+        </div>
+
+        <h2>The configurations, concretely</h2>
+
+        <p>The same recipe scaled across two model generations:</p>
+
+        <pre>                       DeepSeek-V2          DeepSeek-V3
+total parameters       236 B                671 B
+active per token       21 B                 37 B
+shared experts (K_s)   2                    1
+routed experts (N)     160                  256
+top-k routed           6                    8
+experts per token      2 + 6 = 8            1 + 8 = 9
+router gate            softmax              sigmoid
+balancing              aux losses (×3)      aux-loss-free bias (5.4)
+routing locality       device-limited       node-limited (≤ 4 nodes)
+token dropping         minimal              none</pre>
+
+        <p>Note how small the active fraction is: V3 activates <code>37 / 671 ≈ 5.5%</code> of parameters per token. You pay 37B-model inference cost while the model <em>knows</em> 671B worth — that's the whole MoE bargain (5.1), pushed hard by fine-grained experts.</p>
+
+        <h2>Why each choice follows from the earlier articles</h2>
+
+        <ul>
+          <li><strong>Many fine-grained routed experts (256).</strong> Follows from 5.3: specialisation is distributed, so give the router a fine, combinatorial palette rather than a few blunt experts.</li>
+          <li><strong>Shared experts.</strong> Follows from 5.3's redundancy finding: factor out the common knowledge once instead of duplicating it across routed experts.</li>
+          <li><strong>Sigmoid gating (V3).</strong> With 256 experts, a softmax over all of them is numerically awkward and couples the scores; per-expert sigmoid affinities decouple them and pair cleanly with the additive selection bias (5.4).</li>
+          <li><strong>Aux-loss-free bias balancing.</strong> Follows from 5.4: get balance without the gradient-interference quality tax.</li>
+          <li><strong>Node-limited routing.</strong> Follows from 5.5: cap each token's experts to ≤4 nodes to bound all-to-all traffic and keep load satisfiable without dropping.</li>
+        </ul>
+
+        <blockquote>DeepSeekMoE isn't one clever trick — it's a stack of choices that each answer a specific failure mode from the previous articles. Fine-grained experts for the routing flexibility, shared experts for the redundancy, sigmoid + bias for clean balanced selection, node-limited routing for the network. Together they make a 671B model train and serve at 37B cost.</blockquote>
+
+        <h2>What it buys, measured</h2>
+
+        <p>DeepSeek's ablations show fine-grained + shared experts beating a conventional MoE of equal total and active parameters — the gains are architectural, not just from scale. And the engineering payoff is stark: DeepSeek-V3 trained for a small fraction of the cost of comparable dense frontier models precisely because only ~5.5% of parameters activate per token, while quality tracks much larger dense models.</p>
+
+        <h2>The shared-expert caveat</h2>
+
+        <p>Shared experts are always on, so they're always in the active-parameter budget and on the critical path for every token. Make them too large and you erode the sparsity advantage; too small and they can't hold the common knowledge. DeepSeek-V3's choice of a single shared expert (down from V2's two) reflects tuning this balance as the routed pool grew to 256 — more fine-grained routed capacity meant less needed to be carried in the always-on path.</p>
+
+        <p>Next, 5.7 turns this into code: a minimal but faithful DeepSeekMoE block in PyTorch — fine-grained routed experts, shared experts, sigmoid gating, top-k selection with the balancing bias, and the gather/scatter that makes it run.</p>
+
+        <h2>References</h2>
+        <ul>
+          <li>Dai et al. (2024), <em>DeepSeekMoE: Towards Ultimate Expert Specialization</em> — fine-grained segmentation and shared-expert isolation. <a href="https://arxiv.org/abs/2401.06066" target="_blank">arXiv:2401.06066</a></li>
+          <li>DeepSeek-AI (2024), <em>DeepSeek-V2</em> — 236B/21B, 2 shared + 160 routed, device-limited routing. <a href="https://arxiv.org/abs/2405.04434" target="_blank">arXiv:2405.04434</a></li>
+          <li>DeepSeek-AI (2024), <em>DeepSeek-V3</em> — 671B/37B, sigmoid gating, node-limited routing, drop-free. <a href="https://arxiv.org/abs/2412.19437" target="_blank">arXiv:2412.19437</a></li>
+          <li>Fedus et al. (2021), <em>Switch Transformers</em> — the conventional MoE baseline being improved on. <a href="https://arxiv.org/abs/2101.03961" target="_blank">arXiv:2101.03961</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-5-5-capacity-factor.html">← Capacity Factor</a>
+        <a href="deepseek-5-7-moe-code.html">MoE in Code →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Fine-grained experts</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Splitting each expert into m smaller ones (mN experts, top-mk, 1/m size). Same compute, combinatorially more routing options — C(mN,mk) ≫ C(N,k).</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Shared expert</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">An always-on expert (no routing) every token passes through. Captures common knowledge once, freeing routed experts from redundantly relearning the basics.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Active vs total params</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Total = all experts stored; active = those run per token. DeepSeek-V3: 37B active of 671B total (~5.5%). Inference cost tracks active, knowledge tracks total.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Sigmoid gating</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">V3 scores each expert with an independent sigmoid affinity instead of a softmax over all 256. Decouples scores and pairs cleanly with the additive selection bias.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Node-limited routing</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Restrict each token's chosen experts to ≤ a few compute nodes (V3: 4). Bounds all-to-all network traffic and keeps per-node load satisfiable without dropping.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Knowledge redundancy</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">In conventional MoE, every routed expert relearns common patterns. Shared experts remove this by holding the common knowledge in one always-on place.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=6"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

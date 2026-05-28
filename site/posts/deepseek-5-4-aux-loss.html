@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auxiliary Loss & Load Balancing — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=25">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 5</p>
+        <p class="series-banner-title">Mixture of Experts (MoE)</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 4 of 7 · Phase 5 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-5-1-intro-moe.html" class="done">5.1 Intro</a>
+          <a href="deepseek-5-2-routing.html" class="done">5.2 Routing</a>
+          <a href="deepseek-5-3-visualizing-experts.html" class="done">5.3 Visualizing</a>
+          <a href="deepseek-5-4-aux-loss.html" class="active">5.4 Aux Loss</a>
+          <a href="deepseek-5-5-capacity-factor.html">5.5 Capacity</a>
+          <a href="deepseek-5-6-deepseekmoe.html">5.6 DeepSeekMoE</a>
+          <a href="deepseek-5-7-moe-code.html">5.7 Code</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 17 min read · 3600 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Auxiliary Loss & Load Balancing.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">moe</span>
+          <span class="tag">phase-5</span>
+          <span class="tag">load-balancing</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>An MoE only saves compute if tokens spread across experts. Left alone, a router does the opposite — it piles tokens onto a handful of experts and starves the rest. This article is about the force that stops that: the load-balancing auxiliary loss. What it is, the exact formula, why it works, why it quietly damages the model, and the bias trick DeepSeek-V3 used to delete it.</p>
+
+        <h2>The problem: routing collapse</h2>
+
+        <p>The router is trained jointly with the rest of the model. Early in training one expert gets, by chance, slightly better at something. The router sends it more tokens. More tokens means more gradient, so it improves faster, so the router sends it even more. Rich-get-richer. Within a few thousand steps a small clique of experts handles almost everything and the others are <strong>dead</strong> — near-zero load, never trained.</p>
+
+        <p>This is <strong>routing collapse</strong>, and it defeats the entire point of MoE. You provisioned 256 experts of capacity; you're paying to store all of them; and 16 are doing the work. Worse, dead experts can't recover — no tokens means no gradient means no improvement means no reason for the router to ever pick them.</p>
+
+        <blockquote>MoE has no natural pressure toward balance. The default dynamics actively favour collapse. Balance has to be imposed by an explicit objective — that objective is the auxiliary loss.</blockquote>
+
+        <h2>The auxiliary loss, exactly</h2>
+
+        <p>Define it over a batch of <code>T</code> tokens and <code>N</code> experts, with top-<code>k</code> routing. Two quantities per expert <code>i</code>:</p>
+
+        <pre>f_i = (1/T) * (number of tokens that selected expert i)     # fraction of dispatch
+P_i = (1/T) * sum over tokens t of  g_t,i                    # mean router probability
+
+  where g_t,i = softmax(router_logits_t)_i  is the gate prob
+  the router assigned token t to expert i.</pre>
+
+        <p><code>f_i</code> is the <em>actual</em> load — what share of tokens landed on expert <code>i</code>. <code>P_i</code> is the <em>soft</em> load — the average probability mass the router put on expert <code>i</code>, whether or not it was selected. The Switch Transformer auxiliary loss is their dot product, scaled:</p>
+
+        <pre>L_aux = alpha * N * sum over i of  ( f_i * P_i )</pre>
+
+        <p>Add it to the language-modelling loss: <code>L_total = L_LM + L_aux</code>. The coefficient <code>alpha</code> (Switch used 0.01) sets how hard balance is enforced.</p>
+
+        <h3>Why this particular product?</h3>
+
+        <p>The subtlety: <code>f_i</code> is a count, produced by an argmax/top-k — it has <strong>no usable gradient</strong>. You can't backprop through "how many tokens chose expert i." But <code>P_i</code> is a smooth softmax average — fully differentiable. The product <code>f_i · P_i</code> treats <code>f_i</code> as a constant weight and pushes gradients only through <code>P_i</code>:</p>
+
+        <pre>d L_aux / d P_i  ∝  alpha * N * f_i</pre>
+
+        <p>Read that: the gradient pressure to <em>lower</em> the router probability for expert <code>i</code> is proportional to how overloaded <code>i</code> already is. Overloaded experts (large <code>f_i</code>) get their logits pushed down hardest; starved experts barely get touched, so their relative probability rises. The loss is minimised when load is uniform — every <code>f_i = P_i = 1/N</code>, giving <code>L_aux = alpha · N · N · (1/N)² = alpha</code>, a constant floor. Any imbalance pushes it above that floor.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .a-h  { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+              .a-l  { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .a-b  { stroke: #2a2620; stroke-width: 0.8; }
+              .a-arr{ stroke: #c96442; stroke-width: 1.4; marker-end: url(#ah); }
+            </style>
+            <defs><marker id="ah" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#c96442"/></marker></defs>
+            <text x="170" y="16" class="a-h">step 0: collapse forming</text>
+            <text x="510" y="16" class="a-h">aux loss pushes back</text>
+            <!-- collapse -->
+            <rect x="50"  y="40" width="26" height="120" class="a-b" fill="#c96442"/>
+            <rect x="86"  y="120" width="26" height="40" class="a-b" fill="#c96442"/>
+            <rect x="122" y="150" width="26" height="10" class="a-b" fill="#c96442"/>
+            <rect x="158" y="148" width="26" height="12" class="a-b" fill="#c96442"/>
+            <rect x="194" y="155" width="26" height="5" class="a-b" fill="#c96442"/>
+            <rect x="230" y="156" width="26" height="4" class="a-b" fill="#c96442"/>
+            <line x1="45" y1="160" x2="265" y2="160" class="a-b"/>
+            <text x="63"  y="36" class="a-l">f_1 huge</text>
+            <text x="220" y="150" class="a-l">dead</text>
+            <!-- arrow down on tallest -->
+            <line x1="63" y1="50" x2="63" y2="95" class="a-arr"/>
+            <text x="155" y="180" class="a-l">gradient ∝ f_i : biggest bar pushed down hardest</text>
+            <!-- balanced -->
+            <rect x="390" y="95"  width="26" height="65" class="a-b" fill="#6b9e6b"/>
+            <rect x="426" y="92"  width="26" height="68" class="a-b" fill="#6b9e6b"/>
+            <rect x="462" y="98"  width="26" height="62" class="a-b" fill="#6b9e6b"/>
+            <rect x="498" y="90"  width="26" height="70" class="a-b" fill="#6b9e6b"/>
+            <rect x="534" y="96"  width="26" height="64" class="a-b" fill="#6b9e6b"/>
+            <rect x="570" y="93"  width="26" height="67" class="a-b" fill="#6b9e6b"/>
+            <line x1="385" y1="160" x2="605" y2="160" class="a-b"/>
+            <text x="495" y="180" class="a-l">converges toward f_i = 1/N for all experts</text>
+            <text x="340" y="225" class="a-l" text-anchor="start">L_aux = alpha · N · Σ f_i·P_i  —  minimised (= alpha) only at perfectly uniform load.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — The auxiliary gradient is proportional to each expert's current load, so it counteracts the rich-get-richer dynamic that drives collapse.</p>
+        </div>
+
+        <h2>Tuning alpha is a tightrope</h2>
+
+        <p>The coefficient is the whole problem in miniature:</p>
+
+        <ul>
+          <li><strong>alpha too small</strong> — balancing is too weak, collapse wins, experts die. You wasted capacity.</li>
+          <li><strong>alpha too large</strong> — balancing dominates the LM signal. The router is forced to spread tokens evenly even when that means sending a token to an expert that handles it <em>worse</em>. Balance improves; model quality drops.</li>
+        </ul>
+
+        <p>There's no setting that's free. Even at a good <code>alpha</code>, you're trading some language-modelling quality for balance every single step. Switch settled on 0.01 empirically; it's model- and data-dependent and brittle.</p>
+
+        <h2>DeepSeek-V2: three balancing losses at once</h2>
+
+        <p>At scale, "balance" isn't one thing. DeepSeek-V2 ran three auxiliary losses simultaneously, each targeting a different granularity:</p>
+
+        <ul>
+          <li><strong>Expert-level balance</strong> — the classic <code>f_i · P_i</code> loss, so no individual expert collapses.</li>
+          <li><strong>Device-level balance</strong> — experts are sharded across GPUs; you also need each <em>device's</em> group of experts to get even load, or one GPU bottlenecks the step. Same form, grouped by device.</li>
+          <li><strong>Communication balance</strong> — expert parallelism dispatches tokens across the network (all-to-all). This loss caps how much any device sends/receives so the interconnect doesn't choke.</li>
+        </ul>
+
+        <p>Three coefficients to tune, all interacting. Functional, but a lot of brittle knobs — and every one of them is still leaking balancing gradient into the model.</p>
+
+        <h2>The real cost: gradient interference</h2>
+
+        <p>Step back from tuning and look at what the auxiliary loss <em>is</em>. It's a second objective bolted onto the model whose only goal is even load — a goal the user does not care about. Its gradient and the language-modelling gradient point in different directions, and they're summed. Every step, some of the update is spent making load even rather than making predictions better.</p>
+
+        <p>Concretely: a token whose best expert is already busy gets nudged toward a worse expert, because the aux loss wants that busy expert relieved. Multiply across billions of tokens and you get a measurable quality tax. The aux loss fixes collapse by <em>actively corrupting</em> the routing the model would otherwise learn.</p>
+
+        <blockquote>The auxiliary loss is a hack that works: it trades model quality for load balance, every step, by design. DeepSeek's question for V3 was — can we get the balance without paying the quality tax?</blockquote>
+
+        <h2>DeepSeek-V3: auxiliary-loss-free balancing</h2>
+
+        <p>The answer is yes, and it's elegant. The key realisation: the aux loss conflates two jobs — <em>deciding which expert handles a token</em> (selection) and <em>how much each expert's output is weighted</em> (the gate value). Collapse is a selection problem. So fix selection directly, and leave the gradients alone.</p>
+
+        <p>Add a per-expert <strong>bias</strong> term <code>b_i</code> used <em>only</em> for the top-k selection, not for the gate weight:</p>
+
+        <pre>select top-k experts by:     s_i + b_i        # biased scores, selection only
+weight chosen expert by:     g_i = softmax(s_i)  # original score, NO bias
+
+  s_i   = router affinity (sigmoid/softmax of router logit)
+  b_i   = balancing bias, NOT a learned parameter
+  g_i   = the gate value actually multiplying the expert output</pre>
+
+        <p>The bias tilts <em>which</em> experts win the top-k, but the output weighting uses the clean, unbiased score — so no balancing signal enters the gradient. Then update <code>b_i</code> with a dead-simple rule after each step, watching the realised load:</p>
+
+        <pre>for each expert i:
+    if load_i &gt; target:   b_i = b_i - gamma     # overloaded → make it less attractive
+    if load_i &lt; target:   b_i = b_i + gamma     # underloaded → make it more attractive
+
+  gamma = small fixed step (bias update speed)
+  target = T*k / N   (even share of the k*T dispatch slots)</pre>
+
+        <p>Overloaded experts get their bias nudged down, so on the next step they win fewer top-k slots; starved experts get nudged up and win more. It's a feedback controller on selection. No second loss, no gradient interference — the LM gradient stays pure, and balance is handled by a non-gradient control loop running alongside.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .f-t { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; fill: #2a2620; }
+              .f-l { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; }
+              .f-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.2; }
+              .f-arr { stroke: #2a2620; stroke-width: 1.2; fill: none; marker-end: url(#fa); }
+              .f-arr2{ stroke: #c96442; stroke-width: 1.2; fill: none; marker-end: url(#fa2); stroke-dasharray: 3 2; }
+            </style>
+            <defs>
+              <marker id="fa" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2a2620"/></marker>
+              <marker id="fa2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#c96442"/></marker>
+            </defs>
+            <rect class="f-box" x="20"  y="80" width="110" height="40"/>
+            <text class="f-t" x="34" y="96">router score</text>
+            <text class="f-t" x="46" y="110">s_i</text>
+            <rect class="f-box" x="170" y="80" width="120" height="40"/>
+            <text class="f-t" x="184" y="96">+ bias b_i</text>
+            <text class="f-l" x="184" y="110">(selection only)</text>
+            <rect class="f-box" x="330" y="80" width="120" height="40"/>
+            <text class="f-t" x="350" y="96">top-k select</text>
+            <text class="f-l" x="344" y="110">which experts win</text>
+            <rect class="f-box" x="490" y="80" width="130" height="40"/>
+            <text class="f-t" x="505" y="96">gate = softmax(s_i)</text>
+            <text class="f-l" x="505" y="110">unbiased weight</text>
+            <line class="f-arr" x1="130" y1="100" x2="168" y2="100"/>
+            <line class="f-arr" x1="290" y1="100" x2="328" y2="100"/>
+            <line class="f-arr" x1="450" y1="100" x2="488" y2="100"/>
+            <!-- feedback -->
+            <path class="f-arr2" d="M390,80 C390,30 230,30 230,78"/>
+            <text class="f-l" x="250" y="28">update b_i from realised load (±gamma) — no gradient</text>
+            <text class="f-l" x="20" y="160">Selection is biased toward starved experts; the weight that hits the gradient is the clean score.</text>
+            <text class="f-l" x="20" y="174">Result: balance with zero interference in the language-modelling objective.</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — Auxiliary-loss-free balancing: a bias steers top-k selection, a control loop updates the bias from realised load, and the gradient never sees the balancing signal.</p>
+        </div>
+
+        <h2>A tiny safety net</h2>
+
+        <p>DeepSeek-V3 keeps one very small <strong>sequence-wise</strong> auxiliary loss with a minuscule coefficient — not to drive balance (the bias does that), but to discourage extreme imbalance <em>within a single sequence</em>, which the batch-level bias controller can miss. It's a guardrail, not the mechanism. The heavy lifting is the bias.</p>
+
+        <h2>Why this matters</h2>
+
+        <ul>
+          <li><strong>Quality.</strong> Removing the balancing gradient removes the per-step quality tax. DeepSeek reports better performance at equal balance versus the aux-loss approach.</li>
+          <li><strong>Fewer knobs.</strong> One <code>gamma</code> and a target replace three brittle, interacting <code>alpha</code>s.</li>
+          <li><strong>Stability.</strong> A control loop on realised load is more robust than hoping a gradient coefficient holds across a long run.</li>
+        </ul>
+
+        <p>The lesson generalises: when a regulariser fights your real objective, ask whether the thing it controls actually needs to be in the gradient. Often — as with expert selection — it doesn't, and a cheap control loop does the job cleaner.</p>
+
+        <p>Next, 5.5 looks at the other half of balancing in practice: <strong>capacity factor</strong> — what happens to tokens when an expert's buffer is full, why dropped tokens exist, and how to size the buffers.</p>
+
+        <h2>References</h2>
+        <ul>
+          <li>Shazeer et al. (2017), <em>Outrageously Large Neural Networks</em> — original sparsely-gated MoE and load-balancing loss. <a href="https://arxiv.org/abs/1701.06538" target="_blank">arXiv:1701.06538</a></li>
+          <li>Fedus et al. (2021), <em>Switch Transformers</em> — the <code>f_i · P_i</code> auxiliary-loss formulation used here. <a href="https://arxiv.org/abs/2101.03961" target="_blank">arXiv:2101.03961</a></li>
+          <li>Lepikhin et al. (2020), <em>GShard</em> — load balancing at scale with expert parallelism. <a href="https://arxiv.org/abs/2006.16668" target="_blank">arXiv:2006.16668</a></li>
+          <li>DeepSeek-AI (2024), <em>DeepSeek-V2</em> — expert/device/communication balancing losses. <a href="https://arxiv.org/abs/2405.04434" target="_blank">arXiv:2405.04434</a></li>
+          <li>Wang et al. (2024), <em>Auxiliary-Loss-Free Load Balancing</em> — the bias-based scheme. <a href="https://arxiv.org/abs/2408.15664" target="_blank">arXiv:2408.15664</a></li>
+          <li>DeepSeek-AI (2024), <em>DeepSeek-V3</em> — aux-loss-free balancing in a production model. <a href="https://arxiv.org/abs/2412.19437" target="_blank">arXiv:2412.19437</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-5-3-visualizing-experts.html">← Visualizing Experts</a>
+        <a href="deepseek-5-5-capacity-factor.html">Capacity Factor →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Routing collapse</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Rich-get-richer failure where the router funnels almost all tokens to a few experts; the rest go dead. The default MoE failure mode the aux loss exists to prevent.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Auxiliary loss</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">L_aux = alpha·N·Σ f_i·P_i, added to the LM loss to push load toward uniform. f_i = dispatch fraction (no gradient), P_i = mean gate prob (differentiable).</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">f_i and P_i</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">f_i: fraction of tokens that actually selected expert i (the hard load). P_i: average router probability mass on expert i (the soft, differentiable load). Their product is the loss.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Gradient interference</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The aux-loss gradient and the LM gradient point different ways and are summed; balance is bought by corrupting routing the model would otherwise pick. The per-step quality tax.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Aux-loss-free (bias) balancing</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">DeepSeek-V3 scheme: a per-expert bias b_i steers top-k selection only, updated ±gamma from realised load. Gate weight stays unbiased, so no balancing signal hits the gradient.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Dead expert</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">An expert receiving ~zero tokens that never trains and can't recover (no tokens → no gradient). Wasted capacity; the concrete symptom of collapse.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=6"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visualizing Experts — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=25">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 5</p>
+        <p class="series-banner-title">Mixture of Experts (MoE)</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 3 of 7 · Phase 5 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-5-1-intro-moe.html" class="done">5.1 Intro</a>
+          <a href="deepseek-5-2-routing.html" class="done">5.2 Routing</a>
+          <a href="deepseek-5-3-visualizing-experts.html" class="active">5.3 Visualizing</a>
+          <a href="deepseek-5-4-aux-loss.html">5.4 Aux Loss</a>
+          <a href="deepseek-5-5-capacity-factor.html">5.5 Capacity</a>
+          <a href="deepseek-5-6-deepseekmoe.html">5.6 DeepSeekMoE</a>
+          <a href="deepseek-5-7-moe-code.html">5.7 Code</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 14 min read · 2900 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Visualizing Experts.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">moe</span>
+          <span class="tag">phase-5</span>
+          <span class="tag">interpretability</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>The intuitive story of MoE is "expert 7 handles Python, expert 22 handles French." It's a useful first picture and almost entirely wrong. This article looks at what experts actually specialise in, why the clean story fails, and what the real routing patterns imply for how you design an MoE — which is exactly the reasoning behind DeepSeek's fine-grained + shared design (5.6).</p>
+
+        <h2>The myth: clean semantic experts</h2>
+
+        <p>You'd hope a trained router sorts tokens by topic — code to one expert, biology to another, so you could point at expert 12 and say "that's the legal-text expert." Researchers looked. With rare exceptions, it isn't there. Specialisation is real but it doesn't line up with human-legible categories like topic or language.</p>
+
+        <h2>What experts actually specialise in</h2>
+
+        <p>When you tally which tokens hit which experts across a large corpus, the patterns that emerge are mostly <strong>low-level and syntactic</strong>, not semantic:</p>
+
+        <ul>
+          <li><strong>Token-level / lexical</strong> — experts fire on punctuation, whitespace, numbers, or specific frequent tokens. The Switch Transformer authors found experts specialising in things like "the token after a quotation mark."</li>
+          <li><strong>Positional and syntactic</strong> — experts keyed to part-of-speech-like roles or position in a clause, rather than meaning.</li>
+          <li><strong>Distributed semantics</strong> — to the extent topic matters, it's spread across many experts in combination, not localised to one. No single "physics expert."</li>
+        </ul>
+
+        <p>Specialisation is genuine — routing is far from random, and ablating the wrong expert for a token hurts — but it's specialisation in the model's internal feature space, which doesn't map onto the categories humans name.</p>
+
+        <blockquote>Experts specialise in features, not topics. The router learned a partition of the model's latent space that's useful for prediction, and that partition mostly tracks low-level token/syntax structure, not "Python vs French." The clean-category picture is a human projection onto a machine's bookkeeping.</blockquote>
+
+        <h2>Why the clean story can't hold</h2>
+
+        <p>Two structural reasons specialisation stays distributed and low-level:</p>
+
+        <h3>1. Per-layer, per-token routing</h3>
+
+        <p>Routing happens independently at every MoE layer and for every token. A sentence about astrophysics isn't sent to "the astrophysics expert" — each of its tokens is routed separately at each layer, hitting dozens of different experts on the way up. "Which expert handles this sentence" isn't even a well-posed question; there are dozens of decisions per token across depth.</p>
+
+        <h3>2. Load balancing actively prevents clean clusters</h3>
+
+        <p>This is the deep reason, and it ties straight to 5.4. Training pressures the router toward <em>even</em> token distribution across experts. A clean semantic partition would be wildly unbalanced — far more tokens are prose than are, say, chemical formulae — so a topic-sorted router would overload some experts and starve others. The balancing objective explicitly pushes against that. The model is rewarded for spreading load evenly, which fragments any would-be clean semantic clusters into distributed, balanced ones. <strong>Interpretability and balance are in direct tension.</strong></p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .v-h  { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+              .v-l  { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .v-bar{ stroke: #2a2620; stroke-width: 0.8; }
+            </style>
+            <text x="170" y="16" class="v-h">Myth: clean semantic experts</text>
+            <text x="510" y="16" class="v-h">Reality: balanced + distributed</text>
+            <!-- myth bars: very uneven -->
+            <g>
+              <rect x="50"  y="120" width="22" height="60" class="v-bar" fill="#c96442"/>
+              <rect x="80"  y="60"  width="22" height="120" class="v-bar" fill="#c96442"/>
+              <rect x="110" y="160" width="22" height="20" class="v-bar" fill="#c96442"/>
+              <rect x="140" y="100" width="22" height="80" class="v-bar" fill="#c96442"/>
+              <rect x="170" y="170" width="22" height="10" class="v-bar" fill="#c96442"/>
+              <rect x="200" y="50"  width="22" height="130" class="v-bar" fill="#c96442"/>
+              <rect x="230" y="168" width="22" height="12" class="v-bar" fill="#c96442"/>
+              <rect x="260" y="155" width="22" height="25" class="v-bar" fill="#c96442"/>
+            </g>
+            <line x1="45" y1="180" x2="290" y2="180" class="v-bar"/>
+            <text x="170" y="200" class="v-l">uneven load → some experts swamped, others idle</text>
+            <text x="170" y="213" class="v-l">would be interpretable, but breaks training</text>
+            <!-- reality bars: even -->
+            <g>
+              <rect x="390" y="95"  width="22" height="85" class="v-bar" fill="#6b9e6b"/>
+              <rect x="420" y="90"  width="22" height="90" class="v-bar" fill="#6b9e6b"/>
+              <rect x="450" y="100" width="22" height="80" class="v-bar" fill="#6b9e6b"/>
+              <rect x="480" y="92"  width="22" height="88" class="v-bar" fill="#6b9e6b"/>
+              <rect x="510" y="98"  width="22" height="82" class="v-bar" fill="#6b9e6b"/>
+              <rect x="540" y="88"  width="22" height="92" class="v-bar" fill="#6b9e6b"/>
+              <rect x="570" y="96"  width="22" height="84" class="v-bar" fill="#6b9e6b"/>
+              <rect x="600" y="93"  width="22" height="87" class="v-bar" fill="#6b9e6b"/>
+            </g>
+            <line x1="385" y1="180" x2="630" y2="180" class="v-bar"/>
+            <text x="510" y="200" class="v-l">even load → low-level / distributed features</text>
+            <text x="510" y="213" class="v-l">less interpretable, but trains stably</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Balancing forces even per-expert load (right). A clean topic-sorted router (left) would be wildly unbalanced and is selected against during training.</p>
+        </div>
+
+        <h2>How researchers actually probe experts</h2>
+
+        <p>Methods used to study expert specialisation, useful to know if you debug your own MoE:</p>
+
+        <ul>
+          <li><strong>Routing heatmaps</strong> — for a fixed input set, a matrix of token × expert selection frequency. Reveals whether load is balanced and whether any expert is dead (never selected).</li>
+          <li><strong>Top-token analysis</strong> — for each expert, the tokens that route to it most often. This is how the "punctuation expert" findings surfaced.</li>
+          <li><strong>Expert ablation</strong> — zero out an expert and measure loss change per token type. Identifies what an expert contributes without relying on a clean label.</li>
+          <li><strong>Co-activation graphs</strong> — which experts tend to be selected together across layers, exposing the distributed nature of specialisation.</li>
+        </ul>
+
+        <h2>What this means for design</h2>
+
+        <p>The empirical picture directly motivates DeepSeek's choices in 5.6:</p>
+
+        <ul>
+          <li><strong>Shared experts.</strong> Since much of what any token needs is common, low-level processing (the kind a balanced router fragments), DeepSeek dedicates a few <em>always-on</em> shared experts to that common knowledge. Routed experts are then freed to capture the finer, rarer distinctions — pushing specialisation to be more meaningful.</li>
+          <li><strong>Fine-grained experts.</strong> If specialisation is distributed across many experts anyway, make experts small and numerous (256 vs the classic 8–64). More, smaller experts give the router a finer palette to combine, improving the effective specialisation per token without raising active compute.</li>
+        </ul>
+
+        <p>In other words, DeepSeek didn't fight the messy reality — it designed <em>around</em> it. Shared experts absorb the common load that would otherwise smear across everything; fine-grained routed experts exploit the fact that real specialisation is distributed and combinatorial.</p>
+
+        <h2>Don't over-interpret</h2>
+
+        <p>A practical caution. It's tempting to read deep meaning into routing patterns, but most apparent "specialisation" is the model's internal bookkeeping, not human-meaningful structure. A dead expert (zero load) is a real bug worth fixing; "expert 12 seems to like commas" is mostly trivia. Use expert visualisation to diagnose balance and dead experts — not to tell stories about what the model "knows."</p>
+
+        <p>Next, 5.4 makes the balancing pressure concrete: the auxiliary load-balancing loss, exactly how it pushes load even, and the gradient interference that pushed DeepSeek to abandon it for a bias-based scheme.</p>
+
+        <h2>References</h2>
+        <ul>
+          <li>Fedus et al. (2021), <em>Switch Transformers</em> — expert specialisation analysis, token-level findings. <a href="https://arxiv.org/abs/2101.03961" target="_blank">arXiv:2101.03961</a></li>
+          <li>Jiang et al. (2024), <em>Mixtral of Experts</em> — routing analysis showing syntactic, not topical, specialisation. <a href="https://arxiv.org/abs/2401.04088" target="_blank">arXiv:2401.04088</a></li>
+          <li>Dai et al. (2024), <em>DeepSeekMoE</em> — fine-grained + shared experts motivated by specialisation structure. <a href="https://arxiv.org/abs/2401.06066" target="_blank">arXiv:2401.06066</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-5-2-routing.html">← MoE Routing</a>
+        <a href="deepseek-5-4-aux-loss.html">Auxiliary Loss →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Expert specialisation</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The real (but mostly low-level) division of labour experts learn: punctuation, syntax, token-level features — not human topics. Genuine but not human-legible.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Routing heatmap</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Token × expert selection-frequency matrix. Primary tool to check load balance and spot dead experts. The practical reason to visualise experts.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Dead expert</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">An expert that receives ~zero tokens and never trains. A real bug (wasted capacity), distinct from harmless distributed specialisation. What heatmaps catch.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Interpretability–balance tension</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">A clean topic-sorted router would be wildly unbalanced; balancing pressure fragments clean clusters into distributed ones. Why experts aren't interpretable by design.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Shared expert</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">An always-on expert (no routing) that captures common knowledge, freeing routed experts to specialise. DeepSeek's answer to the distributed-specialisation reality. Detailed in 5.6.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=6"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

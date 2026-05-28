@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoE Routing — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=25">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 5</p>
+        <p class="series-banner-title">Mixture of Experts (MoE)</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 2 of 7 · Phase 5 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-5-1-intro-moe.html" class="done">5.1 Intro</a>
+          <a href="deepseek-5-2-routing.html" class="active">5.2 Routing</a>
+          <a href="deepseek-5-3-visualizing-experts.html">5.3 Visualizing</a>
+          <a href="deepseek-5-4-aux-loss.html">5.4 Aux Loss</a>
+          <a href="deepseek-5-5-capacity-factor.html">5.5 Capacity</a>
+          <a href="deepseek-5-6-deepseekmoe.html">5.6 DeepSeekMoE</a>
+          <a href="deepseek-5-7-moe-code.html">5.7 Code</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 17 min read · 3500 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>MoE Routing.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">moe</span>
+          <span class="tag">phase-5</span>
+          <span class="tag">routing</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>The router is the brain of an MoE layer. It decides, for every token at every layer, which experts run. Get it right and experts specialise usefully; get it wrong and the model either collapses onto a few experts (5.1's failure mode) or routes incoherently. This article unpacks how routing actually works — the gating math, the choices that matter, and the non-differentiability problem hiding inside top-k.</p>
+
+        <h2>The basic gate</h2>
+
+        <p>The router is one small linear layer mapping a token's hidden state to a score per expert, followed by a selection step:</p>
+
+        <pre>h        = token hidden state, shape (d_model,)
+logits   = W_g · h                  # (N,) one logit per expert, W_g: (N, d_model)
+gates    = softmax(logits)          # (N,) probabilities summing to 1
+top_k    = argtopk(gates, k)        # indices of k highest
+y        = Σ_{i in top_k} gates_i · Expert_i(h)</pre>
+
+        <p><code>W_g</code> is tiny — <code>N × d_model</code>, negligible next to the experts themselves. That a single linear layer governs a model with hundreds of experts is part of MoE's elegance and part of its fragility: the whole routing policy is one matrix.</p>
+
+        <h2>Softmax before or after top-k?</h2>
+
+        <p>A subtle but real design choice: do you softmax over all <code>N</code> logits and then pick top-<code>k</code>, or pick top-<code>k</code> logits and softmax only those? It changes the gate magnitudes.</p>
+
+        <pre># Option A — softmax over all, then select (gates don't sum to 1 after selection)
+gates = softmax(logits)[top_k]            # e.g. [0.34, 0.12] — sums to 0.46
+
+# Option B — select, then softmax over the k chosen (gates sum to 1)
+gates = softmax(logits[top_k])            # e.g. [0.74, 0.26] — sums to 1.0</pre>
+
+        <p>Option B (renormalise over the chosen experts) keeps the combined output at a consistent scale regardless of how confident the router was, which interacts more cleanly with the residual stream and normalisation. DeepSeek-V2/V3 use a softmax-then-normalise variant. The choice affects gradient flow and the effective scale of the MoE output — small detail, real consequences.</p>
+
+        <h2>Why top-k breaks differentiability</h2>
+
+        <p>Here's the catch that shapes everything. <code>argtopk</code> — picking the k largest — is a discrete, non-differentiable operation. You can't backprop through "which experts were chosen": the selection is a hard step function of the logits, derivative zero almost everywhere. So how does the router learn anything?</p>
+
+        <p>The answer is the gate weights. The chosen experts' outputs are <em>multiplied</em> by their gate values <code>gates_i</code>, and those are differentiable. Gradient flows back through the gate value into <code>W_g</code>: if expert <code>i</code> produced a useful output, the loss pushes <code>gates_i</code> up, which raises <code>logits_i</code>, making expert <code>i</code> more likely to be chosen next time. The selection itself is non-differentiable, but the <em>weighting</em> of selected experts carries the learning signal. The router learns "how much to trust an expert I picked," and that indirectly shapes "which to pick."</p>
+
+        <blockquote>Top-k routing learns through the gate weights of the experts it actually used — never through the ones it didn't. An expert that's never selected gets no gradient and never improves. That's exactly the starvation dynamic behind routing collapse, and why explicit balancing (5.4–5.6) is mandatory.</blockquote>
+
+        <h2>Noisy top-k gating</h2>
+
+        <p>Shazeer's 2017 router added tunable Gaussian noise to the logits before selection:</p>
+
+        <pre>logits = W_g · h + StandardNormal() · softplus(W_noise · h)
+top_k  = argtopk(logits, k)</pre>
+
+        <p>Two reasons. First, exploration: noise occasionally bumps a non-favourite expert into the top-k, giving starved experts a chance to receive gradient and improve — a direct counter to collapse. Second, it smooths the load distribution by making selection stochastic rather than deterministic. Modern large MoEs (Switch, DeepSeek) often drop noise in favour of explicit balancing losses or bias terms, but the idea — inject exploration so every expert gets some traffic — survives.</p>
+
+        <h2>Token-choice vs expert-choice routing</h2>
+
+        <p>Two opposite framings of the assignment problem:</p>
+
+        <ul>
+          <li><strong>Token-choice</strong> (standard, DeepSeek): each token picks its top-<code>k</code> experts. Simple, but nothing guarantees experts receive equal load — a popular expert can be swamped while others starve. Needs explicit balancing.</li>
+          <li><strong>Expert-choice</strong> (Zhou et al. 2022): flip it — each expert picks its top-<code>capacity</code> tokens. Load is balanced <em>by construction</em> (every expert takes exactly its quota), but a token might be chosen by zero experts (dropped) or many (uneven compute per token).</li>
+        </ul>
+
+        <p>Token-choice matches autoregressive decoding better (you can't see future tokens to do expert-choice at inference), so it dominates production LLMs. The price is that load balancing must be solved separately — the subject of 5.4–5.6.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .c-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.3; }
+              .c-tok { fill: #5c87b5; stroke: #2a2620; stroke-width: 1.3; }
+              .c-exp { fill: #6b9e6b; stroke: #2a2620; stroke-width: 1.3; }
+              .c-t   { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .c-tw  { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; fill: #ebe3cf; text-anchor: middle; dominant-baseline: middle; }
+              .c-h   { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+              .c-l   { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .c-ar  { stroke: #c96442; stroke-width: 1.2; fill: none; marker-end: url(#ca); }
+            </style>
+            <defs><marker id="ca" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L0,5 L6,3 z" fill="#c96442"/></marker></defs>
+            <text x="170" y="16" class="c-h">Token-choice (DeepSeek)</text>
+            <text x="510" y="16" class="c-h">Expert-choice</text>
+            <!-- token choice: tokens pick experts -->
+            <rect x="40" y="40" width="46" height="22" rx="3" class="c-tok"/><text x="63" y="51" class="c-tw">tok A</text>
+            <rect x="40" y="80" width="46" height="22" rx="3" class="c-tok"/><text x="63" y="91" class="c-tw">tok B</text>
+            <rect x="40" y="120" width="46" height="22" rx="3" class="c-tok"/><text x="63" y="131" class="c-tw">tok C</text>
+            <rect x="250" y="40" width="46" height="22" rx="3" class="c-exp"/><text x="273" y="51" class="c-tw">E1</text>
+            <rect x="250" y="80" width="46" height="22" rx="3" class="c-exp"/><text x="273" y="91" class="c-tw">E2</text>
+            <rect x="250" y="120" width="46" height="22" rx="3" class="c-exp"/><text x="273" y="131" class="c-tw">E3</text>
+            <line x1="86" y1="51" x2="250" y2="51" class="c-ar"/>
+            <line x1="86" y1="80" x2="250" y2="55" class="c-ar"/>
+            <line x1="86" y1="120" x2="250" y2="48" class="c-ar"/>
+            <text x="170" y="170" class="c-l">tokens choose → E1 overloaded, E3 starved</text>
+            <text x="170" y="184" class="c-l">balance NOT guaranteed</text>
+            <!-- expert choice -->
+            <rect x="390" y="40" width="46" height="22" rx="3" class="c-exp"/><text x="413" y="51" class="c-tw">E1</text>
+            <rect x="390" y="80" width="46" height="22" rx="3" class="c-exp"/><text x="413" y="91" class="c-tw">E2</text>
+            <rect x="390" y="120" width="46" height="22" rx="3" class="c-exp"/><text x="413" y="131" class="c-tw">E3</text>
+            <rect x="600" y="40" width="46" height="22" rx="3" class="c-tok"/><text x="623" y="51" class="c-tw">tok A</text>
+            <rect x="600" y="80" width="46" height="22" rx="3" class="c-tok"/><text x="623" y="91" class="c-tw">tok B</text>
+            <rect x="600" y="120" width="46" height="22" rx="3" class="c-tok"/><text x="623" y="131" class="c-tw">tok C</text>
+            <line x1="436" y1="51" x2="600" y2="51" class="c-ar"/>
+            <line x1="436" y1="80" x2="600" y2="91" class="c-ar"/>
+            <line x1="436" y1="120" x2="600" y2="131" class="c-ar"/>
+            <text x="510" y="170" class="c-l">experts choose → equal load by design</text>
+            <text x="510" y="184" class="c-l">but tokens can be dropped / over-picked</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Token-choice (each token picks experts) needs explicit balancing; expert-choice (each expert picks tokens) balances by construction but can drop tokens. Production LLMs use token-choice.</p>
+        </div>
+
+        <h2>Worked routing example</h2>
+
+        <p>4 experts, top-2, softmax-then-select-then-renormalise:</p>
+
+        <pre>token h → logits = [2.0, 0.5, 1.5, -1.0]
+
+step 1: select top-2 logits      → experts {0, 2}, logits [2.0, 1.5]
+step 2: softmax over chosen       → [exp(2.0), exp(1.5)] / sum
+                                   = [7.39, 4.48] / 11.87
+                                   = [0.623, 0.377]
+step 3: output = 0.623·E0(h) + 0.377·E2(h)</pre>
+
+        <p>Experts 1 and 3 do nothing for this token and receive no gradient from it. Run this over a batch and tally how many tokens hit each expert — that tally is the <strong>load</strong>, and keeping it even is the balancing problem.</p>
+
+        <h2>Routing in DeepSeek specifically</h2>
+
+        <p>DeepSeek's router has a few distinctive choices that 5.6 expands on:</p>
+
+        <ul>
+          <li><strong>Fine-grained experts</strong> — many small experts (256 in V3) instead of few large ones, so each token's top-k draws from a richer menu and specialisation is finer.</li>
+          <li><strong>Shared experts</strong> — a few experts every token always uses (no routing), capturing common knowledge so routed experts can specialise on the rest.</li>
+          <li><strong>Sigmoid gate + bias balancing</strong> — V3 scores experts with a sigmoid and adds a per-expert bias term, adjusted during training to equalise load <em>without</em> an auxiliary loss. This is the auxiliary-loss-free method of 5.6 — the router's selection uses logits+bias, but the gate values used for the weighted sum exclude the bias, so balancing doesn't distort the learned combination.</li>
+        </ul>
+
+        <h2>What this sets up</h2>
+
+        <p>Routing gives the mechanism; it doesn't give balance. Because gradient only reaches selected experts and token-choice guarantees nothing about load, an unmanaged router collapses. Article 5.3 first looks at what the router's choices actually <em>mean</em> — what experts specialise in — then 5.4 starts the balancing story with the classic auxiliary loss, 5.5 covers capacity limits and token dropping, and 5.6 shows DeepSeek's bias-based scheme that fixes balance without the auxiliary loss's downsides.</p>
+
+        <h2>References</h2>
+        <ul>
+          <li>Shazeer et al. (2017), <em>Sparsely-Gated MoE</em> — noisy top-k gating. <a href="https://arxiv.org/abs/1701.06538" target="_blank">arXiv:1701.06538</a></li>
+          <li>Fedus et al. (2021), <em>Switch Transformers</em> — top-1 routing. <a href="https://arxiv.org/abs/2101.03961" target="_blank">arXiv:2101.03961</a></li>
+          <li>Zhou et al. (2022), <em>Mixture-of-Experts with Expert Choice Routing</em>. <a href="https://arxiv.org/abs/2202.09368" target="_blank">arXiv:2202.09368</a></li>
+          <li>DeepSeek-AI (2024), <em>DeepSeek-V3</em> — sigmoid gate + bias balancing. <a href="https://arxiv.org/abs/2412.19437" target="_blank">arXiv:2412.19437</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-5-1-intro-moe.html">← Intro to MoE</a>
+        <a href="deepseek-5-3-visualizing-experts.html">Visualizing Experts →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Gating network</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The router: a single linear layer W_g mapping a token to N expert logits, then top-k selection + gate weights. Governs the whole routing policy with one small matrix.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Top-k routing</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Activate the k highest-scoring experts per token. The argtopk step is non-differentiable; learning flows through the differentiable gate weights of the chosen experts only.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Noisy gating</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Add learned Gaussian noise to logits before top-k. Gives starved experts occasional selection (exploration) and smooths load. Used by Shazeer 2017; often replaced by bias balancing now.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Token-choice routing</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Each token picks its top-k experts. Standard for autoregressive LLMs. Load balance not guaranteed → needs aux loss or bias correction.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Expert-choice routing</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Each expert picks its top-capacity tokens. Balanced by construction but can drop or over-pick tokens. Hard to use at decode time, so rare in production LLMs.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Expert load</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">How many tokens in a batch are routed to a given expert. Uneven load wastes capacity and idles GPUs. Balancing = keeping load roughly equal across experts.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=6"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

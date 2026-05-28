@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Introduction to Mixture of Experts — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=25">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 5</p>
+        <p class="series-banner-title">Mixture of Experts (MoE)</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 1 of 7 · Phase 5 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-5-1-intro-moe.html" class="active">5.1 Intro</a>
+          <a href="deepseek-5-2-routing.html">5.2 Routing</a>
+          <a href="deepseek-5-3-visualizing-experts.html">5.3 Visualizing</a>
+          <a href="deepseek-5-4-aux-loss.html">5.4 Aux Loss</a>
+          <a href="deepseek-5-5-capacity-factor.html">5.5 Capacity</a>
+          <a href="deepseek-5-6-deepseekmoe.html">5.6 DeepSeekMoE</a>
+          <a href="deepseek-5-7-moe-code.html">5.7 Code</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 16 min read · 3300 words <span class="difficulty beginner">beginner</span></p>
+        <h1>Introduction to Mixture of Experts.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">moe</span>
+          <span class="tag">phase-5</span>
+          <span class="tag">transformers</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Phases 1–4 were about attention — how a Transformer mixes information across positions, and how MLA and RoPE make that cheap. But attention is only half of a Transformer block. The other half is the feed-forward network (FFN), and in large models the FFN is where most of the parameters and most of the compute live. Phase 5 is about the idea that lets DeepSeek scale that half to hundreds of billions of parameters while only paying for a small slice per token: <strong>Mixture of Experts</strong>.</p>
+
+        <p>This article sets up the problem MoE solves, the core "sparse activation" idea, and the vocabulary the rest of Phase 5 will use. No prior MoE knowledge assumed.</p>
+
+        <h2>Where the parameters actually go</h2>
+
+        <p>A standard Transformer block has two sublayers: multi-head attention, then a position-wise FFN. The FFN is a simple two-layer MLP applied to each token independently:</p>
+
+        <pre>FFN(x) = W_2 · activation(W_1 · x)
+
+where for a model of width d_model:
+  W_1: (d_ff, d_model)     # up-projection, d_ff usually 4 × d_model
+  W_2: (d_model, d_ff)     # down-projection</pre>
+
+        <p>With <code>d_ff = 4·d_model</code>, the FFN holds <code>2 · 4 · d_model²</code> parameters per layer — roughly two-thirds of a block's parameters in a typical dense model. To make a model "smarter" you mostly grow <code>d_ff</code>, and the FFN balloons. Every token pays for the entire FFN on every layer. That coupling — bigger model means proportionally bigger per-token compute — is the wall MoE was invented to break.</p>
+
+        <blockquote>Dense scaling ties capacity to cost: double the parameters, double the FLOPs per token. MoE breaks the tie. You add many FFNs but route each token to only a few — capacity grows, per-token compute barely moves.</blockquote>
+
+        <h2>The MoE idea: many experts, few active</h2>
+
+        <p>Replace the single FFN with <code>N</code> parallel FFNs, called <strong>experts</strong>. Add a small <strong>router</strong> (a gating network) that, for each token, picks the top-<code>k</code> experts to actually run. The token is processed only by those <code>k</code> experts; the other <code>N − k</code> sit idle for that token.</p>
+
+        <pre>Dense FFN:  every token → 1 big FFN              (all params active)
+
+MoE layer:  every token → router picks k of N experts
+            token processed by k small FFNs only   (k/N params active)</pre>
+
+        <p>The router outputs a score per expert; the top-<code>k</code> experts run, and their outputs are combined weighted by the router's gate values:</p>
+
+        <pre>scores      = softmax(W_router · x)        # (N,) one score per expert
+top_k       = indices of k largest scores
+y = Σ_{i in top_k}  gate_i · Expert_i(x)   # weighted sum of chosen experts</pre>
+
+        <p>Concrete numbers from DeepSeek-V2: 160 routed experts, only 6 active per token (plus shared experts, covered in 5.6). The model has the <em>parameter count</em> of all 160 experts but the <em>per-token compute</em> of about 6. That's the whole trick.</p>
+
+        <h2>Dense vs sparse: the FLOP accounting</h2>
+
+        <p>Make the tradeoff concrete. Suppose each expert is the same size as the original dense FFN.</p>
+
+        <pre>Dense model:
+  params (FFN)   = P
+  active/token   = P
+  FLOPs/token    ∝ P
+
+MoE, N=64 experts, k=2 active:
+  params (FFN)   = 64 · P        (64× the capacity)
+  active/token   = 2 · P         (only 2 experts run)
+  FLOPs/token    ∝ 2 · P         (32× cheaper than dense-equivalent capacity)</pre>
+
+        <p>A 64× larger parameter store, but each token does only 2× the original FFN work. The model holds far more knowledge — different experts specialise in different patterns — while inference and training compute per token stay near a small dense model. This is why "total parameters" and "active parameters" are reported separately for MoE models: DeepSeek-V3 is 671B total, ~37B active per token.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .m-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .m-on  { fill: #6b9e6b; stroke: #2a2620; stroke-width: 1.5; }
+              .m-off { fill: #ebe3cf; stroke: #948a78; stroke-width: 1; stroke-dasharray: 3 2; }
+              .m-rt  { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .m-t   { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .m-tw  { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #ebe3cf; text-anchor: middle; dominant-baseline: middle; }
+              .m-l   { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .m-ar  { stroke: #2a2620; stroke-width: 1.2; fill: none; marker-end: url(#ma); }
+              .m-arf { stroke: #948a78; stroke-width: 1; fill: none; stroke-dasharray: 3 2; }
+            </style>
+            <defs><marker id="ma" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#2a2620"/></marker></defs>
+            <rect x="40" y="110" width="80" height="28" rx="3" class="m-box"/>
+            <text x="80" y="124" class="m-t">token x</text>
+            <line x1="120" y1="124" x2="160" y2="124" class="m-ar"/>
+            <rect x="162" y="104" width="70" height="40" rx="3" class="m-rt"/>
+            <text x="197" y="120" class="m-t">router</text>
+            <text x="197" y="132" class="m-t">top-2</text>
+            <!-- experts -->
+            <g>
+              <rect x="300" y="20"  width="90" height="26" rx="3" class="m-on"/><text x="345" y="33" class="m-tw">Expert 1 ✓</text>
+              <rect x="300" y="56"  width="90" height="26" rx="3" class="m-off"/><text x="345" y="69" class="m-t">Expert 2</text>
+              <rect x="300" y="92"  width="90" height="26" rx="3" class="m-off"/><text x="345" y="105" class="m-t">Expert 3</text>
+              <rect x="300" y="128" width="90" height="26" rx="3" class="m-on"/><text x="345" y="141" class="m-tw">Expert 4 ✓</text>
+              <rect x="300" y="164" width="90" height="26" rx="3" class="m-off"/><text x="345" y="177" class="m-t">Expert 5</text>
+              <rect x="300" y="200" width="90" height="26" rx="3" class="m-off"/><text x="345" y="213" class="m-t">... Expert N</text>
+            </g>
+            <line x1="232" y1="120" x2="300" y2="33" class="m-ar"/>
+            <line x1="232" y1="128" x2="300" y2="141" class="m-ar"/>
+            <line x1="232" y1="124" x2="300" y2="69" class="m-arf"/>
+            <line x1="232" y1="124" x2="300" y2="105" class="m-arf"/>
+            <line x1="232" y1="124" x2="300" y2="177" class="m-arf"/>
+            <line x1="232" y1="124" x2="300" y2="213" class="m-arf"/>
+            <!-- combine -->
+            <line x1="390" y1="33" x2="470" y2="110" class="m-ar"/>
+            <line x1="390" y1="141" x2="470" y2="124" class="m-ar"/>
+            <rect x="472" y="108" width="100" height="32" rx="3" class="m-box"/>
+            <text x="522" y="118" class="m-t">Σ gate·Expert</text>
+            <text x="522" y="131" class="m-t">= output</text>
+            <text x="345" y="244" class="m-l">N experts stored · only k=2 run per token (solid = active, dashed = idle)</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — An MoE layer. The router scores all experts, runs only the top-k, and combines their outputs by gate weight. Idle experts cost storage, not compute.</p>
+        </div>
+
+        <h2>Why specialisation helps, intuitively</h2>
+
+        <p>A dense FFN must be a jack of all trades — the same weights handle code, prose, math, and dialogue. An MoE layer lets different experts specialise: some lean toward syntax, some toward factual recall, some toward numerical patterns. The router learns to send each token to the experts most useful for it. Capacity isn't just bigger; it's <em>partitioned</em>, so the model can hold more specialised knowledge without every token paying for all of it. Article 5.3 visualises what experts actually specialise in — the picture is messier and more interesting than "expert 7 = Python."</p>
+
+        <h2>The two costs MoE introduces</h2>
+
+        <p>Sparse activation isn't free lunch — it trades compute for two new problems that the rest of Phase 5 is largely about solving.</p>
+
+        <h3>Cost 1: memory</h3>
+
+        <p>All <code>N</code> experts must be stored in memory even though only <code>k</code> run. DeepSeek-V3's 671B parameters all sit in GPU memory; sparsity cuts compute, not storage. This forces expert parallelism — sharding experts across GPUs — covered in Phase 8.</p>
+
+        <h3>Cost 2: load balancing</h3>
+
+        <p>The router is learned, and learned routers collapse. Early in training a few experts get slightly favoured, so they get more tokens, so they train faster, so they get favoured more — a rich-get-richer spiral. Left alone, the model uses a handful of experts and ignores the rest, wasting the capacity you paid for. Worse, in distributed training, uneven token counts per expert mean some GPUs sit idle waiting for overloaded ones. <strong>Load balancing</strong> — keeping token assignment roughly even across experts — is the central engineering challenge of MoE, and it drives articles 5.4 (auxiliary loss), 5.5 (capacity factor), and 5.6 (DeepSeek's auxiliary-loss-free scheme).</p>
+
+        <blockquote>Routing collapse is the MoE failure mode. The router has no built-in reason to spread tokens evenly, and the feedback loop actively concentrates them. Every MoE balancing technique exists to fight this one spiral.</blockquote>
+
+        <h2>A short history</h2>
+
+        <ul>
+          <li><strong>1991</strong> — Jacobs &amp; Hinton introduce mixtures of experts for neural nets. The idea predates Transformers by decades.</li>
+          <li><strong>2017</strong> — Shazeer et al., <em>Outrageously Large Neural Networks</em>, put sparsely-gated MoE into LSTMs at scale (137B params), introducing top-k routing and the auxiliary load-balancing loss.</li>
+          <li><strong>2020–2021</strong> — GShard and Switch Transformer bring MoE to Transformers; Switch simplifies to top-1 routing and shows MoE scales cleanly to trillions of parameters.</li>
+          <li><strong>2024</strong> — DeepSeekMoE introduces fine-grained expert segmentation and shared experts; DeepSeek-V3 adds auxiliary-loss-free balancing. These are Phase 5's destination (5.6).</li>
+        </ul>
+
+        <h2>What's coming in Phase 5</h2>
+
+        <ul>
+          <li><strong>5.2 Routing</strong> — how the gating network actually works: top-k, softmax-before-or-after, noisy gating, token-choice vs expert-choice.</li>
+          <li><strong>5.3 Visualizing Experts</strong> — what specialisation really looks like; why it's distributed, not clean.</li>
+          <li><strong>5.4 Auxiliary Loss</strong> — the classic load-balancing loss and the gradient interference it causes.</li>
+          <li><strong>5.5 Capacity Factor</strong> — expert capacity, token dropping, and the throughput tradeoff.</li>
+          <li><strong>5.6 DeepSeekMoE</strong> — fine-grained experts, shared experts, auxiliary-loss-free balancing.</li>
+          <li><strong>5.7 Code</strong> — a complete MoE layer in PyTorch, router to combine.</li>
+        </ul>
+
+        <p>By the end you'll understand not just what an MoE layer computes, but why DeepSeek's specific variant — 256 fine-grained experts, shared experts, bias-based balancing — outperforms the textbook design. Phase 6 then turns to the other DeepSeek training innovation, Multi-Token Prediction.</p>
+
+        <h2>References</h2>
+        <ul>
+          <li>Shazeer et al. (2017), <em>Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer</em>. <a href="https://arxiv.org/abs/1701.06538" target="_blank">arXiv:1701.06538</a></li>
+          <li>Fedus et al. (2021), <em>Switch Transformers</em>. <a href="https://arxiv.org/abs/2101.03961" target="_blank">arXiv:2101.03961</a></li>
+          <li>Lepikhin et al. (2020), <em>GShard</em>. <a href="https://arxiv.org/abs/2006.16668" target="_blank">arXiv:2006.16668</a></li>
+          <li>Dai et al. (2024), <em>DeepSeekMoE</em>. <a href="https://arxiv.org/abs/2401.06066" target="_blank">arXiv:2401.06066</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-4-5-why-rope-won.html">← Why RoPE Won</a>
+        <a href="deepseek-5-2-routing.html">MoE Routing →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Mixture of Experts</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Replace one FFN with N parallel expert FFNs + a router that activates only top-k per token. Capacity scales with N; per-token compute scales with k. Decouples size from cost.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Expert</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">One of the N parallel FFNs in an MoE layer. Stored always, run only when the router selects it. Different experts specialise in different token patterns.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Router / gating</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Small learned network that scores experts per token and picks top-k. Output gate weights combine the chosen experts' outputs. The source of both specialisation and load-balancing trouble.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Active vs total params</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Total = all experts stored (e.g. 671B for V3). Active = params actually used per token (e.g. 37B). Sparsity makes these diverge — the defining MoE metric.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Routing collapse</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Failure where a few experts get all tokens (rich-get-richer). Wastes capacity and idles GPUs. The problem all MoE load-balancing methods exist to prevent.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=6"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

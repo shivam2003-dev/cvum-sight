@@ -1,6 +1,22 @@
 /* app.js — renders post cards, archive list, tag cloud, sidebar cats, contrib grid, progress bar */
 
 (function () {
+  // ── mobile hamburger nav ──
+  (function () {
+    const sidebar = document.querySelector(".sidebar");
+    if (!sidebar || sidebar.querySelector(".nav-toggle")) return;
+    const btn = document.createElement("button");
+    btn.className = "nav-toggle";
+    btn.setAttribute("aria-label", "menu");
+    btn.innerHTML = "<span></span><span></span><span></span>";
+    btn.addEventListener("click", function () { sidebar.classList.toggle("open"); });
+    sidebar.insertBefore(btn, sidebar.firstChild);
+    // close on nav link tap
+    sidebar.querySelectorAll("nav a").forEach(function (a) {
+      a.addEventListener("click", function () { sidebar.classList.remove("open"); });
+    });
+  })();
+
   // ── helpers ──
   function escapeHtml(str) {
     const div = document.createElement("div");

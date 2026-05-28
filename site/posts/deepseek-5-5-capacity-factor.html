@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Capacity Factor & Token Dropping — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=25">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 5</p>
+        <p class="series-banner-title">Mixture of Experts (MoE)</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 5 of 7 · Phase 5 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-5-1-intro-moe.html" class="done">5.1 Intro</a>
+          <a href="deepseek-5-2-routing.html" class="done">5.2 Routing</a>
+          <a href="deepseek-5-3-visualizing-experts.html" class="done">5.3 Visualizing</a>
+          <a href="deepseek-5-4-aux-loss.html" class="done">5.4 Aux Loss</a>
+          <a href="deepseek-5-5-capacity-factor.html" class="active">5.5 Capacity</a>
+          <a href="deepseek-5-6-deepseekmoe.html">5.6 DeepSeekMoE</a>
+          <a href="deepseek-5-7-moe-code.html">5.7 Code</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 15 min read · 3100 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Capacity Factor & Token Dropping.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">moe</span>
+          <span class="tag">phase-5</span>
+          <span class="tag">systems</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>The aux loss (5.4) makes load <em>roughly</em> even. But hardware needs more than roughly — it needs fixed-size buffers known before the batch runs. That requirement is where capacity factor and token dropping come from. This article is the systems half of MoE balancing: why experts have a hard buffer size, what happens to the tokens that don't fit, and how DeepSeek arranges things so almost nothing gets dropped.</p>
+
+        <h2>Why experts need a fixed buffer</h2>
+
+        <p>On a GPU, the expert computation is a batched matmul. Batched matmuls want a static shape: expert tensors are <code>[N_experts, capacity, d_model]</code>. That <code>capacity</code> dimension has to be a fixed integer chosen <em>before</em> you see how routing actually distributes tokens. You cannot grow a tensor mid-kernel because expert 7 turned out popular this step.</p>
+
+        <p>So every expert gets the same number of token slots, the <strong>expert capacity</strong>. Routing is even on average, but never exactly even on any given batch — some experts will be handed more tokens than their slots, others fewer. That mismatch is the entire subject of this article.</p>
+
+        <h2>The capacity formula</h2>
+
+        <p>Capacity is the even share scaled by a <strong>capacity factor</strong> <code>C</code>:</p>
+
+        <pre>capacity = ceil( C * (T * k) / N )
+
+  T = tokens per batch (per device)
+  k = experts per token (top-k)
+  N = number of experts
+  C = capacity factor (slack), e.g. 1.0, 1.25, 2.0
+
+  T*k / N  = the perfectly-even load per expert
+  C        = headroom above even for the experts that run hot</pre>
+
+        <p><code>C = 1.0</code> means "exactly the even share, no slack." <code>C = 1.25</code> means each expert can absorb 25% more than its fair share before overflowing. The factor buys tolerance for the unevenness the router can't fully remove.</p>
+
+        <h2>Two failure modes of a fixed buffer</h2>
+
+        <h3>1. Overflow → dropped tokens</h3>
+
+        <p>If more tokens route to an expert than it has slots, the surplus can't be processed. They are <strong>dropped</strong>: the expert produces no output for them. The token isn't deleted from the sequence — it skips the expert via the <strong>residual connection</strong>, passing through that MoE layer unchanged. Its representation simply doesn't get the expert's transformation at that layer.</p>
+
+        <p>Dropping is a real information loss and it's <em>biased</em> — the tokens most likely to be dropped are exactly those routed to popular experts, i.e. common patterns. A high drop rate hurts quality and, worse, hurts it unevenly across the data distribution.</p>
+
+        <h3>2. Underflow → wasted padding</h3>
+
+        <p>If an expert gets fewer tokens than its capacity, the empty slots are <strong>padded</strong> with zeros so the tensor shape stays static. That padding is pure wasted compute — you run the matmul on slots that hold nothing. A large <code>C</code> guarantees few drops but pays for it in padding FLOPs on every under-loaded expert, every step.</p>
+
+        <blockquote>Capacity factor is a dial between two wastes: too low and you drop tokens (lost quality); too high and you burn compute on padding (lost efficiency). The aux loss and capacity factor are partners — better balance lets you run a smaller C safely.</blockquote>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .c-h { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+              .c-l { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .c-cap { stroke: #c96442; stroke-width: 1.4; stroke-dasharray: 4 3; }
+              .c-b { stroke: #2a2620; stroke-width: 0.8; }
+            </style>
+            <text x="340" y="16" class="c-h">capacity line (dashed) = fixed buffer per expert</text>
+            <!-- capacity line -->
+            <line x1="40" y1="70" x2="640" y2="70" class="c-cap"/>
+            <text x="600" y="64" class="c-l">capacity</text>
+            <!-- experts -->
+            <!-- e1 overflow -->
+            <rect x="70"  y="50" width="40" height="120" class="c-b" fill="#c96442"/>
+            <rect x="70"  y="50" width="40" height="20"  fill="#2a2620" opacity="0.35"/>
+            <text x="90" y="188" class="c-l">E1</text>
+            <text x="90" y="44"  class="c-l">drop</text>
+            <!-- e2 full -->
+            <rect x="150" y="70" width="40" height="100" class="c-b" fill="#6b9e6b"/>
+            <text x="170" y="188" class="c-l">E2 ok</text>
+            <!-- e3 under -->
+            <rect x="230" y="120" width="40" height="50" class="c-b" fill="#6b9e6b"/>
+            <rect x="230" y="70"  width="40" height="50" fill="#948a78" opacity="0.25" stroke="#948a78" stroke-dasharray="2 2"/>
+            <text x="250" y="188" class="c-l">E3 pad</text>
+            <!-- e4 under more -->
+            <rect x="310" y="140" width="40" height="30" class="c-b" fill="#6b9e6b"/>
+            <rect x="310" y="70"  width="40" height="70" fill="#948a78" opacity="0.25" stroke="#948a78" stroke-dasharray="2 2"/>
+            <text x="330" y="188" class="c-l">E4 pad</text>
+            <!-- e5 overflow small -->
+            <rect x="390" y="58" width="40" height="112" class="c-b" fill="#c96442"/>
+            <rect x="390" y="58" width="40" height="12"  fill="#2a2620" opacity="0.35"/>
+            <text x="410" y="188" class="c-l">E5</text>
+            <!-- e6 ok -->
+            <rect x="470" y="78" width="40" height="92" class="c-b" fill="#6b9e6b"/>
+            <text x="490" y="188" class="c-l">E6 ok</text>
+            <!-- e7 under -->
+            <rect x="550" y="110" width="40" height="60" class="c-b" fill="#6b9e6b"/>
+            <rect x="550" y="70"  width="40" height="40" fill="#948a78" opacity="0.25" stroke="#948a78" stroke-dasharray="2 2"/>
+            <text x="570" y="188" class="c-l">E7 pad</text>
+            <text x="340" y="214" class="c-l">dark caps above the line = dropped tokens · grey hatch below = wasted padding</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — A fixed capacity line cuts every expert. Tokens above it (red caps) are dropped to the residual; empty slots below it (grey) are padded with zeros and waste compute.</p>
+        </div>
+
+        <h2>Training vs inference</h2>
+
+        <p>The two regimes pull <code>C</code> in opposite directions:</p>
+
+        <ul>
+          <li><strong>Training</strong> often tolerates a modest drop rate — typical values land around <code>C = 1.0–1.25</code>. Dropping acts a bit like noise/regularisation, and the aux loss is simultaneously driving balance down, so the drop rate falls over the run. Lower <code>C</code> keeps training FLOPs down.</li>
+          <li><strong>Inference</strong>, especially with batch size 1 or autoregressive decoding, can't afford <em>any</em> dropping on the tokens a user is waiting on. Production serving generally runs <strong>drop-free</strong>: either a large enough capacity, or a routing scheme that guarantees no overflow.</li>
+        </ul>
+
+        <p>This train/infer gap is itself a problem — a model trained with dropping behaves slightly differently when served drop-free. Minimising drops in <em>both</em> regimes is preferable, which is the direction DeepSeek pushed.</p>
+
+        <h2>Expert-choice routing sidesteps dropping entirely</h2>
+
+        <p>Recall the token-choice vs expert-choice distinction from 5.2. <strong>Expert-choice</strong> flips the selection: instead of each token picking its top-k experts (which can overload an expert), each <em>expert</em> picks its top-<code>capacity</code> tokens. By construction, every expert ends exactly full — <strong>perfect balance, zero drops, zero padding</strong>.</p>
+
+        <p>The catch is the mirror image: a token might be chosen by many experts or by <em>none</em>. A token no expert selects gets no MoE processing at all — effectively dropped from the other side. Expert-choice trades guaranteed expert balance for no guarantee of per-token coverage, which is awkward for autoregressive decoding where you process one token at a time. Useful tool, not a free lunch.</p>
+
+        <h2>DeepSeek's approach: balance so well you barely drop</h2>
+
+        <p>DeepSeek's strategy across V2/V3 is to attack the root cause — make routing balanced enough that a small capacity rarely overflows — rather than papering over imbalance with a big <code>C</code>:</p>
+
+        <ul>
+          <li><strong>Device-limited routing.</strong> Each token's selected experts are restricted to a small number of devices (V2 caps the target experts to <code>M</code> devices). This bounds the all-to-all communication <em>and</em> tightens the load distribution per device, so device-level capacity is easier to satisfy.</li>
+          <li><strong>Strong balancing.</strong> The expert/device/communication aux losses in V2 — then the aux-loss-free bias controller in V3 (5.4) — keep realised load close to even, shrinking the overflow that capacity has to absorb.</li>
+          <li><strong>No token-dropping in V3.</strong> Because the bias-based balancing holds load so tight, DeepSeek-V3 reports training <strong>without dropping any tokens</strong> — the balance is good enough that capacity isn't the binding constraint. The train/infer gap closes.</li>
+        </ul>
+
+        <blockquote>The arc of MoE balancing: early models accept dropped tokens and tune a big capacity factor to limit the damage. DeepSeek instead drives balance hard enough — device-limited routing plus bias control — that it can train drop-free. Capacity stops being a quality dial and becomes just a safety margin.</blockquote>
+
+        <h2>Practical guidance</h2>
+
+        <ul>
+          <li><strong>Monitor the drop rate</strong> as a first-class training metric. A rising drop rate is an early warning of balance problems, often before loss curves show it.</li>
+          <li><strong>Don't fix imbalance with capacity.</strong> A huge <code>C</code> hides a balance bug behind padding FLOPs. Fix the balance (aux loss / bias / routing) and let <code>C</code> stay small.</li>
+          <li><strong>Match train and inference.</strong> If you serve drop-free, aim to train near drop-free too, so behaviour transfers.</li>
+          <li><strong>Account the padding.</strong> Effective MoE FLOPs include padded slots. A model that looks cheap on paper can be much more expensive at <code>C = 2.0</code>.</li>
+        </ul>
+
+        <p>That completes the mechanics of MoE — routing, visualisation, balancing loss, and capacity. Next, 5.6 assembles all of it into <strong>DeepSeekMoE</strong>: fine-grained experts, shared experts, and the specific architecture that made these ideas work at frontier scale.</p>
+
+        <h2>References</h2>
+        <ul>
+          <li>Lepikhin et al. (2020), <em>GShard</em> — capacity factor and token-dropping mechanics in expert parallelism. <a href="https://arxiv.org/abs/2006.16668" target="_blank">arXiv:2006.16668</a></li>
+          <li>Fedus et al. (2021), <em>Switch Transformers</em> — capacity factor trade-offs and drop-rate analysis. <a href="https://arxiv.org/abs/2101.03961" target="_blank">arXiv:2101.03961</a></li>
+          <li>Zhou et al. (2022), <em>Mixture-of-Experts with Expert Choice Routing</em> — drop-free expert-choice selection. <a href="https://arxiv.org/abs/2202.09368" target="_blank">arXiv:2202.09368</a></li>
+          <li>DeepSeek-AI (2024), <em>DeepSeek-V2</em> — device-limited routing and balancing. <a href="https://arxiv.org/abs/2405.04434" target="_blank">arXiv:2405.04434</a></li>
+          <li>DeepSeek-AI (2024), <em>DeepSeek-V3</em> — drop-free training via bias-based balancing. <a href="https://arxiv.org/abs/2412.19437" target="_blank">arXiv:2412.19437</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-5-4-aux-loss.html">← Auxiliary Loss</a>
+        <a href="deepseek-5-6-deepseekmoe.html">DeepSeekMoE →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Expert capacity</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The fixed number of token slots each expert gets per batch, needed for static-shape matmuls. capacity = ceil(C·T·k/N).</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Capacity factor (C)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Slack above the even share. C=1.0 is no headroom; C=1.25 allows 25% over fair share before overflow. Dials between dropped tokens (low) and wasted padding (high).</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Token dropping</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Overflow tokens beyond capacity skip the expert via the residual connection — no expert transform at that layer. Biased toward common patterns; real, uneven quality loss.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Padding waste</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Empty capacity slots filled with zeros to keep tensor shapes static; the matmul runs on nothing. The compute cost of an over-large capacity factor.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Device-limited routing</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">DeepSeek-V2 trick: restrict a token's selected experts to a few devices. Bounds all-to-all traffic and tightens per-device load, easing capacity pressure.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Drop-free training</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Training with no token dropping at all — possible in DeepSeek-V3 because bias-based balancing holds load tight enough that capacity never binds. Closes the train/infer gap.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=6"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

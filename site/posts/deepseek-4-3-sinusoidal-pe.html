@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sinusoidal Positional Encoding — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 4</p>
+        <p class="series-banner-title">Positional Encoding Evolution</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 3 of 5 · Phase 4 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-4-1-integer-pe.html" class="done">4.1 Integer PE</a>
+          <a href="deepseek-4-2-binary-pe.html" class="done">4.2 Binary PE</a>
+          <a href="deepseek-4-3-sinusoidal-pe.html" class="active">4.3 Sinusoidal</a>
+          <a href="deepseek-4-4-rope-visual.html">4.4 RoPE</a>
+          <a href="deepseek-4-5-why-rope-won.html">4.5 Why RoPE Won</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 18 min read · 3600 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Sinusoidal Positional Encoding.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-4</span>
+          <span class="tag">positional-encoding</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>This is the encoding the original Transformer shipped with — Section 3.5 of <em>Attention Is All You Need</em>, 2017. It takes binary's multi-frequency idea (4.2) and makes it continuous, fixing the discreteness and unlocking the property binary couldn't reach: relative distance recoverable through a fixed linear map. Every modern scheme, RoPE included, is a descendant of this formula.</p>
+
+        <h2>The formula</h2>
+
+        <p>For a token at position <code>pos</code> and an encoding of dimension <code>d_model</code>, sinusoidal PE fills each pair of dimensions <code>(2i, 2i+1)</code> with a sine and a cosine at a frequency set by <code>i</code>:</p>
+
+        <pre>PE(pos, 2i)   = sin( pos / 10000^(2i / d_model) )
+PE(pos, 2i+1) = cos( pos / 10000^(2i / d_model) )
+
+where:
+  pos  = token position (0, 1, 2, ...)
+  i    = dimension-pair index (0, 1, ..., d_model/2 - 1)
+  d_model = embedding dimension (e.g. 512)</pre>
+
+        <p>Define the per-pair frequency once and the rest reads cleanly:</p>
+
+        <pre>freq_i = 1 / 10000^(2i / d_model)
+
+PE(pos, 2i)   = sin(pos · freq_i)
+PE(pos, 2i+1) = cos(pos · freq_i)</pre>
+
+        <p>Low <code>i</code> → freq near 1 → fast oscillation (short wavelength), like binary's low bits. High <code>i</code> → freq near 1/10000 → slow oscillation (wavelength up to ~2π·10000), like binary's high bits. Same structure as the binary counter, now with smooth sines instead of square waves. The <code>10000</code> base sets the longest wavelength — geometric spacing of frequencies across the dimension index.</p>
+
+        <h2>A worked vector</h2>
+
+        <p>Take <code>d_model = 8</code>, so 4 frequency pairs. The per-pair frequencies:</p>
+
+        <pre>i=0: freq = 1 / 10000^(0/8)  = 1 / 1      = 1.0
+i=1: freq = 1 / 10000^(2/8)  = 1 / 10      = 0.1
+i=2: freq = 1 / 10000^(4/8)  = 1 / 100     = 0.01
+i=3: freq = 1 / 10000^(6/8)  = 1 / 1000    = 0.001</pre>
+
+        <p>Encoding for position 1:</p>
+
+        <pre>PE(1) = [ sin(1·1.0),   cos(1·1.0),
+          sin(1·0.1),   cos(1·0.1),
+          sin(1·0.01),  cos(1·0.01),
+          sin(1·0.001), cos(1·0.001) ]
+      = [ 0.841,  0.540,
+          0.0998, 0.995,
+          0.0100, 0.99995,
+          0.0010, 0.9999995 ]</pre>
+
+        <p>Note all values sit in [−1, 1] — bounded, requirement 1, no matter how large <code>pos</code> grows. The fast pair (i=0) moves substantially per step; the slow pairs barely budge. Adjacent positions get nearby vectors — continuous and differentiable, fixing binary's jaggedness (requirement 4).</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .s-f0 { fill: none; stroke: #c96442; stroke-width: 2; }
+              .s-f1 { fill: none; stroke: #f0c040; stroke-width: 2; }
+              .s-f2 { fill: none; stroke: #6b9e6b; stroke-width: 2; }
+              .s-f3 { fill: none; stroke: #5c87b5; stroke-width: 2; }
+              .s-axis { stroke: #948a78; stroke-width: 1; }
+              .s-lbl  { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; }
+              .s-hd   { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; }
+            </style>
+            <line x1="50" y1="115" x2="640" y2="115" class="s-axis"/>
+            <line x1="50" y1="20" x2="50" y2="210" class="s-axis"/>
+            <text x="20" y="30" class="s-lbl">+1</text>
+            <text x="20" y="118" class="s-lbl">0</text>
+            <text x="20" y="208" class="s-lbl">-1</text>
+            <text x="345" y="225" class="s-lbl" style="text-anchor:middle">position →</text>
+            <!-- fast sine i=0 freq 1.0 -->
+            <path class="s-f0" d="M50,115 Q70,25 90,115 T130,115 T170,115 T210,115 T250,115 T290,115 T330,115 T370,115 T410,115 T450,115 T490,115 T530,115 T570,115 T610,115"/>
+            <!-- i=1 freq 0.1 -->
+            <path class="s-f1" d="M50,115 C150,30 250,30 345,115 C440,200 540,200 640,115"/>
+            <!-- i=2 freq 0.01 slow -->
+            <path class="s-f2" d="M50,115 C250,75 450,55 640,40"/>
+            <!-- i=3 freq 0.001 slowest, nearly flat -->
+            <path class="s-f3" d="M50,115 L640,110"/>
+            <text x="600" y="22" class="s-hd" style="fill:#c96442">i=0 fast</text>
+            <text x="600" y="200" class="s-hd" style="fill:#f0c040">i=1</text>
+            <text x="560" y="48" class="s-hd" style="fill:#6b9e6b">i=2</text>
+            <text x="560" y="105" class="s-hd" style="fill:#5c87b5">i=3 slow</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Each dimension-pair is a sinusoid at a geometrically spaced frequency. Fast dims (red) resolve fine local position; slow dims (blue) track coarse global position. Smooth everywhere, unlike binary's square waves.</p>
+        </div>
+
+        <h2>The payoff: relative position via a linear map</h2>
+
+        <p>This is the property binary couldn't deliver, and it's why sinusoids were chosen. Claim: for any fixed offset <code>k</code>, the encoding at <code>pos + k</code> is a <strong>linear function</strong> of the encoding at <code>pos</code> — and the linear map depends only on <code>k</code>, not on <code>pos</code>.</p>
+
+        <p>It falls straight out of the angle-addition identities:</p>
+
+        <pre>sin(a + b) = sin(a)cos(b) + cos(a)sin(b)
+cos(a + b) = cos(a)cos(b) - sin(a)sin(b)</pre>
+
+        <p>For one frequency pair, write <code>θ = pos·freq_i</code> and the shift <code>φ = k·freq_i</code>. Then position <code>pos+k</code> has angle <code>θ + φ</code>:</p>
+
+        <pre>PE(pos+k, 2i)   = sin(θ + φ) = sin(θ)cos(φ) + cos(θ)sin(φ)
+PE(pos+k, 2i+1) = cos(θ + φ) = cos(θ)cos(φ) - sin(θ)sin(φ)
+
+In matrix form, per pair:
+
+[ PE(pos+k, 2i)   ]   [  cos(φ)   sin(φ) ] [ PE(pos, 2i)   ]
+[ PE(pos+k, 2i+1) ] = [ -sin(φ)   cos(φ) ] [ PE(pos, 2i+1) ]
+
+where φ = k·freq_i depends only on the offset k.</pre>
+
+        <p>That 2×2 matrix is a <strong>rotation</strong> by angle <code>φ</code>. Shifting position by <code>k</code> rotates each frequency pair by an angle proportional to <code>k</code>. The model can implement "look <code>k</code> tokens back" as one fixed linear transform that works at every absolute position. Relative position is now linearly accessible — requirement 5, met.</p>
+
+        <blockquote>Hold onto this: <strong>shifting position = rotating the encoding</strong>. Sinusoidal PE proves relative position is a rotation, but it still <em>adds</em> the encoding to the token embedding, so attention only recovers the rotation indirectly. RoPE (4.4) takes the rotation literally — apply it directly to Q and K — and the relative-distance property becomes exact and automatic. RoPE is sinusoidal's insight, applied at the right place.</blockquote>
+
+        <h2>How it plugs in</h2>
+
+        <p>Sinusoidal PE is computed once into a fixed table and <em>added</em> to token embeddings at the input, before layer 1:</p>
+
+        <pre>x_input[pos] = token_embedding[token_at_pos] + PE[pos]</pre>
+
+        <p>Zero learned parameters — the table is deterministic. It's injected only at the bottom of the stack; every attention layer then sees position information mixed into the residual stream. This "add at input" placement is exactly what later schemes question: the signal dilutes as it flows up through layers, and it's entangled with token content. RoPE instead injects position <em>inside</em> each attention layer, at Q/K, every layer.</p>
+
+        <h2>Why the 10000 base</h2>
+
+        <p>The base controls the longest wavelength — the slowest oscillation. With base 10000 and a few hundred dimensions, the slowest pair has a wavelength of order 2π·10000 ≈ 63000 tokens, so even very distant positions get distinguishable encodings before the slowest wave repeats. The fastest pair (i=0, wavelength 2π ≈ 6.28) resolves immediate neighbours. Together the frequency ladder spans fine-grained local order to coarse long-range order. Pick the base too small and long sequences alias (distant positions collide); too large and you waste resolution. 10000 was an empirical sweet spot — and the same base reappears in RoPE, where tuning it (NTK scaling, YaRN) is the lever for context extension, covered in 4.5.</p>
+
+        <h2>Strengths and the cracks</h2>
+
+        <p>What sinusoidal got right, and why it's still worth knowing:</p>
+
+        <ul>
+          <li><strong>No parameters</strong> — deterministic table, nothing to train, nothing to overfit.</li>
+          <li><strong>Bounded and smooth</strong> — values in [−1,1], differentiable, gradients flow.</li>
+          <li><strong>Relative position linearly accessible</strong> — the rotation property above.</li>
+          <li><strong>Defined for any position</strong> — the formula computes PE(100000) fine even if training stopped at 512.</li>
+        </ul>
+
+        <p>But the cracks that motivated successors:</p>
+
+        <ul>
+          <li><strong>Extrapolation is "defined" not "good."</strong> You <em>can</em> compute PE at unseen positions, but the model never trained on those activation patterns, so quality still degrades past training length — softer than integer PE's cliff, but real. Length extrapolation stays unsolved.</li>
+          <li><strong>Added, not applied.</strong> Because PE is added at the input, position and content share the residual stream and the signal attenuates through depth. Attention recovers relative position only implicitly via learned weights, not structurally.</li>
+          <li><strong>Absolute by construction.</strong> The encoding names absolute positions; relative distance is a derived convenience, not the native quantity. RoPE flips this — relative distance becomes the thing the dot product computes directly.</li>
+        </ul>
+
+        <table>
+          <thead>
+            <tr><th>Property</th><th>Binary</th><th>Sinusoidal</th><th>RoPE (4.4)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Continuous / smooth</td><td>✗</td><td>✓</td><td>✓</td></tr>
+            <tr><td>Relative pos as rotation</td><td>✗</td><td>✓ (implicit, added)</td><td>✓ (explicit, applied)</td></tr>
+            <tr><td>Injected where</td><td>input</td><td>input</td><td>every attn layer, on Q/K</td></tr>
+            <tr><td>Native quantity</td><td>absolute</td><td>absolute</td><td>relative</td></tr>
+            <tr><td>Long-context extension</td><td>✗</td><td>weak</td><td>strong (NTK/YaRN)</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Where this goes next</h2>
+
+        <p>Sinusoidal PE discovered that shifting position is rotation — but spent the discovery in the wrong place, adding a rotated vector to the input. Article 4.4 keeps the rotation and moves it: instead of adding a position vector to the embedding, <em>rotate the query and key vectors themselves</em> by a position-dependent angle, inside attention. The dot product of two rotated vectors then depends only on their angular difference — i.e. only on relative distance — exactly, automatically, at every layer. That's RoPE, and you've now seen the math it's built on.</p>
+
+        <h2>References</h2>
+        <ul>
+          <li>Vaswani et al. (2017), <em>Attention Is All You Need</em>, §3.5 — the original sinusoidal formula and the 10000 base. <a href="https://arxiv.org/abs/1706.03762" target="_blank">arXiv:1706.03762</a></li>
+          <li>Su et al. (2021), <em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em> — recasts the rotation insight as applied-to-Q/K. <a href="https://arxiv.org/abs/2104.09864" target="_blank">arXiv:2104.09864</a></li>
+          <li>Kazemnejad (2019), <em>The Positional Encoding</em> — clear derivation of the linear-shift property. <a href="https://kazemnejad.com/blog/transformer_architecture_positional_encoding/" target="_blank">kazemnejad.com</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-4-2-binary-pe.html">← Binary PE</a>
+        <a href="deepseek-4-4-rope-visual.html">RoPE Visual Guide →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Sinusoidal PE</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Original Transformer encoding. Each dimension-pair = sin/cos at a geometrically spaced frequency. Added to token embeddings at the input. Bounded, smooth, parameter-free.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">freq_i / wavelength</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">freq_i = 1/10000^(2i/d_model). Low i = high freq = short wavelength (fine local position); high i = low freq = long wavelength (coarse global position).</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Angle-addition identity</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">sin(a+b), cos(a+b) expansions. Make PE(pos+k) a fixed linear (rotation) transform of PE(pos), depending only on offset k. Source of the relative-position property.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Rotation matrix</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The 2×2 [[cosφ, sinφ],[−sinφ, cosφ]] that maps PE(pos) to PE(pos+k), φ=k·freq_i. Shifting position = rotating the encoding. RoPE applies this directly to Q/K.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">10000 base</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Constant setting the longest wavelength. Spans fine→coarse position resolution. Reused in RoPE; tuning it (NTK/YaRN) extends usable context length.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Added vs applied</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Sinusoidal PE is ADDED to embeddings at the input (signal dilutes with depth). RoPE is APPLIED as a rotation to Q/K inside every attention layer (structural, exact relative distance).</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

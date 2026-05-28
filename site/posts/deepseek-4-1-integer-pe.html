@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Integer Positional Encoding — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 4</p>
+        <p class="series-banner-title">Positional Encoding Evolution</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 1 of 5 · Phase 4 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-4-1-integer-pe.html" class="active">4.1 Integer PE</a>
+          <a href="deepseek-4-2-binary-pe.html">4.2 Binary PE</a>
+          <a href="deepseek-4-3-sinusoidal-pe.html">4.3 Sinusoidal</a>
+          <a href="deepseek-4-4-rope-visual.html">4.4 RoPE</a>
+          <a href="deepseek-4-5-why-rope-won.html">4.5 Why RoPE Won</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 14 min read · 2900 words <span class="difficulty beginner">beginner</span></p>
+        <h1>Integer Positional Encoding.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-4</span>
+          <span class="tag">positional-encoding</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Phase 3 ended on RoPE — the positional scheme baked into DeepSeek, LLaMA, and Mistral. But RoPE didn't appear from nowhere. It's the last step in a chain of failed-and-fixed ideas, each one patching the previous one's weakness. Phase 4 walks that chain from the start so RoPE feels inevitable rather than arbitrary.</p>
+
+        <p>This article is step zero: the most obvious way to tell a Transformer where each word sits — tag each token with its integer position. It's the idea everyone reaches for first. It also fails in instructive ways, and understanding exactly <em>why</em> it fails defines every requirement the later schemes must satisfy.</p>
+
+        <h2>Why position needs encoding at all</h2>
+
+        <p>Start with the problem. A Transformer processes all tokens in parallel through self-attention. Attention is a weighted sum over value vectors — and a sum doesn't care about order. Swap two tokens in the input and the attention output for the rest is identical. The mechanism is <strong>permutation-equivariant</strong>: shuffle the inputs, the outputs shuffle the same way, but no information about the original order survives.</p>
+
+        <p>That's fatal for language. "dog bites man" and "man bites dog" contain the same tokens. To the raw attention block they're indistinguishable. RNNs never had this problem — they consume tokens one at a time, so order is implicit in the processing sequence. Transformers traded that sequential bottleneck for parallelism, and the bill came due as a missing signal: the model has no idea what order the words arrived in.</p>
+
+        <blockquote>Self-attention is a set operation. Language is a sequence. Positional encoding is the bridge — it's the only place a vanilla Transformer learns that token order matters at all.</blockquote>
+
+        <p>So every token embedding needs a second signal injected: a representation of <em>where</em> it sits in the sequence. The question for the rest of Phase 4 is simply — what should that signal look like?</p>
+
+        <h2>The obvious first idea: just add the index</h2>
+
+        <p>Each token has a position: 0, 1, 2, 3, … Why not feed that integer straight into the model? Take the token embedding and add the position value to it.</p>
+
+        <pre>token "the"  at position 0  →  embedding + 0
+token "cat"  at position 1  →  embedding + 1
+token "sat"  at position 2  →  embedding + 2
+token "on"   at position 3  →  embedding + 3</pre>
+
+        <p>Clean, intuitive, zero parameters. The model can read the position straight off the input. For a 5-word sentence it even works fine. The trouble shows up the moment sequences get long — which, for an LLM trained on thousands of tokens, is always.</p>
+
+        <h2>Failure 1: unbounded magnitude wrecks the activations</h2>
+
+        <p>Neural networks want inputs in a small, stable range — roughly mean 0, variance 1. That's what weight initialisation, normalisation layers, and activation functions all assume. Token embeddings live in that range by design.</p>
+
+        <p>Now add raw position. At position 4000 you're adding 4000 to embedding values that sit around ±1. The position signal doesn't <em>complement</em> the token signal — it <strong>obliterates</strong> it. The actual word becomes rounding error against a giant position number.</p>
+
+        <pre>embedding values:   [ 0.4, -0.9,  0.2,  1.1, ... ]   ← carries word meaning
++ position 4000:    [ 4000.4, 3999.1, 4000.2, 4001.1, ... ]
+
+word meaning: now indistinguishable noise on top of ~4000</pre>
+
+        <p>Worse, the magnitude depends on sequence length. Position 10 and position 10000 produce activations that differ by three orders of magnitude. Gradients explode, normalisation layers thrash trying to rescale wildly different inputs, training destabilises. A signal whose scale grows without bound is the enemy of stable optimisation.</p>
+
+        <h2>Failure 2: normalising the index breaks cross-length consistency</h2>
+
+        <p>Obvious patch — bound the range. Divide every position by the sequence length so it lands in [0, 1].</p>
+
+        <pre>position 0 of 5    →  0 / 4    = 0.00
+position 1 of 5    →  1 / 4    = 0.25
+position 2 of 5    →  2 / 4    = 0.50
+position 4 of 5    →  4 / 4    = 1.00
+
+position 2 of 100  →  2 / 99   = 0.0202
+position 2 of 1000 →  2 / 999  = 0.0020</pre>
+
+        <p>Magnitude problem solved — everything sits in [0, 1]. But a new bug appears: <strong>the same position means different things in different-length sequences</strong>. "Second token" is 0.25 in a 5-token sentence and 0.002 in a 1000-token document. The model can never learn a stable notion of "position 2" because the number representing it shifts with total length.</p>
+
+        <p>And the step size between adjacent tokens shrinks as sequences grow. In a 5-token sequence neighbours differ by 0.25; in a 10000-token sequence by 0.0001. At long context, adjacent positions become numerically inseparable — the encoding can't even distinguish "next word" from "word after that."</p>
+
+        <h2>Failure 3: no generalisation to unseen lengths</h2>
+
+        <p>This is the one that matters most for LLMs, and it's worth stating sharply.</p>
+
+        <p>Suppose training sequences max out at 512 tokens. With normalised integer positions, the model has only ever seen the value 1.0 attached to "the last of 512 tokens." Deploy it on a 2000-token document and position 1000 maps to a normalised value (and an absolute step size) the model never encountered in training. It has no learned behaviour for that regime. Output quality falls off a cliff exactly when the input grows past training length.</p>
+
+        <p>This is the <strong>length extrapolation</strong> problem, and it becomes the central battleground of positional encoding. The whole reason RoPE eventually won (article 4.5) is that it extrapolates gracefully where these naive schemes shatter.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .p-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .p-bad { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .p-ok  { fill: #6b9e6b; stroke: #2a2620; stroke-width: 1.5; }
+              .p-txt { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .p-txw { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #ebe3cf; text-anchor: middle; dominant-baseline: middle; }
+              .p-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .p-hd  { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+            </style>
+            <text x="113" y="16" class="p-hd">Raw integer</text>
+            <text x="340" y="16" class="p-hd">Normalised /N</text>
+            <text x="567" y="16" class="p-hd">What we need</text>
+
+            <rect x="40" y="30" width="146" height="26" rx="3" class="p-bad"/>
+            <text x="113" y="43" class="p-txw">pos grows unbounded</text>
+            <rect x="40" y="62" width="146" height="26" rx="3" class="p-bad"/>
+            <text x="113" y="75" class="p-txw">swamps embedding</text>
+            <rect x="40" y="94" width="146" height="26" rx="3" class="p-bad"/>
+            <text x="113" y="107" class="p-txw">gradients explode</text>
+            <text x="113" y="138" class="p-lbl">✗ unstable training</text>
+
+            <rect x="267" y="30" width="146" height="26" rx="3" class="p-box"/>
+            <text x="340" y="43" class="p-txt">bounded [0,1] ✓</text>
+            <rect x="267" y="62" width="146" height="26" rx="3" class="p-bad"/>
+            <text x="340" y="75" class="p-txw">pos 2 shifts w/ len</text>
+            <rect x="267" y="94" width="146" height="26" rx="3" class="p-bad"/>
+            <text x="340" y="107" class="p-txw">no extrapolation</text>
+            <text x="340" y="138" class="p-lbl">✗ length-dependent</text>
+
+            <rect x="494" y="30" width="146" height="26" rx="3" class="p-ok"/>
+            <text x="567" y="43" class="p-txw">bounded magnitude</text>
+            <rect x="494" y="62" width="146" height="26" rx="3" class="p-ok"/>
+            <text x="567" y="75" class="p-txw">unique per position</text>
+            <rect x="494" y="94" width="146" height="26" rx="3" class="p-ok"/>
+            <text x="567" y="107" class="p-txw">length-independent</text>
+            <text x="567" y="138" class="p-lbl">✓ design target</text>
+
+            <line x1="40" y1="170" x2="640" y2="170" stroke="#948a78" stroke-width="1" stroke-dasharray="3 3"/>
+            <text x="340" y="192" class="p-hd">+ relative distance should be recoverable</text>
+            <text x="340" y="212" class="p-lbl">attention cares about "how far apart", not absolute index</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Both naive integer schemes fail. The right column is the requirements list every later encoding must satisfy.</p>
+        </div>
+
+        <h2>The requirements list this failure produces</h2>
+
+        <p>The two integer attempts failed, but productively — each failure pins down a property the encoding <em>must</em> have. Collect them and you get the design spec that the rest of Phase 4 chases:</p>
+
+        <ol>
+          <li><strong>Bounded magnitude.</strong> The position signal must stay in a fixed range regardless of how long the sequence is, so it never swamps the token embedding or destabilises training.</li>
+          <li><strong>Unique per position.</strong> Every position needs a distinct encoding, otherwise the model can't tell two tokens apart by location.</li>
+          <li><strong>Length-independent.</strong> "Position 2" must produce the same encoding in a 5-token and a 5000-token sequence. The meaning of a position cannot depend on total length.</li>
+          <li><strong>Deterministic and extrapolatable.</strong> Position 5000 should be computable even if training never exceeded 512, with behaviour that degrades gracefully rather than catastrophically.</li>
+          <li><strong>Relative distance recoverable.</strong> Attention fundamentally cares "how far apart are these two tokens", not "what is their absolute index." The encoding should make relative offset easy for the model to extract.</li>
+        </ol>
+
+        <p>That last requirement is subtle and turns out to be the deepest one. It's exactly what RoPE delivers natively (the dot product of two RoPE-rotated vectors depends only on their distance) and it's why RoPE eventually beat sinusoidal absolute encoding. We met that property already in Phase 3.5; Phase 4 builds up to <em>why</em> it's the property that matters.</p>
+
+        <h2>Where this goes next</h2>
+
+        <p>Integer encoding fails requirements 1, 3, and 4. The fix isn't a smarter scalar — it's a different representation entirely. Article 4.2 takes the first real step: instead of one number per position, use a <strong>vector</strong> of bits. Binary encoding bounds magnitude (every component is 0 or 1), gives every position a unique pattern, and — crucially — different bits flip at different frequencies. That frequency idea is the seed of everything that follows: sinusoidal encoding (4.3) is the smooth, continuous version of binary, and RoPE (4.4) is the rotational version of sinusoidal.</p>
+
+        <blockquote>The whole arc of Phase 4 is one idea getting refined: <em>encode position as a multi-frequency pattern, not a single magnitude.</em> Integer PE is the strawman that proves a single scalar can't work. Everything after is the search for the right multi-frequency vector.</blockquote>
+
+        <h2>References</h2>
+        <ul>
+          <li>Vaswani et al. (2017), <em>Attention Is All You Need</em> — introduces the permutation problem and the need for positional encoding. <a href="https://arxiv.org/abs/1706.03762" target="_blank">arXiv:1706.03762</a></li>
+          <li>Su et al. (2021), <em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em> — the destination of this arc; motivates relative-distance encoding. <a href="https://arxiv.org/abs/2104.09864" target="_blank">arXiv:2104.09864</a></li>
+          <li>Press et al. (2021), <em>Train Short, Test Long (ALiBi)</em> — frames length extrapolation as the core PE problem. <a href="https://arxiv.org/abs/2108.12409" target="_blank">arXiv:2108.12409</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-3-5-mla-rope.html">← MLA + RoPE</a>
+        <a href="deepseek-4-2-binary-pe.html">Binary PE →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Positional encoding</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">A signal added to (or applied on) token embeddings that tells a Transformer where each token sits in the sequence. Required because self-attention itself is order-blind.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Permutation equivariance</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Property of self-attention: shuffle the input tokens and the outputs shuffle identically — no order information is retained. This is the gap positional encoding fills.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Length extrapolation</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">A model's ability to handle sequences longer than its training maximum. Integer/normalised encodings fail here; RoPE with scaling (YaRN) succeeds. The central PE challenge.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Relative position</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The distance (t − s) between two tokens, as opposed to their absolute indices. Attention scores fundamentally depend on relative offset; good encodings make it easy to recover.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Absolute position</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">A token's index from the start of the sequence (0, 1, 2, …). Integer and sinusoidal encodings are absolute; RoPE turns absolute rotations into relative scores at attention time.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

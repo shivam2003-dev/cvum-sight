@@ -19,6 +19,9 @@
     const langSource = innerCode || pre;
     const langMatch = langSource.className.match(/language-(\w+)/);
     const lang = langMatch ? langMatch[1] : (pre.dataset.lang || 'text');
+    // Skip plain-text blocks (ASCII math, tables, numeric output) — no chrome, no copy button.
+    // Only real code (explicit language- class or data-lang) gets highlighting + copy.
+    if (lang === 'text') continue;
     const rawText = pre.textContent;
 
     try {

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Binary Positional Encoding — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 4</p>
+        <p class="series-banner-title">Positional Encoding Evolution</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 2 of 5 · Phase 4 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-4-1-integer-pe.html" class="done">4.1 Integer PE</a>
+          <a href="deepseek-4-2-binary-pe.html" class="active">4.2 Binary PE</a>
+          <a href="deepseek-4-3-sinusoidal-pe.html">4.3 Sinusoidal</a>
+          <a href="deepseek-4-4-rope-visual.html">4.4 RoPE</a>
+          <a href="deepseek-4-5-why-rope-won.html">4.5 Why RoPE Won</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 13 min read · 2700 words <span class="difficulty beginner">beginner</span></p>
+        <h1>Binary Positional Encoding.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-4</span>
+          <span class="tag">positional-encoding</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Article 4.1 ended with a requirements list: bounded magnitude, unique per position, length-independent, extrapolatable, relative distance recoverable. A single scalar can't hit all of them. The fix is to stop using one number and start using a <strong>vector</strong>.</p>
+
+        <p>Binary encoding is the simplest vector idea, and it's a genuinely useful stepping stone — not because anyone ships it, but because it introduces the one concept that survives all the way to RoPE: <strong>different dimensions oscillate at different frequencies</strong>. Sinusoidal encoding (4.3) is literally the continuous version of what you'll see here.</p>
+
+        <h2>The idea: write the position in binary</h2>
+
+        <p>Every integer has a binary representation. Instead of feeding position 5 as the scalar <code>5</code>, feed its bits as a vector <code>[1, 0, 1]</code>. Each bit gets its own dimension.</p>
+
+        <pre>pos 0  →  0 0 0 0
+pos 1  →  0 0 0 1
+pos 2  →  0 0 1 0
+pos 3  →  0 0 1 1
+pos 4  →  0 1 0 0
+pos 5  →  0 1 0 1
+pos 6  →  0 1 1 0
+pos 7  →  0 1 1 1
+pos 8  →  1 0 0 0
+...
+pos 15 →  1 1 1 1</pre>
+
+        <p>With <code>d</code> bits you address 2<sup>d</sup> distinct positions. 16 dimensions covers 65,536 positions; 20 dimensions covers over a million. Compact, and every position gets a guaranteed-unique pattern.</p>
+
+        <h2>Check it against the requirements</h2>
+
+        <p>Binary encoding clears several bars that integer encoding tripped on:</p>
+
+        <ul>
+          <li><strong>Bounded magnitude ✓</strong> — every component is 0 or 1. No matter how long the sequence, no value ever exceeds 1. The signal can never swamp the token embedding. This was integer PE's fatal flaw, and binary kills it outright.</li>
+          <li><strong>Unique per position ✓</strong> — binary representations are unique by construction. No two positions share a pattern (within range).</li>
+          <li><strong>Length-independent ✓</strong> — position 5 is <code>0101</code> whether the sequence is 8 tokens or 8000. The encoding of a position never depends on total length. This was the normalised-integer flaw, also killed.</li>
+          <li><strong>Deterministic ✓</strong> — computable for any position with a fixed rule, no training required, no learned table to overflow.</li>
+        </ul>
+
+        <p>Four of the five requirements, satisfied by a scheme you could implement in one line. That's real progress over Article 4.1.</p>
+
+        <h2>The key observation: bits are frequencies</h2>
+
+        <p>Here's the insight that makes binary worth studying. Look down each <em>column</em> of the table as position increases, and watch how often each bit flips:</p>
+
+        <pre>position:   0 1 2 3 4 5 6 7 8 9 ...
+            -------------------
+bit 0  →    0 1 0 1 0 1 0 1 0 1    flips every step    (fastest)
+bit 1  →    0 0 1 1 0 0 1 1 0 0    flips every 2 steps
+bit 2  →    0 0 0 0 1 1 1 1 0 0    flips every 4 steps
+bit 3  →    0 0 0 0 0 0 0 0 1 1    flips every 8 steps  (slowest)</pre>
+
+        <p>Each bit is a square wave with its own period. The low bit toggles fastest (period 2), each higher bit half as fast (period 4, 8, 16, …). The position is encoded by the <em>combination of phases</em> across these different-frequency channels. This is exactly a binary counter — and it's exactly the structure of sinusoidal encoding, except sinusoidal swaps the abrupt square waves for smooth sine/cosine curves.</p>
+
+        <blockquote>This is the load-bearing idea of all of Phase 4: encode position as a stack of oscillations at geometrically spaced frequencies. Fast dimensions capture fine local position; slow dimensions capture coarse global position. Binary is the discrete prototype; sinusoidal and RoPE are the continuous refinements.</blockquote>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .b-wave { fill: none; stroke: #c96442; stroke-width: 2; }
+              .b-axis { stroke: #948a78; stroke-width: 1; }
+              .b-lbl  { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; }
+              .b-hd   { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; }
+            </style>
+            <!-- bit 0: fastest -->
+            <text x="8" y="30" class="b-hd">bit 0</text>
+            <text x="8" y="42" class="b-lbl">fast</text>
+            <polyline class="b-wave" points="60,40 60,15 80,15 80,40 100,40 100,15 120,15 120,40 140,40 140,15 160,15 160,40 180,40 180,15 200,15 200,40 220,40 220,15 240,15 240,40 260,40 260,15 280,15 280,40 300,40 300,15 320,15 320,40 340,40 340,15 360,15 360,40 380,40 380,15 400,15 400,40 420,40 420,15 440,15 440,40 460,40 460,15 480,15 480,40 500,40 500,15 520,15 520,40 540,40 540,15 560,15 560,40 580,40 580,15 600,15 600,40 620,40"/>
+            <!-- bit 1 -->
+            <text x="8" y="85" class="b-hd">bit 1</text>
+            <polyline class="b-wave" points="60,95 60,70 100,70 100,95 140,95 140,70 180,70 180,95 220,95 220,70 260,70 260,95 300,95 300,70 340,70 340,95 380,95 380,70 420,70 420,95 460,95 460,70 500,70 500,95 540,95 540,70 580,70 580,95 620,95"/>
+            <!-- bit 2 -->
+            <text x="8" y="140" class="b-hd">bit 2</text>
+            <polyline class="b-wave" points="60,150 60,125 140,125 140,150 220,150 220,125 300,125 300,150 380,150 380,125 460,125 460,150 540,150 540,125 620,125"/>
+            <!-- bit 3: slowest -->
+            <text x="8" y="195" class="b-hd">bit 3</text>
+            <text x="8" y="207" class="b-lbl">slow</text>
+            <polyline class="b-wave" points="60,205 60,180 220,180 220,205 380,205 380,180 540,180 540,205 620,205"/>
+            <line x1="60" y1="215" x2="620" y2="215" class="b-axis"/>
+            <text x="340" y="216" class="b-lbl" style="text-anchor:middle" dy="-2"> </text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Each binary bit is a square wave at a different frequency. Low bits oscillate fast, high bits slow. Position = the phase pattern across all frequencies. Sinusoidal PE replaces these squares with smooth sines.</p>
+        </div>
+
+        <h2>Why binary still isn't good enough</h2>
+
+        <p>Binary clears four requirements but stumbles on the fifth — and the fifth is the one that drives the rest of the field. The problem is that binary values are <strong>discrete</strong>: each component jumps abruptly between 0 and 1 with nothing in between.</p>
+
+        <h3>Problem 1: discreteness fights gradient descent</h3>
+
+        <p>Neural networks learn through smooth gradients. A function that snaps from 0 to 1 with no intermediate values has a derivative that's zero almost everywhere and undefined at the jump. The model can't learn a smooth relationship between nearby positions, because "nearby in position" doesn't map to "nearby in encoding." Positions 7 (<code>0111</code>) and 8 (<code>1000</code>) are adjacent in sequence but differ in <em>every single bit</em> — maximally far apart in encoding space. The representation is jagged exactly where you want it smooth.</p>
+
+        <h3>Problem 2: relative distance is not recoverable</h3>
+
+        <p>This is requirement 5, and binary fails it. There's no clean operation on two binary position vectors that yields their distance. Compare <code>0011</code> (pos 3) and <code>0101</code> (pos 5): the gap is 2, but nothing about the bit patterns exposes "2" in a way attention can use linearly. Hamming distance counts differing bits, not positional distance — positions 7 and 8 have Hamming distance 4 despite being adjacent. The encoding scrambles the very quantity attention needs most.</p>
+
+        <pre>pos 3:  0 0 1 1
+pos 5:  0 1 0 1     true distance = 2
+
+pos 7:  0 1 1 1
+pos 8:  1 0 0 0     true distance = 1, but ALL bits differ</pre>
+
+        <p>Attention scores depend on dot products. For relative position to be recoverable, the dot product of two position encodings should be a smooth function of their distance. Binary's discrete bit patterns give no such function. This is the gap that smooth sinusoids — and later RoPE's rotations — close.</p>
+
+        <h2>The bridge to sinusoidal</h2>
+
+        <p>Binary handed us the frequency idea but in a broken, discrete wrapper. The fix writes itself: keep the multi-frequency structure, throw away the discreteness. Replace each square wave with a smooth sine wave at the same frequency.</p>
+
+        <pre>binary bit (discrete):   square wave, values ∈ {0, 1}
+sinusoidal dim (smooth): sine wave,  values ∈ [-1, 1]</pre>
+
+        <p>A sine wave is continuous and differentiable everywhere, so adjacent positions get nearby encodings — gradients flow. And — the deep payoff — sinusoids have a trigonometric identity (sin/cos angle-addition) that lets a fixed linear transform shift one position's encoding to another's. That's precisely what makes relative distance recoverable, the requirement binary couldn't meet. Article 4.3 develops exactly this.</p>
+
+        <table>
+          <thead>
+            <tr><th>Requirement</th><th>Integer</th><th>Binary</th><th>Sinusoidal (next)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Bounded magnitude</td><td>✗</td><td>✓</td><td>✓</td></tr>
+            <tr><td>Unique per position</td><td>✓</td><td>✓</td><td>✓</td></tr>
+            <tr><td>Length-independent</td><td>✗</td><td>✓</td><td>✓</td></tr>
+            <tr><td>Smooth / differentiable</td><td>✓</td><td>✗</td><td>✓</td></tr>
+            <tr><td>Relative distance recoverable</td><td>✗</td><td>✗</td><td>✓</td></tr>
+          </tbody>
+        </table>
+
+        <blockquote>Binary's contribution isn't a usable encoding — it's the realisation that position is naturally a multi-frequency signal. Once you see position as "a stack of oscillators," sinusoidal and RoPE stop looking like clever tricks and start looking like the obvious continuous version of counting in binary.</blockquote>
+
+        <h2>References</h2>
+        <ul>
+          <li>Vaswani et al. (2017), <em>Attention Is All You Need</em> — Section 3.5 motivates sinusoidal encoding as a continuous multi-frequency scheme. <a href="https://arxiv.org/abs/1706.03762" target="_blank">arXiv:1706.03762</a></li>
+          <li>Su et al. (2021), <em>RoFormer (RoPE)</em> — extends the frequency idea to rotations for native relative encoding. <a href="https://arxiv.org/abs/2104.09864" target="_blank">arXiv:2104.09864</a></li>
+          <li>Amirhossein Kazemnejad (2019), <em>Transformer Architecture: The Positional Encoding</em> — widely cited explainer using the binary-counter analogy. <a href="https://kazemnejad.com/blog/transformer_architecture_positional_encoding/" target="_blank">kazemnejad.com</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-4-1-integer-pe.html">← Integer PE</a>
+        <a href="deepseek-4-3-sinusoidal-pe.html">Sinusoidal PE →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Binary encoding</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Represent position by its binary digits, one bit per dimension. Bounded (0/1), unique, length-independent — but discrete, so gradients and relative distance break.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Frequency (PE)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">How fast a dimension oscillates as position advances. Low bits/dims = high frequency (fast flips, fine resolution); high bits/dims = low frequency (slow, coarse resolution).</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Hamming distance</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Number of differing bits between two binary strings. Does NOT equal positional distance — adjacent positions 7 and 8 differ in all 4 bits — which is why binary can't expose relative position.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Discreteness problem</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Binary components jump abruptly between 0 and 1. Derivative is zero/undefined, so the model can't learn smooth position relationships. Sinusoids fix this with continuous values.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Multi-frequency signal</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Encoding position as a stack of oscillators at geometrically spaced frequencies. The core idea binary introduces and sinusoidal/RoPE inherit.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

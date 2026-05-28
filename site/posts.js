@@ -16,6 +16,66 @@
 
 const POSTS = [
   {
+    slug: "deepseek-4-5-why-rope-won",
+    title: "Why RoPE Won.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-4", "rope"],
+    time: 17,
+    words: 3500,
+    excerpt: "RoPE beat learned PE, sinusoidal, T5 bias, and ALiBi on five axes: exact relative position for free, applied every layer, magnitude-preserving, graceful decay, drop-in cheap. Plus the catch — extrapolation needs NTK/YaRN scaling, the path that gives DeepSeek 128K context.",
+    series: "deepseek",
+    seriesNum: "4.5"
+  },
+  {
+    slug: "deepseek-4-4-rope-visual",
+    title: "RoPE — A Visual Guide.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-4", "rope"],
+    time: 19,
+    words: 3800,
+    excerpt: "Rotate, don't add. RoPE turns position into angle: rotate Q and K by m·θ so the dot product depends only on relative offset (n−m) — exactly, every layer, parameter-free. Full derivation, the rotate_half trick, complex-number view, and the tie-back to MLA's decoupled RoPE.",
+    series: "deepseek",
+    seriesNum: "4.4"
+  },
+  {
+    slug: "deepseek-4-3-sinusoidal-pe",
+    title: "Sinusoidal Positional Encoding.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-4", "positional-encoding"],
+    time: 18,
+    words: 3600,
+    excerpt: "The original Transformer encoding. Binary's frequencies made continuous: sin/cos at a geometric frequency ladder. The angle-addition identity reveals the deep payoff — shifting position is a rotation — the insight RoPE later applies directly to Q and K.",
+    series: "deepseek",
+    seriesNum: "4.3"
+  },
+  {
+    slug: "deepseek-4-2-binary-pe",
+    title: "Binary Positional Encoding.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-4", "positional-encoding"],
+    time: 13,
+    words: 2700,
+    excerpt: "Stop using one number, use a vector of bits. Binary fixes magnitude and length-dependence — and introduces the load-bearing idea of all of Phase 4: position is a multi-frequency signal. It still fails on discreteness and relative distance, which sinusoids fix.",
+    series: "deepseek",
+    seriesNum: "4.2"
+  },
+  {
+    slug: "deepseek-4-1-integer-pe",
+    title: "Integer Positional Encoding.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "transformers", "phase-4", "positional-encoding"],
+    time: 14,
+    words: 2900,
+    excerpt: "Self-attention is order-blind — and the obvious fix (tag each token with its index) fails three ways: unbounded magnitude, length-dependence, no extrapolation. Those failures define the requirements list every later encoding must satisfy. Step zero of the road to RoPE.",
+    series: "deepseek",
+    seriesNum: "4.1"
+  },
+  {
     slug: "on-policy-distillation-paper-juice",
     title: "Rethinking On-Policy Distillation — When Copying the Teacher Stops Working.",
     date: "May 27, 2026",

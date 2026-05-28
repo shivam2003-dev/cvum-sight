@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoPE — A Visual Guide — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=21">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var w=localStorage.getItem("cvam-lw");if(w&&w!=="lw-normal")document.documentElement.classList.add(w);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 4</p>
+        <p class="series-banner-title">Positional Encoding Evolution</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 4 of 5 · Phase 4 of 10</p>
+        <div class="series-banner-nav">
+          <a href="deepseek-4-1-integer-pe.html" class="done">4.1 Integer PE</a>
+          <a href="deepseek-4-2-binary-pe.html" class="done">4.2 Binary PE</a>
+          <a href="deepseek-4-3-sinusoidal-pe.html" class="done">4.3 Sinusoidal</a>
+          <a href="deepseek-4-4-rope-visual.html" class="active">4.4 RoPE</a>
+          <a href="deepseek-4-5-why-rope-won.html">4.5 Why RoPE Won</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · ml · 19 min read · 3800 words <span class="difficulty advanced">advanced</span></p>
+        <h1>RoPE — A Visual Guide.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">deepseek</span>
+          <span class="tag">transformers</span>
+          <span class="tag">phase-4</span>
+          <span class="tag">rope</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>Article 4.3 ended on one sentence: shifting position is a rotation. Sinusoidal PE proved it but spent the insight in the wrong place — adding a rotated vector to the input. RoPE (Rotary Position Embedding, Su et al. 2021) takes the rotation literally. Don't add anything. <strong>Rotate the query and key vectors themselves by an angle proportional to their position.</strong> This article builds RoPE visually from that single move.</p>
+
+        <p>We met RoPE operationally in Phase 3.5 (decoupled RoPE inside MLA). This is the from-the-ground-up version: what the rotation does, why the dot product comes out depending only on relative distance, and how it's actually computed.</p>
+
+        <h2>The core move: rotate, don't add</h2>
+
+        <p>Take a query vector. Split it into 2D pairs of components — exactly like sinusoidal's dimension pairs. For a token at position <code>m</code>, rotate each pair by angle <code>m·θ_i</code>, where <code>θ_i</code> is a per-pair frequency (same geometric ladder as sinusoidal):</p>
+
+        <pre>θ_i = 10000^(-2i/d)      # i = pair index, d = head dim
+
+For a 2D pair (x, y) of the query at position m:
+
+[ x' ]   [ cos(m·θ_i)   -sin(m·θ_i) ] [ x ]
+[ y' ] = [ sin(m·θ_i)    cos(m·θ_i) ] [ y ]</pre>
+
+        <p>That's it. The query at position 0 is unrotated. At position 1, every pair turns by <code>θ_i</code>. At position 2, by <code>2θ_i</code>. Position becomes <strong>angle</strong>. The vector's length is untouched (rotations preserve magnitude) — only its direction encodes where the token sits.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .r-circ { fill: none; stroke: #948a78; stroke-width: 1; stroke-dasharray: 3 3; }
+              .r-ax   { stroke: #948a78; stroke-width: 1; }
+              .r-v0   { stroke: #c96442; stroke-width: 2.5; fill: none; marker-end: url(#rv); }
+              .r-v1   { stroke: #f0c040; stroke-width: 2.5; fill: none; marker-end: url(#rv2); }
+              .r-v2   { stroke: #6b9e6b; stroke-width: 2.5; fill: none; marker-end: url(#rv3); }
+              .r-lbl  { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; }
+              .r-sub  { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+            </style>
+            <defs>
+              <marker id="rv" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#c96442"/></marker>
+              <marker id="rv2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#f0c040"/></marker>
+              <marker id="rv3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#6b9e6b"/></marker>
+            </defs>
+            <!-- panel 1 pos 0 -->
+            <circle cx="115" cy="100" r="60" class="r-circ"/>
+            <line x1="45" y1="100" x2="185" y2="100" class="r-ax"/>
+            <line x1="115" y1="30" x2="115" y2="170" class="r-ax"/>
+            <line x1="115" y1="100" x2="170" y2="78" class="r-v0"/>
+            <text x="115" y="200" class="r-sub">position 0</text>
+            <text x="115" y="213" class="r-sub">angle 0°</text>
+            <!-- panel 2 pos 1 -->
+            <circle cx="340" cy="100" r="60" class="r-circ"/>
+            <line x1="270" y1="100" x2="410" y2="100" class="r-ax"/>
+            <line x1="340" y1="30" x2="340" y2="170" class="r-ax"/>
+            <line x1="340" y1="100" x2="385" y2="55" class="r-v1"/>
+            <text x="340" y="200" class="r-sub">position 1</text>
+            <text x="340" y="213" class="r-sub">rotated by θ</text>
+            <!-- panel 3 pos 2 -->
+            <circle cx="565" cy="100" r="60" class="r-circ"/>
+            <line x1="495" y1="100" x2="635" y2="100" class="r-ax"/>
+            <line x1="565" y1="30" x2="565" y2="170" class="r-ax"/>
+            <line x1="565" y1="100" x2="585" y2="44" class="r-v2"/>
+            <text x="565" y="200" class="r-sub">position 2</text>
+            <text x="565" y="213" class="r-sub">rotated by 2θ</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Same vector, three positions. RoPE rotates it by m·θ. Magnitude unchanged; direction carries position. Each dimension-pair has its own θ_i, so it spins at its own rate.</p>
+        </div>
+
+        <h2>Why the dot product gives relative distance — exactly</h2>
+
+        <p>This is the whole point, and it's clean. Query at position <code>m</code>, key at position <code>n</code>. RoPE rotates the query by <code>m·θ</code> and the key by <code>n·θ</code>. The attention score is their dot product. For a single 2D pair, a rotation by angle <code>α</code> is <code>R(α)</code>, and rotations have two facts we need:</p>
+
+        <pre>R(α)ᵀ = R(-α)           # transpose of a rotation = inverse rotation
+R(α)·R(β) = R(α+β)      # rotations compose by adding angles</pre>
+
+        <p>Now expand the score between rotated query <code>q</code> and rotated key <code>k</code>:</p>
+
+        <pre>score = (R(mθ) q) · (R(nθ) k)
+      = (R(mθ) q)ᵀ (R(nθ) k)
+      = qᵀ R(mθ)ᵀ R(nθ) k
+      = qᵀ R(-mθ) R(nθ) k
+      = qᵀ R((n-m)θ) k          ← depends ONLY on (n - m)</pre>
+
+        <p>The absolute positions <code>m</code> and <code>n</code> cancel. What survives is <code>R((n−m)θ)</code> — a rotation by the <strong>relative</strong> offset. Two tokens 5 apart produce the same positional contribution whether they sit at (0,5) or (1000,1005). Relative distance isn't approximated or learned — it's structurally what the dot product computes. This is requirement 5 from 4.1, finally met exactly, and it's the property sinusoidal only reached implicitly.</p>
+
+        <blockquote>Sinusoidal added a rotated vector and hoped attention would learn to read off the offset. RoPE rotates Q and K so the offset falls out of the dot product algebraically. Same trig identity, applied at the right place — and the difference between "implicit" and "exact" is the whole reason RoPE won.</blockquote>
+
+        <h2>Per-pair frequencies: fast and slow spins</h2>
+
+        <p>RoPE doesn't rotate every pair by the same angle. Like sinusoidal, each pair <code>i</code> has its own frequency <code>θ_i = 10000^(−2i/d)</code>:</p>
+
+        <pre>pair 0:  θ = 1.0       → spins fast, full revolutions over short distances
+pair 1:  θ = 0.1       → 10× slower
+pair 2:  θ = 0.01      → 100× slower
+...
+pair d/2-1: θ ≈ 1e-4   → barely moves across the whole sequence</pre>
+
+        <p>Fast pairs resolve fine local distance (is this token 1 or 2 away?); slow pairs resolve coarse global distance (same paragraph or 3000 tokens back?). The model reads relative position at multiple scales simultaneously — the multi-frequency idea from binary (4.2), now expressed as multi-rate rotation. The slowest frequencies are exactly the ones that matter for long-context extension, which is where NTK/YaRN scaling acts (4.5).</p>
+
+        <h2>How it's actually computed</h2>
+
+        <p>You don't build block-diagonal rotation matrices. RoPE has an efficient elementwise form. For a vector <code>x</code> of head dimension <code>d</code> at position <code>m</code>, precompute <code>cos</code> and <code>sin</code> tables of the per-element angles, then:</p>
+
+        <pre># angles: for each pair i, angle = m · θ_i, applied to dims (2i, 2i+1)
+# cos[m], sin[m] are length-d vectors (each angle repeated across its pair)
+
+def rotate_half(x):
+    x1 = x[..., 0::2]      # even dims
+    x2 = x[..., 1::2]      # odd dims
+    return interleave(-x2, x1)   # [-x2_0, x1_0, -x2_1, x1_1, ...]
+
+def apply_rope(x, cos, sin):
+    return x * cos + rotate_half(x) * sin
+
+# applied to Q and K right before the attention dot product:
+q_rope = apply_rope(q, cos[positions], sin[positions])
+k_rope = apply_rope(k, cos[positions], sin[positions])
+scores = q_rope @ k_rope.transpose(-1, -2)   # already relative-position aware</pre>
+
+        <p>Two elementwise multiplies and an add per vector — negligible cost, no parameters. Crucially, RoPE is applied to Q and K <strong>inside every attention layer</strong>, not added once at the input. Position information is re-injected at every layer and never dilutes through depth. Values (V) are left unrotated — only the score computation needs position.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .e-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .e-hi  { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .e-acc { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .e-t   { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: middle; dominant-baseline: middle; }
+              .e-tw  { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #ebe3cf; text-anchor: middle; dominant-baseline: middle; }
+              .e-l   { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #948a78; text-anchor: middle; }
+              .e-ar  { stroke: #2a2620; stroke-width: 1.5; fill: none; marker-end: url(#ea); }
+            </style>
+            <defs><marker id="ea" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#2a2620"/></marker></defs>
+            <rect x="30" y="80" width="90" height="26" rx="3" class="e-box"/>
+            <text x="75" y="93" class="e-t">x (hidden)</text>
+            <line x1="120" y1="93" x2="160" y2="93" class="e-ar"/>
+            <rect x="162" y="60" width="70" height="22" rx="3" class="e-box"/>
+            <text x="197" y="71" class="e-t">q = W_Q x</text>
+            <rect x="162" y="104" width="70" height="22" rx="3" class="e-box"/>
+            <text x="197" y="115" class="e-t">k = W_K x</text>
+            <line x1="232" y1="71" x2="272" y2="71" class="e-ar"/>
+            <line x1="232" y1="115" x2="272" y2="115" class="e-ar"/>
+            <rect x="274" y="60" width="96" height="22" rx="3" class="e-hi"/>
+            <text x="322" y="71" class="e-t">RoPE(q, m)</text>
+            <rect x="274" y="104" width="96" height="22" rx="3" class="e-hi"/>
+            <text x="322" y="115" class="e-t">RoPE(k, n)</text>
+            <text x="322" y="40" class="e-l">rotate by position angle</text>
+            <line x1="370" y1="71" x2="410" y2="85" class="e-ar"/>
+            <line x1="370" y1="115" x2="410" y2="101" class="e-ar"/>
+            <rect x="412" y="80" width="110" height="26" rx="3" class="e-acc"/>
+            <text x="467" y="93" class="e-tw">qᵀk = f(n − m)</text>
+            <line x1="522" y1="93" x2="562" y2="93" class="e-ar"/>
+            <rect x="564" y="80" width="86" height="26" rx="3" class="e-box"/>
+            <text x="607" y="93" class="e-t">softmax · V</text>
+            <text x="467" y="125" class="e-l">depends only on relative offset</text>
+            <text x="340" y="160" class="e-l" style="font-size:9px;fill:#c96442">applied INSIDE every attention layer — not added at input</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — RoPE pipeline. Q and K are rotated by their position angles before the dot product; the score depends only on (n−m). Repeated in every layer. V is untouched.</p>
+        </div>
+
+        <h2>Complex-number view (optional, elegant)</h2>
+
+        <p>A 2D rotation is multiplication by a unit complex number. Pack each pair <code>(x, y)</code> as <code>x + iy</code>. RoPE at position <code>m</code> is then:</p>
+
+        <pre>q_rotated = q · e^(i·m·θ)
+k_rotated = k · e^(i·n·θ)
+
+score (real part of conjugate product):
+  q_rotated · conj(k_rotated) = q·conj(k) · e^(i·(m-n)·θ)
+                              → phase depends only on (m - n)</pre>
+
+        <p>Same result, one line: rotating by position and taking the dot product leaves a phase that's purely the relative offset. The complex form is why you'll see RoPE described as "applying a complex rotation" in the RoFormer paper and DeepSeek's code.</p>
+
+        <h2>Connecting back to MLA (Phase 3.5)</h2>
+
+        <p>Now Phase 3.5 makes full sense. MLA caches a compressed latent for K, but RoPE must rotate K by its absolute position before the dot product — and you can't bake a position-dependent rotation cleanly into a position-independent cached latent. DeepSeek's decoupled RoPE splits K into a content part (from the latent, no rotation) and a small dedicated RoPE part <code>k^R</code> (rotated). The relative-distance property you just derived is exactly what the <code>k^R</code> path preserves; the content path carries semantics. That whole design exists to keep <em>this</em> dot-product-gives-relative-distance behaviour intact under latent compression.</p>
+
+        <h2>What RoPE delivers against the requirements list</h2>
+
+        <ul>
+          <li><strong>Bounded ✓</strong> — rotations preserve magnitude; nothing grows with position.</li>
+          <li><strong>Unique ✓</strong> — distinct angle per position (within the slowest wavelength).</li>
+          <li><strong>Length-independent ✓</strong> — angle is <code>m·θ</code>, a fixed function of absolute position, never of sequence length.</li>
+          <li><strong>Smooth ✓</strong> — rotation is continuous in <code>m</code>; gradients flow.</li>
+          <li><strong>Relative distance recoverable ✓ (exactly)</strong> — the dot product depends only on <code>(n−m)</code>, structurally.</li>
+          <li><strong>Bonus: applied every layer, parameter-free, extrapolatable</strong> — sets up the long-context story in 4.5.</li>
+        </ul>
+
+        <p>For the first time, every requirement from 4.1 is met — and the hardest one (relative distance) is met <em>exactly</em>, not approximately. Article 4.5 closes Phase 4 by asking the comparative question: given sinusoidal, learned, ALiBi, and RoPE all exist, why did RoPE specifically become the standard — and where it still needs help (NTK scaling, YaRN) for million-token context.</p>
+
+        <h2>References</h2>
+        <ul>
+          <li>Su et al. (2021), <em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em> — the RoPE paper; rotation formulation and complex-number derivation. <a href="https://arxiv.org/abs/2104.09864" target="_blank">arXiv:2104.09864</a></li>
+          <li>DeepSeek-AI (2024), <em>DeepSeek-V2</em> — decoupled RoPE inside MLA. <a href="https://arxiv.org/abs/2405.04434" target="_blank">arXiv:2405.04434</a></li>
+          <li>EleutherAI, <em>Rotary Embeddings: A Relative Revolution</em> — popular visual explainer. <a href="https://blog.eleuther.ai/rotary-embeddings/" target="_blank">blog.eleuther.ai</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="deepseek-4-3-sinusoidal-pe.html">← Sinusoidal PE</a>
+        <a href="deepseek-4-5-why-rope-won.html">Why RoPE Won →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">RoPE</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Rotary Position Embedding. Rotates Q and K vectors by an angle m·θ proportional to position, inside every attention layer. The score dot product then depends only on relative offset (n−m).</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Rotation composition</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">R(α)ᵀR(β)=R(β−α). Why RoPE's dot product cancels absolute positions and leaves only relative distance. The algebraic heart of the method.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">θ_i (per-pair freq)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">θ_i = 10000^(−2i/d). Each dimension-pair spins at its own rate: fast pairs resolve local distance, slow pairs resolve long-range distance. Same frequency ladder as sinusoidal.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">rotate_half</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The elementwise trick: x*cos + rotate_half(x)*sin computes the pairwise rotation without building rotation matrices. Two muls + an add. How RoPE is implemented in practice.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Complex form</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Pack pairs as x+iy; RoPE = multiply by e^(i·m·θ). The conjugate product leaves a phase of (m−n)·θ — relative offset. The RoFormer paper's native formulation.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Decoupled RoPE</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">MLA's adaptation (Phase 3.5): split K into unrotated content (from latent) + small rotated k^R. Keeps RoPE's relative-distance property under latent KV compression.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=3"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

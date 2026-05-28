@@ -103,6 +103,79 @@
     grid.innerHTML = html;
   }
 
+  // ── home page: stat card ──
+  const statPosts = document.getElementById("stat-posts");
+  if (statPosts && typeof POSTS !== "undefined") {
+    const totalWords = POSTS.reduce((s, p) => s + (p.words || 0), 0);
+    const totalMins = POSTS.reduce((s, p) => s + (p.time || 0), 0);
+    const topics = new Set(POSTS.map(p => p.cat)).size;
+    statPosts.textContent = POSTS.length;
+    const w = document.getElementById("stat-words");
+    if (w) w.textContent = totalWords >= 1000 ? Math.round(totalWords / 1000) + "k" : totalWords;
+    const t = document.getElementById("stat-topics");
+    if (t) t.textContent = topics;
+    const m = document.getElementById("stat-mins");
+    if (m) m.textContent = totalMins;
+  }
+
+  // ── home page: topic chips ──
+  const topicChips = document.getElementById("topic-chips");
+  if (topicChips && typeof POSTS !== "undefined") {
+    const counts = {};
+    POSTS.forEach(p => { counts[p.cat] = (counts[p.cat] || 0) + 1; });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    topicChips.innerHTML = sorted.map(([cat, count]) =>
+      `<a href="archive.html?cat=${encodeURIComponent(cat)}">${escapeHtml(cat)} <span class="tc-count">${count}</span></a>`
+    ).join("");
+  }
+
+  // ── home page: search ──
+  const searchInput = document.getElementById("site-search");
+  const searchResults = document.getElementById("search-results");
+  const searchClear = document.getElementById("search-clear");
+  if (searchInput && searchResults && typeof POSTS !== "undefined") {
+    function runSearch(q) {
+      q = q.trim().toLowerCase();
+      if (!q) {
+        document.body.classList.remove("searching");
+        searchResults.hidden = true;
+        searchResults.innerHTML = "";
+        if (searchClear) searchClear.hidden = true;
+        return;
+      }
+      document.body.classList.add("searching");
+      searchResults.hidden = false;
+      if (searchClear) searchClear.hidden = false;
+      const terms = q.split(/\s+/);
+      const matches = POSTS.filter(p => {
+        const hay = (p.title + " " + p.excerpt + " " + p.cat + " " + p.tags.join(" ")).toLowerCase();
+        return terms.every(term => hay.includes(term));
+      });
+      if (!matches.length) {
+        searchResults.innerHTML = `<div class="search-empty">no articles match "${escapeHtml(q)}" — try a broader term.</div>`;
+        return;
+      }
+      searchResults.innerHTML =
+        `<p class="search-count">${matches.length} result${matches.length !== 1 ? "s" : ""} for "${escapeHtml(q)}"</p>` +
+        `<div class="search-grid">${matches.map(renderPostCard).join("")}</div>`;
+    }
+    searchInput.addEventListener("input", function () { runSearch(this.value); });
+    if (searchClear) searchClear.addEventListener("click", function () {
+      searchInput.value = "";
+      runSearch("");
+      searchInput.focus();
+    });
+    // allow ?q= deep link and "/" focus shortcut
+    const qp = new URLSearchParams(window.location.search).get("q");
+    if (qp) { searchInput.value = qp; runSearch(qp); }
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "/" && document.activeElement !== searchInput) {
+        e.preventDefault();
+        searchInput.focus();
+      }
+    });
+  }
+
   // ── archive page ──
   const archiveList = document.getElementById("archive-list");
   if (archiveList && typeof POSTS !== "undefined") {

@@ -16,6 +16,78 @@
 
 const POSTS = [
   {
+    slug: "deepseek-5-6-deepseekmoe",
+    title: "The DeepSeekMoE Architecture.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "moe", "phase-5", "architecture"],
+    time: 18,
+    words: 3700,
+    excerpt: "The synthesis: two changes to the classic MoE block — fine-grained expert segmentation and shared expert isolation — that design around routing's messy reality instead of fighting it. Why DeepSeek's MoE works at 671B params with only 37B active.",
+    series: "deepseek",
+    seriesNum: "5.6"
+  },
+  {
+    slug: "deepseek-5-5-capacity-factor",
+    title: "Capacity Factor & Token Dropping.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "moe", "phase-5", "systems"],
+    time: 15,
+    words: 3100,
+    excerpt: "The systems half of MoE balancing. Hardware needs fixed-size buffers known before the batch runs — that requirement is where capacity factor and token dropping come from, and how DeepSeek arranges things so almost nothing gets dropped.",
+    series: "deepseek",
+    seriesNum: "5.5"
+  },
+  {
+    slug: "deepseek-5-4-aux-loss",
+    title: "Auxiliary Loss & Load Balancing.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "moe", "phase-5", "load-balancing"],
+    time: 17,
+    words: 3600,
+    excerpt: "A router left alone piles tokens onto a few experts and starves the rest. The load-balancing auxiliary loss is the force that stops it — the exact formula, why it works, why it quietly damages the model, and the bias trick DeepSeek-V3 used to delete it.",
+    series: "deepseek",
+    seriesNum: "5.4"
+  },
+  {
+    slug: "deepseek-5-3-visualizing-experts",
+    title: "Visualizing Experts.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "moe", "phase-5", "interpretability"],
+    time: 14,
+    words: 2900,
+    excerpt: "\"Expert 7 handles Python\" is a useful first picture and almost entirely wrong. What experts actually specialise in, why the clean story fails, and what real routing patterns imply for MoE design.",
+    series: "deepseek",
+    seriesNum: "5.3"
+  },
+  {
+    slug: "deepseek-5-2-routing",
+    title: "MoE Routing.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "moe", "phase-5", "routing"],
+    time: 17,
+    words: 3500,
+    excerpt: "The router is the brain of an MoE layer — it decides which experts run for every token at every layer. The gating math, the choices that matter, and the non-differentiability problem hiding inside top-k.",
+    series: "deepseek",
+    seriesNum: "5.2"
+  },
+  {
+    slug: "deepseek-5-1-intro-moe",
+    title: "Introduction to Mixture of Experts.",
+    date: "May 29, 2026",
+    cat: "ml",
+    tags: ["ml", "deepseek", "moe", "phase-5", "transformers"],
+    time: 16,
+    words: 3300,
+    excerpt: "Attention is only half a Transformer block — the FFN is where most params and compute live. MoE is the idea that lets DeepSeek scale that half to hundreds of billions of params while paying for only a small slice per token.",
+    series: "deepseek",
+    seriesNum: "5.1"
+  },
+  {
     slug: "deepseek-4-5-why-rope-won",
     title: "Why RoPE Won.",
     date: "May 29, 2026",

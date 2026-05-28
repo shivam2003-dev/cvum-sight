@@ -99,8 +99,17 @@
       </a>`;
     });
 
-    html += standalone.map(renderPostCard).join("");
+    // Home feed stays light: only the most recent standalone posts.
+    // Full list lives in the archive.
+    const RECENT_LIMIT = 6;
+    const recent = standalone.slice(0, RECENT_LIMIT);
+    html += recent.map(renderPostCard).join("");
     grid.innerHTML = html;
+
+    const moreLink = document.getElementById("feed-more");
+    if (moreLink && standalone.length > RECENT_LIMIT) {
+      moreLink.hidden = false;
+    }
   }
 
   // ── home page: stat card ──

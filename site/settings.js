@@ -12,10 +12,6 @@
     { id: "text-md", label: "M" },
     { id: "text-lg", label: "L" }
   ];
-  var WIDTHS = [
-    { id: "lw-normal", label: "Normal" },
-    { id: "lw-wide",   label: "Wide" }
-  ];
   var FONTS = [
     { id: "font-sans", label: "Sans" },
     { id: "font-serif", label: "Serif" },
@@ -25,13 +21,9 @@
 
   var savedTheme = localStorage.getItem("cvam-theme") || "matcha";
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
-  // migrate anyone who had lw-narrow stored → lw-normal
-  var savedWidth = localStorage.getItem("cvam-lw") || "lw-normal";
-  if (savedWidth === "lw-narrow") {
-    savedWidth = "lw-normal";
-    localStorage.setItem("cvam-lw", "lw-normal");
-    document.documentElement.classList.remove("lw-narrow");
-  }
+  // line width now adaptive (CSS clamp) — clear any legacy override
+  localStorage.removeItem("cvam-lw");
+  document.documentElement.classList.remove("lw-narrow", "lw-wide");
 
   var btn = document.createElement("button");
   btn.className = "settings-btn";
@@ -60,11 +52,6 @@
     return '<button class="fs-btn' + active + '" data-size="' + s.id + '">' + s.label + '</button>';
   }).join("");
 
-  var lwBtns = WIDTHS.map(function (w) {
-    var active = w.id === savedWidth ? " active" : "";
-    return '<button class="lw-btn' + active + '" data-lw="' + w.id + '">' + w.label + '</button>';
-  }).join("");
-
   var fontBtns = FONTS.map(function (f) {
     var active = f.id === savedFont ? " active" : "";
     return '<button class="font-btn' + active + '" data-font="' + f.id + '">' + f.label + '</button>';
@@ -80,10 +67,6 @@
     '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
       '<label class="seg-label">Text size</label>' +
       '<div class="seg-row font-size-row">' + sizeBtns + '</div>' +
-    '</div>' +
-    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:6px;">' +
-      '<label class="seg-label">Line width</label>' +
-      '<div class="seg-row lw-row">' + lwBtns + '</div>' +
     '</div>' +
     '<div class="settings-divider"></div>' +
     '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
@@ -155,17 +138,4 @@
     });
   });
 
-  var lwBtnEls = panel.querySelectorAll(".lw-btn");
-  lwBtnEls.forEach(function (lwBtn) {
-    lwBtn.addEventListener("click", function () {
-      var lw = this.getAttribute("data-lw");
-      WIDTHS.forEach(function (w) { document.documentElement.classList.remove(w.id); });
-      if (lw !== "lw-normal") {
-        document.documentElement.classList.add(lw);
-      }
-      localStorage.setItem("cvam-lw", lw);
-      lwBtnEls.forEach(function (b) { b.classList.remove("active"); });
-      this.classList.add("active");
-    });
-  });
 })();

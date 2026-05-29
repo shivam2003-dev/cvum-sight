@@ -60,7 +60,7 @@
       </div>
 
       <div class="post-header">
-        <p class="meta">May 30, 2026 · paperjuice · 22 min read · 4500 words <span class="difficulty advanced">advanced</span></p>
+        <p class="meta">May 30, 2026 · paperjuice · 27 min read · 5400 words <span class="difficulty advanced">advanced</span></p>
         <h1>Diffusion Model Predictive Control — Planning by Painting the Future.</h1>
         <div class="tag-row">
           <span class="tag fill">paperjuice</span>
@@ -243,6 +243,102 @@
           time. For many real control problems — where the objective genuinely shifts — that's the
           trade you want.
         </blockquote>
+
+        <h2>A vocabulary refresher (so the rest lands)</h2>
+        <p>
+          Three families of methods, one quick map:
+        </p>
+        <ul>
+          <li><strong>Model-free RL</strong> — learn a policy $\pi(a \mid s)$ directly: state in, action
+            out. Fast at run time, but the goal is baked into the weights. Change the reward and you
+            retrain. Examples: SAC, TD3, CQL.</li>
+          <li><strong>Model-based RL with a learned policy</strong> — learn a dynamics model, use it to
+            train a policy. Better sample efficiency, still a frozen policy at the end.</li>
+          <li><strong>Planning / MPC</strong> — learn a dynamics model, but <em>don't</em> distill a
+            policy; instead search over action sequences at run time using the model. The goal lives in
+            a reward function you pass in during planning, so it's swappable. D-MPC lives here.</li>
+        </ul>
+        <p>
+          The reason planning lost popularity is precisely the reason D-MPC is interesting: learned
+          dynamics models were too inaccurate over multi-step rollouts to plan against, so model-free
+          reflexes won on raw performance. Fix the accuracy and planning's flexibility becomes free
+          upside.
+        </p>
+
+        <h2>Why diffusion beats the usual proposal tricks</h2>
+        <p>
+          The action proposal is doing more work than it looks. A planner is only as good as the
+          candidates it bothers to evaluate — score a thousand nonsense action sequences and you learn
+          nothing. Prior planners proposed candidates in limited ways:
+        </p>
+        <ul>
+          <li><strong>Gaussian noise around a mean</strong> (CEM / MPPI style) — jitter each action
+            independently. Produces incoherent sequences: step 3 doesn't "know" what step 2 did, so the
+            candidate trajectories look like twitchy noise rather than purposeful motion.</li>
+          <li><strong>Autoregressive policy rollout</strong> — sample actions one at a time from a learned
+            policy. Coherent, but narrow — it only proposes what the policy already prefers, so the
+            planner can't discover anything the base policy wouldn't have done.</li>
+          <li><strong>Diffusion proposal (D-MPC)</strong> — generate a whole multi-step action sequence
+            as one joint sample. Coherent <em>and</em> diverse: the model has learned the manifold of
+            plausible action sequences from the offline data, so its candidates are realistic
+            multi-step behaviours, not jitter and not policy-clones.</li>
+        </ul>
+        <p>
+          Same story on the dynamics side. The multi-step diffusion dynamics model generates the future
+          state window jointly, so the candidate futures it hands the reward function are internally
+          consistent — no snowballing one-step error to mislead the scoring.
+        </p>
+
+        <h2>The trick for run-time rewards: guidance</h2>
+        <p>
+          How does a model that never trained on your new reward suddenly optimize it? The mechanism is
+          the same one image diffusion models use to follow a text prompt: <strong>guidance</strong>.
+          During the denoising that generates a trajectory, you nudge each step toward regions of higher
+          reward. The unconditional diffusion model supplies "what trajectories are physically
+          plausible"; the reward gradient supplies "which of those I actually want." Multiply them
+          together and you sample plausible <em>and</em> high-reward trajectories.
+        </p>
+        <p>
+          That factorization is the whole reason the reward can be swapped at run time. Plausibility
+          lives in the (fixed) learned diffusion model; preference lives in the (swappable) reward. You
+          never retrain the expensive part to chase a new objective.
+        </p>
+
+        <details class="math-optional">
+          <summary>optional read — reward guidance during denoising</summary>
+          <div class="math-inner">
+          <p>
+            A diffusion model samples a trajectory $\tau$ by reversing a noising process, following the
+            score $\nabla_\tau \log p(\tau)$ at each denoising step. To bias sampling toward high reward
+            $r(\tau)$, add the reward gradient:
+          </p>
+          <p>
+            $$\nabla_\tau \log\big[p(\tau)\, e^{\,\alpha\, r(\tau)}\big] \;=\; \underbrace{\nabla_\tau \log p(\tau)}_{\text{plausible (fixed model)}} \;+\; \underbrace{\alpha\, \nabla_\tau r(\tau)}_{\text{preference (swappable)}}$$
+          </p>
+          <p>
+            The temperature $\alpha$ trades realism against greedy reward-chasing. Because the first term
+            is the frozen learned model and the second is just the reward you pass in, a brand-new
+            $r(\cdot)$ at run time changes only the second term — no retraining. This is also how D-MPC
+            adapts to novel dynamics: re-condition the dynamics diffusion on observed transitions.
+          </p>
+          </div>
+        </details>
+
+        <h2>What D4RL actually measures</h2>
+        <p>
+          D4RL (Datasets for Deep Data-Driven RL) is the field's standard offline-RL gym. The relevant
+          slices here are continuous-control locomotion (HalfCheetah, Hopper, Walker2d) under dataset
+          qualities like <code>medium</code>, <code>medium-replay</code>, and <code>medium-expert</code> —
+          i.e. you learn from logged trajectories of varying skill, never touching the live environment
+          during training. It's a brutal test of a dynamics model: the offline data has gaps, and a
+          planner that hallucinates good outcomes in those gaps gets punished.
+        </p>
+        <p>
+          D-MPC's results there — beating prior MPC methods like <strong>MBOP</strong> and matching SOTA
+          model-based and model-free RL — are the evidence that the multi-step diffusion dynamics model
+          is accurate enough to plan against. And beating earlier <strong>diffusion planners (Diffuser)</strong>
+          shows the gain is the specific propose-and-simulate design, not just "add diffusion."
+        </p>
 
         <h2>Honest limitations</h2>
         <ul>

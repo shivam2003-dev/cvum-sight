@@ -60,7 +60,7 @@
       </div>
 
       <div class="post-header">
-        <p class="meta">May 30, 2026 · paperjuice · 28 min read · 5800 words <span class="difficulty expert">expert</span></p>
+        <p class="meta">May 30, 2026 · paperjuice · 34 min read · 6900 words <span class="difficulty expert">expert</span></p>
         <h1>Pre-training Under Infinite Compute — Optimizing for Data, Not FLOPs.</h1>
         <div class="tag-row">
           <span class="tag fill">paperjuice</span>
@@ -104,6 +104,24 @@
         <p>
           So "infinite compute" is not a free lunch. The question becomes: what knobs convert surplus
           compute into <em>lower asymptotic loss</em> on fixed data, rather than into overfitting?
+        </p>
+
+        <h2>Background: Chinchilla and the data wall</h2>
+        <p>
+          To feel the inversion, recall the Chinchilla result (2022). Given a fixed compute budget
+          $C \approx 6ND$ (for $N$ parameters and $D$ tokens), it asked how to split $C$ between $N$ and
+          $D$ to minimize loss, and found you should scale them <em>together</em> — roughly 20 tokens
+          per parameter. The whole framing assumes compute is the binding constraint and data is
+          abundant enough to feed whatever model size you pick.
+        </p>
+        <p>
+          That assumption is breaking. Compute (GPUs, FLOPs) keeps growing exponentially; high-quality
+          human text does not. Estimates put the stock of useful public text in the low tens of
+          trillions of tokens — and frontier runs are already there. So the realistic future constraint
+          flips: you have <em>more</em> compute than you can spend without re-reading the same tokens
+          many times. Chinchilla-optimal advice ("just scale $N$ and $D$ together") becomes
+          inapplicable because you <em>can't</em> scale $D$. The question is no longer "how to spend
+          compute" but "how to extract maximum signal from a fixed $D$ when compute is nearly free."
         </p>
 
         <h2>Lever 1 — regularization, turned way up</h2>
@@ -231,6 +249,57 @@
           parameter scaling, ensembling — to push the data-bound loss floor as low as possible, then
           distill that capability into a compact model that's cheap to deploy. The expensive part stays
           offline; the served artifact is small.
+        </p>
+
+        <h2>Why ensembles win at the limit — the bias–variance view</h2>
+        <p>
+          The ensemble result isn't a free-floating trick; it falls out of bias–variance. A single
+          model's error decomposes into bias (systematic error from the model class) plus variance (how
+          much the fit wobbles with training randomness) plus irreducible noise. Heavy regularization
+          fights variance by constraining the model — but past a point it adds bias, and that's the floor
+          a single regularized model can't get under.
+        </p>
+        <p>
+          Averaging $K$ independently trained models attacks variance from a different direction: their
+          individual errors are partly uncorrelated, so the average cancels the wobble without adding the
+          bias that more regularization would. That's why an ensemble's asymptote sits <em>below</em> any
+          single regularized model's — it's buying variance reduction that regularization can only get by
+          paying in bias. Under infinite compute, training many models is cheap, so this is a natural
+          place to spend the surplus.
+        </p>
+
+        <h2>The full recipe, stacked</h2>
+        <p>
+          The levers compose, and the order tells a story. Read it as a checklist for data-bound
+          pre-training:
+        </p>
+        <ol>
+          <li><strong>Epoch the data</strong> — accept multiple passes over the fixed corpus (the only
+            way to spend more compute on fixed $D$).</li>
+          <li><strong>Crank regularization</strong> — retune weight decay (~30× standard) so epoching
+            doesn't overfit. This is what makes the loss-vs-size curve monotone instead of U-turning.</li>
+          <li><strong>Scale parameters</strong> — grow $N$ along the now-clean power law toward its
+            asymptote $E$.</li>
+          <li><strong>Scale ensembles</strong> — train $K$ models and average, pushing the asymptote
+            below the single-model floor.</li>
+          <li><strong>Distill</strong> — compress the ensemble into one student ~8× smaller, keeping
+            ~83% of the gain, so serving stays cheap.</li>
+        </ol>
+        <p>
+          Each step exists to unblock the next: you can't safely epoch without heavy regularization, the
+          power law only appears once overfitting is tamed, ensembling only helps once each member is
+          well-regularized, and distillation only matters because the ensemble is otherwise unservable.
+        </p>
+
+        <h2>The data-efficiency numbers, in context</h2>
+        <p>
+          The payoffs — match baseline at 200M tokens with <strong>5.17× less data</strong>, a
+          <strong>9%</strong> eval improvement, and <strong>17.5×</strong> data efficiency over continued
+          pre-training on math — all say the same thing in different units: <em>the same tokens, worth
+          much more.</em> The math number is the most pointed. Continued pre-training on a small, precious
+          domain corpus (where you genuinely cannot get more tokens) is exactly the data-bound regime in
+          miniature, and a 17.5× stretch there is the difference between a domain adaptation that works
+          and one that overfits and fails.
         </p>
 
         <h2>Why this is an important paper for researchers</h2>

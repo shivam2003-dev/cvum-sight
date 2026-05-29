@@ -60,7 +60,7 @@
       </div>
 
       <div class="post-header">
-        <p class="meta">May 29, 2026 · paperjuice · 22 min read · 4600 words <span class="difficulty advanced">advanced</span></p>
+        <p class="meta">May 29, 2026 · paperjuice · 28 min read · 5500 words <span class="difficulty advanced">advanced</span></p>
         <h1>Speculative Speculative Decoding — Guessing the Guess Before It Lands.</h1>
         <div class="tag-row">
           <span class="tag fill">paperjuice</span>
@@ -288,6 +288,110 @@
           ordinary speculative decoding. Good draft–target pairing is still doing the heavy lifting —
           SSD just stops wasting the idle time when that pairing is good.
         </p>
+
+        <h2>A worked example, token by token</h2>
+        <p>
+          Concrete numbers make the idea click. Say the draft model proposes $k = 4$ tokens to continue
+          "The capital of France is":
+        </p>
+        <pre>draft proposes:   [" Paris", " ,", " a", " beautiful"]
+target verifies:  [" Paris" ✓, " ," ✓, " a" ✓, " beautiful" ✗ → " city"]</pre>
+        <p>
+          The verifier agrees on the first three tokens and rejects the fourth, substituting its own
+          "bonus" token (" city"). Acceptance length $a = 3$. Under plain speculative decoding, the loop
+          now emits those 4 tokens, <em>then</em> wakes the draft model and asks for 4 fresh guesses
+          starting from "…is Paris , a city". That draft call is pure latency — the GPU was idle waiting
+          for the verify result before it even knew where to draft from.
+        </p>
+        <p>
+          SSD's move: <em>during</em> the verify pass above, the draft model already produced candidate
+          continuations for each possible outcome $a = 0,1,2,3,4$. The instant verification reports
+          $a = 3$, SSD returns its prepared "continue-from-accept-3" draft. No draft call on the critical
+          path — the drafting latency was folded into time the big model was busy anyway.
+        </p>
+
+        <h2>The latency anatomy: why there's a gap to fill</h2>
+        <p>
+          To see why this is nearly free, look at where time goes in one speculative step. The verify
+          pass is a single forward pass of the <em>big</em> model over $k+1$ positions — the expensive
+          part, and on modern accelerators it's usually <strong>memory-bandwidth bound</strong>:
+          you're streaming billions of weights through the cores and the actual matmuls don't saturate
+          the compute units. The draft pass is several forward passes of a <em>small</em> model — cheap
+          in FLOPs but strictly serial relative to verification.
+        </p>
+        <p>
+          So a big, slow, bandwidth-bound op (verify) runs next to a small, compute-light op (draft) that
+          has nothing to do but wait. Textbook setup for overlap: slot the small thing into the idle
+          compute headroom of the big thing. "Slot into the headroom" is exactly Challenge 3 — and it's
+          harder than it sounds on real hardware.
+        </p>
+
+        <h2>How much can you save? The probability tree</h2>
+        <p>
+          The expected speedup hinges on one thing: <strong>how predictable the acceptance length
+          is.</strong> Treat the verification outcome as a random variable $A$ over $\{0,\dots,k\}$. If
+          $A$ is sharply peaked — a well-matched draft model that almost always gets 3 or 4 tokens
+          accepted — then pre-drafting just two branches (accept-3, accept-4) covers most of the
+          probability, and you almost always hit a prepared branch.
+        </p>
+        <p>
+          If $A$ is spread out — an erratic draft model, acceptance all over the place — no small set of
+          prepared branches covers the likely outcomes, you miss often, and SSD degrades gracefully back
+          toward ordinary speculative decoding (you just ate some wasted draft compute).
+        </p>
+
+        <details class="math-optional">
+          <summary>optional read — expected drafting overhead eliminated</summary>
+          <div class="math-inner">
+          <p>
+            Let $p_a = \Pr[A = a]$ be the acceptance-length distribution and $S \subseteq \{0,\dots,k\}$
+            the set of outcomes you pre-draft (chosen by Challenge 1's budget allocation). The fraction
+            of steps where drafting latency is fully hidden is
+          </p>
+          <p>
+            $$P_{\text{hit}} = \sum_{a \in S} p_a$$
+          </p>
+          <p>
+            and expected per-step draft latency drops from $t_{\text{draft}}$ to about
+            $(1 - P_{\text{hit}})\, t_{\text{draft}}$, minus the scheduling cost of running the
+            pre-emptive drafts concurrently. Because acceptance distributions for well-tuned
+            draft–target pairs are heavily concentrated, even $|S| = 2$ or $3$ pushes $P_{\text{hit}}$
+            high — which is why the average ~30% gain appears without preparing all $k+1$ branches.
+          </p>
+          </div>
+        </details>
+
+        <h2>Where SSD sits in the inference stack</h2>
+        <p>
+          Worth placing against neighbours, because the fast-inference space is crowded:
+        </p>
+        <ul>
+          <li><strong>Medusa / EAGLE</strong> — improve the <em>draft</em> step (extra prediction heads,
+            feature-level drafting) so acceptance lengths rise. SSD is orthogonal: it removes the serial
+            <em>wait</em> regardless of how drafting is done, and a better draft model only sharpens
+            SSD's branch prediction.</li>
+          <li><strong>Tree attention / token trees</strong> — verify many candidate continuations in one
+            pass by packing them into a tree. SSD's pre-emptive branches are a tree <em>over
+            verification outcomes</em>, not over token continuations — a different axis.</li>
+          <li><strong>Plain speculative decoding</strong> — the baseline SSD beats by ~30%. SSD is a
+            strict superset: disable pre-emptive drafting and you're back to it.</li>
+        </ul>
+        <p>
+          Mental model: most acceleration work gets <em>more accepted tokens per verify</em>. SSD removes
+          a <em>fixed serial cost</em> that sat between every verify. Those gains stack.
+        </p>
+
+        <h2>Practical takeaways</h2>
+        <ul>
+          <li><strong>Inference-time</strong> change — no retraining, drop-in on an existing draft–target
+            pair.</li>
+          <li>The win scales with <strong>draft–target alignment</strong>. Tune a well-matched draft
+            model first; SSD then converts the predictable acceptance into hidden latency.</li>
+          <li>The hard part is <strong>systems</strong>, not theory — concurrency scheduling (Challenge 3)
+            is what makes the overlap real, implemented in Saguaro against open-source engines.</li>
+          <li>Diminishing returns when acceptance is unpredictable, but it never runs slower than
+            speculative decoding by more than the wasted-draft budget you permit.</li>
+        </ul>
 
         <p>
           <a href="https://arxiv.org/abs/2603.03251" target="_blank">arXiv:2603.03251</a> —

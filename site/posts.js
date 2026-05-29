@@ -16,6 +16,66 @@
 
 const POSTS = [
   {
+    slug: "ycpc-1-speculative-speculative-decoding",
+    title: "Speculative Speculative Decoding — Guessing the Guess Before It Lands.",
+    date: "May 29, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "inference", "speculative-decoding", "llm-serving"],
+    time: 22,
+    words: 4600,
+    excerpt: "Speculative decoding has a hidden serial step of its own. SSD (Saguaro) parallelizes the draft↔verify loop — the draft model pre-guesses verification outcomes while verification runs — for ~30% over speculative baselines and up to 5× over plain decoding.",
+    series: "yc-paper-club",
+    seriesNum: "1"
+  },
+  {
+    slug: "ycpc-2-diffusion-mpc",
+    title: "Diffusion Model Predictive Control — Planning by Painting the Future.",
+    date: "May 30, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "reinforcement-learning", "diffusion-models", "control"],
+    time: 22,
+    words: 4500,
+    excerpt: "D-MPC learns both a multi-step action proposal and a multi-step dynamics model as diffusion models, then plans online. Matches SOTA offline RL on D4RL while adapting to new rewards and dynamics at run time — flexibility a frozen policy can't have.",
+    series: "yc-paper-club",
+    seriesNum: "2"
+  },
+  {
+    slug: "ycpc-3-leworldmodel",
+    title: "LeWorldModel — A World Model That Refuses to Collapse.",
+    date: "May 30, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "world-models", "jepa", "self-supervised"],
+    time: 21,
+    words: 4400,
+    excerpt: "JEPAs collapse without elaborate tricks. LeWM trains end-to-end from raw pixels with just two loss terms and one hyperparameter (down from six) — 15M params, single GPU, 48× faster planning, and it actually learns physics.",
+    series: "yc-paper-club",
+    seriesNum: "3"
+  },
+  {
+    slug: "ycpc-4-deep-learning-not-mysterious",
+    title: "Deep Learning is Not So Mysterious or Different — Demystifying Generalization.",
+    date: "May 30, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "generalization", "learning-theory", "pac-bayes"],
+    time: 22,
+    words: 4500,
+    excerpt: "Benign overfitting, double descent, overparametrization — Andrew Gordon Wilson argues none are unique to neural nets, and old theory explains them. Soft inductive biases, PAC-Bayes, and what actually does make deep learning special.",
+    series: "yc-paper-club",
+    seriesNum: "4"
+  },
+  {
+    slug: "ycpc-5-pretraining-infinite-compute",
+    title: "Pre-training Under Infinite Compute — Optimizing for Data, Not FLOPs.",
+    date: "May 30, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "scaling-laws", "pretraining", "data-efficiency"],
+    time: 28,
+    words: 5800,
+    excerpt: "Compute grows faster than text. When data is fixed and compute is free, defaults break: weight decay 30× standard, fit asymptotes instead of point budgets, ensemble scaling, then distill 8× smaller. Written deeper for PhD readers.",
+    series: "yc-paper-club",
+    seriesNum: "5"
+  },
+  {
     slug: "locate-anything-paper-juice",
     title: "LocateAnything — Teaching a Vision-Language Model to See Boxes All At Once.",
     date: "May 29, 2026",

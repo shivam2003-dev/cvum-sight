@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pre-training Under Infinite Compute — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=27">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  details.math-optional { border-left: 3px solid #141413; padding: 12px 16px; margin: 16px 0; background: rgba(42,38,32,0.35); border-radius: 0 6px 6px 0; }
+  details.math-optional summary { cursor: pointer; font-family: var(--font-body); font-style: italic; color: #262625; font-size: 0.95rem; list-style: none; user-select: none; }
+  details.math-optional summary::-webkit-details-marker { display: none; }
+  details.math-optional summary::before { content: '▸ '; font-style: normal; }
+  details.math-optional[open] summary::before { content: '▾ '; }
+  details.math-optional .math-inner { margin-top: 12px; }
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]})"></script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">YC Paper Club</p>
+        <p class="series-banner-title">Pre-training Under Infinite Compute</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Paper 5 of 5 · Scaling Laws · PhD depth</p>
+        <div class="series-banner-nav">
+          <a href="ycpc-1-speculative-speculative-decoding.html" class="done">1. Speculative²</a>
+          <a href="ycpc-2-diffusion-mpc.html" class="done">2. Diffusion-MPC</a>
+          <a href="ycpc-3-leworldmodel.html" class="done">3. LeWorldModel</a>
+          <a href="ycpc-4-deep-learning-not-mysterious.html" class="done">4. DL Not Mysterious</a>
+          <a href="ycpc-5-pretraining-infinite-compute.html" class="active">5. Infinite Compute</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 30, 2026 · paperjuice · 28 min read · 5800 words <span class="difficulty expert">expert</span></p>
+        <h1>Pre-training Under Infinite Compute — Optimizing for Data, Not FLOPs.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">scaling-laws</span>
+          <span class="tag">pretraining</span>
+          <span class="tag">data-efficiency</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          This one is pitched deeper than the rest of the series — written for readers comfortable with
+          scaling laws, regularization, and the language of asymptotics. If you do LLM research, this is
+          the paper in the batch most likely to change how you set up an experiment.
+        </p>
+
+        <p>
+          The premise is a clean inversion of the last decade. The Chinchilla era asked: <em>given a
+          fixed compute budget, how should I split it between model size and data?</em> Compute was the
+          scarce resource. But compute is growing far faster than the supply of high-quality web text.
+          So Konwoo Kim, Suhas Kotha, Percy Liang, and Tatsunori Hashimoto (arXiv:2509.14786) flip the
+          constraint: <strong>data is fixed, compute is effectively infinite. Now what?</strong>
+        </p>
+
+        <blockquote>
+          The regime shift: stop optimizing loss per FLOP and start optimizing loss per <em>token of
+          data</em>. When compute is free, the only scarce thing left is information, and the entire
+          recipe changes.
+        </blockquote>
+
+        <h2>The first observation: naive scaling overfits</h2>
+        <p>
+          The obvious move under infinite compute is "just train a bigger model longer on the data you
+          have." The paper shows this <strong>eventually overfits</strong>. Past a point, more
+          parameters and more epochs on a fixed corpus drive training loss down while validation loss
+          turns back up. The standard data-constrained playbook hits a wall — it does not monotonically
+          benefit from extra compute.
+        </p>
+        <p>
+          So "infinite compute" is not a free lunch. The question becomes: what knobs convert surplus
+          compute into <em>lower asymptotic loss</em> on fixed data, rather than into overfitting?
+        </p>
+
+        <h2>Lever 1 — regularization, turned way up</h2>
+        <p>
+          The headline practical finding. To stop the overfitting, the authors retune regularization —
+          and the optimum is dramatic: <strong>weight decay roughly 30× larger than standard
+          practice.</strong>
+        </p>
+        <p>
+          The intuition: standard weight-decay values were tuned in the compute-bound regime, where you
+          take relatively few passes over a lot of data. In the data-bound regime you hammer the same
+          tokens many times, so you need a much stronger pull toward simple solutions to avoid
+          memorizing. Most people would never sweep weight decay that high because in the old regime it
+          would underfit; here it's exactly right.
+        </p>
+
+        <details class="math-optional">
+          <summary>optional read — why heavier decay, formally</summary>
+          <div class="math-inner">
+          <p>
+            Weight decay $\lambda$ adds $\tfrac{\lambda}{2}\|\theta\|^2$ to the loss, biasing toward
+            small-norm solutions. The effective regularization strength a parameter "feels" scales with
+            the number of gradient updates it participates in. In the data-rich regime, the per-token
+            update count is low; in the data-poor / many-epoch regime it is high, so the same
+            generalization target requires a much larger nominal $\lambda$. Empirically the authors find
+            the loss-minimizing $\lambda$ is ~$30\times$ the conventional value, and — importantly —
+            that with this retuning the loss as a function of parameter count $N$ follows a clean
+            power law down to a finite asymptote $E$:
+          </p>
+          <p>
+            $$L(N) \;=\; E + \frac{A}{N^{\alpha}}$$
+          </p>
+          <p>
+            rather than U-turning into overfitting. The asymptote $E$ — not the loss at any one budget —
+            becomes the quantity to optimize.
+          </p>
+          </div>
+        </details>
+
+        <h2>Lever 2 — fit the asymptote, don't pick a budget</h2>
+        <p>
+          This is the methodological core, and it's the part PhD readers should steal. Instead of
+          evaluating models at one chosen size/compute budget, the authors fit <strong>power-law
+          scaling laws</strong> that predict how loss falls as parameters grow, and then read off the
+          <strong>asymptotic loss</strong> — the floor the method converges to as compute → ∞.
+        </p>
+        <p>
+          Why this matters: two recipes can look identical at a small budget but have very different
+          floors. Comparing methods by their fitted asymptote $E$ is the right comparison under infinite
+          compute, because the budget you happen to run at is arbitrary. It turns "which is better?"
+          into "which has the lower limit?" — a much more stable and meaningful question.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .p-axis { stroke: #2a2620; stroke-width: 1.2; }
+              .p-naive { fill: none; stroke: #c96442; stroke-width: 2; }
+              .p-reg { fill: none; stroke: #6b9e6b; stroke-width: 2; }
+              .p-asym { stroke: #948a78; stroke-width: 1; stroke-dasharray: 4 3; }
+              .p-text { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; }
+              .p-lbl { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; fill: #948a78; }
+              .p-title { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+            </style>
+            <text x="340" y="16" class="p-title">LOSS vs PARAMETERS (fixed data)</text>
+            <line x1="70" y1="40" x2="70" y2="200" class="p-axis"/>
+            <line x1="70" y1="200" x2="620" y2="200" class="p-axis"/>
+            <text x="40" y="120" class="p-text" transform="rotate(-90 40 120)">val loss</text>
+            <text x="320" y="220" class="p-text">model size / compute →</text>
+            <!-- naive: U-turn up -->
+            <path d="M90 90 Q 200 150 300 165 T 500 130 Q 560 115 600 95" class="p-naive"/>
+            <text x="510" y="88" class="p-text" fill="#c96442">naive: overfits</text>
+            <!-- regularized: monotone to asymptote -->
+            <path d="M90 95 Q 250 140 400 158 T 600 168" class="p-reg"/>
+            <line x1="90" y1="172" x2="620" y2="172" class="p-asym"/>
+            <text x="500" y="186" class="p-lbl">fitted asymptote E (the floor)</text>
+            <text x="430" y="150" class="p-text" fill="#6b9e6b">retuned reg: power law → E</text>
+            <text x="100" y="240" class="p-lbl">compare methods by their floor E, not by loss at one arbitrary budget</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Naive scaling on fixed data turns upward (overfit); with 30× weight decay the loss follows a clean power law down to a finite asymptote E. That asymptote is the right object to optimize.</p>
+        </div>
+
+        <h2>Lever 3 — ensembles beat single models at the limit</h2>
+        <p>
+          A single regularized model has a floor. The authors show that <strong>ensembles of
+          independently trained models reach a lower loss asymptote</strong> than any single regularized
+          model can. With surplus compute, training $K$ models and combining them converts compute into
+          a strictly better floor — a different and better use of FLOPs than making one model ever
+          bigger.
+        </p>
+        <p>
+          Combined with parameter scaling and regularization, this gives two complementary axes of
+          "spend compute to lower the data-bound floor": grow each model (parameter scaling) and grow
+          the number of models (ensemble scaling). Both have their own power-law behavior.
+        </p>
+
+        <h2>Putting the levers together: the data-efficiency result</h2>
+        <p>
+          The payoff is stated as data efficiency, which is the right currency in this regime. Combining
+          <strong>epoching + regularization + parameter scaling + ensemble scaling</strong>, the authors
+          match a baseline's loss using dramatically less data:
+        </p>
+        <ul>
+          <li>Match the baseline at <strong>200M tokens using 5.17× less data.</strong></li>
+          <li><strong>9% improvement</strong> on pre-training evaluations.</li>
+          <li><strong>17.5× data-efficiency improvement</strong> over continued pre-training on math
+            mid-training data — i.e. when you have a small, precious domain corpus, these techniques
+            stretch it enormously.</li>
+        </ul>
+
+        <blockquote>
+          Read those numbers as: the same fixed pile of tokens, squeezed for far more. In a world where
+          high-quality text is the bottleneck, multiplying its effective value is worth more than
+          another rack of GPUs.
+        </blockquote>
+
+        <h2>Lever 4 — distill the ensemble back down</h2>
+        <p>
+          The obvious objection: ensembles are expensive to serve. You don't want $K$ models in
+          production. So the authors <strong>distill the ensemble into a single student 8× smaller,
+          retaining 83% of the ensemble's benefit.</strong>
+        </p>
+        <p>
+          This closes the loop. Use infinite compute at <em>training</em> time — heavy regularization,
+          parameter scaling, ensembling — to push the data-bound loss floor as low as possible, then
+          distill that capability into a compact model that's cheap to deploy. The expensive part stays
+          offline; the served artifact is small.
+        </p>
+
+        <h2>Why this is an important paper for researchers</h2>
+        <p>
+          Three reasons it's worth more than its abstract:
+        </p>
+        <ol>
+          <li><strong>It names the regime change.</strong> The field's mental model is still
+            Chinchilla-shaped (compute-bound). As frontier labs run into the data wall, the
+            data-bound / compute-rich regime is where the action moves, and this paper is an early,
+            careful map of it.</li>
+          <li><strong>It promotes a better evaluation methodology.</strong> Comparing fitted asymptotes
+            instead of point estimates at an arbitrary budget is a more honest way to compare methods,
+            and it generalizes well beyond this paper. That alone is a useful import into your own
+            experimental design.</li>
+          <li><strong>The 30× weight-decay finding is immediately actionable.</strong> If you're doing
+            data-constrained pre-training or domain continued-pretraining, your regularization is almost
+            certainly tuned for the wrong regime. This is a concrete knob to sweep tomorrow.</li>
+        </ol>
+
+        <h2>The honest caveats</h2>
+        <ul>
+          <li><strong>"Infinite compute" is a modeling idealization.</strong> Nobody has infinite
+            compute; the results are about the <em>limit</em> and the scaling-law extrapolations toward
+            it. How well the fitted asymptotes hold at genuinely frontier scale is an empirical bet.</li>
+          <li><strong>Scale of experiments.</strong> The studies are run at academic scales (hundreds of
+            millions of tokens / modest models). The power-law framing is explicitly designed to
+            extrapolate, but extrapolation is extrapolation — the conclusions are strongest as
+            <em>directional</em> guidance.</li>
+          <li><strong>Ensembling + distillation has real cost.</strong> The training-time bill for
+            ensembles is large; the method trades training compute for data efficiency, which is exactly
+            the right trade <em>if</em> your true constraint is data and you genuinely have surplus
+            compute. If you don't, the calculus is different.</li>
+        </ul>
+
+        <p>
+          The throughline of the whole paper is a single reframing: when compute stops being the
+          bottleneck, every default we inherited from the compute-bound era — model-vs-data splits,
+          weight-decay values, single-model training, point-budget evaluation — is potentially
+          mis-tuned. This paper re-derives the defaults for the regime we're actually heading into.
+        </p>
+
+        <p>
+          <a href="https://arxiv.org/abs/2509.14786" target="_blank">arXiv:2509.14786</a> —
+          <em>Pre-training under infinite compute</em>, Konwoo Kim, Suhas Kotha, Percy Liang, Tatsunori
+          Hashimoto. Presented at the YC Paper Club. This closes the YC Paper Club series.
+        </p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="ycpc-4-deep-learning-not-mysterious.html">← prev: DL Not Mysterious</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Compute-bound (Chinchilla)</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">The classic regime: fixed FLOP budget, optimize the split between model size and tokens. Compute is the scarce resource.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Data-bound regime</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">This paper's setting: data is fixed, compute is effectively infinite. The scarce resource is information, so you optimize loss per token, not per FLOP.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Weight decay</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Regularizer biasing toward small-norm weights. Optimal value here is ~30× standard practice — the heavier pull needed to avoid memorizing a fixed corpus over many epochs.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Asymptotic loss (E)</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">The floor a method's loss converges to as compute→∞, read from a fitted power law L(N)=E+A/N^α. The right object to compare methods by in this regime.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Power-law scaling</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Loss falls as a power of model size / compute. Fitting the law lets you predict the floor instead of evaluating at one arbitrary budget.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Ensemble scaling</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Training K independent models and combining them reaches a lower loss asymptote than any single regularized model. A second axis for spending surplus compute.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Distillation</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Compress the expensive ensemble into a single student 8× smaller, keeping 83% of its benefit — so the served model stays cheap.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Data efficiency</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">How much performance you extract per token of data. Combined levers match baseline with 5.17× less data; 17.5× over continued pretraining on math.</div></div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=6"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js?v=3"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

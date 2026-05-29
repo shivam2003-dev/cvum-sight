@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Speculative Speculative Decoding — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=27">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  details.math-optional { border-left: 3px solid #141413; padding: 12px 16px; margin: 16px 0; background: rgba(42,38,32,0.35); border-radius: 0 6px 6px 0; }
+  details.math-optional summary { cursor: pointer; font-family: var(--font-body); font-style: italic; color: #262625; font-size: 0.95rem; list-style: none; user-select: none; }
+  details.math-optional summary::-webkit-details-marker { display: none; }
+  details.math-optional summary::before { content: '▸ '; font-style: normal; }
+  details.math-optional[open] summary::before { content: '▾ '; }
+  details.math-optional .math-inner { margin-top: 12px; }
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]})"></script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">YC Paper Club</p>
+        <p class="series-banner-title">Speculative Speculative Decoding</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Paper 1 of 5 · Inference Speed</p>
+        <div class="series-banner-nav">
+          <a href="ycpc-1-speculative-speculative-decoding.html" class="active">1. Speculative²</a>
+          <a href="ycpc-2-diffusion-mpc.html">2. Diffusion-MPC</a>
+          <a href="ycpc-3-leworldmodel.html">3. LeWorldModel</a>
+          <a href="ycpc-4-deep-learning-not-mysterious.html">4. DL Not Mysterious</a>
+          <a href="ycpc-5-pretraining-infinite-compute.html">5. Infinite Compute</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · paperjuice · 22 min read · 4600 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Speculative Speculative Decoding — Guessing the Guess Before It Lands.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">inference</span>
+          <span class="tag">speculative-decoding</span>
+          <span class="tag">llm-serving</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          Here's a thing that's always slightly absurd about large language models: they generate text
+          one token at a time, in strict order, and the most expensive part — the big model — sits
+          mostly idle while it waits for itself. The bottleneck isn't math. It's the <em>sequence</em>.
+          Each token needs the one before it.
+        </p>
+        <p>
+          <strong>Speculative decoding</strong> was the clever fix everyone adopted: let a small, fast
+          model guess several upcoming tokens, then let the big model check them all in a single
+          forward pass. When the guesses are right, you got many tokens for the price of one big-model
+          step. Beautiful.
+        </p>
+        <p>
+          But this paper — <strong>"Speculative Speculative Decoding"</strong> by Tanishq Kumar, Tri
+          Dao, and Avner May (arXiv:2603.03251) — notices that speculative decoding has a hidden serial
+          step <em>of its own</em>. And it parallelizes that too. The result, an algorithm called
+          <strong>Saguaro</strong>, runs ~30% faster than tuned speculative-decoding baselines and up
+          to 5× faster than plain autoregressive decoding.
+        </p>
+
+        <h2>Recap: how speculative decoding works</h2>
+
+        <p>
+          Two models. A small <strong>draft</strong> model (cheap, fast, a bit dumb) and a big
+          <strong>target</strong> model (expensive, slow, the one whose outputs you actually want).
+        </p>
+        <ol>
+          <li><strong>Draft:</strong> the small model proposes the next $k$ tokens, fast.</li>
+          <li><strong>Verify:</strong> the big model runs <em>once</em> over all $k$ guesses in parallel,
+            scoring each. Tokens that match what the big model would have produced are accepted; the
+            first mismatch and everything after it are thrown away.</li>
+          <li>Repeat from wherever verification stopped.</li>
+        </ol>
+
+        <p>
+          The win: one big-model pass can confirm several tokens at once. The catch nobody talks about:
+          <strong>drafting and verifying still happen one after the other.</strong> You draft, then you
+          verify, then — only once you know the result — you draft again. There's a serial dependency
+          baked in: the next draft can't begin until you know where the last verification landed.
+        </p>
+
+        <blockquote>
+          Speculative decoding removed the per-token serial dependency of the big model. But it
+          introduced a new serial loop: draft → verify → draft → verify. SSD attacks that loop.
+        </blockquote>
+
+        <h2>The key move: speculate on the speculation</h2>
+
+        <p>
+          The insight is almost cheeky. While the big model is busy verifying the current batch of
+          guesses, the draft model is idle — waiting to find out the result so it knows where to draft
+          next. But the number of possible verification outcomes is small and predictable.
+        </p>
+        <p>
+          A verification of $k$ draft tokens has only $k+1$ possible outcomes: accept 0 tokens, accept
+          1, accept 2, …, accept all $k$. That's it. So instead of waiting, the draft model
+          <strong>pre-emptively drafts continuations for the likely outcomes</strong> — in parallel
+          with the ongoing verification.
+        </p>
+        <p>
+          When verification finishes and reveals "we accepted 3 tokens," you check: did we already
+          prepare a speculation for the accept-3 case? If yes, return it <em>immediately</em> — the
+          drafting overhead for that step vanishes entirely. You've hidden the draft latency behind the
+          verify latency.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .s-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .s-box-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .s-box-acc { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .s-text { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: middle; }
+              .s-text-w { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #ebe3cf; text-anchor: middle; }
+              .s-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .s-title { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+            </style>
+            <text x="170" y="14" class="s-title">SPECULATIVE DECODING</text>
+            <rect x="40" y="26" width="80" height="24" class="s-box-hi"/><text x="80" y="42" class="s-text">draft k</text>
+            <rect x="124" y="26" width="100" height="24" class="s-box-acc"/><text x="174" y="42" class="s-text-w">verify (big)</text>
+            <rect x="228" y="26" width="80" height="24" class="s-box-hi"/><text x="268" y="42" class="s-text">draft k</text>
+            <text x="170" y="68" class="s-lbl">serial: draft waits for verify, verify waits for draft</text>
+
+            <text x="510" y="14" class="s-title">SSD (SAGUARO)</text>
+            <rect x="400" y="26" width="80" height="24" class="s-box-hi"/><text x="440" y="42" class="s-text">draft k</text>
+            <rect x="484" y="26" width="120" height="24" class="s-box-acc"/><text x="544" y="42" class="s-text-w">verify (big)</text>
+            <!-- pre-emptive drafts overlapping verify -->
+            <rect x="484" y="54" width="38" height="18" class="s-box"/><text x="503" y="66" class="s-text">a=0</text>
+            <rect x="526" y="54" width="38" height="18" class="s-box"/><text x="545" y="66" class="s-text">a=1</text>
+            <rect x="568" y="54" width="38" height="18" class="s-box"/><text x="587" y="66" class="s-text">a=k</text>
+            <text x="544" y="88" class="s-lbl">drafts for each outcome run DURING verify</text>
+            <text x="544" y="100" class="s-lbl">match → return instantly, zero draft wait</text>
+
+            <line x1="40" y1="130" x2="640" y2="130" stroke="#948a78" stroke-dasharray="3 3"/>
+            <text x="340" y="160" class="s-title">RESULT</text>
+            <rect x="120" y="172" width="440" height="22" class="s-box"/>
+            <text x="340" y="187" class="s-text">spec decode baseline</text>
+            <rect x="120" y="200" width="310" height="22" class="s-box-acc"/>
+            <text x="275" y="215" class="s-text-w">SSD: ~30% faster</text>
+            <text x="340" y="240" class="s-lbl">up to 5× faster than plain autoregressive decoding</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Speculative decoding leaves the draft model idle during verification; SSD fills that gap by drafting continuations for every possible verification outcome ahead of time.</p>
+        </div>
+
+        <details class="math-optional">
+          <summary>optional read — why there are only k+1 outcomes</summary>
+          <div class="math-inner">
+          <p>
+            Speculative decoding accepts a prefix of the draft. If the draft proposes tokens
+            $d_1, \dots, d_k$, the verifier accepts the longest prefix that agrees (under the standard
+            accept/reject sampling rule), then emits one extra "bonus" token. The accepted-length
+            $a \in \{0, 1, \dots, k\}$ fully determines where the next draft must continue from:
+          </p>
+          <p>
+            $$\text{next context} = x \,\Vert\, d_{1:a} \,\Vert\, t_{\text{bonus}}(a)$$
+          </p>
+          <p>
+            So the branching factor of "what should we draft next" is exactly $k+1$. Small, enumerable,
+            and — crucially — most of the probability mass concentrates on a few of those outcomes, so
+            you don't even need to prepare all $k+1$ branches to win most of the time.
+          </p>
+          </div>
+        </details>
+
+        <h2>The three challenges (and the fixes)</h2>
+
+        <p>
+          Pre-drafting for every outcome sounds free, but it isn't. The paper names three concrete
+          problems and offers a principled fix for each — that engineering is what turns the idea into
+          Saguaro.
+        </p>
+
+        <h3>Challenge 1 — combinatorial blowup</h3>
+        <p>
+          If you naively branch on every possible outcome at every step, the tree of pre-emptive drafts
+          explodes exponentially. You can't prepare everything.
+        </p>
+        <p>
+          <strong>Fix:</strong> spend your draft budget where the probability is. Verification outcomes
+          are <em>not</em> uniform — acceptance lengths cluster (a well-matched draft model usually gets
+          most tokens accepted). Allocate pre-emptive drafts to the high-probability outcomes only, and
+          accept that the rare branches fall back to the normal draft-then-wait path.
+        </p>
+
+        <h3>Challenge 2 — wasted draft compute</h3>
+        <p>
+          Every pre-emptive draft you prepare for an outcome that <em>doesn't</em> happen is thrown
+          away. If you over-speculate, you burn the small model's compute (and GPU memory bandwidth) on
+          branches that never get used — which can erase the latency win.
+        </p>
+        <p>
+          <strong>Fix:</strong> treat it as a budget-allocation problem. Balance the expected latency
+          saved against the extra compute spent, and only pre-draft branches whose
+          expected-payoff justifies the cost. The paper formalizes this trade-off rather than guessing.
+        </p>
+
+        <h3>Challenge 3 — scheduling on real hardware</h3>
+        <p>
+          Drafting and verifying now want to run concurrently on the same GPU. Naive concurrency means
+          they fight over the same compute units and you get no overlap at all — the verify pass and the
+          pre-emptive drafts just serialize anyway under the hood.
+        </p>
+        <p>
+          <strong>Fix:</strong> careful kernel scheduling so the small draft work slots into the gaps of
+          the big verify pass (which is often memory-bound and leaves compute headroom). This is the
+          unglamorous systems work that makes the theoretical overlap actually materialize on an
+          accelerator.
+        </p>
+
+        <blockquote>
+          The pattern of this paper: a one-sentence idea ("draft the next step before you know the
+          current result") plus three pages of "here's why that's hard and how we actually made it
+          fast." The idea is the hook; the challenge-fixes are the contribution.
+        </blockquote>
+
+        <h2>Saguaro — the assembled algorithm</h2>
+
+        <p>
+          Put the three fixes together and you get <strong>Saguaro</strong>: an SSD implementation that
+          pre-drafts only the high-probability verification outcomes, budgets its speculative compute
+          against expected payoff, and schedules draft + verify to genuinely overlap on the GPU.
+        </p>
+        <p>
+          When a verification outcome matches a prepared branch — which it does most of the time,
+          because acceptance lengths are predictable — the next tokens are returned with zero drafting
+          latency. Drafting effectively becomes free, hidden entirely behind verification.
+        </p>
+
+        <h2>The numbers</h2>
+        <ul>
+          <li><strong>~30% faster</strong> on average than optimized speculative-decoding baselines.</li>
+          <li><strong>Up to 5×</strong> faster than plain autoregressive decoding.</li>
+          <li>Measured with <strong>open-source inference engines</strong> — not a private toy setup, which
+            makes the result more credible and reproducible.</li>
+        </ul>
+        <p>
+          The 30% is the honest headline. Speculative decoding was already a strong baseline; squeezing
+          another third out of it by removing a serial step most people didn't even notice is a real
+          win for anyone paying a GPU bill per token.
+        </p>
+
+        <h2>Why this is a satisfying paper</h2>
+        <p>
+          It's recursive in the best way — it applies the core trick of speculative decoding (do work
+          ahead of time, verify later) <em>to speculative decoding itself</em>. The name is a joke that
+          also happens to be a precise description. And it doesn't require retraining anything: it's a
+          pure inference-time, drop-in acceleration that sits on top of models you already have.
+        </p>
+        <p>
+          The limitation is honest too: the win depends on verification outcomes being predictable. If
+          your draft model is poorly matched to the target (acceptance lengths all over the place), the
+          high-probability branches you pre-draft will miss more often and the advantage shrinks toward
+          ordinary speculative decoding. Good draft–target pairing is still doing the heavy lifting —
+          SSD just stops wasting the idle time when that pairing is good.
+        </p>
+
+        <p>
+          <a href="https://arxiv.org/abs/2603.03251" target="_blank">arXiv:2603.03251</a> —
+          <em>Speculative Speculative Decoding</em>, Tanishq Kumar, Tri Dao, Avner May. Presented at the
+          YC Paper Club.
+        </p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="locate-anything-paper-juice.html">← prev: LocateAnything</a>
+        <a href="ycpc-2-diffusion-mpc.html">next: Diffusion-MPC →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Autoregressive decoding</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Generating text one token at a time, each conditioned on all previous tokens. Strictly sequential — the bottleneck speculative methods attack.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Speculative decoding</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">A fast draft model proposes k tokens; the big target model verifies them all in one parallel pass. Accepted tokens come "free" — many tokens per big-model step.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Draft model</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Small, cheap model that proposes candidate tokens. Quality depends on how well its distribution matches the target model's.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Target model</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">The large model whose outputs you actually want. Expensive; used to verify (not generate) drafts.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">SSD</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Speculative Speculative Decoding. Parallelizes the draft↔verify serial loop: pre-drafts continuations for likely verification outcomes while verification is still running.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Saguaro</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">The paper's optimized SSD algorithm. ~30% faster than tuned speculative decoding, up to 5× over autoregressive, on open-source engines.</div></div>
+    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Acceptance length</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">How many of the k drafted tokens the verifier accepts (0..k). Determines where the next draft continues — only k+1 possible outcomes, and they cluster predictably.</div></div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=6"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js?v=3"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

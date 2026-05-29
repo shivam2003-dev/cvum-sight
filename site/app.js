@@ -57,73 +57,14 @@
   // ── home page: post grid ──
   const grid = document.getElementById("post-grid");
   if (grid && typeof POSTS !== "undefined") {
-    const standalone = POSTS.filter(p => !p.series);
-    const seriesPosts = POSTS.filter(p => p.series);
-    let html = "";
-
-    // group series posts by series id and render a promo card per series
-    const seriesGroups = {};
-    seriesPosts.forEach(p => {
-      if (!seriesGroups[p.series]) seriesGroups[p.series] = [];
-      seriesGroups[p.series].push(p);
-    });
-
-    const seriesPromos = {
-      deepseek: {
-        href: "series.html",
-        title: "DeepSeek Engineering Blog Series",
-        excerpt: "From Transformer internals to DeepSeek-V4. {count} articles published across 10 planned phases.",
-        tags: ["#deepseek", "#ml", "#transformers"],
-        status: "Ongoing"
-      },
-      flashattention: {
-        href: "paperjuice.html",
-        title: "FlashAttention — The Evolution Series",
-        excerpt: "Four papers. Four years. From IO-aware tiling to Blackwell asymmetric scaling. {count} papers squeezed.",
-        tags: ["#flashattention", "#ml", "#gpu"],
-        status: "Paper Juice"
-      },
-      "ai-tools": {
-        href: "series-ai-tools.html",
-        title: "AI Coding Tools — The Ultimate Guide",
-        excerpt: "Fundamentals, GitHub Copilot, Codex, Claude Code. {count} guides covering every AI coding tool a developer needs.",
-        tags: ["#ai-tools", "#devops", "#developer-productivity"],
-        status: "Complete"
-      }
-    };
-
-    Object.keys(seriesGroups).forEach(key => {
-      const posts = seriesGroups[key];
-      const promo = seriesPromos[key] || {
-        href: "archive.html",
-        title: key,
-        excerpt: "{count} articles in this series.",
-        tags: [],
-        status: "Series"
-      };
-      html += `<a href="${promo.href}" class="post-card series-promo-card">
-        <span class="cat">series</span>
-        <h3>${escapeHtml(promo.title)}</h3>
-        <p class="card-excerpt">${escapeHtml(promo.excerpt.replace("{count}", posts.length))}</p>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">
-          ${promo.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("")}
-        </div>
-        <div class="card-meta">
-          <span>${escapeHtml(promo.status)}</span>
-          <span>· ${posts.length} articles</span>
-        </div>
-      </a>`;
-    });
-
-    // Home feed stays light: only the most recent standalone posts.
-    // Full list lives in the archive.
+    // Home feed stays light: only the 6 latest posts.
+    // Everything else lives behind "browse all articles".
     const RECENT_LIMIT = 6;
-    const recent = standalone.slice(0, RECENT_LIMIT);
-    html += recent.map(renderPostCard).join("");
-    grid.innerHTML = html;
+    const recent = POSTS.slice(0, RECENT_LIMIT);
+    grid.innerHTML = recent.map(renderPostCard).join("");
 
     const moreLink = document.getElementById("feed-more");
-    if (moreLink && standalone.length > RECENT_LIMIT) {
+    if (moreLink && POSTS.length > RECENT_LIMIT) {
       moreLink.hidden = false;
     }
   }

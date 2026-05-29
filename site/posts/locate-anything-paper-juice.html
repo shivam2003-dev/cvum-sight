@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LocateAnything — Parallel Box Decoding — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=27">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  details.math-optional {
+    border-left: 3px solid #141413;
+    padding: 12px 16px;
+    margin: 16px 0;
+    background: rgba(42,38,32,0.35);
+    border-radius: 0 6px 6px 0;
+  }
+  details.math-optional summary {
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-style: italic;
+    color: #262625;
+    font-size: 0.95rem;
+    list-style: none;
+    user-select: none;
+  }
+  details.math-optional summary::-webkit-details-marker { display: none; }
+  details.math-optional summary::before {
+    content: '▸ ';
+    font-style: normal;
+  }
+  details.math-optional[open] summary::before {
+    content: '▾ ';
+  }
+  details.math-optional .math-inner {
+    margin-top: 12px;
+  }
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]})"></script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">May 29, 2026 · paperjuice · 26 min read · 6100 words</p>
+        <h1>LocateAnything — Teaching a Vision-Language Model to See Boxes All At Once.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">vision-language-models</span>
+          <span class="tag">object-detection</span>
+          <span class="tag">grounding</span>
+          <span class="tag">nvidia</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          Picture this. You show an image to a smart assistant and say "find every car." A human
+          glances once and points to all of them in parallel — eyes flick to each car instantly, no
+          waiting in line. But the way most vision-language models do it in 2025 is closer to a
+          stenographer dictating coordinates out loud, one digit at a time: "first car, x equals…
+          three… two… seven… comma… y equals…" — and only after that whole number is spelled out can
+          it start on the next box.
+        </p>
+        <p>
+          That spelling-out is the bottleneck. <strong>LocateAnything</strong>, a paper out of NVIDIA
+          (with collaborators from HK PolyU, Princeton, Nanjing University, and UIUC), kills it. Their
+          trick is called <strong>Parallel Box Decoding (PBD)</strong>, and it lets the model emit a
+          whole bounding box as one atomic unit and many boxes at once. The result is a grounding
+          model that is <strong>up to 10× faster</strong> than competitors while also being <em>more
+          accurate</em> — which is the rare combination that makes a paper worth squeezing.
+        </p>
+        <p>
+          <strong>"LocateAnything: Fast and High-Quality Vision-Language Grounding with Parallel Box
+          Decoding"</strong> (arXiv:2605.27365, 2026; corresponding author Zhiding Yu) is the subject.
+          Let's unpack what grounding is, why the old way is slow, what PBD actually changes, and why
+          the numbers are convincing.
+        </p>
+
+        <h2>First — what is "grounding"?</h2>
+
+        <p>
+          Grounding is the bridge between language and pixels. You give the model an image plus a
+          text query ("the dog on the left", "all traffic lights", "the Submit button"), and it
+          returns <em>where</em> in the image those things are — usually as bounding boxes
+          $(x_1, y_1, x_2, y_2)$, sometimes as points.
+        </p>
+        <p>
+          It is the workhorse behind a lot of things you already use: object detection, GUI agents
+          that click buttons, document layout parsing, OCR that knows where each word sits, and any
+          agent that needs to "look and act." If a model can ground reliably and quickly, it can
+          drive a screen, read a form, or count objects in a warehouse photo.
+        </p>
+
+        <blockquote>
+          Grounding = "given words, return coordinates." It is the perception layer that every
+          vision agent stands on. Make it fast and accurate, and everything built on top gets faster
+          and more reliable.
+        </blockquote>
+
+        <h2>The old way, and why it crawls</h2>
+
+        <p>
+          Modern grounding models are mostly built on top of large language models. An LLM only knows
+          how to do one thing: predict the next token. So to make it output a box, people turned the
+          box into <em>text</em>. The model literally writes out the coordinates as a sequence of
+          tokens — digit by digit, comma by comma — and you parse the string afterward.
+        </p>
+        <p>
+          This is called <strong>autoregressive (AR) decoding</strong>, or next-token prediction
+          (NTP). Each token depends on the one before it, so the model must generate them strictly in
+          order. To emit one box like <code>(327, 88, 410, 250)</code> you might burn a dozen tokens.
+          For a dense scene with 200 objects, that's thousands of sequential steps. The GPU spends
+          most of its time waiting on itself.
+        </p>
+        <p>
+          The paper points out this design has <strong>two</strong> distinct problems, not one:
+        </p>
+
+        <ol>
+          <li>
+            <strong>The inference bottleneck.</strong> Serializing 2D geometry into a 1D token stream
+            is inherently sequential. More objects = linearly more steps. Dense detection is
+            painfully slow.
+          </li>
+          <li>
+            <strong>The geometric mismatch.</strong> A bounding box is a 2D object with four
+            interrelated numbers. Forcing it through a 1D left-to-right token pipeline is unnatural —
+            the model predicts $x_1$ with no knowledge of $y_2$, even though they describe the same
+            box. The structure of the data fights the structure of the decoder.
+          </li>
+        </ol>
+
+        <p>
+          Different prior works attacked these from different angles. <strong>Rex-Omni</strong>
+          quantizes coordinates into special tokens (fewer tokens per box, but still sequential).
+          <strong>Qwen3-VL</strong> decodes coordinates as plain text. Both still pay the
+          one-box-after-another tax. LocateAnything's claim is that you can drop the tax entirely.
+        </p>
+
+        <h2>The core idea: Parallel Box Decoding</h2>
+
+        <p>
+          Here's the shift. Instead of treating a box as a <em>string of tokens</em>, PBD treats each
+          box (or point) as a single <strong>atomic unit</strong>. At one decoding step, the model
+          predicts the <em>entire</em> box — all four coordinates $(x_1, y_1, x_2, y_2)$ — at once.
+          And it can predict <em>many</em> boxes in parallel in the same pass.
+        </p>
+        <p>
+          The analogy: the old way is a single cashier ringing up items one digit at a time. PBD is
+          opening every checkout lane simultaneously — each box gets its own lane, and all the
+          coordinates within a box pop out together rather than being spelled.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .l-box { fill: #ebe3cf; stroke: #2a2620; stroke-width: 1.5; }
+              .l-box-hi { fill: #f0c040; stroke: #2a2620; stroke-width: 1.5; }
+              .l-box-acc { fill: #c96442; stroke: #2a2620; stroke-width: 1.5; }
+              .l-text { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #2a2620; text-anchor: middle; }
+              .l-text-w { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #ebe3cf; text-anchor: middle; }
+              .l-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #948a78; text-anchor: middle; }
+              .l-title { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #2a2620; text-anchor: middle; font-weight: bold; }
+            </style>
+            <!-- AR side -->
+            <text x="170" y="16" class="l-title">AUTOREGRESSIVE (old)</text>
+            <rect x="40" y="30" width="34" height="22" class="l-box"/><text x="57" y="45" class="l-text">x1</text>
+            <rect x="80" y="30" width="34" height="22" class="l-box"/><text x="97" y="45" class="l-text">y1</text>
+            <rect x="120" y="30" width="34" height="22" class="l-box"/><text x="137" y="45" class="l-text">x2</text>
+            <rect x="160" y="30" width="34" height="22" class="l-box"/><text x="177" y="45" class="l-text">y2</text>
+            <rect x="200" y="30" width="34" height="22" class="l-box"/><text x="217" y="45" class="l-text">x1</text>
+            <rect x="240" y="30" width="34" height="22" class="l-box"/><text x="257" y="45" class="l-text">...</text>
+            <line x1="74" y1="41" x2="80" y2="41" stroke="#2a2620"/>
+            <line x1="114" y1="41" x2="120" y2="41" stroke="#2a2620"/>
+            <line x1="154" y1="41" x2="160" y2="41" stroke="#2a2620"/>
+            <line x1="194" y1="41" x2="200" y2="41" stroke="#2a2620"/>
+            <text x="170" y="78" class="l-lbl">step 1 → 2 → 3 → 4 → 5 → ... (one token each)</text>
+            <text x="170" y="92" class="l-lbl">box 2 cannot start until box 1 finishes</text>
+
+            <!-- PBD side -->
+            <text x="500" y="16" class="l-title">PARALLEL BOX DECODING</text>
+            <rect x="400" y="30" width="64" height="40" class="l-box-hi"/>
+            <text x="432" y="46" class="l-text">box 1</text>
+            <text x="432" y="58" class="l-text">x1y1x2y2</text>
+            <rect x="478" y="30" width="64" height="40" class="l-box-acc"/>
+            <text x="510" y="46" class="l-text-w">box 2</text>
+            <text x="510" y="58" class="l-text-w">x1y1x2y2</text>
+            <rect x="556" y="30" width="64" height="40" class="l-box-hi"/>
+            <text x="588" y="46" class="l-text">box 3</text>
+            <text x="588" y="58" class="l-text">x1y1x2y2</text>
+            <text x="500" y="92" class="l-lbl">all boxes, all coords — one parallel pass</text>
+
+            <!-- timing bars -->
+            <text x="340" y="130" class="l-title" text-anchor="middle">time to emit 200 boxes</text>
+            <rect x="60" y="145" width="540" height="20" class="l-box"/>
+            <text x="330" y="159" class="l-text">AR: ~thousands of sequential steps</text>
+            <rect x="60" y="175" width="80" height="20" class="l-box-acc"/>
+            <text x="100" y="189" class="l-text-w">PBD</text>
+            <text x="150" y="189" class="l-lbl" text-anchor="start">2–6× faster on dense scenes</text>
+
+            <text x="340" y="230" class="l-lbl">12.7 boxes/sec on H100 — 10× Qwen3-VL, 2.5× Rex-Omni</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — AR decoding spells each box out token-by-token and serializes boxes; PBD emits each box as an atomic unit and many boxes in parallel.</p>
+        </div>
+
+        <p>
+          By making the box atomic, PBD also fixes the geometric mismatch. The four coordinates are
+          predicted jointly, so the model reasons about the box as a 2D shape rather than as four
+          unrelated text symbols arriving one at a time.
+        </p>
+
+        <details class="math-optional">
+          <summary>optional read — AR vs PBD factorisation</summary>
+          <div class="math-inner">
+          <p>
+            Autoregressive decoding factorises a set of $N$ boxes (flattened into a token sequence
+            $t_1 \dots t_M$) as a strict chain:
+          </p>
+          <p>
+            $$p(t_1, \dots, t_M \mid I) = \prod_{i=1}^{M} p(t_i \mid t_{&lt;i}, I)$$
+          </p>
+          <p>
+            Every token waits on every prior token — $M$ is large because each box costs many tokens.
+            PBD instead predicts each box $b_j = (x_1, y_1, x_2, y_2)_j$ as a single decoding target
+            and conditions the boxes on the image and a set of parallel query slots rather than on each
+            other:
+          </p>
+          <p>
+            $$p(b_1, \dots, b_N \mid I) \approx \prod_{j=1}^{N} p(b_j \mid I, q_j)$$
+          </p>
+          <p>
+            The product now runs over <em>boxes</em>, not <em>tokens</em>, and the terms are computed
+            in parallel. The number of sequential steps stops scaling with coordinate digits and stops
+            scaling linearly with object count in the same brutal way.
+          </p>
+          </div>
+        </details>
+
+        <h2>The architecture, piece by piece</h2>
+
+        <p>
+          LocateAnything is not exotic plumbing. It is three well-understood blocks wired together,
+          with PBD as the decoding head on top.
+        </p>
+
+        <h3>1. Moon-ViT — the eyes</h3>
+        <p>
+          The vision encoder is <strong>Moon-ViT</strong>, which handles <strong>native
+          resolution</strong>. That matters more than it sounds. Many encoders force every image down
+          to a fixed square (say 448×448), which smears small objects and tiny UI elements into mush.
+          Native resolution means a 4K screenshot or a dense document keeps its detail, so small
+          buttons and fine text survive into the model's representation. This is a big reason the GUI
+          and document numbers come out strong.
+        </p>
+
+        <h3>2. MLP projector — the translator</h3>
+        <p>
+          A small multi-layer perceptron maps the visual features into the language model's embedding
+          space. Standard glue, but necessary — the language decoder only speaks "embedding," so the
+          image features have to be translated into that vocabulary.
+        </p>
+
+        <h3>3. Qwen2.5 — the brain</h3>
+        <p>
+          The language decoder is <strong>Qwen2.5</strong>. It interprets the text query, fuses it
+          with the visual tokens, and drives the PBD head to produce boxes. Using a strong off-the-
+          shelf LLM means LocateAnything inherits good language understanding for free — it can parse
+          messy referring expressions ("the third person from the left who's wearing red").
+        </p>
+
+        <h2>Three speeds: Fast, Slow, Hybrid</h2>
+
+        <p>
+          The clever bit is that LocateAnything doesn't force you to pick parallel-or-sequential
+          forever. It ships <strong>three inference modes</strong>, and the default is adaptive.
+        </p>
+
+        <ul>
+          <li>
+            <strong>Fast mode (parallel / MTP):</strong> full Parallel Box Decoding. Emit everything
+            at once. This is where the 10× speed lives. Great for clean, well-separated objects.
+          </li>
+          <li>
+            <strong>Slow mode (autoregressive / NTP):</strong> fall back to the classic one-at-a-time
+            decoding. Slower, but the sequential context can resolve tricky cases — heavy overlap,
+            ambiguous instructions, weird formats.
+          </li>
+          <li>
+            <strong>Hybrid mode (default):</strong> run Fast by default, and fall back to Slow only
+            when the model detects trouble — format irregularities or spatial ambiguity. You get fast
+            speed almost always, and the accuracy safety net exactly when it's needed.
+          </li>
+        </ul>
+
+        <blockquote>
+          Hybrid is the headline product. It's the "fast unless it's hard, then careful" policy —
+          which is exactly how you'd want a perception system to behave. The ablation shows Hybrid
+          hits 51.6 F1 on COCO at 13.2 boxes/sec: near the accuracy of the slow path, near the speed
+          of the fast path.
+        </blockquote>
+
+        <h2>The data: LocateAnything-Data</h2>
+
+        <p>
+          A model is only as good as what it's fed, and grounding needs a <em>lot</em> of boxes. The
+          authors built a giant unified corpus to train on.
+        </p>
+
+        <ul>
+          <li><strong>138M</strong> queries</li>
+          <li><strong>12M</strong> images</li>
+          <li><strong>785M</strong> bounding boxes</li>
+        </ul>
+
+        <p>
+          And crucially it's a <em>mixture</em> of task types, not just COCO-style detection. The
+          composition:
+        </p>
+
+        <table>
+          <thead>
+            <tr><th>Task type</th><th>Share</th><th>What it teaches</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Detection</td><td>66.9%</td><td>find all instances of a category</td></tr>
+            <tr><td>GUI</td><td>16.5%</td><td>locate buttons, icons, UI elements</td></tr>
+            <tr><td>Referring</td><td>7.3%</td><td>resolve "the X that is Y"</td></tr>
+            <tr><td>OCR</td><td>3.6%</td><td>find and read text regions</td></tr>
+            <tr><td>Layout</td><td>3.5%</td><td>parse document structure</td></tr>
+            <tr><td>Point</td><td>2.2%</td><td>pinpoint single locations</td></tr>
+          </tbody>
+        </table>
+
+        <p>
+          That diversity is why one model can do detection, click GUIs, read documents, and resolve
+          natural-language references — instead of needing a separate specialist for each. The
+          detection-heavy mix anchors the core skill; the smaller slices broaden it.
+        </p>
+
+        <h2>Do the numbers hold up?</h2>
+
+        <p>
+          Speed and accuracy usually trade off. The interesting claim here is that LocateAnything wins
+          on both. Start with speed.
+        </p>
+
+        <h3>Speed (boxes per second on an H100)</h3>
+        <ul>
+          <li><strong>LocateAnything: 12.7 BPS</strong></li>
+          <li>Rex-Omni: 5.0 BPS — LocateAnything is <strong>2.5×</strong> faster</li>
+          <li>Qwen3-VL: 1.1 BPS — LocateAnything is <strong>~10×</strong> faster</li>
+        </ul>
+        <p>
+          The denser the scene, the bigger the win — the paper reports a <strong>2–6× speedup</strong>
+          on images with 20–300 boxes, because that's exactly where the AR baselines drown in
+          sequential steps and PBD doesn't.
+        </p>
+
+        <h3>Accuracy — and especially at tight overlap</h3>
+        <p>
+          The headline accuracy result is on <strong>LVIS</strong> (a long-tail detection benchmark)
+          at a strict <strong>IoU = 0.95</strong> — meaning a box only counts as correct if it
+          overlaps the ground truth almost perfectly. LocateAnything scores <strong>31.1 mean
+          F1</strong> versus 20.7 for the comparison, a <strong>+3.8% mean F1</strong> jump where it's
+          hardest to score. That's a sign PBD's joint coordinate prediction produces geometrically
+          tighter boxes, not just roughly-right ones.
+        </p>
+
+        <details class="math-optional">
+          <summary>optional read — what IoU = 0.95 actually demands</summary>
+          <div class="math-inner">
+          <p>
+            Intersection-over-Union measures box overlap:
+          </p>
+          <p>
+            $$\text{IoU}(A, B) = \frac{|A \cap B|}{|A \cup B|}$$
+          </p>
+          <p>
+            At the common IoU = 0.5 threshold, a box can be quite sloppy and still "count." At
+            IoU = 0.95 the predicted box must share 95% of its area with the truth — almost pixel
+            perfect. Models that predict coordinates loosely (digit-by-digit text, quantized buckets)
+            tend to fall apart here. LocateAnything <em>gaining</em> ground at 0.95 is the strongest
+            evidence that predicting all four coordinates jointly yields genuinely tighter geometry.
+          </p>
+          </div>
+        </details>
+
+        <h3>The rest of the scoreboard</h3>
+        <table>
+          <thead>
+            <tr><th>Benchmark</th><th>What it tests</th><th>Score</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>COCO</td><td>classic detection</td><td>+1.8% over Rex-Omni</td></tr>
+            <tr><td>ScreenSpot-Pro</td><td>GUI grounding</td><td>60.3 (SOTA)</td></tr>
+            <tr><td>DocLayNet</td><td>document layout</td><td>76.8</td></tr>
+            <tr><td>M6Doc</td><td>document layout</td><td>70.1 (+14.5)</td></tr>
+            <tr><td>TotalText</td><td>OCR localisation</td><td>43.3</td></tr>
+            <tr><td>HumanRef</td><td>referring on people</td><td>78.7</td></tr>
+            <tr><td>Dense200</td><td>very dense scenes</td><td>58.7</td></tr>
+            <tr><td>VisDrone</td><td>aerial / tiny objects</td><td>39.9</td></tr>
+          </tbody>
+        </table>
+        <p>
+          The standout is <strong>M6Doc +14.5</strong> — a big jump on document layout, which is
+          exactly the kind of dense, small-element task where native-resolution Moon-ViT plus tight
+          boxes should pay off. <strong>ScreenSpot-Pro SOTA</strong> means it's the best published GUI
+          grounder, which matters a lot for screen-driving agents.
+        </p>
+
+        <h2>The ablations — does PBD itself earn its keep?</h2>
+
+        <p>
+          It's fair to ask whether the wins come from PBD or just from the giant dataset. The
+          ablations isolate PBD.
+        </p>
+        <ul>
+          <li>
+            <strong>PBD in slow mode scores 52.1 F1 on COCO — beating 1D serialization.</strong> Same
+            backbone, same data; the only change is treating the box as an atomic unit. It wins. So
+            the geometric framing helps accuracy, not just speed.
+          </li>
+          <li>
+            <strong>Hybrid hits 51.6 F1 at 13.2 BPS</strong> — almost the slow-mode accuracy at near
+            top speed. That's the mode you'd actually ship.
+          </li>
+          <li>
+            <strong>Coordinate ordering matters:</strong> predicting corners in an X-Y order came out
+            optimal. A small detail, but it confirms the model is learning real spatial structure
+            rather than memorising a token string.
+          </li>
+        </ul>
+
+        <blockquote>
+          The ablation that matters most: PBD beats 1D serialization <em>even in slow mode</em>, where
+          there's no speed advantage. That means PBD is a better way to represent boxes, full stop —
+          the speed is a bonus on top.
+        </blockquote>
+
+        <h2>How it stacks against the competition</h2>
+
+        <ul>
+          <li>
+            <strong>Rex-Omni</strong> — quantizes coordinates into discrete tokens. Fewer tokens than
+            plain text, but still sequential box-by-box. LocateAnything beats it on COCO (+1.8%) and
+            is 2.5× faster.
+          </li>
+          <li>
+            <strong>Qwen3-VL</strong> — decodes coordinates as raw text. Most flexible, slowest
+            (1.1 BPS). LocateAnything is ~10× faster.
+          </li>
+          <li>
+            <strong>GUI-Owl-32B</strong> — a much larger GUI specialist, yet LocateAnything (a 3B
+            model) takes SOTA on ScreenSpot-Pro. Small + well-designed beats large + general here.
+          </li>
+        </ul>
+
+        <h2>Where it's honest about limits</h2>
+
+        <p>
+          A few things worth keeping in mind before you assume this solves grounding forever:
+        </p>
+        <ol>
+          <li>
+            <strong>Parallel decoding can struggle with heavy overlap.</strong> When many boxes pile
+            on top of each other, the parallel slots can collide or duplicate — which is precisely why
+            the Slow/Hybrid fallback exists. Hybrid is a mitigation, not a proof that parallel always
+            wins.
+          </li>
+          <li>
+            <strong>It leans on a massive proprietary-ish dataset.</strong> 785M boxes is a lot of
+            curation. Some of the gain is data, and reproducing the full recipe without that corpus is
+            non-trivial (the dataset release was still pending at paper time).
+          </li>
+          <li>
+            <strong>3B is small for a reason, but still a VLM.</strong> Native-resolution encoding of
+            4K images is not free; the speedups are measured on an H100. Real-time on edge hardware is
+            a different story.
+          </li>
+        </ol>
+
+        <h2>Why this paper is worth your time</h2>
+
+        <p>
+          Most grounding papers chase a benchmark with a bigger model or more data. LocateAnything
+          instead questions a design assumption everyone inherited from LLMs: that a 2D box should be
+          spelled out as a 1D token string. Once you reject that, both problems — speed
+          <em>and</em> geometry — improve at the same time. That's the mark of a good idea: it
+          doesn't trade one thing for another, it dissolves the false choice.
+        </p>
+        <p>
+          The practical upshot: if you're building a screen agent, a document parser, or anything that
+          needs to localise many things quickly, a 3B model running at 12.7 boxes/sec with SOTA GUI
+          accuracy is a very attractive perception layer. Fast enough to sit in an agent loop, accurate
+          enough to trust the boxes.
+        </p>
+
+        <p>
+          <a href="https://research.nvidia.com/labs/lpr/locate-anything/" target="_blank">Project
+          page</a> · <a href="https://arxiv.org/abs/2605.27365" target="_blank">arXiv:2605.27365</a> —
+          <em>LocateAnything: Fast and High-Quality Vision-Language Grounding with Parallel Box
+          Decoding</em>. Code on NVlabs/Eagle, weights as nvidia/LocateAnything-3B on Hugging Face,
+          with a live demo on HF Spaces.
+        </p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="on-policy-distillation-paper-juice.html">← prev: Rethinking On-Policy Distillation</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Grounding</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Mapping a text query to where it is in an image, usually as bounding boxes (x1,y1,x2,y2) or points. The perception layer under detection, GUI agents, OCR, and layout parsing.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">PBD</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Parallel Box Decoding. Treats each box/point as one atomic unit, predicting all four coordinates jointly and many boxes at once — instead of spelling coordinates out token-by-token, box-by-box.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Autoregressive (AR / NTP)</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Next-token prediction. Each token depends on the previous, so coordinates are emitted strictly in order. The classic but slow way grounding models output boxes.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Geometric mismatch</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">A box is a 2D object with four interrelated numbers; a 1D left-to-right token stream predicts them in isolation. The structure of the data fights the structure of the decoder. PBD removes this by predicting coordinates jointly.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Moon-ViT</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The native-resolution vision encoder. Keeps full image detail instead of squashing to a fixed square — why small UI elements and fine document text survive.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">Hybrid mode</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Default inference mode. Runs Fast (parallel) by default, falls back to Slow (autoregressive) on format irregularities or spatial ambiguity. 51.6 F1 on COCO at 13.2 BPS.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">BPS</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Boxes Per Second on an H100 — the speed metric. LocateAnything: 12.7 (10× Qwen3-VL, 2.5× Rex-Omni).</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">IoU</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">Intersection-over-Union — box overlap. At IoU=0.95 a box must be near pixel-perfect. LocateAnything gains +3.8% mean F1 on LVIS at 0.95, evidence of tighter geometry.</div>
+    </div>
+    <div class="vocab-term">
+      <div class="vocab-term-header"><span class="vocab-term-word">LocateAnything-Data</span><span class="vocab-term-arrow">▶</span></div>
+      <div class="vocab-term-def">The training corpus: 138M queries, 12M images, 785M boxes, mixing detection (66.9%), GUI, referring, OCR, layout, and point tasks into one unified set.</div>
+    </div>
+  </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=6"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js?v=3"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "locate-anything-paper-juice",
+    title: "LocateAnything — Teaching a Vision-Language Model to See Boxes All At Once.",
+    date: "May 29, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "vision-language-models", "object-detection", "grounding", "nvidia"],
+    time: 26,
+    words: 6100,
+    excerpt: "NVIDIA's grounding model that drops the one-coordinate-at-a-time bottleneck. Parallel Box Decoding emits each box as an atomic unit and many boxes at once — 10× faster than Qwen3-VL while being more accurate. Moon-ViT eyes, Qwen2.5 brain, 785M-box dataset, and SOTA on GUI grounding."
+  },
+  {
     slug: "deepseek-5-6-deepseekmoe",
     title: "The DeepSeekMoE Architecture.",
     date: "May 29, 2026",

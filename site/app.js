@@ -149,16 +149,26 @@
     const filterCat = params.get("cat");
     const filtered = filterCat ? POSTS.filter(p => p.cat === filterCat) : POSTS;
 
-    // Collapse series posts: only collapse deepseek series, show paperjuice series individually
+    // Collapse every series into ONE entry: series name, linking to its FIRST article.
+    const seriesNames = {
+      deepseek: "DeepSeek",
+      "ai-tools": "AI Coding Tools",
+      flashattention: "FlashAttention",
+      "yc-paper-club": "YC Paper Club"
+    };
     const seenSeries = {};
     const collapsed = [];
     filtered.forEach(p => {
-      if (p.series && (p.series === "deepseek" || p.series === "ai-tools")) {
+      if (p.series) {
         if (!seenSeries[p.series]) {
-          seenSeries[p.series] = { post: p, count: 1 };
-          collapsed.push({ type: "series", data: seenSeries[p.series] });
+          seenSeries[p.series] = { first: p, count: 1 };
+          collapsed.push({ type: "series", key: p.series });
         } else {
           seenSeries[p.series].count++;
+          // keep the lowest seriesNum as the "first article" link target
+          const cur = parseFloat(seenSeries[p.series].first.seriesNum) || 0;
+          const cand = parseFloat(p.seriesNum) || 0;
+          if (cand < cur) seenSeries[p.series].first = p;
         }
       } else {
         collapsed.push({ type: "post", data: p });
@@ -175,13 +185,15 @@
 
     archiveList.innerHTML = collapsed.map(item => {
       if (item.type === "series") {
-        const p = item.data.post;
-        const count = item.data.count;
-        // link to the first article of the series
+        const entry = seenSeries[item.key];
+        const p = entry.first;
+        const count = entry.count;
+        const name = seriesNames[item.key] || (item.key.charAt(0).toUpperCase() + item.key.slice(1));
+        // link to the FIRST article of the series
         return `<li>
           <span class="meta">${escapeHtml(p.date)}</span>
           <span class="tag fill">series</span>
-          <a href="posts/${escapeHtml(p.slug)}.html">${escapeHtml(p.series.charAt(0).toUpperCase() + p.series.slice(1))} Series</a>
+          <a href="posts/${escapeHtml(p.slug)}.html">${escapeHtml(name)} Series</a>
           <span class="meta">${count} article${count !== 1 ? "s" : ""}</span>
         </li>`;
       } else {

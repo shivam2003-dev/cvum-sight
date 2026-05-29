@@ -1,4 +1,4 @@
-/* settings.js — reader settings panel (theme, text size, font, line spacing, scroll style, read-aloud) */
+/* settings.js — reader settings panel (theme, text size, font, line spacing, scroll style) */
 (function () {
   var THEMES = [
     { id: "paper",    label: "Paper" },
@@ -98,17 +98,6 @@
         '<label class="seg-label">Scroll style</label>' +
         '<div class="seg-row scroll-row">' + seg("scroll-btn", "data-scroll", SCROLLS, savedScroll) + '</div>' +
       '</div>';
-    if ("speechSynthesis" in window) {
-      html +=
-        '<div class="settings-divider"></div>' +
-        '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
-          '<label class="seg-label">Read aloud</label>' +
-          '<div class="seg-row tts-row">' +
-            '<button class="tts-btn" data-tts="play">&#9654; Play</button>' +
-            '<button class="tts-btn" data-tts="stop">&#9632; Stop</button>' +
-          '</div>' +
-        '</div>';
-    }
   }
 
   html += '<p style="font-family:var(--font-body);font-size:10px;color:var(--ink-faint);margin:8px 0 0;text-align:center;">press ? for keyboard shortcuts</p>';
@@ -240,37 +229,4 @@
       this.classList.add("active");
     });
   });
-
-  // ── read aloud (text-to-speech) ──
-  if (hasArticle && "speechSynthesis" in window) {
-    var ttsBtns = panel.querySelectorAll(".tts-btn");
-    var playBtn = panel.querySelector('.tts-btn[data-tts="play"]');
-    function setPlayLabel(state) {
-      playBtn.innerHTML = state === "speaking" ? "&#10073;&#10073; Pause"
-                        : state === "paused"  ? "&#9654; Resume"
-                        : "&#9654; Play";
-    }
-    function speakArticle() {
-      var body = document.querySelector(".post-body");
-      var text = body ? body.innerText.replace(/\s+/g, " ").trim() : "";
-      if (!text) return;
-      window.speechSynthesis.cancel();
-      var u = new SpeechSynthesisUtterance(text);
-      u.rate = 1; u.pitch = 1;
-      u.onend = function () { setPlayLabel("idle"); };
-      u.onerror = function () { setPlayLabel("idle"); };
-      window.speechSynthesis.speak(u);
-      setPlayLabel("speaking");
-    }
-    playBtn.addEventListener("click", function () {
-      var ss = window.speechSynthesis;
-      if (ss.speaking && !ss.paused) { ss.pause(); setPlayLabel("paused"); }
-      else if (ss.paused) { ss.resume(); setPlayLabel("speaking"); }
-      else { speakArticle(); }
-    });
-    panel.querySelector('.tts-btn[data-tts="stop"]').addEventListener("click", function () {
-      window.speechSynthesis.cancel(); setPlayLabel("idle");
-    });
-    window.addEventListener("beforeunload", function () { window.speechSynthesis.cancel(); });
-  }
 })();

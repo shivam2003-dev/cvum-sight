@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging Pod Failures — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">← Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE · KUBERNETES · SRE PLAYBOOK</p>
+        <h1>Debugging Pod Failures — Decode Every Status.</h1>
+        <div class="tag-row">
+          <span class="tag fill">kubernetes</span>
+          <span class="tag">debugging</span>
+          <span class="tag">sre</span>
+          <span class="tag">pods</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          The pod status column is a diagnosis, not a mystery. Each value points at a specific layer:
+          scheduling, image pull, container start, the app itself, or probes. Workflow is always the
+          same — <code>kubectl get pod</code> → read status → <code>kubectl describe pod</code> (Events)
+          → <code>kubectl logs</code> (incl. <code>--previous</code>). This guide maps each status to its
+          cause and fix.
+        </blockquote>
+
+        <h2 id="triage">The 30-second triage</h2>
+        <pre data-lang="bash">kubectl get pod <pod> -o wide                 # STATUS + RESTARTS + node
+kubectl describe pod <pod>                     # scroll to Events (the why)
+kubectl logs <pod>                             # app output
+kubectl logs <pod> --previous                  # crashed container's last words
+kubectl get events --sort-by=.lastTimestamp -n <ns></pre>
+        <p>Status tells you which section below to jump to.</p>
+        <table>
+          <thead><tr><th>Status</th><th>Layer</th></tr></thead>
+          <tbody>
+            <tr><td><code>Pending</code></td><td>Scheduling — no node fits yet</td></tr>
+            <tr><td><code>ImagePullBackOff</code> / <code>ErrImagePull</code></td><td>Image pull</td></tr>
+            <tr><td><code>CreateContainerConfigError</code></td><td>Missing ConfigMap/Secret</td></tr>
+            <tr><td><code>CrashLoopBackOff</code></td><td>App starts then dies, repeatedly</td></tr>
+            <tr><td><code>OOMKilled</code></td><td>Hit memory limit</td></tr>
+            <tr><td><code>Running</code> but <code>0/1 READY</code></td><td>Readiness probe failing</td></tr>
+            <tr><td><code>Init:…</code></td><td>An init container is stuck/failing</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="pending">Pending — won't schedule</h2>
+        <p><strong>Cause.</strong> Scheduler found no node that fits. <code>describe</code> Events spell it
+        out: <em>Insufficient cpu/memory</em>, <em>node(s) had taint …</em>, <em>didn't match node
+        affinity</em>, or <em>unbound PersistentVolumeClaim</em>.</p>
+        <p><strong>Diagnose &amp; fix.</strong></p>
+        <pre data-lang="bash">kubectl describe pod <pod> | grep -A10 Events
+kubectl get nodes -o wide
+kubectl describe node <node> | grep -A5 Allocated   # free resources</pre>
+        <ul>
+          <li><strong>Insufficient resources:</strong> lower the pod's requests, free capacity, or scale the cluster (autoscaler).</li>
+          <li><strong>Taints:</strong> add a matching toleration, or schedule elsewhere.</li>
+          <li><strong>Affinity/nodeSelector:</strong> no node has the required label — fix the rule or label a node.</li>
+          <li><strong>Unbound PVC:</strong> no PV / StorageClass can satisfy the claim — see the PVC events.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">requests, not limits, drive scheduling</span>
+          A pod requesting 4Gi stays Pending if no node has 4Gi free — even if it would only use 200Mi.
+          Right-size <em>requests</em>; they reserve capacity.
+        </div>
+
+        <h2 id="imagepull">ImagePullBackOff / ErrImagePull</h2>
+        <p><strong>Cause.</strong> Kubelet can't pull the image.</p>
+        <ul>
+          <li>Wrong image name/tag (typo, tag doesn't exist).</li>
+          <li>Private registry, no/invalid <code>imagePullSecret</code>.</li>
+          <li>Registry unreachable / rate-limited (Docker Hub anonymous pull limits).</li>
+          <li>Wrong architecture (arm64 image on amd64 node).</li>
+        </ul>
+        <pre data-lang="bash">kubectl describe pod <pod> | grep -A5 Events    # exact pull error
+kubectl get secret <pullsecret> -o yaml          # exists? right registry?
+# test the pull manually on a node / locally:
+docker pull <image>:<tag></pre>
+        <p><strong>Fix.</strong> Correct the tag; attach a valid <code>imagePullSecret</code> to the pod
+        or ServiceAccount; use a mirror/authenticated pull to dodge rate limits; match the node arch.</p>
+
+        <h2 id="configerr">CreateContainerConfigError</h2>
+        <p><strong>Cause.</strong> The pod references a ConfigMap or Secret (env or volume) that doesn't
+        exist or lacks the key.</p>
+        <pre data-lang="bash">kubectl describe pod <pod> | grep -A5 Events   # "configmap X not found"
+kubectl get configmap,secret -n <ns></pre>
+        <p><strong>Fix.</strong> Create the missing ConfigMap/Secret (right name, right namespace, right
+        key), or fix the reference in the pod spec.</p>
+
+        <h2 id="crashloop">CrashLoopBackOff</h2>
+        <p><strong>Cause.</strong> The container starts, exits, and Kubernetes restarts it on a backoff —
+        repeatedly. The crash is your app's, not K8s'. The <em>why</em> is in the logs.</p>
+        <pre data-lang="bash">kubectl logs <pod> --previous          # the crash output — start here
+kubectl describe pod <pod>             # exit code + reason
+#   exit 1   = app error (read the log)
+#   exit 137 = SIGKILL (often OOM — check OOMKilled)
+#   exit 143 = SIGTERM (shutdown)</pre>
+        <p><strong>Common causes &amp; fix.</strong></p>
+        <ul>
+          <li>Bad config / missing env var / can't reach a dependency at boot → fix config; don't crash on a transient dep, retry.</li>
+          <li>Failing migration or panic on startup → fix the app; gate with an init container.</li>
+          <li>Liveness probe killing a slow starter → add a <code>startupProbe</code> (see below).</li>
+          <li>Wrong command/entrypoint → container exits immediately; verify the cmd.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">--previous is the key</span>
+          <code>kubectl logs &lt;pod&gt;</code> shows the <em>current</em> (just-started) container, often
+          empty. <code>--previous</code> shows the one that just crashed — that's where the error is.
+        </div>
+
+        <h2 id="oom">OOMKilled</h2>
+        <p><strong>Cause.</strong> The container exceeded its memory <code>limit</code>; the kernel killed
+        it (exit 137). Restarts, often into CrashLoopBackOff.</p>
+        <pre data-lang="bash">kubectl describe pod <pod> | grep -i -A2 "Last State"   # OOMKilled, exit 137
+kubectl top pod <pod>                                    # current usage
+# node-side: dmesg shows the OOM kill</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Raise the memory <code>limit</code> if the workload legitimately needs it.</li>
+          <li>Fix the leak / cap heap (JVM <code>-Xmx</code> below the limit; many runtimes ignore cgroup limits unless told).</li>
+          <li>Set <code>requests</code> = typical, <code>limit</code> = peak with headroom.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">runtimes don't auto-see limits</span>
+          A JVM/Node process may size its heap to <em>node</em> RAM, not the pod limit, then get OOMKilled.
+          Set <code>-Xmx</code> / <code>--max-old-space-size</code> below the container limit.
+        </div>
+
+        <h2 id="notready">Running but 0/1 READY</h2>
+        <p><strong>Cause.</strong> Container is up but the <strong>readiness probe</strong> fails, so it's
+        kept out of Service endpoints (no traffic). Not restarted — readiness ≠ liveness.</p>
+        <pre data-lang="bash">kubectl describe pod <pod> | grep -A3 Readiness   # probe config + failures
+kubectl get endpoints <svc>                        # empty = no ready pods
+kubectl exec <pod> -- curl -s localhost:<port>/healthz</pre>
+        <p><strong>Fix.</strong> Make sure the probe path/port match a real health endpoint; give a
+        sufficient <code>initialDelaySeconds</code> or use a <code>startupProbe</code>; ensure the app
+        actually binds and the dependency it health-checks is reachable.</p>
+
+        <h2 id="init">Init / stuck containers</h2>
+        <p><strong>Cause.</strong> An init container hasn't completed (waiting on a dependency, failing
+        repeatedly), so the main containers never start. Status shows <code>Init:0/1</code> or
+        <code>Init:CrashLoopBackOff</code>.</p>
+        <pre data-lang="bash">kubectl logs <pod> -c <init-container-name>
+kubectl describe pod <pod>     # which init container, what it's waiting on</pre>
+        <p><strong>Fix.</strong> Debug the init container like any container (logs, exit code). Common:
+        "wait-for-db" loops forever because the DB Service name/port is wrong or the DB isn't up.</p>
+
+        <h2 id="probes">Probe tuning — the recurring root cause</h2>
+        <p>Half of "weird pod" tickets are probe misconfig. Three probes, three jobs:</p>
+        <table>
+          <thead><tr><th>Probe</th><th>On fail</th><th>Use for</th></tr></thead>
+          <tbody>
+            <tr><td>liveness</td><td>restart container</td><td>detect a wedged process</td></tr>
+            <tr><td>readiness</td><td>remove from Service</td><td>"can I serve traffic right now"</td></tr>
+            <tr><td>startup</td><td>hold off liveness</td><td>slow-booting apps</td></tr>
+          </tbody>
+        </table>
+        <div class="gotcha">
+          <span class="gotcha-label">don't point liveness at dependencies</span>
+          If liveness checks the DB and the DB blips, K8s restarts your healthy app for no reason —
+          turning a small blip into a crash loop. Liveness = "is the process stuck"; readiness = "should
+          I get traffic"; startup = "still booting."
+        </div>
+
+        <h2 id="ref">Quick reference</h2>
+        <pre data-lang="bash">kubectl get pod <pod> -o wide
+kubectl describe pod <pod>                 # Events = the why
+kubectl logs <pod> [-c container] [--previous] [-f]
+kubectl get events --sort-by=.lastTimestamp -n <ns>
+kubectl top pod <pod>                      # needs metrics-server
+kubectl debug -it <pod> --image=busybox --target=<container>   # ephemeral debug
+kubectl get pod <pod> -o jsonpath='{.status.containerStatuses[*].state}'</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../debug-guides.html">← all debug guides</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=8"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

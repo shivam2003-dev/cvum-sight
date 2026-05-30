@@ -38,7 +38,7 @@
 
       <div class="post-header">
         <p class="meta">CHEATSHEET &middot; GENAI &middot; LLM SERVING</p>
-        <h1>LLM Inference — The Serving Cheatsheet.</h1>
+        <h1>LLM Inference — The Deep Serving Cheatsheet.</h1>
         <div class="tag-row">
           <span class="tag fill">inference</span>
           <span class="tag">llm</span>
@@ -52,121 +52,178 @@
         <blockquote>
           LLM inference is <strong>two different jobs</strong>. <strong>Prefill</strong> (process the prompt) is
           compute-bound and parallel. <strong>Decode</strong> (generate tokens one at a time) is
-          memory-bandwidth-bound — every token re-reads all the weights and the KV cache. Almost all serving
-          tricks exist to make decode less wasteful.
+          memory-bandwidth-bound — every token re-reads all the weights and the entire KV cache. Almost every
+          serving trick exists to make decode less wasteful or to pack more requests onto the GPU. This sheet
+          goes deep: the arithmetic, the KV cache, batching, quantization, decoding tricks, parallelism, the
+          stack, the tuning knobs, and the metrics that prove it works.
         </blockquote>
 
         <h2 id="phases">1. Prefill vs decode</h2>
         <table>
           <thead><tr><th></th><th>Prefill</th><th>Decode</th></tr></thead>
           <tbody>
-            <tr><td>What</td><td>Encode the whole prompt, build KV cache</td><td>Generate one token per step, autoregressively</td></tr>
-            <tr><td>Bound by</td><td>Compute (big parallel matmul)</td><td>Memory bandwidth (read weights + KV each step)</td></tr>
+            <tr><td>What</td><td>Encode the whole prompt; build KV cache for all prompt tokens at once</td><td>Generate one token per forward, autoregressively</td></tr>
+            <tr><td>Parallelism</td><td>All prompt positions in parallel → big GEMM</td><td>One position at a time → tall-skinny matmul</td></tr>
+            <tr><td>Bound by</td><td>Compute (FLOPs)</td><td>Memory bandwidth (read weights + KV every step)</td></tr>
             <tr><td>Metric</td><td><strong>TTFT</strong> (time to first token)</td><td><strong>TPOT</strong> / inter-token latency</td></tr>
+            <tr><td>Cost driver</td><td>Prompt length</td><td>Output length × model size</td></tr>
           </tbody>
         </table>
-        <p>Latency a user feels = TTFT + (tokens × TPOT). Throughput = tokens/sec across all concurrent
-        requests. You optimize them separately.</p>
+        <p>Total user-visible latency = TTFT + (output_tokens × TPOT). Throughput = total tokens/sec across all
+        concurrent requests. You optimize them with different levers, so always measure the split first.</p>
+        <div class="gotcha"><span class="gotcha-label">why decode is bandwidth-bound</span>
+          Decode does very little math per token (one tall-skinny matmul per layer) but must read every weight
+          and the whole KV cache from HBM each step. Arithmetic intensity is tiny → you're waiting on memory,
+          not the ALUs. That's why shrinking bytes-moved (quantization, smaller KV) speeds decode, while adding
+          FLOPs does nothing.</div>
 
         <h2 id="metrics">2. The metrics that matter</h2>
         <ul>
-          <li><strong>TTFT</strong> — time to first token. Dominated by prompt length + queue wait.</li>
-          <li><strong>TPOT / ITL</strong> — time per output token. Dominated by model size, batch, bandwidth.</li>
-          <li><strong>Throughput</strong> — total tokens/sec; what you pay for. Trades off against latency.</li>
-          <li><strong>Goodput</strong> — throughput of requests that <em>met their SLO</em>. The honest number.</li>
+          <li><strong>TTFT</strong> — time to first token. Dominated by prompt length (prefill compute) + queue wait. The "feels responsive" number for chat.</li>
+          <li><strong>TPOT / ITL</strong> — time per output token (inter-token latency). Dominated by model size, batch size, bandwidth, quantization.</li>
+          <li><strong>Throughput</strong> — total output (and input) tokens/sec; what your $/token is based on. Rises with batch but so does TPOT.</li>
+          <li><strong>Goodput</strong> — throughput of requests that met their SLO (e.g. TTFT&lt;1s, TPOT&lt;50ms). The honest capacity number; raw throughput can hide SLO violations.</li>
+          <li><strong>Latency percentiles</strong> — p50/p95/p99. Tail latency is where users feel pain; a good mean with bad p99 is a scheduling problem.</li>
         </ul>
 
         <h2 id="kv">3. The KV cache (the real constraint)</h2>
         <ul>
-          <li>Every generated token attends to all previous tokens — so you cache their Key/Value tensors to avoid recomputing.</li>
-          <li>KV size ≈ <code>2 × layers × kv_heads × head_dim × seq_len × batch × dtype_bytes</code>. It grows linearly with context and concurrency, and it <strong>competes with weights for VRAM</strong>.</li>
-          <li>At long context / high concurrency, <strong>KV cache, not weights, is what OOMs you</strong>.</li>
+          <li>Each generated token attends to all previous tokens, so you cache their Key/Value tensors to avoid recomputing them every step.</li>
+          <li>Size formula: <code>KV_bytes = 2 (K and V) × n_layers × n_kv_heads × head_dim × seq_len × batch × dtype_bytes</code>.</li>
+          <li>It grows <strong>linearly with context length and concurrency</strong>, and it competes with weights for VRAM. At long context / high concurrency, <strong>KV cache — not weights — is what OOMs you</strong>.</li>
+          <li><strong>GQA/MQA</strong> shrink it: fewer <code>n_kv_heads</code> → proportionally smaller KV → more concurrency, longer context, faster decode.</li>
         </ul>
+        <pre data-lang="text"># Example: 7B, 32 layers, 32 KV heads, head_dim 128, FP16, 4096 ctx, 1 seq
+KV = 2 × 32 × 32 × 128 × 4096 × 1 × 2 bytes ≈ 2.1 GB  per sequence
+# 64 concurrent sequences → ~137 GB of KV alone. GQA (8 KV heads) → ÷4.</pre>
         <div class="gotcha"><span class="gotcha-label">PagedAttention is why vLLM wins</span>
-          Naive serving pre-allocates a contiguous KV block for max length → huge fragmentation and waste.
-          PagedAttention pages the KV cache like virtual memory (fixed blocks, no contiguity needed) → far
-          higher batch sizes and throughput from the same VRAM.</div>
+          Naive serving pre-allocates a contiguous KV block for the max possible length → huge internal
+          fragmentation and waste. PagedAttention pages the KV cache like OS virtual memory: fixed-size blocks,
+          a block table mapping logical→physical, allocated on demand, non-contiguous. Result: near-zero waste,
+          far higher batch sizes, and shareable blocks (common prefixes, beam search) — the core of vLLM's
+          throughput.</div>
 
         <h2 id="batching">4. Continuous batching</h2>
         <ul>
-          <li><strong>Static batching</strong> waits for the whole batch to finish — short requests block behind long ones (head-of-line blocking).</li>
-          <li><strong>Continuous (in-flight) batching</strong> — add/evict requests at the token level each step. A finished sequence frees its slot immediately for a queued one. Massive throughput gain at high concurrency.</li>
-          <li>This is the default in vLLM / TGI / TensorRT-LLM. It's the single biggest serving lever after the KV cache.</li>
+          <li><strong>Static batching</strong> waits for the whole batch to finish — short requests block behind the longest one (head-of-line blocking), and a finished slot can't be reused mid-batch.</li>
+          <li><strong>Continuous (in-flight) batching</strong> schedules at the token level: every decode step, admit queued requests and evict finished ones. A completed sequence frees its slot immediately. Keeps the GPU densely packed under length variance.</li>
+          <li>This is the single biggest throughput lever after the KV cache. Default in vLLM / TGI / TensorRT-LLM.</li>
+          <li><strong>Chunked prefill</strong> interleaves prefill chunks with ongoing decode so a big prompt doesn't stall everyone's token generation — keeps TPOT stable under load.</li>
         </ul>
 
         <h2 id="quant">5. Quantization (smaller, faster)</h2>
         <table>
-          <thead><tr><th>Method</th><th>What</th></tr></thead>
+          <thead><tr><th>Method</th><th>What it quantizes</th><th>Notes</th></tr></thead>
           <tbody>
-            <tr><td><strong>Weight-only INT8/INT4</strong> (GPTQ, AWQ)</td><td>Shrink weights → less VRAM + bandwidth. Decode is bandwidth-bound, so this speeds it up. Tiny quality hit.</td></tr>
-            <tr><td><strong>W8A8 / SmoothQuant</strong></td><td>Quantize weights <em>and</em> activations → use INT8 Tensor Cores. More speed, more care.</td></tr>
-            <tr><td><strong>FP8</strong></td><td>Hopper+/Blackwell native; good quality/speed balance for serving.</td></tr>
-            <tr><td><strong>KV-cache quant</strong></td><td>Store KV in INT8/FP8 → more concurrent sequences / longer context per GB.</td></tr>
+            <tr><td><strong>GPTQ</strong></td><td>Weights → INT4/3 (post-training, layer-wise)</td><td>Calibration-based; widely supported.</td></tr>
+            <tr><td><strong>AWQ</strong></td><td>Weights → INT4 (protects salient channels)</td><td>Strong quality at 4-bit; popular default.</td></tr>
+            <tr><td><strong>SmoothQuant / W8A8</strong></td><td>Weights + activations → INT8</td><td>Uses INT8 Tensor Cores; needs activation handling.</td></tr>
+            <tr><td><strong>FP8 (E4M3)</strong></td><td>Weights + activations → 8-bit float</td><td>Hopper/Ada/Blackwell native; good balance.</td></tr>
+            <tr><td><strong>KV-cache quant</strong></td><td>Stored K/V → INT8/FP8</td><td>More concurrency / longer context per GB.</td></tr>
+            <tr><td><strong>GGUF (llama.cpp)</strong></td><td>Weights → various k-quants</td><td>CPU/edge/local serving.</td></tr>
           </tbody>
         </table>
-        <p>Rule of thumb: for decode-bound serving, <strong>weight-only 4-bit (AWQ/GPTQ)</strong> is the
-        easiest large win — memory and bandwidth drop, quality mostly holds.</p>
+        <p><strong>Weight-only vs weight+activation:</strong> decode is bandwidth-bound, so <em>weight-only 4-bit
+        (AWQ/GPTQ)</em> is the easiest big win — fewer weight bytes per token, minimal quality hit. W8A8/FP8
+        also speed compute-bound prefill by using low-precision Tensor Cores. Always validate on an eval set;
+        quality loss is model- and task-dependent.</p>
 
         <h2 id="decode">6. Faster decoding</h2>
         <ul>
-          <li><strong>Speculative decoding</strong> — a small draft model proposes K tokens, the big model verifies them in one pass. Accepted tokens come "free" → lower latency, same distribution.</li>
-          <li><strong>Prefix caching</strong> — reuse KV for shared prompt prefixes (system prompts, few-shot). Big win for chat / RAG with repeated context.</li>
-          <li><strong>Chunked prefill</strong> — split long prompts so prefill and decode interleave; keeps TTFT bounded under load.</li>
-          <li><strong>Multi-LoRA serving</strong> — many adapters on one base model in memory (S-LoRA style).</li>
+          <li><strong>Speculative decoding</strong> — a small draft model proposes K tokens; the target verifies them in one parallel forward and accepts the longest prefix consistent with its own distribution (modified rejection sampling). Same output distribution, lower latency. Variants: Medusa heads, EAGLE, n-gram/prompt lookup, self-speculation.</li>
+          <li><strong>Prefix caching</strong> — reuse KV for shared prompt prefixes (system prompts, few-shot examples, RAG headers). Cuts prefill cost and TTFT for repeated heads. SGLang's RadixAttention generalizes this with a radix tree.</li>
+          <li><strong>Chunked prefill</strong> — bound TTFT under load by splitting long prompts.</li>
+          <li><strong>Multi-LoRA serving</strong> — many adapters on one base model in VRAM (S-LoRA), batching across adapters.</li>
+          <li><strong>CUDA graphs</strong> — capture the decode step to remove per-launch CPU overhead at small batch.</li>
         </ul>
 
-        <h2 id="parallel">7. Fitting big models across GPUs</h2>
-        <ul>
-          <li><strong>Tensor parallel (TP)</strong> — split each layer's matmuls across GPUs. Low latency, needs fast interconnect (NVLink). Within a node.</li>
-          <li><strong>Pipeline parallel (PP)</strong> — split layers into stages across GPUs/nodes. Higher throughput, adds pipeline latency.</li>
-          <li><strong>Expert parallel</strong> — for MoE models, route experts across GPUs.</li>
-          <li>Pick TP for latency on a single node; add PP to cross nodes for very large models.</li>
-        </ul>
-
-        <h2 id="stack">8. The serving stack (2025-era)</h2>
+        <h2 id="attn">7. Attention variants that change serving</h2>
         <table>
-          <thead><tr><th>Tool</th><th>Use</th></tr></thead>
+          <thead><tr><th>Variant</th><th>Effect on serving</th></tr></thead>
           <tbody>
-            <tr><td><strong>vLLM</strong></td><td>De-facto OSS server: PagedAttention, continuous batching, OpenAI-compatible API. Default choice.</td></tr>
-            <tr><td><strong>TensorRT-LLM</strong></td><td>NVIDIA, max performance, compiled engines. Fastest on NVIDIA, more ops effort.</td></tr>
-            <tr><td><strong>TGI</strong></td><td>Hugging Face text-generation-inference server.</td></tr>
-            <tr><td><strong>SGLang</strong></td><td>Fast serving + structured/programmatic generation, strong prefix caching (RadixAttention).</td></tr>
-            <tr><td><strong>llama.cpp / Ollama</strong></td><td>Local / CPU / GGUF quantized; great for edge + dev.</td></tr>
+            <tr><td><strong>MHA</strong> (multi-head)</td><td>Full K/V per head → largest KV cache.</td></tr>
+            <tr><td><strong>MQA</strong> (multi-query)</td><td>One K/V head shared by all query heads → smallest KV, fastest decode, small quality cost.</td></tr>
+            <tr><td><strong>GQA</strong> (grouped-query)</td><td>K/V shared per group → middle ground; the modern default (Llama-2/3 70B, Mistral).</td></tr>
+            <tr><td><strong>MLA</strong> (multi-head latent)</td><td>DeepSeek's low-rank KV compression → very small KV cache.</td></tr>
+            <tr><td><strong>Sliding-window</strong></td><td>Bounded attention window → bounded KV (Mistral). Trades long-range recall.</td></tr>
           </tbody>
         </table>
 
-        <h2 id="tune">9. Tuning knobs &amp; serving math</h2>
-        <pre data-lang="bash"># vLLM — the levers you actually touch
---max-model-len 8192               # cap context = cap KV per request
---gpu-memory-utilization 0.90      # fraction of VRAM for weights+KV
---max-num-seqs 256                 # concurrency cap
---tensor-parallel-size 2           # split across 2 GPUs
---quantization awq                 # 4-bit weights
---enable-prefix-caching            # reuse shared prefixes</pre>
+        <h2 id="parallel">8. Fitting big models across GPUs</h2>
         <ul>
-          <li>VRAM budget ≈ weights + KV-cache pool + activation overhead. If you raise concurrency or context, you need more KV pool → lower other two or OOM.</li>
-          <li>Bigger batch → more throughput but higher TPOT. Set <code>max-num-seqs</code> to the point where p99 latency still meets SLO.</li>
+          <li><strong>Tensor parallel (TP)</strong> — split each layer's matmuls across GPUs, all-reduce activations per layer. Low latency, needs NVLink, intra-node. Best for latency-sensitive serving on one node.</li>
+          <li><strong>Pipeline parallel (PP)</strong> — split layers into stages across GPUs/nodes; activations passed stage→stage. Crosses nodes well, adds pipeline latency, needs concurrency to fill stages.</li>
+          <li><strong>Expert parallel</strong> — route MoE experts across GPUs.</li>
+          <li>Pick TP for single-node latency; add PP to span nodes for very large models. Replicate the whole setup behind a load balancer for horizontal scale.</li>
         </ul>
 
-        <h2 id="ref">10. Quick reference</h2>
-        <pre data-lang="text">Latency = TTFT + tokens × TPOT
-Prefill = compute-bound (prompt) → batch/chunk it
-Decode  = bandwidth-bound (per token) → quantize, speculate, cache
-KV cache grows with context × concurrency → the usual OOM
-Levers: continuous batching, PagedAttention, AWQ/GPTQ 4-bit,
-        prefix caching, speculative decoding, TP/PP</pre>
+        <h2 id="stack">9. The serving stack (2025-era)</h2>
+        <table>
+          <thead><tr><th>Tool</th><th>Use</th></tr></thead>
+          <tbody>
+            <tr><td><strong>vLLM</strong></td><td>De-facto OSS server: PagedAttention, continuous batching, OpenAI-compatible API, broad model + quant support. Default.</td></tr>
+            <tr><td><strong>TensorRT-LLM</strong></td><td>NVIDIA, compiled engines, max performance on NVIDIA HW. More ops effort; pair with Triton Inference Server.</td></tr>
+            <tr><td><strong>TGI</strong></td><td>Hugging Face text-generation-inference; solid production server.</td></tr>
+            <tr><td><strong>SGLang</strong></td><td>Fast serving + structured/programmatic generation; RadixAttention prefix sharing.</td></tr>
+            <tr><td><strong>llama.cpp / Ollama</strong></td><td>Local / CPU / Apple Silicon / GGUF; great for dev + edge.</td></tr>
+            <tr><td><strong>LMDeploy / DeepSpeed-MII</strong></td><td>Other high-throughput servers worth benchmarking.</td></tr>
+          </tbody>
+        </table>
 
-        <h2 id="qa">11. Interview Q&amp;A</h2>
+        <h2 id="tune">10. Tuning knobs &amp; serving math</h2>
+        <pre data-lang="bash"># vLLM — the levers you actually touch
+--max-model-len 8192               # cap context = cap KV per request
+--gpu-memory-utilization 0.90      # fraction of VRAM for weights + KV pool
+--max-num-seqs 256                 # concurrency cap (running requests)
+--max-num-batched-tokens 8192      # token budget per scheduler step
+--tensor-parallel-size 2           # split model across 2 GPUs
+--quantization awq                 # 4-bit weights
+--kv-cache-dtype fp8               # quantize KV cache
+--enable-prefix-caching            # reuse shared prefixes
+--enable-chunked-prefill           # bound TTFT under load</pre>
+        <ul>
+          <li>VRAM budget ≈ weights + KV pool + activation overhead. Raising concurrency or context needs a bigger KV pool → shrink weights (quantize) or lower the others, or OOM.</li>
+          <li>Bigger batch → more throughput but higher TPOT. Set <code>max-num-seqs</code> at the knee where p99 latency still meets the SLO.</li>
+          <li>Leave headroom: <code>gpu-memory-utilization</code> too high (0.97) leaves no room for activation spikes → intermittent OOM.</li>
+        </ul>
+
+        <h2 id="sampling">11. Sampling &amp; output control</h2>
+        <ul>
+          <li><strong>temperature</strong> — randomness; 0 = greedy/deterministic (use for eval, code, extraction).</li>
+          <li><strong>top-p (nucleus)</strong> / <strong>top-k</strong> — truncate the tail to the smallest set with cumulative prob p / top k tokens.</li>
+          <li><strong>repetition / frequency / presence penalty</strong> — discourage loops and over-repetition.</li>
+          <li><strong>stop sequences / EOS</strong> — must be configured correctly or generation runs to <code>max_tokens</code> every time (cost + latency + KV blowup).</li>
+          <li><strong>structured output</strong> — JSON-schema / grammar-constrained decoding (Outlines, XGrammar) guarantees parseable output.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">wrong chat template = garbage output</span>
+          Each instruct model has an exact prompt format (special tokens, role markers). Use the model's own
+          chat template / tokenizer; a mismatched template produces rambling or ignored-instruction output and
+          is the most common "the model is broken" bug. Same for missing stop tokens → runaway generations.</div>
+
+        <h2 id="ref">12. Quick reference</h2>
+        <pre data-lang="text">Latency = TTFT + tokens × TPOT ; Throughput vs latency trade at batch
+Prefill = compute-bound (prompt) → chunked prefill + prefix cache
+Decode  = bandwidth-bound (per token) → 4-bit weights, KV quant, speculate
+KV cache grows with context × concurrency → the usual OOM ; GQA/MQA shrink it
+Levers: continuous batching, PagedAttention, AWQ/GPTQ, prefix cache,
+        speculative decoding, TP/PP, chunked prefill
+Knobs: max-model-len, max-num-seqs, gpu-memory-utilization, kv-cache-dtype
+Metrics: TTFT, TPOT, throughput, GOODPUT, p99 ; serve with vLLM/TRT-LLM/SGLang</pre>
+
+        <h2 id="qa">13. Interview Q&amp;A</h2>
         <ul class="cheat-qa">
           <li><span class="q">Why is decode memory-bound but prefill compute-bound?</span><span class="a">Prefill processes many prompt tokens in parallel — a big GEMM (compute). Decode does one token at a time, re-reading all weights + KV per step with little math → bandwidth-bound.</span></li>
-          <li><span class="q">What does the KV cache cost and why does it matter?</span><span class="a">Grows linearly with context length × batch × layers × kv-heads. At scale it dominates VRAM and is usually what OOMs you, not the weights. It's the reason for PagedAttention and KV quant.</span></li>
-          <li><span class="q">What is continuous batching?</span><span class="a">Schedule requests at the token level — add new ones and evict finished ones every step instead of waiting for a whole static batch. Removes head-of-line blocking, big throughput win.</span></li>
-          <li><span class="q">How does speculative decoding keep the output correct?</span><span class="a">A small draft model proposes K tokens; the target model verifies them in one forward pass and accepts the longest matching prefix. The accepted tokens follow the target's exact distribution, so quality is unchanged.</span></li>
-          <li><span class="q">Which quantization for a latency-sensitive decode workload?</span><span class="a">Weight-only 4-bit (AWQ/GPTQ): decode is bandwidth-bound, so shrinking weights directly cuts per-token time with minimal quality loss. Add KV-cache quant for long context.</span></li>
-          <li><span class="q">TTFT is fine but throughput is low — what do you check?</span><span class="a">Batching strategy (static vs continuous), max-num-seqs, KV pool size limiting concurrency, and whether you're GPU-bound or queueing. Raise concurrency until p99 latency hits the SLO.</span></li>
-          <li><span class="q">Tensor parallel vs pipeline parallel?</span><span class="a">TP splits each layer across GPUs (low latency, needs NVLink, single node). PP splits layers into stages (higher throughput, pipeline latency, crosses nodes). Combine for very large models.</span></li>
-          <li><span class="q">How do you serve many fine-tunes cheaply?</span><span class="a">Multi-LoRA: keep one base model in VRAM and swap small LoRA adapters per request (S-LoRA). Avoids loading a full model per fine-tune.</span></li>
-          <li><span class="q">What is prefix caching good for?</span><span class="a">Reusing KV for shared prompt prefixes — system prompts, few-shot examples, RAG context. Cuts prefill cost and TTFT for repeated heads.</span></li>
+          <li><span class="q">What does the KV cache cost and why does it matter?</span><span class="a">2 × layers × kv_heads × head_dim × seq_len × batch × dtype_bytes. Grows linearly with context × concurrency; at scale it dominates VRAM and is what OOMs you, not the weights. Drives PagedAttention, KV quant, GQA.</span></li>
+          <li><span class="q">What is continuous batching?</span><span class="a">Token-level scheduling — admit new and evict finished requests every step instead of waiting for a static batch. Removes head-of-line blocking; biggest throughput win.</span></li>
+          <li><span class="q">How does speculative decoding stay correct?</span><span class="a">A draft model proposes K tokens; the target verifies in one pass and accepts via modified rejection sampling calibrated to its own distribution. Output is distributed exactly as the target alone — same quality, lower latency.</span></li>
+          <li><span class="q">Which quantization for latency-sensitive decode?</span><span class="a">Weight-only 4-bit (AWQ/GPTQ): decode is bandwidth-bound, so fewer weight bytes per token cuts TPOT with minimal quality loss. Add KV-cache quant for long context.</span></li>
+          <li><span class="q">How do GQA/MQA change serving?</span><span class="a">Fewer KV heads → smaller KV cache → more concurrency, longer context, faster decode (less KV to read), small quality cost. Why modern serving models use GQA.</span></li>
+          <li><span class="q">TTFT is fine, throughput low — what do you check?</span><span class="a">Batching strategy (static vs continuous), max-num-seqs, KV pool limiting concurrency, queueing. Raise concurrency to the knee where p99 still meets SLO.</span></li>
+          <li><span class="q">Server OOMs only under load — why?</span><span class="a">KV cache scales with context × concurrency. Lower max-model-len/max-num-seqs, quantize KV, cap output tokens, back off gpu-memory-utilization.</span></li>
+          <li><span class="q">Tensor vs pipeline parallel for inference?</span><span class="a">TP splits each layer (low latency, NVLink, single node); PP splits layers into stages (crosses nodes, pipeline latency, needs concurrency). TP for latency, +PP to span nodes.</span></li>
+          <li><span class="q">How serve many fine-tunes cheaply?</span><span class="a">Multi-LoRA: one base model in VRAM + small swappable adapters (S-LoRA), batched across adapters. Avoids a full model per variant.</span></li>
+          <li><span class="q">What is goodput and why prefer it?</span><span class="a">Throughput of requests meeting their SLO. Raw throughput can be high while many requests violate latency targets; goodput reflects real user-facing capacity.</span></li>
+          <li><span class="q">Same prompt, different answer at temp 0 — bug?</span><span class="a">Not necessarily. Greedy removes sampling randomness, but batching changes floating-point reduction order, so tiny numerical differences are expected. Genuine divergence points to nondeterministic kernels or state.</span></li>
         </ul>
 
       </div>

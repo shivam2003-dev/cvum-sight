@@ -38,7 +38,7 @@
 
       <div class="post-header">
         <p class="meta">CHEATSHEET &middot; GENAI &middot; APPLIED LLM SYSTEMS</p>
-        <h1>GenAI Engineering — The Applied Cheatsheet.</h1>
+        <h1>GenAI Engineering — The Deep Applied Cheatsheet.</h1>
         <div class="tag-row">
           <span class="tag fill">genai</span>
           <span class="tag">rag</span>
@@ -52,106 +52,142 @@
         <blockquote>
           Building with LLMs is mostly <strong>context engineering</strong> and <strong>evaluation</strong>, not
           model training. The model is a fixed black box; your job is to get the right tokens into the prompt,
-          constrain the output, measure quality honestly, and keep cost/latency sane. This is the applied stack.
+          constrain the output, measure quality honestly, defend against injection, and keep cost/latency sane.
+          This sheet covers the full applied stack — the capability ladder, prompting, RAG internals, agents,
+          context limits, evaluation, safety, and LLMOps.
         </blockquote>
 
         <h2 id="ladder">1. The capability ladder (cheapest first)</h2>
         <ol>
-          <li><strong>Prompt engineering</strong> — instructions, examples, format. Always start here.</li>
-          <li><strong>RAG</strong> — inject retrieved knowledge. For facts/freshness/private data.</li>
-          <li><strong>Tools / function calling</strong> — let the model act (search, code, APIs).</li>
-          <li><strong>Agents</strong> — multi-step loops with memory + tools. For open-ended tasks.</li>
+          <li><strong>Prompt engineering</strong> — instructions, examples, format. Always start here; instant, free.</li>
+          <li><strong>RAG</strong> — inject retrieved knowledge for facts/freshness/private data/citations.</li>
+          <li><strong>Tools / function calling</strong> — let the model act (search, code, APIs, DB).</li>
+          <li><strong>Agents</strong> — multi-step reason→act loops with memory + tools for open-ended tasks.</li>
           <li><strong>Fine-tuning</strong> — last resort, for style/format/latency, not for facts.</li>
         </ol>
         <div class="gotcha"><span class="gotcha-label">don't fine-tune for knowledge</span>
           Fine-tuning teaches behaviour/format, not facts — and it bakes them in stale. For knowledge that
-          changes or must be cited, use RAG. Reach for fine-tuning to fix tone, structure, or to shrink a big
-          prompt into the weights for latency.</div>
+          changes or must be cited, use RAG. Reach for fine-tuning to fix tone, structure, or to compress a
+          long prompt into the weights for latency/cost. Climb the ladder only when the cheaper rung fails.</div>
 
         <h2 id="prompt">2. Prompting that holds up</h2>
         <ul>
-          <li>Be explicit: role, task, constraints, output format. Show 1–3 examples (few-shot) for tricky formats.</li>
-          <li><strong>Chain-of-thought / reasoning</strong> for multi-step problems; with reasoning models, ask for the answer and let them think internally.</li>
-          <li><strong>Structured output</strong> — JSON schema / constrained decoding (grammars) so downstream parsing never breaks.</li>
-          <li>Put stable content (system prompt, instructions) first → it's prefix-cacheable. Keep the variable bit at the end.</li>
+          <li>Be explicit: <strong>role, task, constraints, output format</strong>. Show 1–3 examples (few-shot) for tricky formats; zero-shot for simple ones.</li>
+          <li><strong>Chain-of-thought / reasoning</strong> for multi-step problems. With reasoning models, ask for the answer and let them think internally; don't double-prompt CoT.</li>
+          <li><strong>Structured output</strong> — JSON-schema / grammar-constrained decoding so downstream parsing never breaks.</li>
+          <li><strong>Decomposition</strong> — break complex tasks into steps/sub-prompts; self-consistency (sample n, vote) for hard reasoning.</li>
+          <li>Order for caching: put stable content (system prompt, instructions, few-shot) <strong>first</strong> (prefix-cacheable), variable content last.</li>
         </ul>
 
-        <h2 id="rag">3. RAG pipeline</h2>
-        <pre data-lang="text">ingest → chunk → embed → index            (offline)
-query → embed → retrieve → rerank → pack → generate → cite   (online)</pre>
+        <h2 id="embed">3. Embeddings &amp; vector search</h2>
         <ul>
-          <li><strong>Chunking</strong> — semantic / structure-aware beats fixed size; keep chunks self-contained, add overlap + metadata.</li>
-          <li><strong>Hybrid retrieval</strong> — dense (embeddings) + sparse (BM25) + a <strong>reranker</strong> (cross-encoder). Hybrid + rerank beats pure vector almost always.</li>
-          <li><strong>Vector stores</strong> — pgvector, Qdrant, Weaviate, Milvus, FAISS (local). Postgres+pgvector is the boring, correct default.</li>
-          <li>Advanced: query rewriting, HyDE, parent-document / small-to-big, GraphRAG for connected facts.</li>
+          <li><strong>Embedding</strong> — dense vector where semantic similarity ≈ closeness (cosine/dot). Pick a model sized to your latency/quality (and language/domain); normalize for cosine.</li>
+          <li><strong>ANN index</strong> — exact search doesn't scale, so use approximate nearest neighbour: <strong>HNSW</strong> (graph, great recall/latency, more memory) or <strong>IVF-PQ</strong> (clustered + compressed, memory-efficient). Tune <code>ef_search</code>/<code>nprobe</code> for recall vs speed.</li>
+          <li><strong>Vector stores</strong> — pgvector (boring, correct default), Qdrant, Weaviate, Milvus, FAISS (local/in-process), Pinecone (managed).</li>
+          <li><strong>Metadata filtering</strong> — combine vector similarity with structured filters (tenant, date, source) — essential for multi-tenant and freshness.</li>
+        </ul>
+
+        <h2 id="rag">4. RAG pipeline (in depth)</h2>
+        <pre data-lang="text">OFFLINE: ingest → chunk → embed → index (+ metadata)
+ONLINE:  query → [rewrite] → embed → retrieve (dense + BM25)
+         → rerank (cross-encoder) → pack (budget) → generate → cite
+EVAL:    retrieval (recall@k, ctx precision) + generation (faithfulness)</pre>
+        <ul>
+          <li><strong>Chunking</strong> — structure/semantic-aware beats fixed size; self-contained chunks, overlap, metadata. Consider small-to-big / parent-document retrieval.</li>
+          <li><strong>Hybrid retrieval</strong> — dense (semantic) + sparse (BM25 keyword) fused (e.g. reciprocal rank fusion). Catches both meaning and exact terms/codes.</li>
+          <li><strong>Reranking</strong> — a cross-encoder scores (query, doc) jointly; reorder top-k (50→5). Retrieve-then-rerank consistently beats pure vector.</li>
+          <li><strong>Query transforms</strong> — rewriting, multi-query, HyDE (hypothetical doc embedding), step-back.</li>
+          <li><strong>GraphRAG</strong> — build an entity/relation graph for global/connected questions that chunk retrieval misses.</li>
         </ul>
         <div class="gotcha"><span class="gotcha-label">retrieval quality is the ceiling</span>
-          A great model can't answer from bad context. Most "the LLM is dumb" bugs are retrieval bugs —
-          wrong chunks, no reranker, chunk too big/small. Evaluate retrieval (recall@k, hit rate)
-          <em>separately</em> from generation.</div>
+          A great model can't answer from bad context. Most "the LLM is dumb" bugs are retrieval bugs — wrong
+          chunks, no reranker, chunk too big/small, missing metadata filter. Evaluate retrieval (recall@k, hit
+          rate) <em>separately</em> from generation so you fix the real bottleneck.</div>
 
-        <h2 id="agents">4. Agents &amp; tools</h2>
+        <h2 id="agents">5. Agents &amp; tools</h2>
         <ul>
-          <li><strong>Loop:</strong> model reasons → picks a tool → gets the result → repeats until done (ReAct-style).</li>
-          <li><strong>Function calling</strong> — define tools as schemas; the model emits a structured call you execute and feed back.</li>
-          <li><strong>MCP (Model Context Protocol)</strong> — open standard for connecting models to tools/data sources; the emerging integration layer.</li>
-          <li>Frameworks: LangGraph (graphs/state), the OpenAI Agents SDK, CrewAI, plain function-calling loops. Start with the simplest that works.</li>
-          <li>Keep agents <strong>bounded</strong>: step limits, tool allow-lists, timeouts, human-in-the-loop for risky actions.</li>
+          <li><strong>Loop (ReAct):</strong> reason → choose tool → execute → observe result → repeat until done.</li>
+          <li><strong>Function calling</strong> — tools defined as JSON schemas; model emits a structured call, you run it and feed the result back.</li>
+          <li><strong>MCP (Model Context Protocol)</strong> — open standard connecting models to tools/data via a uniform client-server interface; the emerging integration layer ("USB-C for tools").</li>
+          <li><strong>Patterns</strong> — single-agent + tools (start here), planner/executor, reflection/critique, multi-agent (only when justified — coordination cost is real).</li>
+          <li><strong>Memory</strong> — short-term (conversation window/summary) + long-term (vector store of past facts).</li>
+          <li><strong>Bound everything</strong> — step limits, tool allow-lists, timeouts, cost caps, human-in-the-loop for risky actions.</li>
+          <li>Frameworks: LangGraph (graphs/state), OpenAI Agents SDK, CrewAI, LlamaIndex, or a plain function-calling loop. Use the simplest that works.</li>
         </ul>
 
-        <h2 id="context">5. Context window management</h2>
+        <h2 id="context">6. Context window management</h2>
         <ul>
-          <li>Long context ≠ free: cost + latency grow, and models suffer <strong>"lost in the middle"</strong> — info mid-prompt gets ignored. Put critical content at the start or end.</li>
-          <li>Summarize / compress history; retrieve only what's needed instead of dumping everything.</li>
-          <li>Track token budget per request; trim conversation memory with windowing or summarization.</li>
+          <li>Long context ≠ free: cost + latency grow with tokens, and models suffer <strong>"lost in the middle"</strong> — info mid-prompt gets under-used. Put critical content at the start or end.</li>
+          <li>Retrieve <em>less but better</em> (strong reranking) instead of stuffing everything.</li>
+          <li>Compress/summarize history; trim with windowing or rolling summaries; track a token budget per request.</li>
+          <li>Test the same fact at different prompt positions to measure your model's effective usable context.</li>
         </ul>
 
-        <h2 id="eval">6. Evaluation (the part everyone skips)</h2>
+        <h2 id="eval">7. Evaluation (the part everyone skips)</h2>
         <ul>
           <li>Build a <strong>golden eval set</strong> from real queries early. You can't improve what you don't measure.</li>
-          <li><strong>LLM-as-judge</strong> for open-ended quality (calibrate against human labels); exact/structured checks where possible.</li>
-          <li>RAG metrics: <strong>faithfulness</strong> (grounded in context?), <strong>answer relevance</strong>, <strong>context precision/recall</strong> (RAGAS-style).</li>
-          <li>Run evals in CI on every prompt/model change — prompts are code and regress silently.</li>
-          <li>Tools: RAGAS, promptfoo, LangSmith, Braintrust, OpenAI Evals.</li>
+          <li><strong>LLM-as-judge</strong> for open-ended quality — calibrate against human labels, watch for position/verbosity bias; use pairwise or rubric scoring.</li>
+          <li>Deterministic checks where possible — exact match, schema validation, unit tests on tool outputs.</li>
+          <li><strong>RAG metrics</strong> (RAGAS-style): <strong>faithfulness</strong> (grounded in context?), <strong>answer relevance</strong>, <strong>context precision/recall</strong>.</li>
+          <li>Run evals in <strong>CI</strong> on every prompt/model/index change — prompts are code and regress silently. Track cost + latency alongside quality.</li>
+          <li>Tools: RAGAS, promptfoo, LangSmith, Braintrust, OpenAI Evals, DeepEval.</li>
         </ul>
 
-        <h2 id="safety">7. Safety &amp; reliability</h2>
+        <h2 id="safety">8. Safety &amp; reliability</h2>
         <ul>
-          <li><strong>Prompt injection</strong> is the top risk — untrusted content (retrieved docs, tool output, user input) can hijack instructions. Never trust retrieved text as commands; separate data from instructions; constrain tool permissions.</li>
-          <li><strong>Hallucination control</strong> — ground with RAG, require citations, ask "I don't know" when unsupported, verify with a second pass.</li>
-          <li><strong>Guardrails</strong> — input/output validation, PII redaction, content filters, schema validation.</li>
-          <li>Cap blast radius of tool use (no raw shell/db write without checks).</li>
+          <li><strong>Prompt injection</strong> is the top risk — untrusted content (retrieved docs, tool output, user input, fetched pages) can hijack instructions. <strong>Indirect</strong> injection via RAG/web data is especially dangerous in acting agents.</li>
+          <li>Mitigations (defense in depth): separate data from instructions (clear delimiters), never execute retrieved text as commands, constrain tool permissions (least privilege), validate inputs/outputs, guardrail models/classifiers, human-in-the-loop for risky actions. Put real authorization in <em>code</em>, not the prompt.</li>
+          <li><strong>Hallucination control</strong> — ground with RAG, require citations, allow "I don't know", constrain output, verify with a second pass, lower temperature for facts.</li>
+          <li><strong>Guardrails</strong> — input/output validation, PII redaction, content filters, schema validation, jailbreak detection.</li>
+          <li><strong>Data privacy</strong> — PII handling, tenant isolation in the vector store, retention/zero-retention with the provider.</li>
         </ul>
 
-        <h2 id="ops">8. LLMOps — cost, latency, observability</h2>
+        <h2 id="ops">9. LLMOps — cost, latency, observability</h2>
         <ul>
-          <li><strong>Cache</strong> aggressively: exact-match, semantic cache, and prompt-prefix caching for repeated system prompts.</li>
-          <li><strong>Route</strong> by difficulty: small/cheap model for easy turns, big model for hard ones (model cascades / routers).</li>
+          <li><strong>Cache</strong> — exact-match, <strong>semantic</strong> (near-duplicate queries), and <strong>prompt-prefix</strong> caching for shared system prompts/few-shot/RAG headers.</li>
+          <li><strong>Route / cascade</strong> — small cheap model for easy turns, big model only for hard ones; classify difficulty up front.</li>
+          <li><strong>Token discipline</strong> — trim history, retrieve fewer chunks, cap max output tokens, structured output to stop rambling.</li>
           <li><strong>Stream</strong> tokens for perceived latency; measure TTFT + cost/request + tokens/request.</li>
-          <li><strong>Trace</strong> every call (prompt, retrieved context, tool calls, tokens, latency, cost). You cannot debug a black box without traces.</li>
-          <li>Set budgets/rate limits; watch for runaway agent loops burning tokens.</li>
+          <li><strong>Trace</strong> every call (prompt, retrieved context, tool calls, tokens, latency, cost) — you can't debug or cost-optimize a black box without traces.</li>
+          <li><strong>Govern</strong> — per-user budgets/rate limits; bound agent loops so they can't burn unbounded tokens; fallback/provider failover.</li>
         </ul>
 
-        <h2 id="ref">9. Quick reference</h2>
-        <pre data-lang="text">Order: prompt → RAG → tools → agents → fine-tune (last)
-RAG = hybrid retrieval + rerank; eval retrieval separately
-Output = constrained JSON/grammar so parsing never breaks
-Agents = bounded loops + function calling + MCP tools
-Eval = golden set + LLM-judge + RAGAS, run in CI
-Safety = treat retrieved/tool text as untrusted (prompt injection)
-Ops = cache + route + stream + trace; watch cost/TTFT</pre>
+        <h2 id="patterns">10. Common architectures</h2>
+        <table>
+          <thead><tr><th>Need</th><th>Pattern</th></tr></thead>
+          <tbody>
+            <tr><td>Answer over private docs</td><td>RAG (hybrid + rerank) with citations</td></tr>
+            <tr><td>Exact data / transactions</td><td>Tool/function calling to APIs/SQL, not retrieval</td></tr>
+            <tr><td>Multi-step open task</td><td>Agent loop, bounded, with tools + memory</td></tr>
+            <tr><td>Global/aggregate questions</td><td>GraphRAG or map-reduce summarization</td></tr>
+            <tr><td>Consistent format/tone</td><td>Fine-tune (LoRA) + structured output</td></tr>
+            <tr><td>High volume, cost-sensitive</td><td>Model cascade + caching + small model default</td></tr>
+          </tbody>
+        </table>
 
-        <h2 id="qa">10. Interview Q&amp;A</h2>
+        <h2 id="ref">11. Quick reference</h2>
+        <pre data-lang="text">Order: prompt → RAG → tools → agents → fine-tune (last)
+RAG = chunk well + hybrid retrieval + rerank ; eval retrieval separately
+Output = constrained JSON/grammar so parsing never breaks
+Agents = bounded reason-act loops + function calling + MCP tools + memory
+Context = retrieve less but better ; mind lost-in-the-middle
+Eval = golden set + LLM-judge + RAGAS (faithfulness), run in CI
+Safety = treat retrieved/tool text as UNTRUSTED (prompt injection); authz in code
+Ops = cache + route + stream + trace ; cap tokens & agent loops</pre>
+
+        <h2 id="qa">12. Interview Q&amp;A</h2>
         <ul class="cheat-qa">
-          <li><span class="q">RAG vs fine-tuning — when each?</span><span class="a">RAG for knowledge: facts, freshness, private/citable data. Fine-tuning for behaviour: tone, format, structure, or compressing a long prompt for latency. Knowledge changes, so don't bake it into weights.</span></li>
-          <li><span class="q">Why add a reranker to RAG?</span><span class="a">Embedding retrieval is fast but coarse; a cross-encoder reranker scores query-document pairs jointly and reorders the top-k, sharply improving the context the model sees. Hybrid + rerank is the standard.</span></li>
-          <li><span class="q">What is prompt injection and how do you mitigate it?</span><span class="a">Untrusted text (retrieved docs, tool output, user input) containing instructions that hijack the model. Mitigate by separating data from instructions, never executing retrieved text as commands, constraining tool permissions, and validating outputs.</span></li>
-          <li><span class="q">How do you evaluate a RAG system?</span><span class="a">Separately measure retrieval (recall@k, context precision/recall) and generation (faithfulness, answer relevance) on a golden set, e.g. RAGAS. Run it in CI so prompt/model changes don't regress silently.</span></li>
-          <li><span class="q">What is 'lost in the middle'?</span><span class="a">Models attend best to the start and end of a long context and can miss info in the middle. Put critical content at the edges, retrieve less but better, and don't assume bigger context fixes quality.</span></li>
-          <li><span class="q">How do agents decide what to do?</span><span class="a">A reason-act loop: the model reasons, emits a structured tool call, you execute it and feed back the result, repeat until done. Bound it with step limits, allow-lists, and timeouts.</span></li>
-          <li><span class="q">What is MCP?</span><span class="a">Model Context Protocol — an open standard for connecting LLMs to external tools and data sources through a common interface, instead of bespoke per-tool glue.</span></li>
-          <li><span class="q">How do you cut LLM cost and latency in production?</span><span class="a">Prompt/semantic/prefix caching, route easy requests to smaller models, stream tokens, trim context, quantized serving, and budget/limit agent loops. Trace everything to find the spend.</span></li>
-          <li><span class="q">How do you reduce hallucination?</span><span class="a">Ground answers in retrieved context, require citations, allow 'I don't know', constrain output format, and verify with a second check. Most of it is a retrieval/grounding problem.</span></li>
+          <li><span class="q">RAG vs fine-tuning — when each?</span><span class="a">RAG for knowledge (facts, freshness, private, citable). Fine-tuning for behaviour (tone, format, latency). Knowledge changes — don't bake it into weights.</span></li>
+          <li><span class="q">Why add a reranker?</span><span class="a">Embedding retrieval (bi-encoder) is fast but coarse; a cross-encoder reranker scores query-doc pairs jointly and reorders top-k, sharply improving the context. Retrieve-then-rerank is standard.</span></li>
+          <li><span class="q">Bi-encoder vs cross-encoder?</span><span class="a">Bi-encoder embeds query and docs independently (fast, indexable); cross-encoder processes the pair together (accurate, slow). Use bi-encoder to retrieve, cross-encoder to rerank the shortlist.</span></li>
+          <li><span class="q">What is prompt injection and how do you mitigate it?</span><span class="a">Untrusted text containing instructions that hijack the model (esp. indirect, via RAG/tools in agents). Separate data from instructions, never execute retrieved text as commands, least-privilege tools, validate I/O, authz in code — defense in depth.</span></li>
+          <li><span class="q">How do you evaluate a RAG system?</span><span class="a">Separately measure retrieval (recall@k, context precision/recall) and generation (faithfulness, answer relevance) on a golden set (RAGAS). Run in CI.</span></li>
+          <li><span class="q">What is 'lost in the middle'?</span><span class="a">Models use start/end of long context better than the middle. Put critical content at the edges, retrieve less-but-better; bigger context ≠ better quality.</span></li>
+          <li><span class="q">How do agents decide what to do?</span><span class="a">A reason-act loop: reason → emit a structured tool call → execute → observe → repeat until done. Bound with step limits, allow-lists, timeouts.</span></li>
+          <li><span class="q">What is MCP?</span><span class="a">Model Context Protocol — open standard connecting LLMs to tools/data via a uniform client-server interface, replacing bespoke per-tool glue.</span></li>
+          <li><span class="q">How do you cut LLM cost and latency?</span><span class="a">Prompt/semantic/prefix caching, route easy requests to small models, stream, trim context, quantized serving, cap output + agent loops. Trace to find spend.</span></li>
+          <li><span class="q">How do you reduce hallucination?</span><span class="a">Ground in retrieved context, require citations, allow 'I don't know', constrain output, verify with a second pass, improve retrieval, lower temperature. Mostly a grounding problem.</span></li>
+          <li><span class="q">When NOT to use RAG?</span><span class="a">For behaviour/format (fine-tune), exact structured data (tools/SQL), global/aggregate reasoning (GraphRAG/map-reduce), or small stable knowledge (just put it in context).</span></li>
           <li><span class="q">Why constrain output to a schema?</span><span class="a">Downstream code needs reliable structure; constrained decoding / JSON-schema / grammars guarantee parseable output instead of hoping the model formats correctly.</span></li>
         </ul>
 

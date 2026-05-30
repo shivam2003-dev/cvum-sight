@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redis Cheatsheet — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../cheatsheets.html" style="color:var(--ink-faint);text-decoration:none">&larr; Cheatsheets</a></p>
+
+      <div class="post-header">
+        <p class="meta">CHEATSHEET &middot; MESSAGING &amp; DATA &middot; SENIOR INTERVIEW</p>
+        <h1>Redis — The Senior Interview Cheatsheet.</h1>
+        <div class="tag-row">
+          <span class="tag fill">redis</span>
+          <span class="tag">caching</span>
+          <span class="tag">data-store</span>
+          <span class="tag">interview-prep</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Redis is a <strong>single-threaded, in-memory data-structure server</strong>. Single-threaded for
+          command execution means one slow command stalls everyone — so the senior story is all about
+          O(N) commands, memory, persistence fork pauses, and the replication/HA topology. It's not "a
+          cache"; it's a toolbox of data structures with optional durability.
+        </blockquote>
+
+        <h2 id="model">1. Why single-threaded matters</h2>
+        <ul>
+          <li>Commands run on one thread in an event loop → <strong>atomic</strong> by nature (no locks between commands), but one O(N) command blocks <em>all</em> clients.</li>
+          <li>Redis 6+ adds <strong>threaded I/O</strong> (socket read/write only); command execution stays single-threaded. Redis 7 keeps this model.</li>
+          <li>Implication: never run <code>KEYS *</code>, big <code>SMEMBERS</code>/<code>HGETALL</code>, or a long Lua script in prod — they freeze the loop.</li>
+        </ul>
+
+        <h2 id="types">2. Data types &amp; when to use them</h2>
+        <table>
+          <thead><tr><th>Type</th><th>Use / key commands</th></tr></thead>
+          <tbody>
+            <tr><td><strong>String</strong></td><td>Cache value, counter. <code>SET/GET</code>, <code>INCR</code>, <code>SETEX</code>, <code>SETNX</code>, <code>GETSET</code>.</td></tr>
+            <tr><td><strong>Hash</strong></td><td>Object/fields. <code>HSET/HGET/HGETALL</code>, <code>HINCRBY</code>. Memory-efficient for small objects.</td></tr>
+            <tr><td><strong>List</strong></td><td>Queue/stack. <code>LPUSH/RPUSH</code>, <code>LPOP/RPOP</code>, <code>BLPOP</code> (blocking), <code>LRANGE</code>.</td></tr>
+            <tr><td><strong>Set</strong></td><td>Unique members, set ops. <code>SADD</code>, <code>SISMEMBER</code>, <code>SINTER/SUNION</code>.</td></tr>
+            <tr><td><strong>Sorted Set (ZSet)</strong></td><td>Leaderboard, priority, time index. <code>ZADD</code>, <code>ZRANGE</code>, <code>ZRANGEBYSCORE</code>, <code>ZRANK</code>.</td></tr>
+            <tr><td><strong>Stream</strong></td><td>Append-only log + consumer groups (Kafka-lite). <code>XADD</code>, <code>XREADGROUP</code>, <code>XACK</code>.</td></tr>
+            <tr><td><strong>Bitmap / HyperLogLog</strong></td><td>Flags / approx-cardinality. <code>SETBIT</code>, <code>BITCOUNT</code>; <code>PFADD</code>/<code>PFCOUNT</code> (~0.81% error, 12KB).</td></tr>
+            <tr><td><strong>Geo</strong></td><td>Geospatial (zset under the hood). <code>GEOADD</code>, <code>GEOSEARCH</code>.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="expiry">3. Keys, TTL &amp; expiry</h2>
+        <pre data-lang="bash">EXPIRE key 60 ; PEXPIRE key 1500 ; TTL key ; PERSIST key
+SET key val EX 60 NX           # set if-absent with TTL (atomic)
+SCAN 0 MATCH user:* COUNT 100  # cursor iteration — NEVER KEYS * in prod</pre>
+        <ul>
+          <li>Expiry is <strong>lazy</strong> (on access) + <strong>active</strong> (background sampling) — an expired key can briefly linger in memory until reaped.</li>
+          <li>On a replica, keys don't expire on their own — the primary sends <code>DEL</code> on expiry (avoids replicas diverging).</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">KEYS * is a production footgun</span>
+          <code>KEYS</code> is O(N) over the whole keyspace and blocks the single thread — a multi-second
+          freeze on millions of keys. Always <code>SCAN</code> (cursor, non-blocking, bounded work).</div>
+
+        <h2 id="memory">4. Memory &amp; eviction</h2>
+        <pre data-lang="bash">CONFIG GET maxmemory ; CONFIG SET maxmemory 4gb
+CONFIG SET maxmemory-policy allkeys-lru
+INFO memory   # used_memory, mem_fragmentation_ratio, maxmemory_policy</pre>
+        <table>
+          <thead><tr><th>Policy</th><th>Behaviour</th></tr></thead>
+          <tbody>
+            <tr><td><code>noeviction</code></td><td>Reject writes when full (default). Good for a durable store, bad for a cache.</td></tr>
+            <tr><td><code>allkeys-lru / lfu</code></td><td>Evict least-recently / least-frequently used across all keys. Cache default.</td></tr>
+            <tr><td><code>volatile-lru / ttl / random</code></td><td>Evict only among keys with a TTL.</td></tr>
+          </tbody>
+        </table>
+        <div class="gotcha"><span class="gotcha-label">cache with noeviction = outage</span>
+          A cache using <code>noeviction</code> stops accepting writes when full instead of dropping cold
+          keys. Use <code>allkeys-lru</code>/<code>lfu</code> and set <code>maxmemory</code> below the
+          container limit (else the kernel OOM-kills the process).</div>
+
+        <h2 id="persistence">5. Persistence — RDB vs AOF</h2>
+        <table>
+          <thead><tr><th></th><th>RDB</th><th>AOF</th></tr></thead>
+          <tbody>
+            <tr><td>What</td><td>Point-in-time snapshot (fork + dump)</td><td>Append-only log of write commands</td></tr>
+            <tr><td>Recovery</td><td>Faster load, lose data since last snapshot</td><td>Less data loss (fsync everysec), slower replay</td></tr>
+            <tr><td>Cost</td><td>Fork = copy-on-write memory spike</td><td>Disk-heavy; periodic rewrite/compaction</td></tr>
+          </tbody>
+        </table>
+        <p><code>appendfsync everysec</code> is the balanced default (≤1s loss). Many run <strong>both</strong>
+        (AOF for durability + RDB for fast restart). <code>BGSAVE</code>/<code>BGREWRITEAOF</code> fork in the
+        background — the fork's copy-on-write can double memory under heavy writes.</p>
+
+        <h2 id="atomicity">6. Transactions, Lua &amp; pipelining</h2>
+        <ul>
+          <li><strong>MULTI/EXEC</strong> — queue commands, run atomically (no interleaving). <strong>Not</strong> rollback-on-error; <strong>WATCH</strong> adds optimistic locking (CAS) — abort if a watched key changed.</li>
+          <li><strong>Lua scripts</strong> (<code>EVAL</code>/<code>EVALSHA</code>) run atomically server-side — ideal for read-modify-write (rate limiters, locks). Keep them short (they block the loop).</li>
+          <li><strong>Pipelining</strong> — send many commands without waiting for each reply → fewer round trips, big throughput win. Not atomic; just batched.</li>
+        </ul>
+
+        <h2 id="patterns">7. Patterns (the interview favourites)</h2>
+        <ul>
+          <li><strong>Cache-aside</strong>: read cache → miss → read DB → <code>SET</code> with TTL. Handle stampedes with jittered TTL / locks / request coalescing.</li>
+          <li><strong>Distributed lock</strong>: <code>SET key token NX PX 30000</code>; release via a Lua compare-and-del (only if token matches). For HA correctness, Redlock — but it's debated; a single instance + fencing token is often enough.</li>
+          <li><strong>Rate limiting</strong>: <code>INCR</code> + <code>EXPIRE</code> (fixed window), or a Lua sliding-window with a ZSet.</li>
+          <li><strong>Leaderboard</strong>: ZSet <code>ZADD</code>/<code>ZREVRANGE</code>.</li>
+          <li><strong>Queue / stream</strong>: Lists (<code>BLPOP</code>) for simple; Streams + consumer groups for ack/replay.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">naive SET NX lock is unsafe</span>
+          Locking with <code>SETNX</code> then a plain <code>DEL</code> can delete <em>someone else's</em>
+          lock after your TTL expired. Store a unique token and release with a Lua check-and-delete; add a
+          fencing token if the protected resource supports it.</div>
+
+        <h2 id="ha">8. Replication, Sentinel &amp; Cluster</h2>
+        <ul>
+          <li><strong>Replication</strong> — async primary → replicas; replicas serve reads (can be stale). <code>WAIT</code> can require N replicas ack a write (not full sync durability).</li>
+          <li><strong>Sentinel</strong> — monitors + automatic failover for a single-primary setup (promotes a replica, updates clients). HA, not sharding.</li>
+          <li><strong>Cluster</strong> — sharding across nodes via <strong>16384 hash slots</strong> (<code>CRC16(key) % 16384</code>); each primary owns a slot range + has replicas. Multi-key ops must share a slot (use <strong>hash tags</strong> <code>{user1}:profile</code>).</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">async replication can lose acked writes</span>
+          A write acked by the primary may not have reached a replica before failover — small data-loss
+          window. <code>WAIT</code> reduces it but isn't synchronous durability. Know this trade-off.</div>
+
+        <h2 id="perf">9. Performance &amp; diagnosis</h2>
+        <pre data-lang="bash">redis-cli --latency / --latency-history     # round-trip latency
+redis-cli SLOWLOG GET 20                     # slowest commands + args
+redis-cli LATENCY DOCTOR                     # human latency analysis
+redis-cli INFO commandstats                  # usec_per_call per command
+redis-cli --bigkeys / --hotkeys              # memory hogs / hot keys
+redis-cli INFO clients   # blocked_clients, connected_clients</pre>
+        <p>Top causes of latency: O(N) commands on big keys, fork pauses (RDB/AOF rewrite), swap (never
+        let Redis swap), big-value (de)serialization, <code>MONITOR</code> left running, THP enabled on the
+        host. Use <code>UNLINK</code> (async free) not <code>DEL</code> for big keys.</p>
+
+        <h2 id="qa">10. Senior interview Q&amp;A</h2>
+        <ul class="cheat-qa">
+          <li><span class="q">Why is single-threaded a feature, not a bug?</span><span class="a">No lock contention, atomic commands, predictable; bottleneck is memory/network not CPU. Downside: one O(N) command blocks all — so avoid KEYS/big-key ops. I/O is threaded in 6+.</span></li>
+          <li><span class="q">RDB vs AOF?</span><span class="a">RDB = periodic snapshot (fast restart, more loss). AOF = command log (less loss with everysec, slower replay). Often run both.</span></li>
+          <li><span class="q">How does eviction work / which policy for a cache?</span><span class="a">When maxmemory hit, evict per maxmemory-policy. Cache → allkeys-lru/lfu; durable store → noeviction (but then full = write errors).</span></li>
+          <li><span class="q">Is MULTI/EXEC a real transaction?</span><span class="a">Atomic + isolated, but no rollback on logic errors. WATCH gives optimistic CAS. For atomic read-modify-write, prefer a Lua script.</span></li>
+          <li><span class="q">How do you build a safe distributed lock?</span><span class="a">SET key token NX PX ttl; release via Lua that deletes only if token matches; add a fencing token. Redlock for multi-node (debated).</span></li>
+          <li><span class="q">Sentinel vs Cluster?</span><span class="a">Sentinel = HA/failover for single-primary (no sharding). Cluster = sharding via 16384 hash slots + per-shard replicas.</span></li>
+          <li><span class="q">How does Cluster shard keys?</span><span class="a">CRC16(key) % 16384 → slot → node. Multi-key ops must hit one slot; force co-location with hash tags {tag}.</span></li>
+          <li><span class="q">Can Redis lose data?</span><span class="a">Yes — async replication + failover has a loss window; RDB loses since last snapshot. WAIT/AOF reduce it. It's not a system of record by default.</span></li>
+          <li><span class="q">How do you prevent a cache stampede?</span><span class="a">Jittered TTLs, a short lock so one request rebuilds, request coalescing, or stale-while-revalidate.</span></li>
+          <li><span class="q">Why did latency spike with no traffic change?</span><span class="a">Usually a fork pause (BGSAVE/AOF rewrite), an O(N) command on a big key, swap, or THP. Check SLOWLOG + LATENCY DOCTOR.</span></li>
+          <li><span class="q">DEL vs UNLINK?</span><span class="a">DEL frees synchronously (blocks on a huge key); UNLINK frees in a background thread.</span></li>
+          <li><span class="q">Redis vs Memcached?</span><span class="a">Memcached = simple multi-threaded LRU cache. Redis = rich data structures, persistence, replication, pub/sub, scripting, cluster.</span></li>
+          <li><span class="q">When NOT to use Redis?</span><span class="a">As the only system of record for critical data (loss window), for datasets that don't fit RAM affordably, or for complex queries/joins (use a DB).</span></li>
+        </ul>
+
+
+      </div>
+
+      <div class="post-nav">
+        <a href="cheat-kafka.html">&larr; prev: Kafka</a>
+        <a href="cheat-emqx.html">next: EMQX &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

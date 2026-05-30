@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kafka Cheatsheet — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../cheatsheets.html" style="color:var(--ink-faint);text-decoration:none">&larr; Cheatsheets</a></p>
+
+      <div class="post-header">
+        <p class="meta">CHEATSHEET &middot; MESSAGING &amp; DATA &middot; SENIOR INTERVIEW</p>
+        <h1>Kafka — The Senior Interview Cheatsheet.</h1>
+        <div class="tag-row">
+          <span class="tag fill">kafka</span>
+          <span class="tag">messaging</span>
+          <span class="tag">streaming</span>
+          <span class="tag">interview-prep</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Kafka is a <strong>distributed, partitioned, replicated commit log</strong>. Producers append
+          records to partitions; consumers read at their own offset; the broker just stores an immutable,
+          ordered log per partition and serves reads from the page cache. Everything — ordering, parallelism,
+          delivery guarantees, throughput — falls out of "partition = the unit of everything". Senior
+          interviews probe the <em>why</em>: replication, exactly-once, rebalancing, and the trade-offs.
+        </blockquote>
+
+        <h2 id="model">1. The mental model</h2>
+        <table>
+          <thead><tr><th>Concept</th><th>What it is</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Topic</strong></td><td>A named stream, split into partitions. Logical; not a unit of parallelism on its own.</td></tr>
+            <tr><td><strong>Partition</strong></td><td>An ordered, immutable, append-only log. The unit of ordering, parallelism, replication, and retention. Ordering is guaranteed <em>only within</em> a partition.</td></tr>
+            <tr><td><strong>Offset</strong></td><td>Monotonic position of a record in a partition. Consumers track committed offsets; brokers don't track per-consumer position.</td></tr>
+            <tr><td><strong>Broker</strong></td><td>A server holding partition replicas, serving produce/fetch.</td></tr>
+            <tr><td><strong>Replica / Leader / Follower</strong></td><td>Each partition has R replicas; one leader (all reads/writes), the rest followers (replicate).</td></tr>
+            <tr><td><strong>ISR</strong></td><td>In-Sync Replicas — followers caught up within <code>replica.lag.time.max.ms</code>. Only ISR members are eligible to become leader (with unclean election off).</td></tr>
+            <tr><td><strong>Consumer group</strong></td><td>Consumers sharing a <code>group.id</code>; partitions are divided among members — each partition to exactly one member.</td></tr>
+            <tr><td><strong>Consumer lag</strong></td><td>log-end-offset − committed-offset. The key health metric.</td></tr>
+          </tbody>
+        </table>
+        <div class="gotcha"><span class="gotcha-label">ordering is per-partition only</span>
+          There is no global order across a topic. If you need ordering for an entity, route it to one
+          partition via a stable key. More partitions = more parallelism but weaker ordering scope.</div>
+
+        <h2 id="storage">2. Storage internals</h2>
+        <ul>
+          <li>A partition is a directory of <strong>segment</strong> files (<code>.log</code>) + indexes (<code>.index</code> offset→position, <code>.timeindex</code>). The active segment is appended; older segments roll at <code>segment.bytes</code>/<code>segment.ms</code>.</li>
+          <li>Writes are <strong>sequential appends</strong> to the active segment — why Kafka is fast on spinning disk and SSD alike.</li>
+          <li>Reads are served from the OS <strong>page cache</strong>; <strong>zero-copy</strong> (<code>sendfile</code>) ships bytes from cache straight to the socket — no userspace copy.</li>
+          <li>Retention deletes whole segments past <code>retention.ms</code>/<code>retention.bytes</code> — not individual records.</li>
+          <li>Records are stored in <strong>batches</strong> (compressed as a unit) — compression + batching are the throughput levers.</li>
+        </ul>
+
+        <h2 id="producer">3. Producer internals &amp; config</h2>
+        <pre data-lang="bash">acks=all                 # leader waits for all ISR before ack (durability)
+enable.idempotence=true  # dedupe retries -> exactly-once *per partition* on produce
+                         #   (implies acks=all, retries>0, max.in.flight<=5)
+linger.ms=10             # wait to batch (throughput vs latency)
+batch.size=64KB          # max bytes per partition batch
+compression.type=zstd    # lz4/snappy/zstd/gzip — big throughput win
+max.in.flight.requests.per.connection=5   # >1 + idempotence keeps order
+retries=Integer.MAX ; delivery.timeout.ms  # bound total time, not retry count</pre>
+        <ul>
+          <li><strong>acks:</strong> <code>0</code> fire-and-forget (lose on failure), <code>1</code> leader-only (lose if leader dies before replication), <code>all</code> + <code>min.insync.replicas=2</code> = no acknowledged-then-lost writes.</li>
+          <li><strong>Idempotent producer</strong> stamps a producer ID + sequence number so a retried batch isn't written twice — exactly-once <em>on the produce path</em>, per partition.</li>
+          <li><strong>Partitioner</strong>: keyed → <code>hash(key) % partitions</code> (sticky ordering per key); null key → sticky partitioning (batch to one partition then rotate).</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">acks=all is not "no data loss" alone</span>
+          Pair <code>acks=all</code> with <code>min.insync.replicas=2</code> and RF=3. With RF=3/min.isr=2 you
+          survive one broker loss with no acknowledged-write loss; if ISR shrinks below min.isr, producers
+          get <code>NotEnoughReplicas</code> and block — durability over availability, by design.</div>
+
+        <h2 id="consumer">4. Consumer internals &amp; config</h2>
+        <pre data-lang="bash">group.id=orders-svc
+enable.auto.commit=false          # commit manually AFTER processing (at-least-once)
+auto.offset.reset=earliest|latest # when no committed offset exists
+max.poll.records=500 ; max.poll.interval.ms=300000   # processing budget
+session.timeout.ms=45000 ; heartbeat.interval.ms=3000
+partition.assignment.strategy=CooperativeStickyAssignor   # incremental rebalance
+isolation.level=read_committed    # skip aborted txn records (EOS reads)</pre>
+        <ul>
+          <li><strong>Offset commit</strong>: commit <em>after</em> processing for at-least-once; commit before = at-most-once. Offsets live in the internal <code>__consumer_offsets</code> topic.</li>
+          <li><strong>Group coordinator</strong> (a broker) manages membership; a <strong>rebalance</strong> reassigns partitions when members join/leave or the topic changes.</li>
+          <li><strong>Heartbeats</strong> on a background thread; but exceeding <code>max.poll.interval.ms</code> (slow processing) ejects the member → rebalance. This, not network, is the #1 rebalance cause.</li>
+          <li><strong>Static membership</strong> (<code>group.instance.id</code>) avoids rebalances on rolling restarts.</li>
+        </ul>
+
+        <h2 id="rebalance">5. Rebalance protocols</h2>
+        <table>
+          <thead><tr><th>Protocol</th><th>Behaviour</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Eager</strong> (range/round-robin)</td><td>Stop-the-world: every consumer revokes all partitions, then reassigns. Simple, disruptive.</td></tr>
+            <tr><td><strong>Cooperative sticky</strong></td><td>Incremental: only the partitions that must move are revoked; others keep processing. Modern default.</td></tr>
+            <tr><td><strong>Static membership</strong></td><td>Members keep identity across restarts (<code>group.instance.id</code> + longer session timeout) — no rebalance on a quick bounce.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="replication">6. Replication &amp; leader election</h2>
+        <ul>
+          <li><strong>Replication factor (RF)</strong> = copies per partition. RF=3 is standard for prod.</li>
+          <li><strong>ISR</strong> shrinks when a follower lags &gt; <code>replica.lag.time.max.ms</code>; expands when it catches up.</li>
+          <li><strong>Leader election</strong>: on leader failure, the controller promotes an ISR member. <code>unclean.leader.election.enable=false</code> (default) means it will <em>not</em> promote an out-of-sync replica — choosing consistency (no data loss) over availability.</li>
+          <li><strong>Controller</strong>: one broker coordinates leadership/metadata. In <strong>KRaft</strong> mode the controllers form a Raft quorum (no ZooKeeper); ZooKeeper is removed in modern Kafka.</li>
+        </ul>
+
+        <h2 id="semantics">7. Delivery semantics &amp; EOS</h2>
+        <table>
+          <thead><tr><th>Guarantee</th><th>How</th></tr></thead>
+          <tbody>
+            <tr><td><strong>At-most-once</strong></td><td>Commit offset before processing — crash loses the record.</td></tr>
+            <tr><td><strong>At-least-once</strong></td><td>Commit after processing — crash redelivers. Default target; handlers must be idempotent.</td></tr>
+            <tr><td><strong>Exactly-once (EOS)</strong></td><td>Idempotent producer + <strong>transactions</strong> (<code>transactional.id</code>, <code>initTransactions</code>/<code>commitTransaction</code>) + consumer <code>read_committed</code>. Atomic "consume-process-produce".</td></tr>
+          </tbody>
+        </table>
+        <div class="gotcha"><span class="gotcha-label">EOS is end-to-end only inside Kafka</span>
+          Transactions give exactly-once for read-from-Kafka → write-to-Kafka (+ offset commit) atomically.
+          A side effect to an external system (DB, email) is not covered — make those idempotent or use the
+          outbox/transactional-outbox pattern.</div>
+
+        <h2 id="partitioning">8. Partitioning &amp; keys</h2>
+        <ul>
+          <li>Partition count caps consumer parallelism (active consumers ≤ partitions). Pick for peak throughput + headroom; you can add partitions but it <strong>breaks key→partition mapping</strong> (and ordering) for existing keys.</li>
+          <li>Key choice = ordering scope + load distribution. A hot key (e.g. one big customer) creates a skewed/hot partition.</li>
+          <li>Rule of thumb: target partitions so each handles a manageable MB/s; more partitions = more open files, more rebalance cost, longer leader-election.</li>
+        </ul>
+
+        <h2 id="retention">9. Retention &amp; compaction</h2>
+        <ul>
+          <li><strong>Delete</strong> (default): drop segments past <code>retention.ms</code> / <code>retention.bytes</code>.</li>
+          <li><strong>Log compaction</strong> (<code>cleanup.policy=compact</code>): keep the <em>latest</em> value per key forever; a tombstone (null value) deletes a key. Powers changelog/state topics, <code>__consumer_offsets</code>, KTables.</li>
+          <li>Can combine <code>compact,delete</code>.</li>
+        </ul>
+
+        <h2 id="ecosystem">10. Ecosystem</h2>
+        <ul>
+          <li><strong>Kafka Connect</strong> — declarative source/sink connectors (DB CDC via Debezium, S3, ES) — no code, scales as workers.</li>
+          <li><strong>Kafka Streams</strong> — JVM stream-processing library (KStream/KTable, joins, windows, exactly-once) running in your app.</li>
+          <li><strong>Schema Registry</strong> — Avro/Protobuf/JSON schemas + compatibility (backward/forward/full) so producers/consumers evolve safely.</li>
+          <li><strong>ksqlDB</strong> — SQL over streams.</li>
+        </ul>
+
+        <h2 id="ops">11. CLI &amp; ops</h2>
+        <pre data-lang="bash">kafka-topics.sh --bootstrap-server B --create --topic t --partitions 12 --replication-factor 3
+kafka-topics.sh --bootstrap-server B --describe --topic t        # leaders, ISR, replicas
+kafka-topics.sh --bootstrap-server B --under-replicated-partitions
+kafka-console-producer.sh --bootstrap-server B --topic t
+kafka-console-consumer.sh --bootstrap-server B --topic t --from-beginning --group g
+kafka-consumer-groups.sh --bootstrap-server B --describe --group g    # LAG per partition
+kafka-consumer-groups.sh --bootstrap-server B --group g --reset-offsets --to-earliest --topic t --execute
+kafka-configs.sh --bootstrap-server B --alter --entity-type topics --entity-name t \
+  --add-config retention.ms=604800000
+kafka-reassign-partitions.sh ...   # move replicas / rebalance</pre>
+        <p>Key metrics: <code>UnderReplicatedPartitions</code> (must be 0), <code>OfflinePartitionsCount</code>,
+        <code>ActiveControllerCount</code> (=1), <code>IsrShrinksPerSec</code>, request handler idle ratio,
+        consumer <code>records-lag-max</code>.</p>
+
+        <h2 id="qa">12. Senior interview Q&amp;A</h2>
+        <ul class="cheat-qa">
+          <li><span class="q">How does Kafka guarantee ordering?</span><span class="a">Only within a partition. Route records that must be ordered to the same partition via a stable key. No cross-partition/topic order.</span></li>
+          <li><span class="q">acks=all vs min.insync.replicas?</span><span class="a">acks=all = leader waits for all current ISR. min.insync.replicas = the floor of ISR required to accept a write; below it, produce fails. Together (RF3/min.isr2) = survive one broker loss without acknowledged-write loss.</span></li>
+          <li><span class="q">How does exactly-once work?</span><span class="a">Idempotent producer (PID+seq dedup) + transactions (atomic produce + offset commit) + consumer read_committed. Exactly-once within Kafka; external side effects need idempotency/outbox.</span></li>
+          <li><span class="q">What triggers a rebalance and how to avoid storms?</span><span class="a">Member join/leave, topic change, or exceeding max.poll.interval.ms (slow processing). Use cooperative-sticky assignor + static membership; size max.poll.records to your processing time.</span></li>
+          <li><span class="q">What is the ISR and why does it matter?</span><span class="a">In-sync replicas caught up to the leader. Only ISR members can be elected leader (clean election); shrinking ISR risks availability/durability trade-offs.</span></li>
+          <li><span class="q">Unclean leader election?</span><span class="a">Promoting an out-of-sync replica when no ISR survives — restores availability but loses data. Off by default (consistency first).</span></li>
+          <li><span class="q">Log compaction vs retention?</span><span class="a">Retention deletes old segments by time/size. Compaction keeps the latest value per key forever (tombstone deletes) — for changelog/state topics.</span></li>
+          <li><span class="q">Why is Kafka fast?</span><span class="a">Sequential append-only writes, OS page cache reads, zero-copy (sendfile), batching + compression, partition parallelism.</span></li>
+          <li><span class="q">How do you scale consumer throughput?</span><span class="a">Add consumers up to partition count; beyond that add partitions (mind key remapping); parallelize processing; raise fetch/poll sizes if you can keep up.</span></li>
+          <li><span class="q">Can you add partitions safely?</span><span class="a">You can increase (not decrease) — but it changes hash(key)%n, so existing keys may move partitions, breaking per-key ordering. Plan capacity up front.</span></li>
+          <li><span class="q">KRaft vs ZooKeeper?</span><span class="a">KRaft replaces ZooKeeper with a Raft-based controller quorum inside Kafka — simpler ops, faster metadata, no separate ZK cluster. ZK is deprecated/removed.</span></li>
+          <li><span class="q">How do you handle a poison message?</span><span class="a">Catch, route to a dead-letter topic, commit past it. Don't block the partition forever; bound retries.</span></li>
+          <li><span class="q">Kafka vs RabbitMQ?</span><span class="a">Kafka = durable replayable log, high-throughput streaming, pull, ordered per partition. RabbitMQ = smart broker, flexible routing, per-message ack/requeue, push, lower-throughput task queues.</span></li>
+          <li><span class="q">How to debug rising consumer lag?</span><span class="a">Check consumer-groups LAG per partition (skew?), processing time vs max.poll.interval, rebalance loops, partition count cap, and broker URP/ISR health.</span></li>
+        </ul>
+
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../cheatsheets.html">&larr; all cheatsheets</a>
+        <a href="cheat-redis.html">next: Redis &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

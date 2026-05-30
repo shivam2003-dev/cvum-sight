@@ -51,87 +51,161 @@
 
         <blockquote>
           The Linux an interviewer probes: files &amp; permissions, processes &amp; signals, what's eating
-          resources, and enough text-tool fluency to slice a log. Everything is a file; the shell is the API.
+          resources, networking, and enough text-tool fluency to slice a log. Everything is a file; the
+          shell is the API; <code>/proc</code> is the truth.
         </blockquote>
 
-        <h2 id="files">Files &amp; navigation</h2>
-        <pre data-lang="bash">ls -la ; cd ; pwd ; find / -name "*.log" -mtime -1
-cat / less / head -n 50 / tail -f file
-cp -r src dst ; mv a b ; rm -rf dir ; ln -s target link
-df -h ; du -sh * | sort -rh | head    # space</pre>
-
-        <h2 id="perms">Permissions &amp; ownership</h2>
-        <pre data-lang="bash">chmod 644 file       # rw-r--r--   (u=rw, g=r, o=r)
-chmod +x script.sh   ; chmod -R 755 dir
-chown user:group file ; chgrp group file
-umask 022            # default mask (new files 644, dirs 755)
-# special: setuid(4) setgid(2) sticky(1) -> 4755, 1777 (/tmp)</pre>
-        <p>Octal: r=4 w=2 x=1. <code>755</code> = rwx for owner, r-x group/other.</p>
-        <div class="gotcha"><span class="gotcha-label">permission denied basics</span>
-          To <em>enter</em> a directory you need <code>x</code> on it, not <code>r</code>. To list it you need
-          <code>r</code>. Reading a file needs <code>r</code> on the file <em>and</em> <code>x</code> on every
-          parent dir.</div>
-
-        <h2 id="proc">Processes &amp; signals</h2>
-        <pre data-lang="bash">ps aux | grep nginx ; pgrep -a nginx
-top / htop ; kill -TERM &lt;pid&gt; ; kill -9 &lt;pid&gt; (SIGKILL, last resort)
-kill -HUP &lt;pid&gt;     # reload many daemons
-jobs ; bg ; fg ; nohup cmd & ; disown
-nice/renice ; &lt;cmd&gt; &amp; (background)</pre>
+        <h2 id="fhs">1. Filesystem layout (FHS)</h2>
         <table>
-          <thead><tr><th>Signal</th><th>Meaning</th></tr></thead>
+          <thead><tr><th>Path</th><th>What</th></tr></thead>
           <tbody>
-            <tr><td>SIGTERM (15)</td><td>Polite stop (default kill). Catchable — graceful shutdown.</td></tr>
-            <tr><td>SIGKILL (9)</td><td>Force kill. Uncatchable. Last resort.</td></tr>
-            <tr><td>SIGHUP (1)</td><td>Hangup — often "reload config".</td></tr>
-            <tr><td>SIGINT (2)</td><td>Ctrl-C.</td></tr>
+            <tr><td><code>/etc</code></td><td>System config</td></tr>
+            <tr><td><code>/var</code></td><td>Variable data — <code>/var/log</code>, <code>/var/lib</code>, spool</td></tr>
+            <tr><td><code>/usr</code></td><td>User binaries + libs (<code>/usr/bin</code>, <code>/usr/local</code>)</td></tr>
+            <tr><td><code>/home</code></td><td>User home dirs</td></tr>
+            <tr><td><code>/proc</code>, <code>/sys</code></td><td>Kernel/process virtual filesystems (live state)</td></tr>
+            <tr><td><code>/dev</code></td><td>Device files</td></tr>
+            <tr><td><code>/tmp</code></td><td>Temp (world-writable, sticky bit)</td></tr>
           </tbody>
         </table>
 
-        <h2 id="systemd">systemd &amp; logs</h2>
-        <pre data-lang="bash">systemctl status/start/stop/restart/enable nginx
+        <h2 id="files">2. Files &amp; navigation</h2>
+        <pre data-lang="bash">ls -lah ; cd - ; pwd ; tree -L 2
+find /var/log -name "*.log" -mtime -1 -size +10M     # recent, large
+find . -type f -exec grep -l TODO {} +
+cat / less / head -n50 / tail -f / tac / nl
+cp -a src dst ; mv a b ; rm -rf dir ; mkdir -p a/b/c
+ln -s /target link        # symlink ; ln target hard   # hard link
+stat file ; file binary ; realpath link
+df -h ; du -sh * | sort -rh | head ; ncdu</pre>
+
+        <h2 id="perms">3. Permissions &amp; ownership</h2>
+        <pre data-lang="bash">chmod 644 file        # rw-r--r--  (u=rw g=r o=r)   r=4 w=2 x=1
+chmod +x script.sh ; chmod -R 750 dir ; chmod u+s,g+s,o+t
+chown user:group file ; chown -R app: /srv/app ; chgrp grp file
+umask 022             # default mask -> files 644, dirs 755
+getfacl/setfacl file  # fine-grained ACLs
+lsattr/chattr +i file # immutable bit</pre>
+        <table>
+          <thead><tr><th>Special bit</th><th>Octal</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td>setuid</td><td>4xxx</td><td>Run as file owner (e.g. <code>passwd</code>)</td></tr>
+            <tr><td>setgid</td><td>2xxx</td><td>Run as group / new files inherit dir's group</td></tr>
+            <tr><td>sticky</td><td>1xxx</td><td>Only owner can delete (<code>/tmp</code> = 1777)</td></tr>
+          </tbody>
+        </table>
+        <div class="gotcha"><span class="gotcha-label">x on a directory ≠ x on a file</span>
+          To <em>enter</em> a directory you need <code>x</code> on it; to <em>list</em> it you need
+          <code>r</code>. Reading a file needs <code>r</code> on the file <strong>and</strong> <code>x</code>
+          on every parent directory in the path.</div>
+
+        <h2 id="proc">4. Processes &amp; signals</h2>
+        <pre data-lang="bash">ps aux | grep nginx ; ps -ef --forest ; pgrep -a nginx
+top ; htop ; pidstat 1 ; pstree -p
+kill -TERM <pid>     # 15 graceful (default) ; kill -9 (SIGKILL last resort)
+kill -HUP <pid>      # reload config (many daemons)
+pkill -f pattern ; killall name
+nohup cmd & ; disown ; jobs ; bg ; fg %1
+nice -n 10 cmd ; renice -n 5 -p <pid>     # priority
+cat /proc/<pid>/status ; ls /proc/<pid>/fd | wc -l   # fd count</pre>
+        <table>
+          <thead><tr><th>Signal</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>SIGTERM (15)</td><td>Polite stop (default). Catchable — graceful shutdown.</td></tr>
+            <tr><td>SIGKILL (9)</td><td>Force kill. Uncatchable. Last resort.</td></tr>
+            <tr><td>SIGHUP (1)</td><td>Hangup — often "reload config".</td></tr>
+            <tr><td>SIGINT (2)</td><td>Ctrl-C.</td></tr>
+            <tr><td>SIGSTOP/SIGCONT</td><td>Pause / resume.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="systemd">5. systemd &amp; logs</h2>
+        <pre data-lang="bash">systemctl status/start/stop/restart/enable/disable nginx
 systemctl daemon-reload          # after editing a unit
-journalctl -u nginx -f           # follow a service's logs
-journalctl --since "1 hour ago" -p err
-dmesg -T | tail                  # kernel ring buffer (OOM, hardware)</pre>
+systemctl --failed               # what failed
+systemctl list-units --type=service ; systemctl cat nginx
+journalctl -u nginx -f           # follow a service
+journalctl -u nginx --since "1 hour ago" -p err
+journalctl -b -1                 # previous boot (after crash)
+journalctl --vacuum-time=7d      # shrink journal
+systemd-analyze blame            # slow boot units</pre>
 
-        <h2 id="text">Text tools — slice a log</h2>
-        <pre data-lang="bash">grep -i error app.log ; grep -rn TODO src/
-grep -c 500 access.log                       # count
+        <h2 id="text">6. Text processing — slice a log</h2>
+        <pre data-lang="bash">grep -i error app.log ; grep -rn TODO src/ ; grep -c 500 access.log
+grep -v healthcheck access.log | grep -E '5[0-9]{2}'
 awk '{print $1}' access.log | sort | uniq -c | sort -rn | head   # top IPs
-sed -n '100,120p' file ; sed -i 's/old/new/g' file
-cut -d: -f1 /etc/passwd ; tr -s ' ' ; wc -l
-cmd1 | cmd2 ; cmd > out 2>&1 ; tee ; xargs</pre>
+awk -F: '$3 >= 1000 {print $1}' /etc/passwd                       # human users
+sed -n '100,120p' file ; sed -i.bak 's/old/new/g' file
+cut -d: -f1,7 /etc/passwd ; tr -s ' ' ; column -t ; jq '.items[]'
+sort | uniq -c | sort -rn ; wc -l ; xargs ; tee
+cmd1 | cmd2 ; cmd > out 2>&1 ; cmd 2>/dev/null ; cmd <<< "input"</pre>
 
-        <h2 id="resources">What's eating resources?</h2>
-        <pre data-lang="bash">top ; htop                    # CPU/mem live
-free -m                       # memory (look at available, not free)
-vmstat 1 ; iostat -xz 1       # CPU/IO ; mpstat -P ALL 1
-df -h ; df -i                 # disk space ; inodes
-ss -ltnp                      # listening ports + pid
-lsof -p &lt;pid&gt; ; lsof -i :8080</pre>
+        <h2 id="resources">7. What's eating resources?</h2>
+        <pre data-lang="bash">top / htop                    # CPU/mem live (press M=mem, P=cpu)
+uptime                        # load avg vs core count (nproc)
+free -m                       # use 'available', not 'free'
+vmstat 1                      # r=run queue, si/so=swap, wa=iowait
+mpstat -P ALL 1 ; pidstat -t 1
+df -h ; df -i                 # disk space ; INODES (df -h lies if inodes full)
+iostat -xz 1 ; iotop -o       # disk I/O ; lsof +L1 (deleted-but-open)
+ss -ltnp ; ss -s              # listening ports + pid ; socket summary
+dmesg -T | tail               # OOM kills, hardware, fs errors
+strace -p <pid> ; ltrace      # syscalls / library calls (what's it stuck on)</pre>
 
-        <h2 id="net">Networking basics</h2>
-        <pre data-lang="bash">ip a ; ip route ; ss -tunap
-curl -v https://host ; curl -I url
-dig name ; nslookup name ; ping host ; traceroute host
-nc -vz host port              # port open?</pre>
+        <h2 id="net">8. Networking</h2>
+        <pre data-lang="bash">ip a ; ip route ; ip -s link            # interfaces, routes, stats
+ss -tunap                                # all sockets + pid (replaces netstat)
+ping host ; traceroute host ; mtr host
+dig name ; dig +short name ; nslookup ; getent hosts name
+curl -v https://host ; curl -I url ; wget -qO- url
+nc -vz host port                         # port open? refused vs timeout
+tcpdump -ni any port 443                 # capture (last resort)
+ufw status ; iptables -L -n ; nft list ruleset</pre>
 
-        <h2 id="pkg">Packages &amp; users</h2>
-        <pre data-lang="bash">apt update && apt install pkg   # Debian/Ubuntu
-yum/dnf install pkg             # RHEL/Fedora
-useradd -m user ; passwd user ; usermod -aG sudo user
-id ; whoami ; groups ; sudo -l</pre>
+        <h2 id="disk">9. Disk &amp; storage</h2>
+        <pre data-lang="bash">lsblk ; blkid ; mount | column -t ; cat /etc/fstab
+df -h ; df -i ; du -xh / | sort -rh | head
+mkfs.ext4 /dev/sdb1 ; mount /dev/sdb1 /mnt ; umount /mnt
+# LVM: pvs / vgs / lvs ; lvextend -r -L +10G /dev/vg/lv</pre>
+        <div class="gotcha"><span class="gotcha-label">"disk full" but df shows space</span>
+          You're out of <em>inodes</em> (<code>df -i</code>) or a deleted-but-open file holds the blocks
+          (<code>lsof +L1</code>). Free space ≠ free inodes ≠ released handles.</div>
 
-        <h2 id="qa">Rapid-fire Q&amp;A</h2>
+        <h2 id="pkg">10. Packages, users, cron</h2>
+        <pre data-lang="bash"># Debian/Ubuntu               # RHEL/Fedora
+apt update && apt install pkg  ;  dnf install pkg
+apt list --installed ; dpkg -l ;  rpm -qa ; rpm -qf /path
+useradd -m -s /bin/bash user ; passwd user ; usermod -aG sudo user
+id ; whoami ; groups ; sudo -l ; su - user
+crontab -e ; crontab -l        # "* * * * *  cmd"  (min hr dom mon dow)
+systemctl list-timers          # systemd timers (cron alternative)</pre>
+
+        <h2 id="logs">11. Where the logs live</h2>
+        <table>
+          <thead><tr><th>Path / cmd</th><th>What</th></tr></thead>
+          <tbody>
+            <tr><td><code>journalctl</code></td><td>systemd unit + kernel logs (primary on modern distros)</td></tr>
+            <tr><td><code>/var/log/syslog</code> / <code>messages</code></td><td>general system log</td></tr>
+            <tr><td><code>/var/log/auth.log</code> / <code>secure</code></td><td>logins, sudo, sshd</td></tr>
+            <tr><td><code>dmesg</code></td><td>kernel ring buffer (OOM, disk, hardware)</td></tr>
+            <tr><td><code>/var/log/cloud-init.log</code></td><td>cloud VM first-boot provisioning</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="qa">12. Rapid-fire interview Q&amp;A</h2>
         <ul class="cheat-qa">
           <li><span class="q">What does chmod 755 mean?</span><span class="a">Owner rwx, group r-x, other r-x. Octal r=4 w=2 x=1.</span></li>
           <li><span class="q">SIGTERM vs SIGKILL?</span><span class="a">TERM = graceful, catchable (cleanup). KILL(9) = forced, uncatchable. Try TERM first.</span></li>
           <li><span class="q">free shows little 'free' memory — problem?</span><span class="a">No. Linux uses free RAM as cache. Look at 'available', not 'free'.</span></li>
           <li><span class="q">How to find what's using a port?</span><span class="a"><code>ss -ltnp</code> or <code>lsof -i :PORT</code>.</span></li>
-          <li><span class="q">Hard vs soft link?</span><span class="a">Hard link = another name for the same inode (same data). Soft/symlink = a pointer to a path (can cross filesystems, can dangle).</span></li>
-          <li><span class="q">How to see a service's logs?</span><span class="a"><code>journalctl -u svc -f</code>; kernel events via <code>dmesg</code>.</span></li>
-          <li><span class="q">stdout vs stderr redirect?</span><span class="a"><code>&gt;</code> stdout, <code>2&gt;</code> stderr, <code>2&gt;&amp;1</code> merge stderr into stdout.</span></li>
+          <li><span class="q">Hard vs soft link?</span><span class="a">Hard = another name for the same inode (same fs). Soft/symlink = a pointer to a path (can cross fs, can dangle).</span></li>
+          <li><span class="q">How to see a service's logs?</span><span class="a"><code>journalctl -u svc -f</code>; kernel via <code>dmesg</code>.</span></li>
+          <li><span class="q">stdout vs stderr redirect?</span><span class="a"><code>&gt;</code> stdout, <code>2&gt;</code> stderr, <code>2&gt;&amp;1</code> merge stderr into stdout, <code>&amp;&gt;</code> both.</span></li>
+          <li><span class="q">load average of 4 on a 4-core box?</span><span class="a">Fully utilized (1 per core). Above core count = tasks waiting = saturation.</span></li>
+          <li><span class="q">What's in /proc?</span><span class="a">A virtual fs exposing kernel + per-process state (<code>/proc/&lt;pid&gt;/fd</code>, <code>/proc/meminfo</code>). Live truth, not files on disk.</span></li>
+          <li><span class="q">disk full but df shows space?</span><span class="a">Out of inodes (<code>df -i</code>) or a deleted-but-open file (<code>lsof +L1</code>).</span></li>
+          <li><span class="q">setuid bit?</span><span class="a">Run the binary as its owner regardless of caller — how <code>passwd</code> edits root-owned files.</span></li>
+          <li><span class="q">How to run a job on a schedule?</span><span class="a">cron (<code>crontab -e</code>) or a systemd timer.</span></li>
         </ul>
 
       </div>

@@ -704,4 +704,7 @@ const RESOURCES = [
   { path: "posts/debug-kafka.html", kind: "debug", cat: "debug", title: "Debugging Kafka", tags: ["kafka","messaging","consumer-lag","rebalance","isr","replication","sre"], excerpt: "Consumer lag, rebalancing storms, under-replicated partitions, ISR shrink, broker down." },
   { path: "posts/debug-redis.html", kind: "debug", cat: "debug", title: "Debugging Redis", tags: ["redis","cache","oom","eviction","persistence","replication","hot-keys","sre"], excerpt: "OOM/eviction, slow commands, blocking ops, RDB/AOF persistence, replication lag, hot keys." },
   { path: "posts/debug-rabbitmq.html", kind: "debug", cat: "debug", title: "Debugging RabbitMQ", tags: ["rabbitmq","messaging","queue","unacked","flow-control","dead-letter","sre"], excerpt: "Queue buildup, unacked messages, memory/disk alarms, flow control, dead-letter loops, connection churn." },
+
+  // ── awesome lists ──
+  { path: "posts/awesome-cv.html", kind: "awesome", cat: "awesome", title: "Awesome Computer Vision — Curated Resources", tags: ["computer-vision","cv","deep-learning","detection","segmentation","diffusion","clip","awesome","resources"], excerpt: "Curated CV path: courses (CS231n/fast.ai), books (Szeliski/HZ), frameworks (PyTorch/OpenCV/timm/Detectron2/YOLO), datasets (ImageNet/COCO), and canonical papers across backbones, detection, segmentation, generative, 3D, and vision-language." },
 ];

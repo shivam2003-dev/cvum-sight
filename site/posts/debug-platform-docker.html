@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging Docker — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">&larr; Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE &middot; DOCKER &middot; SRE PLAYBOOK</p>
+        <h1>Debugging Docker — Engine-Level Playbook.</h1>
+        <div class="tag-row">
+          <span class="tag fill">docker</span>
+          <span class="tag">debugging</span>
+          <span class="tag">sre</span>
+          <span class="tag">containers</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Engine-level Docker problems: the daemon, builds, disk, networking, volumes, and the registry.
+          For a single container exiting, see <a href="debug-container-start.html">Container Won't Start</a>.
+        </blockquote>
+
+        <h2 id="daemon">Daemon won't start / "Cannot connect to the Docker daemon"</h2>
+        <pre data-lang="bash">systemctl status docker ; journalctl -u docker -n 100
+docker info                       # works? else daemon down or socket perms
+ls -l /var/run/docker.sock        # permission to talk to it?</pre>
+        <p><strong>Fix.</strong> Start the service; add your user to the <code>docker</code> group (then
+        re-login) for socket access; check the daemon log for a bad <code>/etc/docker/daemon.json</code>
+        (invalid JSON stops startup); disk full can also wedge it.</p>
+
+        <h2 id="disk">Disk full / "no space left on device"</h2>
+        <pre data-lang="bash">docker system df              # where space went: images, containers, volumes, build cache
+docker system df -v           # detailed
+docker system prune -a --volumes   # reclaim (careful — deletes unused)
+du -sh /var/lib/docker/*</pre>
+        <p><strong>Fix.</strong> Prune dangling images, stopped containers, unused volumes, and build
+        cache. Cap container logs (<code>--log-opt max-size=10m --log-opt max-file=3</code>) — unbounded
+        JSON logs are a top disk eater.</p>
+        <div class="gotcha"><span class="gotcha-label">logs eat the disk</span>
+          Default <code>json-file</code> logging grows forever. A chatty container fills
+          <code>/var/lib/docker</code> and wedges the daemon. Set log rotation in <code>daemon.json</code>.</div>
+
+        <h2 id="build">Build failures</h2>
+        <pre data-lang="bash">docker build --no-cache -t app .       # rule out stale cache
+docker build --progress=plain .        # full output
+# common: COPY path not in context, network in RUN, wrong base arch</pre>
+        <p><strong>Fix.</strong> <code>COPY</code> source must be inside the build context (and not in
+        <code>.dockerignore</code>); a <code>RUN</code> needing network may fail behind proxies; cache
+        serving stale layers (<code>--no-cache</code>); arch mismatch (build <code>--platform</code>).</p>
+
+        <h2 id="network">Networking — port not reachable</h2>
+        <pre data-lang="bash">docker ps                         # is the port published? 0.0.0.0:8080-&gt;80
+docker inspect &lt;c&gt; --format '{{json .NetworkSettings.Ports}}'
+docker exec &lt;c&gt; ss -ltnp          # app listening inside? on 0.0.0.0?</pre>
+        <p><strong>Fix.</strong> Publish with <code>-p host:container</code>; app must bind
+        <code>0.0.0.0</code> not <code>127.0.0.1</code>; on a user-defined network containers resolve each
+        other by name (default bridge doesn't); check host firewall.</p>
+
+        <h2 id="volumes">Volumes &amp; permissions</h2>
+        <pre data-lang="bash">docker volume ls ; docker volume inspect &lt;v&gt;
+docker inspect &lt;c&gt; --format '{{json .Mounts}}'</pre>
+        <p><strong>Fix.</strong> Bind-mount path wrong/owned by wrong UID → permission denied; named volume
+        keeps old data masking new image content; SELinux needs <code>:z</code>/<code>:Z</code> on mounts.</p>
+
+        <h2 id="pull">Image pull failures</h2>
+        <pre data-lang="bash">docker pull &lt;image&gt;:&lt;tag&gt;          # exact error
+docker login &lt;registry&gt;            # auth for private registry
+# Docker Hub anonymous pull rate limit? authenticate or mirror</pre>
+
+        <h2 id="inspect">Inspecting a running container</h2>
+        <pre data-lang="bash">docker logs -f --tail 200 &lt;c&gt;
+docker stats                       # live CPU/mem/IO
+docker exec -it &lt;c&gt; sh
+docker inspect &lt;c&gt;                 # full state, exit code, config
+docker events                      # daemon event stream
+docker top &lt;c&gt;</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="debug-platform-kubernetes.html">&larr; prev: Kubernetes</a>
+        <a href="debug-platform-aws.html">next: AWS &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

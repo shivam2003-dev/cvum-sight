@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging Windows Server — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">&larr; Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE &middot; WINDOWS &middot; SRE PLAYBOOK</p>
+        <h1>Debugging Windows Server.</h1>
+        <div class="tag-row">
+          <span class="tag fill">windows</span>
+          <span class="tag">server</span>
+          <span class="tag">debugging</span>
+          <span class="tag">sre</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Windows debugging centers on three tools: <strong>Event Viewer</strong> (logs),
+          <strong>Services</strong> (what's running), and <strong>Performance Monitor / Task Manager</strong>
+          (resources). PowerShell does all of it from the CLI — faster and remotable.
+        </blockquote>
+
+        <h2 id="events">Event Viewer first</h2>
+        <pre data-lang="powershell"># the Windows equivalent of "read the logs"
+Get-EventLog -LogName System -EntryType Error -Newest 30
+Get-WinEvent -LogName Application -MaxEvents 50 |
+  Where-Object LevelDisplayName -eq 'Error'
+# a specific source:
+Get-WinEvent -FilterHashtable @{LogName='System'; Level=2} -MaxEvents 20</pre>
+        <p>System log = OS/driver/service; Application log = apps; Security = auth. Note the Event ID and
+        Source — they're searchable and specific.</p>
+
+        <h2 id="services">A service won't start</h2>
+        <pre data-lang="powershell">Get-Service -Name MyApp
+Get-Service | Where-Object Status -eq 'Stopped'
+Start-Service MyApp ; Restart-Service MyApp
+sc.exe qc MyApp                    # config: binary path, start type, account
+sc.exe queryex MyApp               # exit code / state</pre>
+        <p><strong>Causes.</strong> Wrong service account / password; missing dependency
+        (<code>sc qc</code> shows DEPENDENCIES); bad binary path; permission on the exe/folder; a
+        dependency service stopped. Event Viewer logs the exact failure + Event ID.</p>
+        <div class="gotcha"><span class="gotcha-label">service account &amp; "Logon failure"</span>
+          A service running as a domain account fails after a password change/expiry with a logon error.
+          Update the service credentials, or use a Managed Service Account (gMSA).</div>
+
+        <h2 id="rdp">Can't RDP in</h2>
+        <ul>
+          <li>Network: reachable? port <strong>3389</strong> open in Windows Firewall + cloud SG/NSG?</li>
+          <li>RDP enabled? (<em>Allow Remote Desktop</em> / <code>fDenyTSConnections=0</code>).</li>
+          <li>User in <em>Remote Desktop Users</em>? Account not locked/expired?</li>
+          <li>Too many sessions (server hits the 2-session admin limit) — use <code>/admin</code> or log others off.</li>
+        </ul>
+        <pre data-lang="powershell">Test-NetConnection host -Port 3389
+Get-NetFirewallRule -DisplayGroup "Remote Desktop"</pre>
+
+        <h2 id="resources">High CPU / memory / disk</h2>
+        <pre data-lang="powershell">Get-Process | Sort-Object CPU -Descending | Select-Object -First 10
+Get-Process | Sort-Object WS -Descending | Select-Object -First 10   # working set (mem)
+Get-Counter '\Processor(_Total)\% Processor Time'
+Get-Counter '\Memory\Available MBytes'
+Get-PSDrive -PSProvider FileSystem      # disk free
+Get-Volume</pre>
+        <p>Task Manager / Resource Monitor / Performance Monitor (perfmon) for the GUI view. For deep CPU
+        analysis use the Windows Performance Recorder/Analyzer.</p>
+
+        <h2 id="network">Networking</h2>
+        <pre data-lang="powershell">Test-NetConnection host -Port 443      # ping + port (refused vs timeout)
+Get-NetIPConfiguration ; Get-NetRoute
+Resolve-DnsName name                   # DNS
+Get-NetTCPConnection -State Listen      # listening ports (ss equivalent)
+Get-NetFirewallProfile                  # firewall on?</pre>
+
+        <h2 id="iis">IIS / web app</h2>
+        <ul>
+          <li>App pool stopped/crashing → <code>Get-WebAppPoolState</code>; recycle; check the pool identity.</li>
+          <li>Logs: <code>%SystemDrive%\inetpub\logs\LogFiles</code> + Failed Request Tracing.</li>
+          <li>500.19 = bad web.config; 503 = app pool stopped; 401 = auth.</li>
+        </ul>
+
+        <h2 id="updates">Updates &amp; reboots</h2>
+        <pre data-lang="powershell">Get-HotFix | Sort-Object InstalledOn -Descending | Select -First 10
+# pending reboot often blocks installs/services; check + schedule a reboot window</pre>
+
+        <h2 id="ref">Quick reference</h2>
+        <pre data-lang="powershell">Get-WinEvent -LogName System -MaxEvents 50
+Get-Service ; Restart-Service NAME ; sc.exe qc NAME
+Get-Process | Sort CPU -Descending | Select -First 10
+Test-NetConnection host -Port N ; Get-NetTCPConnection -State Listen
+Get-PSDrive -PSProvider FileSystem</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="debug-ubuntu-server.html">&larr; prev: Ubuntu Server</a>
+        <a href="../debug-guides.html">all debug guides &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

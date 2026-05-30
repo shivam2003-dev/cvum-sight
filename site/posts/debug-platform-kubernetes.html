@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging Kubernetes — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">&larr; Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE &middot; KUBERNETES &middot; SRE PLAYBOOK</p>
+        <h1>Debugging Kubernetes — Cluster-Level Playbook.</h1>
+        <div class="tag-row">
+          <span class="tag fill">kubernetes</span>
+          <span class="tag">debugging</span>
+          <span class="tag">sre</span>
+          <span class="tag">cluster</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          When the cluster (not one pod) is sick, work top-down: events &rarr; nodes &rarr; control plane
+          &rarr; networking &rarr; storage &rarr; RBAC. <code>kubectl get events</code> and
+          <code>kubectl describe</code> answer most of it. For a single pod's status, see the
+          <a href="debug-pod-failures.html">Pod Failures</a> guide.
+        </blockquote>
+
+        <h2 id="events">Always start with events</h2>
+        <pre data-lang="bash">kubectl get events -A --sort-by=.lastTimestamp | tail -40
+kubectl get pods -A | grep -vE 'Running|Completed'    # what's not healthy
+kubectl get nodes -o wide                              # node health</pre>
+        <p>Events are the cluster's narration — scheduling failures, image pulls, evictions, probe
+        failures all land here.</p>
+
+        <h2 id="nodes">Node NotReady</h2>
+        <p><strong>Symptom.</strong> A node shows <code>NotReady</code>; its pods get evicted/stuck.</p>
+        <pre data-lang="bash">kubectl describe node &lt;node&gt;     # Conditions: MemoryPressure, DiskPressure, PIDPressure
+kubectl get node &lt;node&gt; -o yaml | grep -A20 conditions
+# on the node:
+systemctl status kubelet ; journalctl -u kubelet -n 100</pre>
+        <p><strong>Causes &amp; fix.</strong> kubelet down/crashed; node out of disk (<code>DiskPressure</code>
+        → image GC, free space); out of memory; container runtime down; network plugin unhealthy; cloud
+        instance unreachable. Restart kubelet/runtime, free resources, or cordon+drain and replace.</p>
+        <div class="gotcha"><span class="gotcha-label">DiskPressure evicts pods</span>
+          A node low on disk taints itself <code>DiskPressure</code> and evicts pods. Cause is often
+          unbounded container logs or image buildup — set log rotation + image GC thresholds.</div>
+
+        <h2 id="controlplane">Control plane health</h2>
+        <pre data-lang="bash">kubectl get componentstatuses          # (older clusters)
+kubectl -n kube-system get pods         # apiserver, etcd, scheduler, controller-manager, coredns
+kubectl cluster-info
+# API slow/unreachable? check etcd health + apiserver logs</pre>
+        <p>If the API server is slow, suspect etcd (disk latency, size) or apiserver overload (too many
+        watches/list-all). <code>ActiveControllerCount</code> equivalent: exactly one scheduler/controller
+        leader should be active.</p>
+
+        <h2 id="networking">Service / DNS / Ingress not reachable</h2>
+        <pre data-lang="bash">kubectl get endpoints &lt;svc&gt;            # empty = selector matches no ready pods
+kubectl get svc &lt;svc&gt; -o wide
+kubectl run -it --rm dns --image=tutum/dnsutils -- nslookup &lt;svc&gt;.&lt;ns&gt;
+kubectl -n kube-system get pods -l k8s-app=kube-dns   # CoreDNS</pre>
+        <p><strong>Fix.</strong> Selector/label mismatch (empty endpoints); CoreDNS down; NetworkPolicy
+        dropping traffic; Ingress controller misconfigured or no backend. Details in the
+        <a href="debug-dns.html">DNS</a>, <a href="debug-timeouts.html">Timeouts</a>, and
+        <a href="debug-5xx.html">5xx</a> guides.</p>
+
+        <h2 id="storage">PVC stuck Pending</h2>
+        <pre data-lang="bash">kubectl describe pvc &lt;pvc&gt;     # Events: provisioning failure, no matching PV
+kubectl get storageclass</pre>
+        <p><strong>Fix.</strong> No StorageClass / wrong name; CSI driver not installed; zone mismatch
+        (volume in a different AZ than the pod's node); quota. A pod stays Pending while its PVC is
+        unbound.</p>
+
+        <h2 id="rbac">RBAC "Forbidden"</h2>
+        <pre data-lang="bash">kubectl auth can-i create deployments --as=system:serviceaccount:ns:sa -n ns
+kubectl describe rolebinding,clusterrolebinding -n ns | grep -A3 &lt;sa&gt;</pre>
+        <p><strong>Fix.</strong> Grant the missing verb/resource via a Role + RoleBinding (namespaced) or
+        ClusterRole + ClusterRoleBinding (cluster-wide). Least privilege; explicit deny wins.</p>
+
+        <h2 id="resources">Evictions &amp; resource pressure</h2>
+        <p>Pods <code>Evicted</code> / <code>OOMKilled</code> when nodes run hot. Check requests vs node
+        capacity; set requests/limits; see <a href="debug-memory-leaks.html">Memory</a> and
+        <a href="debug-high-cpu.html">High CPU</a>. QoS class (Guaranteed &gt; Burstable &gt; BestEffort)
+        decides eviction order.</p>
+
+        <h2 id="toolkit">Debug toolkit</h2>
+        <pre data-lang="bash">kubectl get events -A --sort-by=.lastTimestamp
+kubectl describe &lt;kind&gt; &lt;name&gt;
+kubectl logs &lt;pod&gt; [-c c] [--previous]
+kubectl exec -it &lt;pod&gt; -- sh
+kubectl debug -it &lt;pod&gt; --image=busybox --target=&lt;c&gt;   # ephemeral container
+kubectl debug node/&lt;node&gt; -it --image=ubuntu              # node shell
+kubectl top nodes ; kubectl top pods -A
+kubectl get --raw /healthz</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../debug-guides.html">&larr; all debug guides</a>
+        <a href="debug-platform-docker.html">next: Docker &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

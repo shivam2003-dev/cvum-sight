@@ -50,124 +50,217 @@
       <div class="post-body">
 
         <blockquote>
-          For the Google Associate Cloud Engineer cert. Know the <strong>resource hierarchy</strong>, IAM,
-          the compute options (and when each fits), VPC (global!), and the storage/database menu. Many
-          questions are "pick the right product" and "least-privilege IAM".
+          The Google <strong>Associate Cloud Engineer (ACE)</strong> exam (120 min, multiple-choice/select)
+          tests whether you can deploy and operate on GCP. It's mostly "pick the right service" + "least-
+          privilege IAM" + "right gcloud command". This sheet follows the official five domains, then the
+          high-priority services, gcloud, and exam-style Q&amp;A. Study order at the bottom.
         </blockquote>
 
-        <h2 id="hierarchy">1. Resource hierarchy</h2>
-        <p><strong>Organization &rarr; Folder &rarr; Project &rarr; Resources.</strong> The
-        <strong>Project</strong> is the core unit of billing, quota, and isolation — every resource lives
-        in exactly one. IAM policies + org policies <strong>inherit downward</strong>. Use folders to model
-        departments/environments.</p>
+        <h2 id="hierarchy">1. Resource hierarchy &amp; environment</h2>
+        <p><strong>Organization &rarr; Folder &rarr; Project &rarr; Resources.</strong> IAM and
+        <strong>Organization Policies</strong> inherit downward. The <strong>Project</strong> is the unit
+        of billing, quota, API enablement, and isolation — every resource lives in exactly one.</p>
+        <ul>
+          <li><strong>Organization</strong> — root node, tied to a Cloud Identity / Workspace domain.</li>
+          <li><strong>Folders</strong> — group projects by team/env; apply policy/IAM at the folder.</li>
+          <li><strong>Org Policies</strong> — guardrails (constraints): restrict regions, block external IPs, enforce uniform bucket access, disable SA key creation. Different from IAM (who can do what) — org policy = what's <em>allowed at all</em>.</li>
+          <li><strong>Cloud Identity</strong> — manage users &amp; groups; grant IAM to <strong>groups</strong>, not individuals.</li>
+          <li><strong>APIs</strong> — must be enabled per project (<code>gcloud services enable</code>).</li>
+          <li><strong>Cloud Asset Inventory</strong> — search/export resource + IAM metadata across the org (snapshots, exports to BigQuery).</li>
+          <li><strong>Resource scope:</strong> <em>global</em> (VPC, images, snapshots), <em>regional</em> (subnets, regional MIGs, regional disks), <em>zonal</em> (VMs, zonal disks).</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">project = isolation + billing unit</span>
+          Quotas, APIs, billing, and most IAM live at the project level. Separate prod/dev into different
+          projects (often different folders) so a mistake or quota in one can't touch the other.</div>
 
-        <h2 id="iam">2. IAM</h2>
+        <h2 id="billing">2. Billing</h2>
+        <ul>
+          <li>A <strong>billing account</strong> (paid via a payments profile) is <em>linked</em> to one or more projects. A project with no billing account can't use paid resources.</li>
+          <li><strong>Budgets + alerts</strong> — set a budget on a billing account/project; alerts at % thresholds (email/Pub/Sub). Budgets <em>notify</em>, they don't cap spend.</li>
+          <li><strong>Billing export</strong> — export detailed billing to <strong>BigQuery</strong> for analysis; labels for cost attribution.</li>
+          <li>IAM roles: <code>billing.admin</code>, <code>billing.user</code> (link projects), <code>billing.viewer</code>.</li>
+        </ul>
+
+        <h2 id="iam">3. IAM &amp; Service Accounts (study #1)</h2>
         <table>
           <thead><tr><th>Thing</th><th>What</th></tr></thead>
           <tbody>
-            <tr><td>Member</td><td>User, group, domain, or service account.</td></tr>
-            <tr><td>Role</td><td>Bundle of permissions: <strong>basic</strong> (owner/editor/viewer — avoid), <strong>predefined</strong> (per-service), <strong>custom</strong>.</td></tr>
-            <tr><td>Binding</td><td>member + role on a resource (the IAM policy).</td></tr>
-            <tr><td>Service account</td><td>Identity for workloads (like an AWS role). Prefer over keys.</td></tr>
+            <tr><td>Member / principal</td><td>User, group, domain, or service account.</td></tr>
+            <tr><td>Role</td><td><strong>Basic</strong> (owner/editor/viewer — avoid), <strong>Predefined</strong> (per-service, e.g. <code>roles/storage.objectViewer</code>), <strong>Custom</strong> (exact permissions).</td></tr>
+            <tr><td>Policy (binding)</td><td>member + role attached to a resource. Inherited down the hierarchy.</td></tr>
+            <tr><td>Service Account (SA)</td><td>Identity for workloads. Has its own IAM roles; others get <code>iam.serviceAccountUser</code> to act as it.</td></tr>
           </tbody>
         </table>
-        <div class="gotcha"><span class="gotcha-label">avoid basic roles + key files</span>
-          The basic roles (owner/editor/viewer) are too broad for prod — use predefined/custom for least
-          privilege. Attach a service account to the VM/workload; don't download and ship SA key files.</div>
-
-        <h2 id="compute">3. Compute — pick the right one</h2>
-        <table>
-          <thead><tr><th>Service</th><th>Use when</th></tr></thead>
-          <tbody>
-            <tr><td><strong>Compute Engine</strong></td><td>VMs (IaaS). Full control. Preemptible/Spot = cheap; managed instance groups + autoscaling.</td></tr>
-            <tr><td><strong>GKE</strong></td><td>Managed Kubernetes — containers at scale, orchestration.</td></tr>
-            <tr><td><strong>Cloud Run</strong></td><td>Serverless containers, scale to zero, request-driven, any language.</td></tr>
-            <tr><td><strong>Cloud Functions</strong></td><td>Serverless functions, event-driven glue.</td></tr>
-            <tr><td><strong>App Engine</strong></td><td>Managed PaaS (standard/flexible).</td></tr>
-          </tbody>
-        </table>
-        <p>Rule of thumb: VM control &rarr; Compute Engine; containers + orchestration &rarr; GKE;
-        stateless container, no infra &rarr; Cloud Run; small event glue &rarr; Cloud Functions.</p>
-
-        <h2 id="network">4. Networking (VPC)</h2>
         <ul>
-          <li><strong>VPC is global</strong>; <strong>subnets are regional</strong> (unlike AWS where the VPC is regional) — a single VPC spans all regions.</li>
-          <li><strong>Firewall rules</strong> — VPC-level, stateful, by network tags or service accounts; priority-ordered.</li>
-          <li><strong>Cloud Load Balancing</strong> — global (HTTP(S), anycast IP) or regional (TCP/UDP/internal).</li>
-          <li><strong>Cloud NAT</strong> — egress for private instances (no public IP); <strong>Cloud DNS</strong> — managed DNS.</li>
-          <li><strong>VPC peering / Shared VPC / Interconnect/VPN</strong> — connect networks / on-prem.</li>
-          <li><strong>Private Google Access / Private Service Connect</strong> — reach Google APIs privately.</li>
+          <li><strong>Least privilege:</strong> predefined/custom roles over basic; grant to groups; scope at the lowest node.</li>
+          <li><strong>Workload Identity</strong> (GKE) / attached SAs (GCE) so pods/VMs auth <em>without</em> key files.</li>
+          <li><strong>SA keys</strong> are a liability — prefer keyless (Workload Identity Federation for external/CI). Org policy can disable key creation.</li>
         </ul>
+        <pre data-lang="bash">gcloud projects add-iam-policy-binding PROJECT \
+  --member="group:devs@ex.com" --role="roles/compute.viewer"
+gcloud iam service-accounts create app-sa --display-name "app"
+gcloud iam roles create myRole --project P --permissions=storage.objects.get
+gcloud projects get-iam-policy PROJECT      # audit who has what</pre>
+        <div class="gotcha"><span class="gotcha-label">attach SAs, don't ship keys</span>
+          Give a VM/GKE pod an attached service account (or Workload Identity), never a downloaded JSON key.
+          Keys leak and don't rotate. Basic "Editor/Owner" in prod = exam wrong answer.</div>
 
-        <h2 id="storage">5. Storage</h2>
-        <table>
-          <thead><tr><th>Service</th><th>Type / use</th></tr></thead>
-          <tbody>
-            <tr><td><strong>Cloud Storage (GCS)</strong></td><td>Object storage. Classes: Standard, Nearline, Coldline, Archive (lifecycle + versioning).</td></tr>
-            <tr><td><strong>Persistent Disk</strong></td><td>Block storage for VMs (zonal/regional). Snapshots.</td></tr>
-            <tr><td><strong>Filestore</strong></td><td>Managed NFS (shared).</td></tr>
-            <tr><td><strong>Local SSD</strong></td><td>Ephemeral high-IOPS, lost on stop.</td></tr>
-          </tbody>
-        </table>
+        <h2 id="compute">4. Compute (study #3)</h2>
+        <ul>
+          <li><strong>Compute Engine</strong> — VMs (IaaS). Machine families: E2/N2 (general), C2 (compute), M (memory). <strong>Preemptible/Spot</strong> = cheap, can be reclaimed. Custom machine types. Sustained-use + committed-use discounts.</li>
+          <li><strong>Instance templates</strong> — immutable VM blueprint; <strong>Managed Instance Group (MIG)</strong> uses a template for autoscaling, autohealing (health checks), rolling updates, regional (multi-zone) spread.</li>
+          <li><strong>GKE</strong> — managed Kubernetes. Standard (you manage nodes) vs <strong>Autopilot</strong> (Google manages nodes, per-pod billing). Node pools, cluster autoscaler, Workload Identity.</li>
+          <li><strong>Cloud Run</strong> — serverless containers, scale to zero, request/CPU billing, any language. Best for stateless HTTP/event services with no infra.</li>
+          <li><strong>App Engine</strong> — PaaS: Standard (sandboxed, scales to zero) vs Flexible (containers on VMs).</li>
+          <li><strong>Cloud Functions</strong> — serverless event-driven functions (Pub/Sub, GCS, HTTP triggers).</li>
+        </ul>
+        <p>Pick: VM control &rarr; Compute Engine; orchestrated containers &rarr; GKE; stateless container no infra &rarr; Cloud Run; tiny event glue &rarr; Cloud Functions.</p>
+        <pre data-lang="bash">gcloud compute instances create vm1 --machine-type e2-medium --zone us-central1-a
+gcloud compute instance-templates create tmpl --machine-type e2-small
+gcloud compute instance-groups managed create mig --template tmpl --size 3 --region us-central1
+gcloud compute instance-groups managed set-autoscaling mig --max-num-replicas 10 --target-cpu-utilization 0.6
+gcloud container clusters create-auto c1 --region us-central1
+gcloud run deploy svc --image REGION-docker.pkg.dev/P/repo/img --region us-central1 --allow-unauthenticated</pre>
 
-        <h2 id="db">6. Databases — pick the right one</h2>
+        <h2 id="storage">5. Storage &amp; databases (study #4, #7)</h2>
+        <ul>
+          <li><strong>Cloud Storage (GCS)</strong> — object storage. Classes: <strong>Standard</strong> (hot), <strong>Nearline</strong> (~30d), <strong>Coldline</strong> (~90d), <strong>Archive</strong> (~365d). <strong>Lifecycle rules</strong> transition/delete by age; versioning; uniform bucket-level access; signed URLs.</li>
+          <li><strong>Persistent Disk</strong> (block, VM-attached, zonal/regional) ; <strong>Filestore</strong> (managed NFS).</li>
+        </ul>
         <table>
-          <thead><tr><th>Need</th><th>Product</th></tr></thead>
+          <thead><tr><th>Need</th><th>Database</th></tr></thead>
           <tbody>
-            <tr><td>Managed relational (MySQL/Postgres/SQL Server)</td><td><strong>Cloud SQL</strong></td></tr>
-            <tr><td>Global, horizontally-scaling relational</td><td><strong>Cloud Spanner</strong></td></tr>
-            <tr><td>Serverless NoSQL document</td><td><strong>Firestore</strong></td></tr>
-            <tr><td>Wide-column, huge scale / time-series</td><td><strong>Bigtable</strong></td></tr>
-            <tr><td>Analytics / data warehouse</td><td><strong>BigQuery</strong> (serverless SQL)</td></tr>
+            <tr><td>Managed relational (MySQL/Postgres/SQL Server), regional</td><td><strong>Cloud SQL</strong></td></tr>
+            <tr><td>Global, horizontally-scaling relational, strong consistency</td><td><strong>Cloud Spanner</strong></td></tr>
+            <tr><td>Serverless NoSQL document, mobile/web, realtime</td><td><strong>Firestore</strong></td></tr>
+            <tr><td>Wide-column, massive throughput, time-series/IoT</td><td><strong>Bigtable</strong></td></tr>
+            <tr><td>Serverless analytics / data warehouse (SQL over huge data)</td><td><strong>BigQuery</strong></td></tr>
             <tr><td>In-memory cache</td><td><strong>Memorystore</strong> (Redis/Memcached)</td></tr>
           </tbody>
         </table>
+        <pre data-lang="bash">gsutil mb -c standard -l us gs://my-bucket ; gsutil cp f gs://my-bucket/
+gsutil lifecycle set lifecycle.json gs://my-bucket
+gcloud sql instances create db1 --database-version POSTGRES_15 --tier db-custom-2-7680 --region us-central1
+bq query --use_legacy_sql=false 'SELECT count(*) FROM ds.t'</pre>
+        <div class="gotcha"><span class="gotcha-label">Cloud SQL vs Spanner vs BigQuery</span>
+          Cloud SQL = single-region OLTP relational. Spanner = global OLTP relational at scale (expensive).
+          BigQuery = analytics/warehouse (OLAP), <em>not</em> for transactional app reads. Classic exam trap.</div>
 
-        <h2 id="data">7. Data &amp; messaging</h2>
+        <h2 id="networking">6. Networking (study #2)</h2>
+        <table>
+          <thead><tr><th>Component</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td><strong>VPC</strong></td><td><em>Global</em> resource; <strong>subnets are regional</strong> (with a CIDR). Auto or custom mode.</td></tr>
+            <tr><td><strong>Firewall rules</strong></td><td>VPC-level, stateful, by network tag / SA; priority-ordered; implied allow-egress + deny-ingress.</td></tr>
+            <tr><td><strong>Routes</strong></td><td>Where traffic goes (default to internet GW, custom for NAT/VPN).</td></tr>
+            <tr><td><strong>Cloud NAT</strong></td><td>Outbound internet for VMs with no external IP (private instances).</td></tr>
+            <tr><td><strong>Cloud Load Balancing</strong></td><td><em>Global</em> external HTTP(S) (anycast IP, L7) ; regional/internal (L4 TCP/UDP). Backend services + health checks + MIGs/NEGs.</td></tr>
+            <tr><td><strong>Cloud VPN / Interconnect</strong></td><td>VPN (IPsec over internet) vs Interconnect (dedicated/partner private link) to on-prem.</td></tr>
+            <tr><td><strong>Cloud DNS</strong></td><td>Managed DNS (public + private zones).</td></tr>
+            <tr><td><strong>Shared VPC / Peering</strong></td><td>Share one VPC across projects / connect two VPCs.</td></tr>
+          </tbody>
+        </table>
+        <pre data-lang="bash">gcloud compute networks create vpc1 --subnet-mode custom
+gcloud compute networks subnets create sn --network vpc1 --range 10.0.0.0/24 --region us-central1
+gcloud compute firewall-rules create allow-ssh --network vpc1 --allow tcp:22 --source-ranges 35.235.240.0/20
+gcloud compute routers create r --network vpc1 --region us-central1
+gcloud compute routers nats create nat --router r --region us-central1 --auto-allocate-nat-external-ips --nat-all-subnet-ip-ranges</pre>
+        <div class="gotcha"><span class="gotcha-label">VPC global, subnets regional (vs AWS)</span>
+          A GCP VPC spans all regions; you add a subnet per region. (AWS VPC is regional.) Firewall rules
+          are at the VPC, evaluated by priority + target tags/SAs — not per-subnet like AWS NACLs.</div>
+
+        <h2 id="iac">7. Infrastructure automation &amp; CI/CD</h2>
         <ul>
-          <li><strong>Pub/Sub</strong> — global messaging / event ingestion (at-least-once).</li>
-          <li><strong>Dataflow</strong> — managed Apache Beam stream/batch processing.</li>
-          <li><strong>Dataproc</strong> — managed Spark/Hadoop.</li>
-          <li><strong>Composer</strong> — managed Airflow orchestration.</li>
-          <li><strong>BigQuery</strong> — serverless warehouse; SQL over huge datasets (analytics, not OLTP).</li>
+          <li><strong>Terraform</strong> — the standard IaC; <code>google</code> provider; remote state in a GCS backend. (Deployment Manager is legacy — just be aware.)</li>
+          <li><strong>Cloud Build</strong> — managed CI/CD; <code>cloudbuild.yaml</code> steps build/test/deploy; triggers on repo push; runs as a service account.</li>
+          <li><strong>Artifact Registry</strong> — store container images + language packages (replaces Container Registry).</li>
+          <li>Typical flow: push &rarr; Cloud Build builds image &rarr; push to Artifact Registry &rarr; deploy to Cloud Run/GKE.</li>
+        </ul>
+        <pre data-lang="bash">gcloud builds submit --tag REGION-docker.pkg.dev/P/repo/img
+gcloud artifacts repositories create repo --repository-format docker --location REGION
+# Terraform: backend "gcs" { bucket = "tf-state"  prefix = "prod" }</pre>
+
+        <h2 id="ops">8. Operations — monitoring &amp; logging (study #8)</h2>
+        <ul>
+          <li><strong>Cloud Monitoring</strong> — metrics, dashboards, uptime checks, <strong>alerting policies</strong> (condition + notification channel). The Ops Agent collects VM metrics/logs.</li>
+          <li><strong>Cloud Logging</strong> — centralized logs; <strong>log sinks</strong> export to GCS/BigQuery/Pub/Sub; log-based metrics; retention buckets.</li>
+          <li><strong>Error Reporting</strong> — groups + surfaces application exceptions.</li>
+          <li><strong>Cloud Trace / Profiler</strong> — latency traces / CPU+heap profiling.</li>
+          <li><strong>Cloud Asset Inventory</strong> — inventory + change history of resources/IAM.</li>
+        </ul>
+        <pre data-lang="bash">gcloud logging read 'severity>=ERROR' --limit 20 --freshness 1h
+gcloud logging sinks create to-bq bigquery.googleapis.com/projects/P/datasets/logs --log-filter='resource.type="gce_instance"'
+gcloud monitoring dashboards list</pre>
+
+        <h2 id="security">9. Security (study throughout)</h2>
+        <ul>
+          <li><strong>IAM least privilege</strong> + groups + custom roles (see §3).</li>
+          <li><strong>Org Policies</strong> — restrict regions, block external IP on VMs, enforce uniform bucket access, disable SA keys.</li>
+          <li><strong>Cloud Armor</strong> — WAF + DDoS protection in front of the global HTTP(S) LB (IP allow/deny, rules, rate limiting).</li>
+          <li><strong>Encryption</strong>: at rest by default (Google-managed); <strong>CMEK</strong> (your keys in Cloud KMS) for control; CSEK (you supply keys); in transit via TLS.</li>
+          <li><strong>Secret Manager</strong> — store/rotate secrets with IAM + versioning (don't put secrets in env/code/images).</li>
+          <li><strong>Audit Logs</strong>: Admin Activity (always on), Data Access (opt-in), System Event, Policy Denied. <strong>Access Transparency</strong> logs Google access.</li>
+          <li><strong>VPC Service Controls</strong> — perimeter to stop data exfiltration from managed services.</li>
+        </ul>
+        <pre data-lang="bash">gcloud secrets create db-pass --replication-policy automatic
+echo -n 's3cr3t' | gcloud secrets versions add db-pass --data-file=-
+gcloud kms keyrings create kr --location us ; gcloud kms keys create k --keyring kr --location us --purpose encryption</pre>
+
+        <h2 id="backup">10. Backup, recovery &amp; troubleshooting</h2>
+        <ul>
+          <li><strong>Snapshots</strong> for persistent disks (incremental, can schedule); machine images for whole VMs.</li>
+          <li><strong>Cloud SQL</strong> automated backups + PITR; export to GCS; cross-region replicas for DR.</li>
+          <li><strong>GCS</strong> versioning + dual/multi-region buckets for durability; Object Lifecycle for retention.</li>
+          <li><strong>Troubleshooting</strong>: IAM denied &rarr; check effective roles + org policy + audit logs; VM unreachable &rarr; firewall rule/tag, external IP, routes (use the connectivity test / SSH-in-browser); app errors &rarr; Logging + Error Reporting.</li>
         </ul>
 
-        <h2 id="ops">8. Operations &amp; security</h2>
-        <ul>
-          <li><strong>Cloud Logging / Monitoring</strong> (ex-Stackdriver) — logs, metrics, alerts, dashboards, uptime checks.</li>
-          <li><strong>Cloud Trace / Profiler / Error Reporting</strong> — performance + errors.</li>
-          <li><strong>IAM + Org Policies</strong> — guardrails; <strong>KMS</strong> — keys; <strong>Secret Manager</strong> — secrets.</li>
-          <li><strong>Cloud Armor</strong> — WAF/DDoS; <strong>VPC Service Controls</strong> — data exfil perimeter.</li>
-          <li><strong>Billing</strong> — budgets + alerts; labels for cost attribution.</li>
-        </ul>
+        <h2 id="cli">11. gcloud / gsutil / bq essentials</h2>
+        <pre data-lang="bash">gcloud init ; gcloud auth login ; gcloud auth application-default login
+gcloud config set project P ; gcloud config set compute/region us-central1
+gcloud config configurations list   # switch between projects/accounts
+gcloud projects list ; gcloud services enable run.googleapis.com
+gcloud compute instances list ; gcloud compute ssh vm1 --zone us-central1-a
+gcloud container clusters get-credentials c1 --region us-central1   # then kubectl
+gcloud iam service-accounts list ; gcloud projects get-iam-policy P
+gsutil ls / cp / rsync / iam ch ; bq ls / query / mk</pre>
 
-        <h2 id="cli">9. CLI essentials</h2>
-        <pre data-lang="bash">gcloud auth login ; gcloud config set project PROJECT_ID
-gcloud projects list ; gcloud config list
-gcloud compute instances list / create / ssh NAME
-gcloud container clusters get-credentials CLUSTER --region R   # then kubectl
-gcloud run deploy SVC --image IMG --region R --allow-unauthenticated
-gcloud iam service-accounts create NAME
-gcloud projects add-iam-policy-binding PROJECT \
-  --member="serviceAccount:..." --role="roles/storage.objectViewer"
-gsutil ls gs://bucket ; gsutil cp file gs://bucket/ ; gsutil rsync
-bq query 'SELECT ...'        # BigQuery</pre>
-
-        <h2 id="qa">10. Rapid-fire interview Q&amp;A</h2>
+        <h2 id="qa">12. Exam-style Q&amp;A</h2>
         <ul class="cheat-qa">
-          <li><span class="q">Resource hierarchy?</span><span class="a">Organization &rarr; Folder &rarr; Project &rarr; Resources. IAM/org policies inherit down. Project = billing/quota/isolation unit.</span></li>
-          <li><span class="q">Cloud Run vs GKE vs Compute Engine?</span><span class="a">Cloud Run = serverless containers (scale to zero). GKE = managed Kubernetes. Compute Engine = raw VMs (full control).</span></li>
-          <li><span class="q">VPC scope vs AWS?</span><span class="a">GCP VPC is global; subnets are regional. AWS VPC is regional.</span></li>
-          <li><span class="q">Cloud SQL vs Spanner vs Bigtable?</span><span class="a">Cloud SQL = managed relational; Spanner = global horizontally-scaling relational (strong consistency); Bigtable = wide-column at massive scale / time-series.</span></li>
-          <li><span class="q">How should a VM authenticate to services?</span><span class="a">Attach a service account with least-privilege roles — not downloaded key files.</span></li>
-          <li><span class="q">What is BigQuery for?</span><span class="a">Serverless analytics / data warehouse — SQL over huge datasets. Not for OLTP/transactions.</span></li>
-          <li><span class="q">Basic vs predefined vs custom roles?</span><span class="a">Basic = broad (owner/editor/viewer, avoid in prod); predefined = service-scoped; custom = exact permission set.</span></li>
-          <li><span class="q">Firestore vs Bigtable?</span><span class="a">Firestore = serverless document DB (app data, queries, real-time). Bigtable = wide-column, huge throughput, key-based (analytics/IoT/time-series).</span></li>
-          <li><span class="q">Pub/Sub use?</span><span class="a">Decoupled, global, at-least-once messaging / event ingestion; fan-out to subscribers.</span></li>
-          <li><span class="q">How to reach Google APIs without public IP?</span><span class="a">Private Google Access / Private Service Connect; egress via Cloud NAT for general internet.</span></li>
-          <li><span class="q">GCS storage classes?</span><span class="a">Standard (hot) &rarr; Nearline &rarr; Coldline &rarr; Archive (coldest/cheapest). Lifecycle rules transition objects.</span></li>
-          <li><span class="q">How do you scope cost?</span><span class="a">Per-project billing + budgets/alerts; labels for attribution across projects.</span></li>
+          <li><span class="q">Resource hierarchy &amp; inheritance?</span><span class="a">Org &rarr; Folder &rarr; Project &rarr; Resource. IAM + org policies inherit downward. Project = billing/quota/API/isolation unit.</span></li>
+          <li><span class="q">Basic vs predefined vs custom roles?</span><span class="a">Basic (owner/editor/viewer) too broad — avoid in prod. Predefined = service-scoped least privilege. Custom = your exact permission set.</span></li>
+          <li><span class="q">How should a VM/pod authenticate to GCP services?</span><span class="a">Attached service account (GCE) or Workload Identity (GKE) — never a downloaded SA key. WIF for external/CI.</span></li>
+          <li><span class="q">Cloud Run vs GKE vs App Engine vs Functions?</span><span class="a">Cloud Run = stateless containers, scale to zero. GKE = full Kubernetes. App Engine = PaaS. Functions = event-driven snippets.</span></li>
+          <li><span class="q">MIG benefits?</span><span class="a">Autoscaling, autohealing (health checks recreate bad VMs), rolling updates, regional spread — from an instance template.</span></li>
+          <li><span class="q">VPC scope vs AWS?</span><span class="a">GCP VPC is global; subnets regional. Firewall rules at the VPC by tag/SA + priority.</span></li>
+          <li><span class="q">Cloud SQL vs Spanner vs Bigtable vs BigQuery?</span><span class="a">SQL = regional relational OLTP; Spanner = global relational at scale; Bigtable = wide-column high-throughput NoSQL; BigQuery = serverless analytics warehouse (OLAP, not app reads).</span></li>
+          <li><span class="q">Which storage class for archived data accessed yearly?</span><span class="a">Archive (cheapest storage, highest retrieval/min-duration). Nearline ~30d, Coldline ~90d, Standard hot.</span></li>
+          <li><span class="q">How do private VMs reach the internet?</span><span class="a">Cloud NAT (outbound only, no external IP). Inbound via a load balancer.</span></li>
+          <li><span class="q">How do you give private VMs access without public IPs to Google APIs?</span><span class="a">Private Google Access on the subnet (and Cloud NAT for general egress).</span></li>
+          <li><span class="q">Budgets vs quotas?</span><span class="a">Budgets alert on spend (don't cap). Quotas are hard limits on resource/API usage (request increases). Org policy restricts what's allowed at all.</span></li>
+          <li><span class="q">CMEK vs default encryption?</span><span class="a">Data is encrypted at rest by default (Google-managed keys). CMEK uses your Cloud KMS keys for control/rotation/audit; CSEK = you supply the key.</span></li>
+          <li><span class="q">How to protect a public app from DDoS/bad IPs?</span><span class="a">Cloud Armor (WAF + rate limiting + IP rules) on the global HTTP(S) load balancer.</span></li>
+          <li><span class="q">Where do secrets go?</span><span class="a">Secret Manager (IAM + versioning + rotation) — not env vars, code, or images.</span></li>
+          <li><span class="q">Which audit log is always on?</span><span class="a">Admin Activity. Data Access logs are opt-in (can be large). Access Transparency logs Google support access.</span></li>
+          <li><span class="q">How to export billing for analysis?</span><span class="a">Enable billing export to BigQuery; query + label for cost attribution.</span></li>
+          <li><span class="q">CI/CD on GCP?</span><span class="a">Cloud Build (triggers, cloudbuild.yaml) builds &rarr; Artifact Registry stores images &rarr; deploy to Cloud Run/GKE. Terraform for infra (state in GCS).</span></li>
+          <li><span class="q">VM unreachable — how to debug?</span><span class="a">Check firewall rule + target tag/SA, external IP / Cloud NAT, routes; use Connectivity Tests and SSH-in-browser; then VM serial console + logs.</span></li>
         </ul>
+
+        <h2 id="study">13. Study priority order</h2>
+        <ol>
+          <li>IAM + Service Accounts</li>
+          <li>VPC networking</li>
+          <li>Compute Engine</li>
+          <li>Cloud Storage</li>
+          <li>GKE</li>
+          <li>Cloud Run</li>
+          <li>Cloud SQL</li>
+          <li>Monitoring &amp; Logging</li>
+          <li>Load Balancers</li>
+          <li>Terraform + Cloud Build</li>
+        </ol>
+        <p>Exam: 120 min, multiple-choice + multiple-select, ~6 months hands-on recommended. Lean on the
+        "right service for the requirement" framing and least-privilege defaults.</p>
 
       </div>
 

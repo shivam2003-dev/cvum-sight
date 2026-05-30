@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging Database Issues — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">&larr; Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE &middot; DATA &middot; SRE PLAYBOOK</p>
+        <h1>Debugging Database Issues — Queries, Pools, Deadlocks.</h1>
+        <div class="tag-row">
+          <span class="tag fill">database</span>
+          <span class="tag">sre</span>
+          <span class="tag">postgres</span>
+          <span class="tag">performance</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Most "DB is slow" tickets: a query missing an index, the pool exhausted, lock/deadlock contention,
+          or replication lag serving stale reads. Find the slow query, read its plan, check pool + locks.
+          Examples lean Postgres; the shape is universal.
+        </blockquote>
+
+        <h2 id="slow">Slow queries</h2>
+        <pre data-lang="sql">SELECT pid, now()-query_start AS dur, state, query
+FROM pg_stat_activity WHERE state!='idle' ORDER BY dur DESC;
+EXPLAIN (ANALYZE, BUFFERS) SELECT ...;     -- Seq Scan on big table = missing index</pre>
+        <p><strong>Fix.</strong> Add the index the plan wants; rewrite sargable; avoid <code>SELECT *</code>;
+        use <code>pg_stat_statements</code> to rank worst queries.</p>
+        <div class="gotcha"><span class="gotcha-label">EXPLAIN ANALYZE is the answer</span>
+          Don't guess — run <code>EXPLAIN (ANALYZE, BUFFERS)</code>. Bad row estimates → run
+          <code>ANALYZE</code>.</div>
+
+        <h2 id="pool">Connection pool exhaustion</h2>
+        <pre data-lang="sql">SELECT count(*), state FROM pg_stat_activity GROUP BY state;
+SHOW max_connections;</pre>
+        <p>App instances &times; pool size &gt; <code>max_connections</code>; leaked connections; long
+        transactions. Fix: pooler (PgBouncer); size pools; release connections (try/finally); kill
+        idle-in-transaction.</p>
+
+        <h2 id="locks">Locks &amp; deadlocks</h2>
+        <pre data-lang="sql">SELECT blocked.pid, blocking.pid, blocked.query
+FROM pg_stat_activity blocked
+JOIN pg_stat_activity blocking ON blocking.pid = ANY(pg_blocking_pids(blocked.pid));</pre>
+        <p><strong>Fix.</strong> Short transactions; acquire locks in the <em>same order</em>; add indexes to
+        narrow lock scope; retry on deadlock (transient).</p>
+
+        <h2 id="replag">Replication lag / stale reads</h2>
+        <pre data-lang="sql">SELECT now() - pg_last_xact_replay_timestamp() AS lag;</pre>
+        <p><strong>Fix.</strong> Route read-after-write to primary; fix replica resource/network limits.</p>
+
+        <h2 id="ref">Quick reference</h2>
+        <pre data-lang="sql">SELECT * FROM pg_stat_activity ORDER BY query_start;
+EXPLAIN (ANALYZE, BUFFERS) &lt;query&gt;;
+SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10;
+-- SELECT pg_terminate_backend(pid);</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="debug-latency.html">&larr; prev: Latency</a>
+        <a href="debug-pipeline.html">next: Pipeline Failures &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

@@ -51,8 +51,8 @@
 
         <blockquote>
           The one-liner: <strong>Kubernetes is a declarative control loop.</strong> You declare desired
-          state (YAML), controllers continuously reconcile actual → desired. You never "start a
-          container"; you tell K8s what you want and it makes reality match.
+          state (YAML), controllers continuously reconcile actual &rarr; desired. You never "start a
+          container" — you tell K8s what you want and it makes reality match, then keeps it matched.
         </blockquote>
 
         <h2 id="arch">1. Architecture</h2>
@@ -60,56 +60,65 @@
         <table>
           <thead><tr><th>Component</th><th>Job</th></tr></thead>
           <tbody>
-            <tr><td><strong>kube-apiserver</strong></td><td>Front door. All reads/writes go through it. The only thing that talks to etcd.</td></tr>
-            <tr><td><strong>etcd</strong></td><td>Key-value store = the single source of truth for cluster state.</td></tr>
-            <tr><td><strong>kube-scheduler</strong></td><td>Assigns Pods to Nodes based on resources, affinity, taints.</td></tr>
-            <tr><td><strong>controller-manager</strong></td><td>Runs control loops (Deployment, ReplicaSet, Node controllers) reconciling state.</td></tr>
-            <tr><td><strong>cloud-controller-manager</strong></td><td>Integrates cloud provider (LB, volumes, nodes).</td></tr>
+            <tr><td><strong>kube-apiserver</strong></td><td>Front door. All reads/writes go through it (REST). The only thing that talks to etcd. AuthN/AuthZ/admission.</td></tr>
+            <tr><td><strong>etcd</strong></td><td>Consistent key-value store = the single source of truth for all cluster state.</td></tr>
+            <tr><td><strong>kube-scheduler</strong></td><td>Assigns Pods to Nodes (filtering + scoring) on resources, affinity, taints, spread.</td></tr>
+            <tr><td><strong>controller-manager</strong></td><td>Runs reconcile loops (Deployment, ReplicaSet, Node, Job, endpoints…).</td></tr>
+            <tr><td><strong>cloud-controller-manager</strong></td><td>Integrates the cloud (LBs, volumes, node lifecycle).</td></tr>
           </tbody>
         </table>
         <p><strong>Worker node</strong> (the muscle):</p>
         <table>
           <thead><tr><th>Component</th><th>Job</th></tr></thead>
           <tbody>
-            <tr><td><strong>kubelet</strong></td><td>Node agent. Talks to API server, ensures the Pod's containers are running &amp; healthy.</td></tr>
-            <tr><td><strong>kube-proxy</strong></td><td>Programs iptables/IPVS for Service networking on the node.</td></tr>
-            <tr><td><strong>container runtime</strong></td><td>Actually runs containers (containerd, CRI-O).</td></tr>
+            <tr><td><strong>kubelet</strong></td><td>Node agent. Watches the API for Pods assigned to it; ensures their containers run &amp; stay healthy; runs probes.</td></tr>
+            <tr><td><strong>kube-proxy</strong></td><td>Programs iptables/IPVS so Service VIPs load-balance to Pod IPs.</td></tr>
+            <tr><td><strong>container runtime</strong></td><td>Runs containers via the CRI (containerd, CRI-O).</td></tr>
           </tbody>
         </table>
+        <p>Flow of a <code>kubectl apply</code>: CLI &rarr; apiserver (validate, admission) &rarr; etcd
+        &rarr; controller creates Pods &rarr; scheduler binds them to nodes &rarr; kubelet on that node
+        pulls images and starts containers &rarr; kube-proxy wires Service routing.</p>
 
         <h2 id="objects">2. Core objects</h2>
         <table>
           <thead><tr><th>Object</th><th>What it does</th></tr></thead>
           <tbody>
-            <tr><td><strong>Pod</strong></td><td>Smallest deployable unit. One or more containers sharing network + storage. Usually not created directly.</td></tr>
+            <tr><td><strong>Pod</strong></td><td>Smallest deployable unit. One+ containers sharing network (same IP) + storage. Usually not created directly.</td></tr>
             <tr><td><strong>ReplicaSet</strong></td><td>Keeps N identical Pods running. Managed by Deployment.</td></tr>
-            <tr><td><strong>Deployment</strong></td><td>Declarative updates for Pods/ReplicaSets — rolling updates, rollback. The workhorse.</td></tr>
-            <tr><td><strong>Service</strong></td><td>Stable network endpoint + load balancing across a set of Pods.</td></tr>
-            <tr><td><strong>Ingress</strong></td><td>HTTP(S) routing into the cluster (host/path → Service).</td></tr>
-            <tr><td><strong>ConfigMap / Secret</strong></td><td>Inject config / sensitive data into Pods.</td></tr>
-            <tr><td><strong>Namespace</strong></td><td>Virtual cluster for isolation/quotas.</td></tr>
-            <tr><td><strong>StatefulSet</strong></td><td>Stable identity + storage for stateful apps (DBs).</td></tr>
-            <tr><td><strong>DaemonSet</strong></td><td>One Pod per node (log/metrics agents).</td></tr>
+            <tr><td><strong>Deployment</strong></td><td>Declarative updates for Pods/ReplicaSets — rolling updates + rollback. The stateless workhorse.</td></tr>
+            <tr><td><strong>StatefulSet</strong></td><td>Stable identity (web-0, web-1) + stable per-Pod storage + ordered ops. Databases.</td></tr>
+            <tr><td><strong>DaemonSet</strong></td><td>One Pod per node (log/metrics/CNI agents).</td></tr>
             <tr><td><strong>Job / CronJob</strong></td><td>Run-to-completion / scheduled tasks.</td></tr>
+            <tr><td><strong>Service</strong></td><td>Stable endpoint + load balancing across a set of Pods.</td></tr>
+            <tr><td><strong>Ingress</strong></td><td>L7 HTTP(S) routing (host/path &rarr; Service).</td></tr>
+            <tr><td><strong>ConfigMap / Secret</strong></td><td>Inject config / sensitive data.</td></tr>
+            <tr><td><strong>Namespace</strong></td><td>Virtual cluster for isolation, quotas, RBAC scoping.</td></tr>
+            <tr><td><strong>PV / PVC</strong></td><td>Cluster storage / a Pod's claim on it.</td></tr>
+            <tr><td><strong>ServiceAccount</strong></td><td>Identity for Pods talking to the API.</td></tr>
           </tbody>
         </table>
 
         <h2 id="kubectl">3. kubectl essentials</h2>
-        <pre data-lang="bash">kubectl get pods -A                       # all namespaces
-kubectl get pods -o wide -n app           # with node/IP
-kubectl describe pod <name>               # events + state (debug gold)
-kubectl logs -f <pod> [-c container]      # stream logs
-kubectl logs <pod> --previous             # logs of crashed prior container
-kubectl exec -it <pod> -- sh              # shell in
-kubectl apply -f manifest.yaml            # declarative create/update
+        <pre data-lang="bash">kubectl get pods -A -o wide                 # all namespaces, with node/IP
+kubectl get all -n app                       # pods/svc/deploy/rs in a ns
+kubectl describe pod <name>                  # events + state (debug gold)
+kubectl logs -f <pod> [-c container] [--previous]
+kubectl exec -it <pod> -- sh
+kubectl apply -f manifest.yaml               # declarative create/update
+kubectl diff -f manifest.yaml                # preview the change
 kubectl delete -f manifest.yaml
-kubectl rollout status deploy/web
-kubectl rollout undo deploy/web           # rollback
+kubectl rollout status/history/undo deploy/web
 kubectl scale deploy/web --replicas=5
-kubectl port-forward svc/web 8080:80      # local access
+kubectl set image deploy/web web=nginx:1.28
+kubectl port-forward svc/web 8080:80         # local access
 kubectl get events --sort-by=.lastTimestamp
-kubectl top pod / node                    # resource usage (metrics-server)
-kubectl config use-context <ctx>          # switch cluster</pre>
+kubectl top pod / node                        # needs metrics-server
+kubectl explain pod.spec.containers           # field docs
+kubectl debug -it <pod> --image=busybox --target=<c>   # ephemeral debug
+kubectl config get-contexts / use-context <ctx>
+kubectl label/annotate ; kubectl cordon/drain/uncordon <node>
+kubectl get pod <p> -o jsonpath='{.status.podIP}'</pre>
 
         <h2 id="pod">4. Pod spec anatomy</h2>
         <pre data-lang="yaml">apiVersion: v1
@@ -118,6 +127,11 @@ metadata:
   name: web
   labels: { app: web }
 spec:
+  serviceAccountName: web-sa
+  initContainers:
+    - name: wait-db
+      image: busybox
+      command: ["sh","-c","until nc -z db 5432; do sleep 1; done"]
   containers:
     - name: web
       image: nginx:1.27
@@ -125,29 +139,35 @@ spec:
       env:
         - name: LOG_LEVEL
           value: info
+        - name: DB_PASS
+          valueFrom: { secretKeyRef: { name: db, key: pass } }
       resources:
         requests: { cpu: "100m", memory: "128Mi" }   # scheduler reserves
-        limits:   { cpu: "500m", memory: "256Mi" }   # hard cap (OOMKill if exceeded)
+        limits:   { cpu: "500m", memory: "256Mi" }   # hard cap (OOMKill over mem)
       readinessProbe:
         httpGet: { path: /healthz, port: 80 }
         initialDelaySeconds: 5
       livenessProbe:
-        httpGet: { path: /healthz, port: 80 }</pre>
-        <div class="gotcha">
-          <span class="gotcha-label">requests vs limits</span>
-          <strong>requests</strong> = what the scheduler guarantees/reserves (drives placement).
-          <strong>limits</strong> = hard ceiling. Exceed memory limit → <code>OOMKilled</code>. Exceed
-          CPU limit → throttled (not killed). No requests set → poor scheduling + first to be evicted.
-        </div>
+        httpGet: { path: /healthz, port: 80 }
+      securityContext:
+        runAsNonRoot: true
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+      volumeMounts: [{ name: cache, mountPath: /tmp }]
+  volumes: [{ name: cache, emptyDir: {} }]</pre>
+        <div class="gotcha"><span class="gotcha-label">requests vs limits</span>
+          <strong>requests</strong> = what the scheduler reserves (drives placement + QoS).
+          <strong>limits</strong> = hard ceiling. Over memory limit &rarr; <code>OOMKilled</code>; over CPU
+          &rarr; throttled (not killed). No requests &rarr; poor scheduling + first to be evicted.</div>
 
         <h2 id="workloads">5. Choosing a workload</h2>
         <table>
           <thead><tr><th>Need</th><th>Use</th></tr></thead>
           <tbody>
             <tr><td>Stateless app, N replicas, rolling updates</td><td><strong>Deployment</strong></td></tr>
-            <tr><td>Stateful app, stable name + storage (DB, Kafka)</td><td><strong>StatefulSet</strong></td></tr>
-            <tr><td>One pod on every node (agent, CNI, logging)</td><td><strong>DaemonSet</strong></td></tr>
-            <tr><td>Run once to completion</td><td><strong>Job</strong></td></tr>
+            <tr><td>Stable name + storage (DB, Kafka, Zookeeper)</td><td><strong>StatefulSet</strong></td></tr>
+            <tr><td>One Pod on every node (agent, CNI, logging)</td><td><strong>DaemonSet</strong></td></tr>
+            <tr><td>Run once to completion (migration, batch)</td><td><strong>Job</strong></td></tr>
             <tr><td>Scheduled recurring task</td><td><strong>CronJob</strong></td></tr>
           </tbody>
         </table>
@@ -157,6 +177,9 @@ metadata: { name: web }
 spec:
   replicas: 3
   selector: { matchLabels: { app: web } }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }   # zero-downtime
   template:
     metadata: { labels: { app: web } }
     spec:
@@ -168,154 +191,157 @@ spec:
           <thead><tr><th>Type</th><th>Exposure</th></tr></thead>
           <tbody>
             <tr><td><strong>ClusterIP</strong></td><td>Default. Internal-only virtual IP. Pod-to-pod.</td></tr>
-            <tr><td><strong>NodePort</strong></td><td>Opens a port on every node (30000–32767). Basic external access.</td></tr>
-            <tr><td><strong>LoadBalancer</strong></td><td>Provisions a cloud LB → Service. Standard external entry.</td></tr>
+            <tr><td><strong>NodePort</strong></td><td>Opens a port on every node (30000–32767). Basic external.</td></tr>
+            <tr><td><strong>LoadBalancer</strong></td><td>Provisions a cloud LB &rarr; Service. Standard external entry.</td></tr>
             <tr><td><strong>ExternalName</strong></td><td>CNAME to an external DNS name.</td></tr>
-            <tr><td><strong>Ingress</strong></td><td>Not a Service type — L7 router (host/path) in front of Services.</td></tr>
+            <tr><td><strong>Headless</strong> (<code>clusterIP: None</code>)</td><td>No VIP — DNS returns Pod IPs directly. StatefulSet discovery.</td></tr>
           </tbody>
         </table>
         <pre data-lang="yaml">apiVersion: v1
 kind: Service
 metadata: { name: web }
 spec:
-  selector: { app: web }       # matches Pod labels
+  selector: { app: web }          # matches Pod labels
   ports: [{ port: 80, targetPort: 80 }]
   type: ClusterIP</pre>
-        <p>
-          <strong>Service discovery:</strong> Services get a DNS name
-          <code>&lt;svc&gt;.&lt;namespace&gt;.svc.cluster.local</code>. A Service finds its Pods via the
-          <strong>label selector</strong> → maintains an Endpoints list. Pod networking itself is a
-          <strong>CNI</strong> plugin (Calico, Cilium, Flannel) — flat network, every Pod gets a routable IP.
-        </p>
-        <div class="gotcha">
-          <span class="gotcha-label">selector mismatch</span>
-          A Service with no matching Pod labels has empty Endpoints → "connection refused" with zero
-          obvious errors. Check <code>kubectl get endpoints &lt;svc&gt;</code> first.
-        </div>
+        <ul>
+          <li><strong>DNS:</strong> <code>&lt;svc&gt;.&lt;ns&gt;.svc.cluster.local</code>. Service &rarr; Pods via label selector &rarr; an Endpoints/EndpointSlice list.</li>
+          <li><strong>CNI</strong> (Calico, Cilium, Flannel) gives every Pod a routable IP — flat network.</li>
+          <li><strong>Ingress</strong> = L7 router (needs an ingress controller); <strong>Gateway API</strong> is its successor.</li>
+          <li><strong>NetworkPolicy</strong> = firewall for Pods (default-allow until one selects a Pod, then default-deny).</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">empty endpoints</span>
+          A Service whose selector matches no ready Pod has empty Endpoints &rarr; "connection refused"
+          with no obvious error. Check <code>kubectl get endpoints &lt;svc&gt;</code> first.</div>
 
         <h2 id="config">7. Config &amp; Secrets</h2>
-        <pre data-lang="bash">kubectl create configmap appcfg --from-literal=LOG_LEVEL=info
+        <pre data-lang="bash">kubectl create configmap appcfg --from-literal=LOG_LEVEL=info --from-file=app.conf
 kubectl create secret generic dbcreds --from-literal=password=s3cr3t</pre>
-        <pre data-lang="yaml"># inject into a Pod
-envFrom:
-  - configMapRef: { name: appcfg }
+        <pre data-lang="yaml">envFrom: [{ configMapRef: { name: appcfg } }]
 env:
   - name: DB_PASSWORD
-    valueFrom:
-      secretKeyRef: { name: dbcreds, key: password }
-# or mount as files
+    valueFrom: { secretKeyRef: { name: dbcreds, key: password } }
 volumes:
   - name: cfg
-    configMap: { name: appcfg }</pre>
-        <div class="gotcha">
-          <span class="gotcha-label">Secrets aren't encrypted by default</span>
-          They're only base64-encoded in etcd. Enable encryption-at-rest and tight RBAC. Anyone who can
-          read Secrets in a namespace can read them plainly.
-        </div>
+    configMap: { name: appcfg }     # or mount as files</pre>
+        <div class="gotcha"><span class="gotcha-label">Secrets aren't encrypted by default</span>
+          They're only base64-encoded in etcd. Enable encryption-at-rest + tight RBAC; consider an
+          external secrets store (Vault, External Secrets Operator).</div>
 
         <h2 id="storage">8. Storage</h2>
         <table>
           <thead><tr><th>Object</th><th>Role</th></tr></thead>
           <tbody>
-            <tr><td><strong>PV (PersistentVolume)</strong></td><td>A piece of cluster storage (admin/provisioner side).</td></tr>
-            <tr><td><strong>PVC (PersistentVolumeClaim)</strong></td><td>A Pod's request for storage. Binds to a PV.</td></tr>
-            <tr><td><strong>StorageClass</strong></td><td>Template for dynamic provisioning (e.g. gp3, ssd).</td></tr>
+            <tr><td><strong>PV</strong></td><td>A piece of cluster storage (admin/provisioner side).</td></tr>
+            <tr><td><strong>PVC</strong></td><td>A Pod's request for storage; binds to a PV.</td></tr>
+            <tr><td><strong>StorageClass</strong></td><td>Template for dynamic provisioning (gp3, ssd, …).</td></tr>
           </tbody>
         </table>
-        <p><strong>Access modes:</strong> <code>RWO</code> (one node RW), <code>ROX</code> (many nodes RO), <code>RWX</code> (many nodes RW). Most block storage is RWO; shared filesystems do RWX.</p>
+        <p><strong>Access modes:</strong> <code>RWO</code> (one node RW), <code>ROX</code> (many nodes RO),
+        <code>RWX</code> (many nodes RW). Most block storage is RWO; shared filesystems do RWX.
+        <strong>Reclaim policy:</strong> <code>Delete</code> vs <code>Retain</code> when the PVC goes away.</p>
 
         <h2 id="scheduling">9. Scheduling controls</h2>
         <table>
           <thead><tr><th>Mechanism</th><th>Effect</th></tr></thead>
           <tbody>
-            <tr><td><strong>nodeSelector</strong></td><td>Simple "schedule only on nodes with this label."</td></tr>
-            <tr><td><strong>Affinity / anti-affinity</strong></td><td>Rich rules — co-locate or spread Pods (e.g. spread replicas across zones).</td></tr>
-            <tr><td><strong>Taints &amp; tolerations</strong></td><td>Taint a node to <em>repel</em> Pods; only Pods with a matching toleration land there (e.g. GPU nodes).</td></tr>
-            <tr><td><strong>requests</strong></td><td>Drive bin-packing — scheduler places by available requested resources.</td></tr>
+            <tr><td><strong>nodeSelector</strong></td><td>Simple "only nodes with this label".</td></tr>
+            <tr><td><strong>Affinity / anti-affinity</strong></td><td>Rich rules — co-locate or spread (e.g. replicas across zones).</td></tr>
+            <tr><td><strong>Taints &amp; tolerations</strong></td><td>Taint a node to <em>repel</em>; only Pods with a matching toleration land there (GPU/spot nodes).</td></tr>
+            <tr><td><strong>Topology spread</strong></td><td>Even distribution across zones/nodes.</td></tr>
+            <tr><td><strong>PriorityClass</strong></td><td>Higher-priority Pods can preempt lower ones.</td></tr>
+            <tr><td><strong>requests</strong></td><td>Drive bin-packing — placement by available requested resources.</td></tr>
           </tbody>
         </table>
-        <p>Mental model: <strong>taint = node repels</strong>, <strong>toleration = pod is allowed</strong>, <strong>affinity = pod is attracted</strong>.</p>
+        <p>Mental model: <strong>taint = node repels</strong>, <strong>toleration = pod allowed</strong>,
+        <strong>affinity = pod attracted</strong>.</p>
 
         <h2 id="probes">10. Health probes</h2>
         <table>
-          <thead><tr><th>Probe</th><th>Question / on fail</th></tr></thead>
+          <thead><tr><th>Probe</th><th>On fail</th><th>For</th></tr></thead>
           <tbody>
-            <tr><td><strong>liveness</strong></td><td>"Is it alive?" Fail → <strong>restart</strong> the container.</td></tr>
-            <tr><td><strong>readiness</strong></td><td>"Can it serve traffic?" Fail → <strong>remove from Service endpoints</strong> (no restart).</td></tr>
-            <tr><td><strong>startup</strong></td><td>"Has it finished booting?" Protects slow starters from liveness killing them early.</td></tr>
+            <tr><td><strong>liveness</strong></td><td>restart the container</td><td>detect a wedged process</td></tr>
+            <tr><td><strong>readiness</strong></td><td>remove from Service endpoints (no restart)</td><td>"can I serve traffic now"</td></tr>
+            <tr><td><strong>startup</strong></td><td>hold off liveness until booted</td><td>slow-starting apps</td></tr>
           </tbody>
         </table>
-        <div class="gotcha">
-          <span class="gotcha-label">probe trap</span>
-          Don't point liveness at a deep dependency (DB). If the DB blips, liveness fails and K8s restarts
-          your healthy app pointlessly. Liveness = "is the process wedged"; readiness = "should I get traffic."
-        </div>
+        <div class="gotcha"><span class="gotcha-label">probe trap</span>
+          Don't point liveness at a dependency (DB). If the DB blips, liveness fails and K8s restarts your
+          healthy app pointlessly. Liveness = "is the process stuck"; readiness = "should I get traffic".</div>
 
-        <h2 id="rollouts">11. Rollouts &amp; updates</h2>
-        <pre data-lang="yaml">spec:
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1          # extra pods allowed above replicas during update
-      maxUnavailable: 0    # how many can be down (0 = zero-downtime)</pre>
+        <h2 id="rollouts">11. Rollouts &amp; QoS</h2>
         <pre data-lang="bash">kubectl set image deploy/web web=nginx:1.28
 kubectl rollout status deploy/web
 kubectl rollout history deploy/web
 kubectl rollout undo deploy/web --to-revision=2</pre>
+        <p>RollingUpdate scales a new ReplicaSet up while the old scales down, bounded by
+        <code>maxSurge</code>/<code>maxUnavailable</code>. <strong>QoS classes</strong> (eviction order):
+        <strong>Guaranteed</strong> (requests=limits) &gt; <strong>Burstable</strong> &gt;
+        <strong>BestEffort</strong> (no requests, evicted first).</p>
 
         <h2 id="rbac">12. RBAC</h2>
         <table>
           <thead><tr><th>Object</th><th>Meaning</th></tr></thead>
           <tbody>
             <tr><td><strong>Role / ClusterRole</strong></td><td>A set of permissions (verbs on resources). Role = namespaced; ClusterRole = cluster-wide.</td></tr>
-            <tr><td><strong>RoleBinding / ClusterRoleBinding</strong></td><td>Grants a Role to a user / group / ServiceAccount.</td></tr>
-            <tr><td><strong>ServiceAccount</strong></td><td>Identity for Pods to talk to the API server.</td></tr>
+            <tr><td><strong>RoleBinding / ClusterRoleBinding</strong></td><td>Grants a Role to a user/group/ServiceAccount.</td></tr>
+            <tr><td><strong>ServiceAccount</strong></td><td>Identity for Pods to call the API.</td></tr>
           </tbody>
         </table>
+        <pre data-lang="bash">kubectl auth can-i create deploy --as=system:serviceaccount:ns:sa -n ns</pre>
         <p>Formula: <strong>Subject + Role + Binding = access.</strong> Least privilege; avoid <code>cluster-admin</code>.</p>
 
-        <h2 id="hpa">13. Autoscaling</h2>
+        <h2 id="autoscale">13. Autoscaling</h2>
         <pre data-lang="bash">kubectl autoscale deploy/web --min=2 --max=10 --cpu-percent=70</pre>
         <ul>
-          <li><strong>HPA</strong> — scales Pod replicas on CPU/mem/custom metrics (needs metrics-server).</li>
+          <li><strong>HPA</strong> — scales replicas on CPU/mem/custom metrics (needs metrics-server). No requests = no HPA.</li>
           <li><strong>VPA</strong> — adjusts a Pod's requests/limits.</li>
           <li><strong>Cluster Autoscaler</strong> — adds/removes nodes when Pods can't schedule.</li>
         </ul>
 
-        <h2 id="debug">14. Debugging playbook</h2>
-        <pre data-lang="bash">kubectl get pods                       # status column tells the story
-kubectl describe pod <pod>             # Events section = why it's stuck
+        <h2 id="security">14. Security context &amp; namespaces</h2>
+        <ul>
+          <li><strong>securityContext</strong>: <code>runAsNonRoot</code>, <code>readOnlyRootFilesystem</code>, drop capabilities, <code>allowPrivilegeEscalation: false</code>, <code>seccompProfile</code>.</li>
+          <li><strong>Pod Security Admission</strong> (privileged / baseline / restricted) replaces PodSecurityPolicy.</li>
+          <li><strong>ResourceQuota</strong> + <strong>LimitRange</strong> per namespace cap usage and set defaults.</li>
+          <li>Use dedicated ServiceAccounts per workload, least-privilege RBAC, NetworkPolicies.</li>
+        </ul>
+
+        <h2 id="debug">15. Debugging playbook</h2>
+        <pre data-lang="bash">kubectl get pods                       # STATUS column tells the story
+kubectl describe pod <pod>             # Events = why it's stuck
 kubectl logs <pod> --previous          # crashed container's last words
 kubectl get events --sort-by=.lastTimestamp
 kubectl get endpoints <svc>            # is the Service wired to Pods?</pre>
         <table>
-          <thead><tr><th>Status</th><th>Meaning → fix</th></tr></thead>
+          <thead><tr><th>Status</th><th>Meaning &rarr; fix</th></tr></thead>
           <tbody>
-            <tr><td><strong>CrashLoopBackOff</strong></td><td>App starts then crashes repeatedly. Check <code>logs --previous</code>; bad config/cmd, failing liveness, missing dep.</td></tr>
-            <tr><td><strong>ImagePullBackOff</strong></td><td>Can't pull image. Wrong name/tag, private registry without imagePullSecret.</td></tr>
-            <tr><td><strong>Pending</strong></td><td>No node fits. Insufficient CPU/mem requests, taints, or unbound PVC.</td></tr>
-            <tr><td><strong>OOMKilled</strong></td><td>Hit memory limit. Raise limit or fix the leak.</td></tr>
-            <tr><td><strong>CreateContainerConfigError</strong></td><td>Missing ConfigMap/Secret referenced by the Pod.</td></tr>
-            <tr><td><strong>0/1 Ready</strong> but Running</td><td>Readiness probe failing — app up but not serving.</td></tr>
+            <tr><td><strong>CrashLoopBackOff</strong></td><td>Starts then crashes — <code>logs --previous</code>; bad config/cmd, failing liveness, missing dep.</td></tr>
+            <tr><td><strong>ImagePullBackOff</strong></td><td>Can't pull — wrong name/tag, private registry without imagePullSecret, rate limit.</td></tr>
+            <tr><td><strong>Pending</strong></td><td>No node fits — insufficient requests, taints, unbound PVC.</td></tr>
+            <tr><td><strong>OOMKilled</strong></td><td>Hit memory limit — raise limit / fix leak.</td></tr>
+            <tr><td><strong>CreateContainerConfigError</strong></td><td>Missing ConfigMap/Secret.</td></tr>
+            <tr><td><strong>0/1 Ready</strong> but Running</td><td>Readiness probe failing — app up, not serving.</td></tr>
           </tbody>
         </table>
 
-        <h2 id="qa">15. Rapid-fire interview Q&amp;A</h2>
+        <h2 id="qa">16. Rapid-fire interview Q&amp;A</h2>
         <ul class="cheat-qa">
-          <li><span class="q">What is a Pod?</span><span class="a">Smallest deployable unit — one or more containers sharing network namespace (same IP) and storage. Containers in a pod are always co-scheduled.</span></li>
-          <li><span class="q">Deployment vs StatefulSet?</span><span class="a">Deployment = interchangeable stateless replicas, random names. StatefulSet = stable identity (web-0, web-1), stable per-pod storage, ordered rollout. Use it for databases.</span></li>
-          <li><span class="q">How does a Service find its Pods?</span><span class="a">Label selector → Endpoints list. kube-proxy programs iptables/IPVS to load-balance to those Pod IPs.</span></li>
-          <li><span class="q">ClusterIP vs NodePort vs LoadBalancer?</span><span class="a">Internal-only → node port on every node → cloud LB. They layer: LoadBalancer sits on NodePort sits on ClusterIP.</span></li>
-          <li><span class="q">Liveness vs readiness?</span><span class="a">Liveness fail → restart container. Readiness fail → pull from Service endpoints (no restart). Startup → guard slow boots.</span></li>
-          <li><span class="q">requests vs limits?</span><span class="a">requests = guaranteed/scheduled amount. limits = hard cap. Over memory limit = OOMKilled; over CPU = throttled.</span></li>
-          <li><span class="q">What's in the control plane?</span><span class="a">api-server (front door), etcd (state), scheduler (placement), controller-manager (reconcile loops). Nodes run kubelet + kube-proxy + runtime.</span></li>
+          <li><span class="q">What is a Pod?</span><span class="a">Smallest deployable unit — one+ containers sharing a network namespace (same IP) and storage, always co-scheduled.</span></li>
+          <li><span class="q">Deployment vs StatefulSet?</span><span class="a">Deployment = interchangeable stateless replicas, random names. StatefulSet = stable identity (web-0), stable per-pod storage, ordered rollout. DBs.</span></li>
+          <li><span class="q">How does a Service find its Pods?</span><span class="a">Label selector &rarr; Endpoints/EndpointSlice; kube-proxy programs iptables/IPVS to load-balance to those Pod IPs.</span></li>
+          <li><span class="q">ClusterIP vs NodePort vs LoadBalancer?</span><span class="a">Internal-only &rarr; node port on every node &rarr; cloud LB. They layer.</span></li>
+          <li><span class="q">Liveness vs readiness vs startup?</span><span class="a">Liveness fail &rarr; restart. Readiness fail &rarr; pull from endpoints. Startup &rarr; guard slow boots.</span></li>
+          <li><span class="q">requests vs limits?</span><span class="a">requests = guaranteed/scheduled. limits = hard cap. Over mem = OOMKilled; over CPU = throttled.</span></li>
+          <li><span class="q">What's in the control plane?</span><span class="a">apiserver (front door), etcd (state), scheduler (placement), controller-manager (reconcile). Nodes run kubelet + kube-proxy + runtime.</span></li>
           <li><span class="q">How does a rolling update work?</span><span class="a">New ReplicaSet scales up while old scales down per maxSurge/maxUnavailable. Rollback = re-point to the previous ReplicaSet.</span></li>
-          <li><span class="q">ConfigMap vs Secret?</span><span class="a">Same idea, Secret is for sensitive data (base64 in etcd, not encrypted by default). Mount as env or files.</span></li>
-          <li><span class="q">Taint vs toleration vs affinity?</span><span class="a">Taint repels pods from a node; toleration lets a pod ignore the taint; affinity attracts pods to nodes/pods.</span></li>
-          <li><span class="q">Why is my Pod Pending?</span><span class="a">Scheduler found no fit: not enough requestable CPU/mem, a taint with no toleration, or an unbound PVC.</span></li>
-          <li><span class="q">What does kubelet do?</span><span class="a">Node agent — watches the API server for Pods assigned to its node and makes sure their containers run and stay healthy.</span></li>
-          <li><span class="q">How is config declarative?</span><span class="a">You <code>apply</code> desired state; controllers run reconcile loops to converge actual → desired continuously. No imperative "start this."</span></li>
-          <li><span class="q">Namespace use?</span><span class="a">Logical isolation: scoping, RBAC, resource quotas, and avoiding name collisions across teams/envs.</span></li>
+          <li><span class="q">ConfigMap vs Secret?</span><span class="a">Same idea; Secret is for sensitive data (base64 in etcd, not encrypted by default). Mount as env or files.</span></li>
+          <li><span class="q">Taint vs toleration vs affinity?</span><span class="a">Taint repels pods from a node; toleration lets a pod ignore it; affinity attracts pods to nodes/pods.</span></li>
+          <li><span class="q">Why is my Pod Pending?</span><span class="a">No fit: insufficient requestable CPU/mem, a taint with no toleration, or an unbound PVC.</span></li>
+          <li><span class="q">What does kubelet do?</span><span class="a">Node agent — watches the API for Pods on its node and keeps their containers running and healthy.</span></li>
+          <li><span class="q">QoS classes?</span><span class="a">Guaranteed (requests=limits) &gt; Burstable &gt; BestEffort. BestEffort evicted first under pressure.</span></li>
+          <li><span class="q">Headless service?</span><span class="a"><code>clusterIP: None</code> — DNS returns Pod IPs directly (no VIP). Used by StatefulSets for stable per-pod DNS.</span></li>
+          <li><span class="q">How is config declarative?</span><span class="a">You apply desired state; controllers reconcile actual &rarr; desired continuously. No imperative "start this".</span></li>
         </ul>
 
       </div>

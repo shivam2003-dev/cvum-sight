@@ -51,89 +51,131 @@
 
         <blockquote>
           The networking an ops interview probes: the model (OSI/TCP-IP), addressing (IP/CIDR), transport
-          (TCP vs UDP), name resolution (DNS), the web stack (HTTP/TLS), and the tools to test each hop.
+          (TCP vs UDP), name resolution (DNS), the web stack (HTTP/TLS), NAT/ports/load balancing, and the
+          tools to test each hop. Follow the packet; test each layer in turn.
         </blockquote>
 
-        <h2 id="model">OSI / TCP-IP model</h2>
+        <h2 id="model">1. OSI / TCP-IP model</h2>
         <table>
-          <thead><tr><th>Layer</th><th>Unit</th><th>Examples</th></tr></thead>
+          <thead><tr><th>Layer</th><th>Unit</th><th>Examples / addressing</th></tr></thead>
           <tbody>
-            <tr><td>L7 Application</td><td>data</td><td>HTTP, DNS, SSH, gRPC</td></tr>
-            <tr><td>L4 Transport</td><td>segment</td><td>TCP, UDP (ports)</td></tr>
-            <tr><td>L3 Network</td><td>packet</td><td>IP, ICMP (addresses, routing)</td></tr>
-            <tr><td>L2 Data link</td><td>frame</td><td>Ethernet, ARP (MAC)</td></tr>
+            <tr><td>L7 Application</td><td>data</td><td>HTTP, DNS, SSH, gRPC, TLS</td></tr>
+            <tr><td>L4 Transport</td><td>segment</td><td>TCP, UDP — <strong>ports</strong></td></tr>
+            <tr><td>L3 Network</td><td>packet</td><td>IP, ICMP — <strong>IP addresses</strong>, routing</td></tr>
+            <tr><td>L2 Data link</td><td>frame</td><td>Ethernet, ARP, VLAN — <strong>MAC</strong></td></tr>
+            <tr><td>L1 Physical</td><td>bits</td><td>cables, radio</td></tr>
           </tbody>
         </table>
-        <p>"Layer 4 vs Layer 7 load balancer": L4 routes by IP/port (fast, dumb); L7 routes by HTTP
-        content (host/path, smart).</p>
+        <p>"L4 vs L7 load balancer": L4 routes by IP/port (fast, protocol-agnostic); L7 routes by HTTP
+        content (host/path/headers, TLS termination, smart). ARP maps IP &rarr; MAC within a subnet.</p>
 
-        <h2 id="ip">IP, subnets &amp; CIDR</h2>
-        <pre data-lang="bash"># CIDR: /N = N network bits. Hosts = 2^(32-N) - 2
-10.0.0.0/24   -> 256 addrs, 254 usable (10.0.0.1–254)
-10.0.0.0/16   -> 65,536 addrs
-10.0.0.0/8    -> 16M
-# private ranges: 10.0.0.0/8  172.16.0.0/12  192.168.0.0/16</pre>
+        <h2 id="ip">2. IP addressing, subnets &amp; CIDR</h2>
+        <pre data-lang="bash"># CIDR /N = N network bits. Usable hosts = 2^(32-N) - 2
+10.0.0.0/24   -> 256 addrs, 254 usable (.1–.254 ; .0 net, .255 bcast)
+10.0.0.0/16   -> 65,536 ; /25 -> 128 ; /30 -> 4 (2 usable, point-to-point)
+# private ranges (RFC1918):
+10.0.0.0/8    172.16.0.0/12    192.168.0.0/16
+# CGNAT 100.64.0.0/10 ; loopback 127.0.0.0/8 ; link-local 169.254.0.0/16</pre>
+        <ul>
+          <li><strong>Network</strong> address (all host bits 0) + <strong>broadcast</strong> (all 1) aren't usable.</li>
+          <li><strong>Gateway</strong> = the router for off-subnet traffic (often .1).</li>
+          <li>Smaller prefix number = bigger network. Subnetting splits a block into smaller ones.</li>
+          <li><strong>IPv6</strong>: 128-bit, hex, no NAT needed; <code>::1</code> loopback, <code>/64</code> typical subnet.</li>
+        </ul>
         <div class="gotcha"><span class="gotcha-label">/24 = 254 usable</span>
-          A /24 has 256 addresses but 2 are reserved (network + broadcast) → 254 usable hosts. Smaller
-          prefix number = bigger network.</div>
+          256 addresses minus network + broadcast = 254 hosts. A <code>/30</code> gives 2 usable — classic
+          point-to-point link. Know how to count hosts from a prefix.</div>
 
-        <h2 id="tcpudp">TCP vs UDP</h2>
+        <h2 id="tcpudp">3. TCP vs UDP</h2>
         <table>
           <thead><tr><th>TCP</th><th>UDP</th></tr></thead>
           <tbody>
-            <tr><td>Connection, reliable, ordered</td><td>Connectionless, best-effort</td></tr>
-            <tr><td>3-way handshake (SYN, SYN-ACK, ACK)</td><td>No handshake — just send</td></tr>
-            <tr><td>HTTP, SSH, DB</td><td>DNS, DHCP, VoIP, QUIC base</td></tr>
+            <tr><td>Connection-oriented, reliable, ordered</td><td>Connectionless, best-effort</td></tr>
+            <tr><td>3-way handshake, flow + congestion control, retransmit</td><td>No handshake, no retransmit — just send</td></tr>
+            <tr><td>HTTP, SSH, DB, SMTP</td><td>DNS, DHCP, NTP, VoIP, QUIC/HTTP3 base</td></tr>
           </tbody>
         </table>
-        <p>3-way handshake: client SYN &rarr; server SYN-ACK &rarr; client ACK. Close: FIN/ACK both ways.</p>
+        <p><strong>Handshake:</strong> client <code>SYN</code> &rarr; server <code>SYN-ACK</code> &rarr;
+        client <code>ACK</code>. <strong>Close:</strong> <code>FIN</code>/<code>ACK</code> both ways (then
+        TIME_WAIT). A <code>RST</code> is an abrupt reset (port closed / forced close).</p>
 
-        <h2 id="dns">DNS</h2>
+        <h2 id="dns">4. DNS</h2>
         <table>
           <thead><tr><th>Record</th><th>Maps</th></tr></thead>
           <tbody>
-            <tr><td>A / AAAA</td><td>name → IPv4 / IPv6</td></tr>
-            <tr><td>CNAME</td><td>name → another name (alias)</td></tr>
-            <tr><td>MX</td><td>mail server</td></tr>
-            <tr><td>TXT</td><td>arbitrary text (SPF, verification)</td></tr>
-            <tr><td>NS</td><td>authoritative nameservers</td></tr>
+            <tr><td>A / AAAA</td><td>name &rarr; IPv4 / IPv6</td></tr>
+            <tr><td>CNAME</td><td>name &rarr; another name (alias; not at zone apex)</td></tr>
+            <tr><td>MX</td><td>mail servers (with priority)</td></tr>
+            <tr><td>TXT</td><td>arbitrary text — SPF, DKIM, domain verification</td></tr>
+            <tr><td>NS / SOA</td><td>authoritative nameservers / zone metadata</td></tr>
+            <tr><td>PTR</td><td>reverse: IP &rarr; name</td></tr>
+            <tr><td>SRV</td><td>service location (host + port)</td></tr>
           </tbody>
         </table>
-        <p>Resolution: resolver → root → TLD → authoritative. TTL controls caching.</p>
+        <p><strong>Resolution:</strong> stub resolver &rarr; recursive resolver &rarr; root &rarr; TLD
+        (<code>.com</code>) &rarr; authoritative. <strong>TTL</strong> controls caching duration.</p>
 
-        <h2 id="http">HTTP, HTTPS &amp; TLS</h2>
+        <h2 id="http">5. HTTP, HTTPS &amp; TLS</h2>
         <ul>
-          <li>Methods: GET (read), POST (create), PUT (replace), PATCH (update), DELETE.</li>
-          <li>Status: 2xx ok, 3xx redirect, 4xx client error, 5xx server error.</li>
-          <li>HTTPS = HTTP over TLS. TLS handshake: negotiate cipher, verify cert (chain to a trusted CA), exchange keys, then encrypted.</li>
-          <li>HTTP/1.1 (keepalive) → HTTP/2 (multiplexed) → HTTP/3 (QUIC over UDP).</li>
+          <li><strong>Methods:</strong> GET (read, idempotent), POST (create), PUT (replace), PATCH (partial), DELETE, HEAD, OPTIONS.</li>
+          <li><strong>Status:</strong> 2xx ok, 3xx redirect, 4xx client error (400/401/403/404/429), 5xx server (500/502/503/504).</li>
+          <li><strong>Headers:</strong> Host, Authorization, Content-Type, Cache-Control, Cookie, X-Forwarded-For.</li>
+          <li><strong>HTTPS = HTTP over TLS.</strong> TLS handshake: negotiate version/cipher &rarr; server sends cert chain &rarr; client verifies to a trusted CA + SNI hostname &rarr; key exchange &rarr; encrypted.</li>
+          <li><strong>Versions:</strong> HTTP/1.1 (keepalive, head-of-line blocking) &rarr; HTTP/2 (multiplexed over one TCP conn) &rarr; HTTP/3 (QUIC over UDP).</li>
         </ul>
 
-        <h2 id="nat">NAT, ports &amp; LB</h2>
+        <h2 id="nat">6. NAT, ports &amp; firewalls</h2>
         <ul>
-          <li><strong>NAT</strong> — many private IPs share one public IP (your home router, cloud NAT gateway).</li>
-          <li><strong>Ports</strong> — 0–65535. Well-known: 22 SSH, 53 DNS, 80 HTTP, 443 HTTPS, 5432 Postgres.</li>
-          <li><strong>Load balancing</strong> — spread traffic; algorithms: round-robin, least-conn, hashing. Health checks remove bad backends.</li>
+          <li><strong>NAT</strong> — many private IPs share a public IP (home router; cloud NAT gateway for private subnets' egress). SNAT (source) / DNAT (destination/port-forward).</li>
+          <li><strong>Ports</strong> — 0–65535. Well-known: 22 SSH, 25 SMTP, 53 DNS, 80 HTTP, 443 HTTPS, 3306 MySQL, 5432 Postgres, 6379 Redis, 3389 RDP. Ephemeral 32768–60999.</li>
+          <li><strong>Firewall</strong> — stateful (tracks connections, return traffic auto-allowed) vs stateless (must allow both directions, e.g. AWS NACL).</li>
         </ul>
 
-        <h2 id="tools">Diagnostic tools</h2>
+        <h2 id="lb">7. Load balancing &amp; proxies</h2>
+        <ul>
+          <li><strong>Algorithms:</strong> round-robin, least-connections, IP/consistent hash, weighted.</li>
+          <li><strong>Health checks</strong> remove unhealthy backends from rotation.</li>
+          <li><strong>L4 LB</strong> (NLB) = TCP/UDP pass-through; <strong>L7 LB</strong> (ALB/nginx) = HTTP-aware routing + TLS termination.</li>
+          <li><strong>Forward proxy</strong> (client-side egress) vs <strong>reverse proxy</strong> (in front of servers: nginx, Envoy).</li>
+          <li><strong>Sticky sessions</strong> pin a client to one backend (cookie/IP) when state isn't shared.</li>
+        </ul>
+
+        <h2 id="tools">8. Diagnostic tools (follow the packet)</h2>
         <pre data-lang="bash">ping host                  # reachable + RTT (ICMP)
 traceroute host / mtr      # path + where it dies
-dig name / nslookup        # DNS resolution
-curl -v https://host       # full HTTP/TLS exchange
-nc -vz host port           # port open? (refused vs timeout)
+dig name ; dig +short ; dig @8.8.8.8 name   # DNS (bypass local resolver)
+curl -v https://host       # full HTTP/TLS exchange, status, timing
+curl -w '%{time_total}\n' -o /dev/null -s url   # timing
+nc -vz host port           # port open? refused vs timeout
 ss -tunap                  # sockets/listeners + pid
-tcpdump -i any port 443    # capture packets (last resort)</pre>
+ip a ; ip route ; arp -n   # interfaces, routes, ARP table
+openssl s_client -connect host:443 -servername host   # inspect TLS
+tcpdump -ni any port 443   # packet capture (last resort)</pre>
 
-        <h2 id="qa">Rapid-fire Q&amp;A</h2>
+        <h2 id="trace">9. "What happens when you type a URL?"</h2>
+        <ol>
+          <li><strong>DNS</strong> resolve the hostname &rarr; IP (cache &rarr; resolver &rarr; authoritative).</li>
+          <li><strong>TCP</strong> connect to IP:443 (3-way handshake).</li>
+          <li><strong>TLS</strong> handshake — cert verified, keys exchanged.</li>
+          <li><strong>HTTP</strong> request sent; server (often via LB/reverse proxy) responds.</li>
+          <li>Browser renders; follows redirects, loads sub-resources (HTTP/2 multiplexed).</li>
+        </ol>
+        <p>Each step is a debug point — a failure at any one explains "the site is down".</p>
+
+        <h2 id="qa">10. Rapid-fire interview Q&amp;A</h2>
         <ul class="cheat-qa">
-          <li><span class="q">TCP vs UDP?</span><span class="a">TCP = reliable, ordered, connection + handshake. UDP = fast, connectionless, best-effort. DNS/streaming use UDP.</span></li>
-          <li><span class="q">What's the 3-way handshake?</span><span class="a">SYN → SYN-ACK → ACK to establish a TCP connection.</span></li>
-          <li><span class="q">How many usable hosts in a /24?</span><span class="a">254 (256 minus network + broadcast).</span></li>
-          <li><span class="q">L4 vs L7 load balancer?</span><span class="a">L4 routes by IP/port; L7 routes by HTTP content (host/path, headers).</span></li>
-          <li><span class="q">A vs CNAME?</span><span class="a">A → IP; CNAME → another name. Can't CNAME the zone apex.</span></li>
-          <li><span class="q">What happens when you type a URL?</span><span class="a">DNS resolve → TCP connect → TLS handshake → HTTP request → response → render. Each hop a debug point.</span></li>
-          <li><span class="q">refused vs timeout?</span><span class="a">Refused = host up, no listener. Timeout = packets dropped (firewall/route).</span></li>
+          <li><span class="q">TCP vs UDP?</span><span class="a">TCP = reliable, ordered, connection + handshake + congestion control. UDP = fast, connectionless, best-effort. DNS/VoIP/streaming use UDP.</span></li>
+          <li><span class="q">The 3-way handshake?</span><span class="a">SYN &rarr; SYN-ACK &rarr; ACK to establish a TCP connection.</span></li>
+          <li><span class="q">Usable hosts in a /24? a /30?</span><span class="a">254 (256 − net − broadcast); /30 = 2 (point-to-point).</span></li>
+          <li><span class="q">L4 vs L7 load balancer?</span><span class="a">L4 routes by IP/port; L7 routes by HTTP content (host/path/headers) and can terminate TLS.</span></li>
+          <li><span class="q">A vs CNAME?</span><span class="a">A &rarr; IP; CNAME &rarr; another name. Can't CNAME the zone apex.</span></li>
+          <li><span class="q">What does NAT do?</span><span class="a">Maps private IPs to a public IP so many hosts share one address; cloud NAT gateways give private subnets outbound internet.</span></li>
+          <li><span class="q">refused vs timeout?</span><span class="a">Refused = host reachable, nothing listening (RST). Timeout = packets dropped (firewall/route/wrong IP).</span></li>
+          <li><span class="q">What happens when you type a URL?</span><span class="a">DNS &rarr; TCP &rarr; TLS &rarr; HTTP request &rarr; response &rarr; render. Each hop a debug point.</span></li>
+          <li><span class="q">HTTP/2 vs HTTP/1.1?</span><span class="a">HTTP/2 multiplexes many requests over one TCP connection (no head-of-line blocking at app layer), binary framing, header compression.</span></li>
+          <li><span class="q">Stateful vs stateless firewall?</span><span class="a">Stateful tracks connections (return traffic auto-allowed). Stateless evaluates each packet — must allow both directions (e.g. AWS NACL).</span></li>
+          <li><span class="q">What's an ephemeral port?</span><span class="a">A temporary high-numbered source port (~32768–60999) the OS assigns for an outbound connection.</span></li>
+          <li><span class="q">How does TLS verify identity?</span><span class="a">Server presents a cert chain; client checks it chains to a trusted CA, isn't expired, and the SAN matches the hostname (with SNI).</span></li>
         </ul>
 
       </div>

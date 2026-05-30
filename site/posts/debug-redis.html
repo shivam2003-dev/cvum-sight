@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging Redis — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">← Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE · DATA STORE · SRE PLAYBOOK</p>
+        <h1>Debugging Redis — Memory, Latency, and Replication.</h1>
+        <div class="tag-row">
+          <span class="tag fill">redis</span>
+          <span class="tag">debugging</span>
+          <span class="tag">sre</span>
+          <span class="tag">caching</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Redis mental model: <strong>single-threaded</strong> command execution (one slow command
+          blocks everything), all data <strong>in RAM</strong>, optional persistence (RDB snapshots /
+          AOF log), optional replication (async to replicas). Most Redis incidents are: ran out of RAM,
+          one command blocked the loop, or a replica fell behind. Diagnose with <code>INFO</code>,
+          <code>SLOWLOG</code>, <code>LATENCY</code>, and <code>--bigkeys</code>.
+        </blockquote>
+
+        <h2 id="oom">OOM &amp; eviction</h2>
+        <p><strong>Symptom.</strong> <code>OOM command not allowed when used memory &gt; 'maxmemory'</code>,
+        writes failing, or keys silently vanishing.</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li>Dataset outgrew <code>maxmemory</code>.</li>
+          <li><code>maxmemory-policy noeviction</code> → writes rejected once full.</li>
+          <li>No TTLs — keys accumulate forever.</li>
+          <li>Memory fragmentation inflating RSS beyond logical dataset size.</li>
+        </ul>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash">redis-cli INFO memory
+#  used_memory_human, maxmemory_human, maxmemory_policy
+#  mem_fragmentation_ratio  (>1.5 = fragmented; <1 = swapping, bad)
+redis-cli --bigkeys              # find the memory hogs
+redis-cli DBSIZE                 # key count
+redis-cli INFO keyspace          # keys with/without TTL per db</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Raise <code>maxmemory</code> (within node RAM) or shard.</li>
+          <li>Set an eviction policy that matches use: <code>allkeys-lru</code>/<code>allkeys-lfu</code> for a cache; keep <code>noeviction</code> only for a durable store.</li>
+          <li>Add TTLs to cache keys (<code>EXPIRE</code>) so they self-clean.</li>
+          <li>Kill the offending big keys; restructure (hash fields, smaller values).</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">cache vs store policy</span>
+          Using Redis as a cache with <code>noeviction</code> means it stops accepting writes when full
+          instead of dropping cold keys — turns a cache into an outage. Pick <code>allkeys-lru</code>.
+        </div>
+
+        <h2 id="slow">Slow commands &amp; latency spikes</h2>
+        <p><strong>Symptom.</strong> p99 latency spikes; clients time out; everything stalls briefly.</p>
+        <p><strong>Likely causes (single-threaded — one slow cmd blocks all).</strong></p>
+        <ul>
+          <li>O(N) commands on big collections: <code>KEYS *</code>, <code>SMEMBERS</code>, <code>HGETALL</code>, <code>LRANGE 0 -1</code> on huge keys.</li>
+          <li><code>FLUSHALL</code>/<code>DEL</code> on a giant key (sync free of memory).</li>
+          <li>Lua scripts that run long.</li>
+          <li>RDB fork / AOF rewrite stalling (see persistence).</li>
+        </ul>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash">redis-cli SLOWLOG GET 20         # slowest recent commands + args
+redis-cli LATENCY DOCTOR         # human-readable latency analysis
+redis-cli LATENCY HISTORY command
+redis-cli INFO commandstats      # calls + usec_per_call per command
+redis-cli --latency              # live round-trip latency</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Never <code>KEYS</code> in prod — use <code>SCAN</code> (cursor, non-blocking).</li>
+          <li>Replace <code>HGETALL</code>/<code>SMEMBERS</code> on huge keys with <code>HSCAN</code>/<code>SSCAN</code> or smaller keys.</li>
+          <li>Use <code>UNLINK</code> instead of <code>DEL</code> for big keys (frees async).</li>
+          <li>Keep Lua scripts short; offload heavy work to the app.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">KEYS * is a footgun</span>
+          <code>KEYS *</code> scans the whole keyspace and blocks the single thread — on millions of
+          keys that's a multi-second freeze for every client. Always <code>SCAN</code>.
+        </div>
+
+        <h2 id="blocking">Blocking operations</h2>
+        <p><strong>Symptom.</strong> Connections pile up; latency cliff while one operation runs.</p>
+        <p><strong>Causes &amp; fix.</strong> Big-key deletes (use <code>UNLINK</code>), synchronous
+        <code>SAVE</code> (use <code>BGSAVE</code>), long blocking pops with large timeouts hogging
+        connections, and <code>MONITOR</code> left running (it streams every command — never leave on in
+        prod). Watch <code>blocked_clients</code> in <code>INFO clients</code>.</p>
+
+        <h2 id="persistence">Persistence (RDB / AOF) issues</h2>
+        <p><strong>Symptom.</strong> Periodic latency spikes, write stalls, or "MISCONF Redis is
+        configured to save RDB snapshots, but is currently not able to persist."</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li><strong>RDB fork:</strong> <code>BGSAVE</code> forks the process; copy-on-write doubles
+            memory under heavy writes → spike or OOM. Fork itself pauses on huge datasets.</li>
+          <li><strong>AOF rewrite:</strong> CPU/disk heavy; if <code>appendfsync always</code>, every
+            write waits on disk.</li>
+          <li>Disk full or slow → snapshot fails → Redis may stop accepting writes (stop-writes-on-bgsave-error).</li>
+        </ul>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash">redis-cli INFO persistence
+#  rdb_last_bgsave_status, aof_last_write_status,
+#  rdb_changes_since_last_save, aof_rewrite_in_progress
+df -h                            # is the disk full?</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Free disk; ensure RAM headroom for fork COW (keep used_memory well under 50% if write-heavy).</li>
+          <li>Use <code>appendfsync everysec</code> (not <code>always</code>) for balanced durability/latency.</li>
+          <li>Schedule snapshots off-peak; consider persistence on a replica, not the primary.</li>
+        </ul>
+
+        <h2 id="replication">Replication lag</h2>
+        <p><strong>Symptom.</strong> Replica reads return stale data; <code>master_repl_offset</code> −
+        replica offset grows; failover promotes a behind replica = data loss.</p>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash">redis-cli INFO replication
+#  master:   connected_slaves, slaveN:...,offset=...,lag=...
+#  replica:  master_link_status:up|down, master_last_io_seconds_ago
+#  compare master_repl_offset vs slave_repl_offset</pre>
+        <p><strong>Likely causes &amp; fix.</strong> Network saturation between primary/replica; replica
+        underpowered (CPU/disk); a big write burst; full resync storms (replica reconnects → full RDB
+        transfer). Fix: give the replica bandwidth/CPU, raise <code>repl-backlog-size</code> so brief
+        disconnects do partial (not full) resync, avoid flapping links.</p>
+
+        <h2 id="hotkeys">Hot keys</h2>
+        <p><strong>Symptom.</strong> One node/shard saturated while others idle; uneven latency;
+        single-key throughput ceiling.</p>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash">redis-cli --hotkeys                       # needs an LFU/LRU policy
+redis-cli INFO commandstats               # which commands dominate
+# in Cluster: one slot/shard far hotter than others</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Add a client-side / local cache in front of the hot key (read-through).</li>
+          <li>Shard the value (split a counter into N sub-keys, sum on read).</li>
+          <li>Replicate reads to replicas for read-hot keys.</li>
+          <li>Fix key design — a single global key is a single bottleneck.</li>
+        </ul>
+
+        <h2 id="docker-k8s">Docker &amp; Kubernetes specifics</h2>
+        <ul>
+          <li><strong>maxmemory must be set below the container limit.</strong> If Redis has no
+            <code>maxmemory</code> and the pod limit is hit first, the kernel OOMKills the whole process
+            (data loss) instead of Redis evicting gracefully. Set <code>maxmemory</code> ~70–80% of the
+            container limit.</li>
+          <li><strong>Disable THP</strong> (transparent huge pages) on the node — it causes latency
+            spikes during fork. Redis warns about it at startup.</li>
+          <li><strong>Persistence needs a PVC</strong> on K8s; <code>emptyDir</code> = data gone on
+            reschedule.</li>
+          <li><strong>vm.overcommit_memory=1</strong> on the host or <code>BGSAVE</code> fork can fail
+            under memory pressure.</li>
+          <li>Liveness probe via <code>redis-cli PING</code>, but keep timeouts generous so a brief
+            fork pause doesn't trigger a restart loop.</li>
+        </ul>
+
+        <h2 id="ref">Quick command reference</h2>
+        <pre data-lang="bash">redis-cli INFO [memory|persistence|replication|clients|stats]
+redis-cli SLOWLOG GET 20 / SLOWLOG RESET
+redis-cli LATENCY DOCTOR / LATENCY RESET
+redis-cli --bigkeys / --hotkeys / --latency
+redis-cli SCAN 0 COUNT 100         # safe iteration (never KEYS *)
+redis-cli UNLINK bigkey            # async delete
+redis-cli MEMORY USAGE key         # bytes for one key
+redis-cli CLIENT LIST              # who's connected / blocked</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="debug-kafka.html">← prev: Kafka</a>
+        <a href="debug-rabbitmq.html">next: RabbitMQ →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=8"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

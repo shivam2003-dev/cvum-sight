@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging RabbitMQ — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">← Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE · MESSAGING · SRE PLAYBOOK</p>
+        <h1>Debugging RabbitMQ — Queues, Acks, and Alarms.</h1>
+        <div class="tag-row">
+          <span class="tag fill">rabbitmq</span>
+          <span class="tag">debugging</span>
+          <span class="tag">sre</span>
+          <span class="tag">messaging</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          RabbitMQ mental model: producers publish to an <strong>exchange</strong>, which routes to
+          <strong>queues</strong> by binding rules; consumers subscribe and <strong>ack</strong> each
+          message when done. Unacked messages stay "in flight" and aren't redelivered until ack/nack or
+          channel close. When memory/disk crosses a threshold, RabbitMQ raises an <strong>alarm</strong>
+          and <strong>blocks publishers</strong>. Most incidents: queue grows faster than it drains,
+          acks never come, or an alarm froze publishing.
+        </blockquote>
+
+        <h2 id="buildup">Queue buildup</h2>
+        <p><strong>Symptom.</strong> <code>messages_ready</code> climbing; consumers can't keep up; memory
+        rising toward an alarm.</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li>Publish rate &gt; consume rate (too few/slow consumers).</li>
+          <li>Low/again-default prefetch making consumers idle between round-trips, or no consumers at all.</li>
+          <li>Slow per-message processing (downstream I/O).</li>
+          <li>A poison message stuck at the head with manual ack blocking progress.</li>
+        </ul>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash">rabbitmqctl list_queues name messages messages_ready messages_unacknowledged consumers
+# growing messages_ready + low consumers = under-consumed
+# high messages_unacknowledged = consumers holding, not acking (see below)</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Add/scale consumers; raise consumer <strong>prefetch</strong> (<code>basic.qos</code>) so each fetches a batch instead of one-at-a-time.</li>
+          <li>Speed up processing or make it async.</li>
+          <li>Cap queues with a max length / TTL or use <strong>quorum queues</strong> for predictable behaviour under load.</li>
+          <li>Set a dead-letter target so poison messages move aside instead of blocking.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">prefetch = throughput knob</span>
+          Default unlimited prefetch can dump the whole queue into one greedy consumer; prefetch of 1
+          starves throughput on round-trips. Tune <code>basic.qos(prefetch)</code> to a sane batch (e.g.
+          10–100) for balanced, fair dispatch.
+        </div>
+
+        <h2 id="unacked">Unacked messages piling up</h2>
+        <p><strong>Symptom.</strong> High <code>messages_unacknowledged</code>; messages "stuck" in
+        flight; redelivery on consumer restart; throughput stalls.</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li>Consumer in manual-ack mode that crashes/hangs before acking.</li>
+          <li>Bug: forgot to ack, or acking the wrong delivery tag.</li>
+          <li>Prefetch too high — consumer holds thousands unacked while processing slowly.</li>
+          <li>Long processing exceeding a consumer/delivery timeout → channel closed, messages requeued.</li>
+        </ul>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash">rabbitmqctl list_queues name messages_unacknowledged consumers
+rabbitmqctl list_consumers           # which channel holds them, prefetch
+rabbitmqctl list_channels name messages_unacknowledged prefetch_count</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Ensure every path acks (success) or nacks/rejects (failure) — wrap in try/finally.</li>
+          <li>Lower prefetch so a stuck consumer holds fewer messages.</li>
+          <li>Use <code>basic.nack</code> with requeue/dead-letter for failures rather than silently dropping.</li>
+          <li>Set consumer <code>delivery-timeout</code> awareness so long jobs don't get force-requeued mid-process.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">unacked ≠ delivered-and-done</span>
+          Messages move to <em>unacked</em> the moment they're dispatched, before processing. If the
+          consumer dies without acking, they're redelivered (at-least-once) — design idempotent handlers.
+        </div>
+
+        <h2 id="alarms">Memory &amp; disk alarms (flow control)</h2>
+        <p><strong>Symptom.</strong> Publishers suddenly <strong>blocked</strong> / hung; connections in
+        <code>blocking</code>/<code>blocked</code> state; "memory resource limit alarm set".</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li>Memory use crossed <code>vm_memory_high_watermark</code> (default ~40% of RAM) → publishers blocked until it drains.</li>
+          <li>Free disk dropped below <code>disk_free_limit</code> → publishers blocked to protect persistence.</li>
+          <li>Root cause is usually queue buildup or huge unacked sets eating memory.</li>
+        </ul>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash">rabbitmqctl status | grep -A5 alarms
+rabbitmqctl status | grep -A10 memory          # what's using it (queues, conns, binaries)
+rabbitmqctl list_connections name state         # 'blocked' = hit an alarm
+df -h                                           # disk_free_limit?</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Drain the queues (scale consumers) — the alarm clears when usage drops below the watermark.</li>
+          <li>Free disk; raise <code>disk_free_limit</code> only if the value is mis-set for the node size.</li>
+          <li>Reduce memory pressure: shorter queues, lower prefetch, lazy/quorum queues that page to disk.</li>
+          <li>Don't just raise <code>vm_memory_high_watermark</code> to 0.8 blindly — you trade the
+            safety alarm for an OOMKill.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">"RabbitMQ hung" = usually an alarm</span>
+          Publishers "freezing" with no error is almost always flow control from a memory/disk alarm,
+          not a crash. Check <code>rabbitmqctl status</code> alarms first.
+        </div>
+
+        <h2 id="dlx">Dead-letter loops</h2>
+        <p><strong>Symptom.</strong> A message bounces endlessly between a queue and its dead-letter
+        queue; CPU/throughput burned on redelivery; DLQ never drains.</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li>DLQ dead-letters <em>back</em> to the original queue (or a cycle of exchanges) with no exit condition.</li>
+          <li>Consumer <code>nack</code>s with <code>requeue=true</code> on a permanently-bad message → infinite immediate redelivery.</li>
+          <li>Message TTL on the DLQ routes it straight back, forever.</li>
+        </ul>
+        <p><strong>Diagnose.</strong> Inspect the <code>x-death</code> header (counts each dead-letter
+        hop) — a large count = looping. Map the DLX bindings to find the cycle.</p>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>DLQ should be a <strong>terminal</strong> sink (no dead-letter back to source). Drain it manually / with a separate repair consumer.</li>
+          <li>For poison messages, <code>nack</code> with <code>requeue=false</code> so they dead-letter once, not loop.</li>
+          <li>Add a retry cap: count <code>x-death</code> and route to a parking queue after N attempts.</li>
+        </ul>
+
+        <h2 id="connchurn">Connection / channel churn</h2>
+        <p><strong>Symptom.</strong> High connection/channel create-close rate; CPU on the node climbs;
+        <code>too_many_channels</code>/file-descriptor errors.</p>
+        <p><strong>Causes &amp; fix.</strong> App opening a connection (or channel) per message/request
+        instead of pooling. Connections and channels are meant to be <strong>long-lived</strong> — open
+        once, reuse, one channel per thread. Watch <code>rabbitmqctl list_connections</code> count and
+        FD/socket limits. Fix the client to pool, not reconnect per operation.</p>
+        <div class="gotcha">
+          <span class="gotcha-label">connect-per-message kills RabbitMQ</span>
+          TLS + connection setup per message can cost more than the message itself and exhausts file
+          descriptors. Reuse one connection, a channel per worker thread.
+        </div>
+
+        <h2 id="docker-k8s">Docker &amp; Kubernetes specifics</h2>
+        <ul>
+          <li><strong>Watermark is a fraction of detected RAM.</strong> In a container, RabbitMQ may see
+            host RAM, not the cgroup limit → it thinks it has more memory than the pod allows → pod
+            OOMKilled before the alarm fires. Set an absolute <code>vm_memory_high_watermark.absolute</code>
+            (e.g. 80% of the pod limit) instead of the default fraction.</li>
+          <li><strong>Persistent storage:</strong> StatefulSet + PVC. <code>emptyDir</code> loses durable
+            queues and the Mnesia/quorum state on reschedule.</li>
+          <li><strong>Clustering needs stable identities</strong> — use the peer-discovery-k8s plugin and
+            a headless Service; nodes find each other by stable DNS. Prefer <strong>quorum queues</strong>
+            over classic mirrored queues for HA.</li>
+          <li><strong>File descriptors:</strong> raise the FD ulimit; RabbitMQ uses one+ per connection.</li>
+          <li>Liveness probe: <code>rabbitmq-diagnostics check_running</code> / <code>ping</code>, with
+            generous timeouts so a busy node isn't killed mid-load.</li>
+        </ul>
+
+        <h2 id="ref">Quick command reference</h2>
+        <pre data-lang="bash">rabbitmqctl list_queues name messages messages_ready messages_unacknowledged consumers
+rabbitmqctl list_consumers
+rabbitmqctl list_connections name state
+rabbitmqctl list_channels name prefetch_count messages_unacknowledged
+rabbitmqctl status                       # alarms, memory breakdown, disk
+rabbitmq-diagnostics observer            # live top-style view
+rabbitmq-diagnostics memory_breakdown
+rabbitmqctl purge_queue NAME             # drain a queue (careful)</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="debug-redis.html">← prev: Redis</a>
+        <a href="../debug-guides.html">all debug guides →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=8"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

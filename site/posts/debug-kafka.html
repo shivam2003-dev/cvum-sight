@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging Kafka — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">← Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE · MESSAGING · SRE PLAYBOOK</p>
+        <h1>Debugging Kafka — Lag, Rebalances, and Replication.</h1>
+        <div class="tag-row">
+          <span class="tag fill">kafka</span>
+          <span class="tag">debugging</span>
+          <span class="tag">sre</span>
+          <span class="tag">messaging</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Kafka mental model: a <strong>topic</strong> is split into <strong>partitions</strong>; each
+          partition is an append-only log replicated to N <strong>brokers</strong>. One replica is
+          <strong>leader</strong> (handles reads/writes), the rest are <strong>followers</strong>. The
+          <strong>ISR</strong> (in-sync replicas) set is followers caught up to the leader. Consumers
+          join a <strong>group</strong>; each partition is owned by exactly one consumer in the group,
+          tracked by a committed <strong>offset</strong>. <em>Lag = log-end-offset − committed-offset.</em>
+          Almost every Kafka incident is one of these moving wrong.
+        </blockquote>
+
+        <h2 id="lag">Consumer lag climbing</h2>
+        <p><strong>Symptom.</strong> Lag grows without bound; downstream data is stale; alerts on
+        <code>records-lag-max</code>.</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li>Consumers too slow / too few — produce rate &gt; consume rate.</li>
+          <li>Slow processing per message (blocking I/O, big batches, GC pauses).</li>
+          <li>Partition count caps parallelism — group can't have more active consumers than partitions.</li>
+          <li>A stuck consumer holding partitions but not progressing.</li>
+          <li>Frequent rebalances resetting progress (see next section).</li>
+        </ul>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash"># lag per partition for a group
+kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+  --describe --group my-group
+# columns: CURRENT-OFFSET  LOG-END-OFFSET  LAG  CONSUMER-ID  HOST
+
+# is one partition hot? look for skew in LAG column
+# is a consumer assigned but CONSUMER-ID empty? → no active member</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Add consumers up to the partition count; beyond that, <strong>add partitions</strong> (carefully — breaks key→partition ordering).</li>
+          <li>Speed up processing: batch writes, async downstream, raise <code>max.poll.records</code> only if you can keep up.</li>
+          <li>Parallelize work <em>inside</em> the consumer if ordering allows.</li>
+          <li>Check for skew — a bad partition key funnels traffic to one partition.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">partitions cap consumers</span>
+          A group with 20 consumers and a topic with 6 partitions runs only 6 active consumers — the
+          other 14 idle. Scaling pods does nothing past partition count. Repartition or rethink keys.
+        </div>
+
+        <h2 id="rebalance">Rebalancing storms</h2>
+        <p><strong>Symptom.</strong> Group constantly rebalances; consumers repeatedly "lost partition
+        ownership"; lag sawtooths; throughput collapses.</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li><code>max.poll.interval.ms</code> exceeded — processing a batch took longer than allowed, broker assumes consumer dead, kicks it.</li>
+          <li>Session timeout / heartbeat misconfig — <code>session.timeout.ms</code> too low vs GC/network.</li>
+          <li>Pods churning (K8s OOMKills, rolling deploys, autoscaling) — every join/leave triggers a rebalance.</li>
+          <li>Using eager assignment — every rebalance stops the world for all consumers.</li>
+        </ul>
+        <p><strong>Diagnose.</strong> Consumer logs show <code>Attempt to heartbeat failed</code> /
+        <code>Revoking previously assigned partitions</code> on a loop. Correlate with pod restarts and
+        GC logs.</p>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Raise <code>max.poll.interval.ms</code> above worst-case batch processing time, or lower <code>max.poll.records</code> so a batch finishes faster.</li>
+          <li>Set <code>session.timeout.ms</code> / <code>heartbeat.interval.ms</code> sane (e.g. 30s / 3s).</li>
+          <li>Switch to <strong>cooperative-sticky</strong> assignor — incremental rebalances, no stop-the-world.</li>
+          <li>Stabilize pods: fix OOMKills, use <code>group.instance.id</code> for static membership so rolling restarts don't trigger full rebalances.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">slow processing = phantom death</span>
+          The #1 rebalance cause isn't network — it's a poll loop where processing one batch exceeds
+          <code>max.poll.interval.ms</code>. The broker can't tell "slow" from "dead." Time your batch.
+        </div>
+
+        <h2 id="urp">Under-replicated partitions</h2>
+        <p><strong>Symptom.</strong> <code>UnderReplicatedPartitions &gt; 0</code>; durability at risk; a
+        broker may be lagging or down.</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li>A broker is down or slow (disk full, GC, network).</li>
+          <li>Followers can't keep up with leader throughput (under-provisioned disk/network).</li>
+          <li>Network partition between brokers.</li>
+        </ul>
+        <p><strong>Diagnose.</strong></p>
+        <pre data-lang="bash"># list under-replicated partitions cluster-wide
+kafka-topics.sh --bootstrap-server localhost:9092 \
+  --describe --under-replicated-partitions
+
+# broker metrics to check:
+#   kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions
+#   disk usage, network throughput, GC time per broker</pre>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Recover the lagging broker — free disk, restart, fix network.</li>
+          <li>Throttle replication if catch-up traffic saturates the network (<code>replication.quota</code>).</li>
+          <li>If a broker is permanently gone, reassign partitions to healthy brokers.</li>
+          <li>Right-size disk/network; followers need bandwidth to keep up with peak produce.</li>
+        </ul>
+
+        <h2 id="isr">ISR shrink</h2>
+        <p><strong>Symptom.</strong> ISR set drops below replication factor; <code>IsrShrinksPerSec</code>
+        spikes; producers with <code>acks=all</code> slow or error.</p>
+        <p><strong>Likely causes.</strong></p>
+        <ul>
+          <li>A follower fell behind by more than <code>replica.lag.time.max.ms</code> → kicked from ISR.</li>
+          <li>Broker GC pause or disk stall makes a replica momentarily unresponsive.</li>
+          <li>Sudden produce spike outruns follower fetch.</li>
+        </ul>
+        <p><strong>Diagnose.</strong> Watch <code>IsrShrinksPerSec</code>/<code>IsrExpandsPerSec</code> —
+        flapping = a chronically struggling broker. <code>kafka-topics.sh --describe</code> shows the
+        current Isr list per partition vs Replicas.</p>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Find the flapping broker (it appears/disappears from ISR) and fix its disk/GC/network.</li>
+          <li>Tune GC (G1, smaller heap) to cut pause times.</li>
+          <li>If <code>min.insync.replicas</code> + <code>acks=all</code> blocks producers during shrink,
+            you've correctly traded availability for durability — fix the broker, don't lower the floor blindly.</li>
+        </ul>
+        <div class="gotcha">
+          <span class="gotcha-label">acks=all + min.insync.replicas</span>
+          With <code>acks=all</code> and <code>min.insync.replicas=2</code>, if ISR shrinks to 1 the
+          producer gets <code>NotEnoughReplicas</code> and <em>blocks</em>. That's durability working as
+          designed — the fix is restoring the replica, not dropping the min.
+        </div>
+
+        <h2 id="brokerdown">Broker down / leader unavailable</h2>
+        <p><strong>Symptom.</strong> <code>LeaderNotAvailable</code>, produce/consume timeouts,
+        <code>OfflinePartitionsCount &gt; 0</code>.</p>
+        <p><strong>Diagnose &amp; fix.</strong></p>
+        <ul>
+          <li>Check broker liveness and controller: <code>OfflinePartitionsCount</code>, <code>ActiveControllerCount</code> (must be exactly 1 cluster-wide).</li>
+          <li>If a partition has no leader and no surviving ISR, you may face unclean-leader-election choices (availability vs data loss). Decide deliberately.</li>
+          <li>Verify the metadata quorum (KRaft) or ZooKeeper ensemble is healthy — no controller, no leader elections.</li>
+        </ul>
+
+        <h2 id="docker-k8s">Docker &amp; Kubernetes specifics</h2>
+        <ul>
+          <li><strong>advertised.listeners</strong> — the #1 Docker/K8s Kafka bug. Clients connect to the
+            bootstrap, then get redirected to whatever <code>advertised.listeners</code> says. If it
+            advertises an internal hostname clients can't resolve → connection refused/timeout. Set it to
+            an address reachable from the client's network.</li>
+          <li><strong>Storage must be persistent.</strong> On K8s, run Kafka as a StatefulSet with PVCs.
+            An <code>emptyDir</code> loses the log on restart = data loss + long re-replication.</li>
+          <li><strong>OOMKills</strong> trigger rebalance storms. Set memory limits above heap + page
+            cache headroom; Kafka leans on the OS page cache, so don't starve the node.</li>
+          <li><strong>Don't cap CPU too tight</strong> — GC under a low CPU limit lengthens pauses → ISR
+            flapping.</li>
+          <li>Liveness probes that restart a briefly-busy broker create churn; prefer generous probes.</li>
+        </ul>
+
+        <h2 id="ref">Quick command reference</h2>
+        <pre data-lang="bash">kafka-consumer-groups.sh --bootstrap-server B --describe --group G   # lag
+kafka-consumer-groups.sh --bootstrap-server B --list                 # all groups
+kafka-topics.sh --bootstrap-server B --describe --topic T            # leaders/ISR/replicas
+kafka-topics.sh --bootstrap-server B --under-replicated-partitions   # URP
+kafka-topics.sh --bootstrap-server B --unavailable-partitions        # no leader
+kafka-reassign-partitions.sh ...                                     # move/rebalance replicas
+# reset a group's offsets (stop consumers first!)
+kafka-consumer-groups.sh --bootstrap-server B --group G \
+  --reset-offsets --to-earliest --topic T --execute</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../debug-guides.html">← all debug guides</a>
+        <a href="debug-redis.html">next: Redis →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=8"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

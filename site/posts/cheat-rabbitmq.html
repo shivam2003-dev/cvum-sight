@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RabbitMQ Cheatsheet — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=33">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../cheatsheets.html" style="color:var(--ink-faint);text-decoration:none">&larr; Cheatsheets</a></p>
+
+      <div class="post-header">
+        <p class="meta">CHEATSHEET &middot; MESSAGING &amp; DATA &middot; SENIOR INTERVIEW</p>
+        <h1>RabbitMQ — The Senior Interview Cheatsheet.</h1>
+        <div class="tag-row">
+          <span class="tag fill">rabbitmq</span>
+          <span class="tag">messaging</span>
+          <span class="tag">amqp</span>
+          <span class="tag">interview-prep</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          RabbitMQ is a <strong>smart broker / dumb consumer</strong> AMQP message broker. Producers publish
+          to an <strong>exchange</strong>; the exchange routes copies to <strong>queues</strong> by binding
+          rules; consumers pull from queues and <strong>ack</strong>. Where Kafka is a dumb log with smart
+          consumers, RabbitMQ puts the routing intelligence in the broker. Senior interviews probe exchange
+          types, ack/prefetch, durability, and the quorum-queue HA story.
+        </blockquote>
+
+        <h2 id="model">1. AMQP model</h2>
+        <table>
+          <thead><tr><th>Concept</th><th>What</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Producer</strong></td><td>Publishes a message to an exchange (never directly to a queue).</td></tr>
+            <tr><td><strong>Exchange</strong></td><td>Receives messages and routes them to queues by type + bindings.</td></tr>
+            <tr><td><strong>Queue</strong></td><td>Buffers messages until a consumer acks them. The unit of consumption.</td></tr>
+            <tr><td><strong>Binding</strong></td><td>A rule linking an exchange to a queue (with a routing/binding key or header match).</td></tr>
+            <tr><td><strong>Routing key</strong></td><td>A string the producer sets; exchanges use it to decide routing.</td></tr>
+            <tr><td><strong>Connection / Channel</strong></td><td>One TCP connection; multiplex many lightweight <em>channels</em> over it (one per thread).</td></tr>
+            <tr><td><strong>Vhost</strong></td><td>Virtual host — namespace/isolation for exchanges, queues, permissions.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="exchanges">2. Exchange types</h2>
+        <table>
+          <thead><tr><th>Type</th><th>Routing</th></tr></thead>
+          <tbody>
+            <tr><td><strong>direct</strong></td><td>Routing key must equal the binding key. Point-to-point / by category.</td></tr>
+            <tr><td><strong>topic</strong></td><td>Pattern match on dotted keys: <code>*</code> = one word, <code>#</code> = zero+ words. <code>logs.*.error</code>.</td></tr>
+            <tr><td><strong>fanout</strong></td><td>Broadcast to <em>all</em> bound queues, ignore key. Pub/sub.</td></tr>
+            <tr><td><strong>headers</strong></td><td>Match on message headers instead of routing key (x-match any/all).</td></tr>
+            <tr><td><strong>default</strong> (<code>""</code>)</td><td>Implicit direct exchange; routing key = queue name. (How "publish to a queue" works.)</td></tr>
+          </tbody>
+        </table>
+        <p>A message published to an exchange with no matching binding is dropped (or returned with the
+        <code>mandatory</code> flag / routed to an alternate exchange).</p>
+
+        <h2 id="ack">3. Acknowledgements &amp; prefetch</h2>
+        <ul>
+          <li><strong>Manual ack</strong> (recommended): consumer <code>basic.ack</code>s after processing → at-least-once. Crash before ack = redelivery. <code>basic.nack</code>/<code>reject</code> with <code>requeue</code> or to a DLX.</li>
+          <li><strong>Auto-ack</strong>: message considered delivered the instant it's sent → at-most-once (lose on crash). Fast, unsafe.</li>
+          <li><strong>Prefetch</strong> (<code>basic.qos(prefetch_count)</code>): max unacked messages a consumer holds at once. The single most important throughput/fairness knob.</li>
+          <li><strong>Publisher confirms</strong>: broker acks the producer once a message is safely handled (persisted/routed) — the producer-side reliability mechanism (analogous to Kafka acks).</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">prefetch is the throughput knob</span>
+          Unlimited prefetch dumps the whole queue into one greedy consumer (no fair spread, huge memory).
+          Prefetch 1 starves throughput on round-trips. Tune to a batch (e.g. 10–100) sized to processing
+          time for balanced, fair dispatch.</div>
+
+        <h2 id="durability">4. Durability &amp; persistence</h2>
+        <p>Three independent things must all hold for a message to survive a broker restart:</p>
+        <ol>
+          <li><strong>Durable queue</strong> (survives restart).</li>
+          <li><strong>Persistent message</strong> (<code>delivery_mode=2</code> — written to disk).</li>
+          <li><strong>Publisher confirms</strong> so the producer knows it was accepted.</li>
+        </ol>
+        <div class="gotcha"><span class="gotcha-label">durable queue ≠ persistent message</span>
+          A durable queue with non-persistent messages still loses the messages on restart. You need
+          durable queue <em>and</em> persistent messages <em>and</em> confirms. Persistence costs latency
+          (fsync) — it's a deliberate durability/throughput trade.</div>
+
+        <h2 id="queuetypes">5. Queue types</h2>
+        <table>
+          <thead><tr><th>Type</th><th>Use</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Classic</strong></td><td>Default single-node queue. Mirroring (HA classic) is deprecated.</td></tr>
+            <tr><td><strong>Quorum</strong></td><td>Raft-replicated, HA, data-safety-first. The modern default for important queues. Replicated across nodes; survives node loss.</td></tr>
+            <tr><td><strong>Stream</strong></td><td>Append-only, replayable log (Kafka-like) for high-throughput fan-out + replay.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="dlx">6. DLX, TTL &amp; limits</h2>
+        <ul>
+          <li><strong>Dead Letter Exchange (DLX)</strong>: messages that are rejected/nacked (no requeue), expire (TTL), or overflow a max-length queue get republished to a DLX → a dead-letter queue.</li>
+          <li><strong>TTL</strong>: per-message or per-queue expiry. Combined with a DLX → <strong>delayed/retry queues</strong> (let a message TTL out of a "wait" queue back to the work queue).</li>
+          <li><strong>Max length / max bytes</strong>: cap a queue; overflow goes to DLX or drops the head.</li>
+          <li><strong>Priority queues</strong>: <code>x-max-priority</code> for higher-priority messages first.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">dead-letter loops</span>
+          If a DLQ dead-letters back to the source (or a TTL bounces a message in a cycle), messages loop
+          forever. Make the DLQ terminal; cap retries by counting the <code>x-death</code> header and
+          parking after N attempts.</div>
+
+        <h2 id="flow">7. Flow control &amp; alarms</h2>
+        <ul>
+          <li>When memory crosses <code>vm_memory_high_watermark</code> (default ~40% RAM) or disk drops below <code>disk_free_limit</code>, RabbitMQ raises an <strong>alarm</strong> and <strong>blocks publishers</strong> until it recovers.</li>
+          <li>"RabbitMQ hung / publishers frozen with no error" is almost always an alarm — check <code>rabbitmqctl status</code> first.</li>
+          <li>Lazy queues / quorum queues page to disk to bound memory under deep backlogs.</li>
+        </ul>
+
+        <h2 id="ha">8. Clustering &amp; HA</h2>
+        <ul>
+          <li>Nodes form a <strong>cluster</strong> (shared metadata via Mnesia/Khepri). Queues live on specific nodes unless replicated.</li>
+          <li><strong>Quorum queues</strong> replicate via Raft across nodes — the modern HA mechanism (classic mirrored queues are deprecated).</li>
+          <li>Clients connect through a load balancer; on K8s use the peer-discovery plugin + a headless service + StatefulSet + PVCs.</li>
+          <li><strong>Federation / Shovel</strong> link brokers across DCs/regions.</li>
+        </ul>
+
+        <h2 id="ops">9. CLI &amp; ops</h2>
+        <pre data-lang="bash">rabbitmqctl list_queues name messages messages_ready messages_unacknowledged consumers
+rabbitmqctl list_consumers ; rabbitmqctl list_channels name prefetch_count messages_unacknowledged
+rabbitmqctl list_connections name state           # 'blocked' = hit an alarm
+rabbitmqctl status                                 # alarms, memory breakdown, disk
+rabbitmq-diagnostics observer / memory_breakdown
+rabbitmqctl list_exchanges ; list_bindings
+rabbitmqctl set_policy ha "^" '{"queue-mode":"lazy"}' --apply-to queues
+rabbitmqctl purge_queue NAME</pre>
+
+        <h2 id="vs">10. RabbitMQ vs Kafka</h2>
+        <table>
+          <thead><tr><th></th><th>RabbitMQ</th><th>Kafka</th></tr></thead>
+          <tbody>
+            <tr><td>Model</td><td>Smart broker, exchanges→queues, push</td><td>Dumb log, partitions, pull</td></tr>
+            <tr><td>Routing</td><td>Rich (direct/topic/fanout/headers)</td><td>By partition/key only</td></tr>
+            <tr><td>Consumption</td><td>Per-message ack, requeue, priority, competing consumers</td><td>Offset-based, replay, ordered per partition</td></tr>
+            <tr><td>Retention</td><td>Until acked (streams = replayable)</td><td>Long, replayable by design</td></tr>
+            <tr><td>Best for</td><td>Task queues, RPC, complex routing</td><td>High-throughput event streaming, replay</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="qa">11. Senior interview Q&amp;A</h2>
+        <ul class="cheat-qa">
+          <li><span class="q">Exchange types?</span><span class="a">direct (key equals binding), topic (pattern with */#), fanout (broadcast), headers (match headers). Default exchange routes by queue name.</span></li>
+          <li><span class="q">How do you guarantee a message survives a restart?</span><span class="a">Durable queue + persistent message (delivery_mode=2) + publisher confirms — all three. A durable queue alone doesn't persist messages.</span></li>
+          <li><span class="q">What does prefetch do?</span><span class="a">Caps unacked messages per consumer (basic.qos). Tune it for fair dispatch + throughput; unlimited = one greedy consumer, 1 = round-trip starvation.</span></li>
+          <li><span class="q">Manual vs auto ack?</span><span class="a">Manual = ack after processing (at-least-once, redelivery on crash). Auto = delivered on send (at-most-once, loss on crash). Use manual + idempotent handlers.</span></li>
+          <li><span class="q">What's a DLX and a use?</span><span class="a">Dead Letter Exchange — rejected/expired/overflow messages route there. Combined with TTL it builds retry/delay queues. Keep DLQs terminal to avoid loops.</span></li>
+          <li><span class="q">Classic vs quorum vs stream queues?</span><span class="a">Classic = single-node default (mirroring deprecated). Quorum = Raft-replicated HA (modern default). Stream = replayable append-only log.</span></li>
+          <li><span class="q">Why are publishers suddenly blocked?</span><span class="a">A memory/disk alarm (flow control) — vm_memory_high_watermark or disk_free_limit crossed. Drain queues / free disk; check rabbitmqctl status.</span></li>
+          <li><span class="q">Connection vs channel?</span><span class="a">One TCP connection multiplexes many channels (one per thread). Reuse connections — opening one per message exhausts FDs and CPU.</span></li>
+          <li><span class="q">How do you do HA now?</span><span class="a">Quorum queues (Raft replication). Classic mirrored queues are deprecated. On K8s: peer-discovery + headless service + StatefulSet + PVCs.</span></li>
+          <li><span class="q">How do competing consumers work?</span><span class="a">Multiple consumers on one queue — the broker round-robins (prefetch-bounded) messages among them. Add consumers to scale a queue.</span></li>
+          <li><span class="q">Publisher confirms vs transactions?</span><span class="a">Confirms = async broker ack per message (fast, recommended). AMQP transactions are synchronous and much slower — avoid.</span></li>
+          <li><span class="q">RabbitMQ vs Kafka — when which?</span><span class="a">RabbitMQ for task queues, complex routing, per-message ack/priority/RPC. Kafka for durable, replayable, high-throughput streaming with ordered partitions.</span></li>
+        </ul>
+
+
+      </div>
+
+      <div class="post-nav">
+        <a href="cheat-emqx.html">&larr; prev: EMQX</a>
+        <a href="cheat-monitoring.html">next: Monitoring &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

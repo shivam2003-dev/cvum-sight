@@ -662,3 +662,35 @@ const TOPICS = [
   { id: "security",   name: "Security",    desc: "Threat models, hardening, and the stuff that keeps things safe." },
   { id: "resources",  name: "Resources",   desc: "Books, papers, courses, and tools I actually use." },
 ];
+
+/*
+ * RESOURCES — searchable Discover items (cheatsheets + debug guides).
+ * Not blog posts (no body in posts.js), but included in site search.
+ * Each: path (relative to site root), title, cat, tags, excerpt, kind.
+ */
+const RESOURCES = [
+  // ── cheatsheets ──
+  { path: "posts/cheat-docker.html", kind: "cheatsheet", cat: "cheatsheet", title: "Docker — The Interview Cheatsheet", tags: ["docker","containers","devops","interview","cheatsheet"], excerpt: "Images, containers, layers, Dockerfile, CMD vs ENTRYPOINT, multi-stage, volumes, networking, Compose, security, debug + rapid-fire Q&A." },
+  { path: "posts/cheat-kubernetes.html", kind: "cheatsheet", cat: "cheatsheet", title: "Kubernetes — The Interview Cheatsheet", tags: ["kubernetes","k8s","orchestration","devops","interview","cheatsheet"], excerpt: "Architecture, Pods, Deployments, Services, probes, RBAC, scheduling, kubectl, rollouts, autoscaling, debug playbook + interview Q&A." },
+
+  // ── debug guides ──
+  { path: "posts/debug-how-to.html", kind: "debug", cat: "debug", title: "How to Debug Anything — The Master Guide", tags: ["debugging","methodology","sre","problem-solving","master"], excerpt: "The universal debugging loop: reproduce, observe, hypothesize, bisect, test, verify. Layer map for application, system, server, and network." },
+  { path: "posts/debug-pod-failures.html", kind: "debug", cat: "debug", title: "Debugging Pod Failures", tags: ["kubernetes","debugging","sre","crashloopbackoff","oomkilled","imagepullbackoff","pending"], excerpt: "Decode every pod status: Pending, ImagePullBackOff, CrashLoopBackOff, OOMKilled, 0/1 Ready, Init — cause and fix." },
+  { path: "posts/debug-container-start.html", kind: "debug", cat: "debug", title: "Debugging Containers That Won't Start", tags: ["containers","docker","debugging","exit-codes","pid1","signals"], excerpt: "Exit codes, PID 1 signal traps, missing entrypoint, permission denied, read-only FS, missing config." },
+  { path: "posts/debug-hpa-scaling.html", kind: "debug", cat: "debug", title: "Debugging HPA & Autoscaling", tags: ["kubernetes","autoscaling","hpa","scaling","cluster-autoscaler","sre"], excerpt: "Unknown targets, metrics-server, missing requests, stuck at min, Cluster Autoscaler not adding nodes, flapping." },
+  { path: "posts/debug-high-cpu.html", kind: "debug", cat: "debug", title: "Debugging High CPU & Throttling", tags: ["cpu","performance","throttling","saturation","sre","linux"], excerpt: "Saturation vs cgroup throttling, run queue, load average, perf/flame graphs, CPU steal." },
+  { path: "posts/debug-memory-leaks.html", kind: "debug", cat: "debug", title: "Debugging Memory Leaks & OOM", tags: ["memory","oom","oomkilled","leak","heap","sre","performance"], excerpt: "OOMKilled vs slow leaks, RSS vs cache, heap profiling, goroutine/fd leaks, fragmentation." },
+  { path: "posts/debug-disk.html", kind: "debug", cat: "debug", title: "Debugging Disk Full & I/O", tags: ["disk","storage","inodes","io","performance","sre"], excerpt: "Out of blocks vs inodes vs deleted-but-open files, iostat/iotop I/O bottlenecks, log rotation." },
+  { path: "posts/debug-dns.html", kind: "debug", cat: "debug", title: "Debugging DNS Resolution Failures", tags: ["dns","network","coredns","ndots","resolv.conf","kubernetes","sre"], excerpt: "NXDOMAIN, slow lookups, CoreDNS, ndots search-domain tax, in-cluster DNS debugging." },
+  { path: "posts/debug-timeouts.html", kind: "debug", cat: "debug", title: "Debugging Connection Timeouts & Refused", tags: ["network","connectivity","timeout","connection-refused","tcp","conntrack","sre"], excerpt: "Refused vs timeout vs reset, firewall/SG, 0.0.0.0 binding, MTU, port/conntrack exhaustion." },
+  { path: "posts/debug-tls.html", kind: "debug", cat: "debug", title: "Debugging TLS & Certificate Errors", tags: ["tls","ssl","certificates","security","openssl","sni","sre"], excerpt: "Expired certs, hostname mismatch, broken chain/intermediates, clock skew, protocol/cipher mismatch." },
+  { path: "posts/debug-5xx.html", kind: "debug", cat: "debug", title: "Debugging 5xx Surges (502/503/504)", tags: ["5xx","502","503","504","http","reliability","sre","load-balancer"], excerpt: "Decode 502 vs 503 vs 504, upstream health, readiness, rollouts, timeouts, triage method." },
+  { path: "posts/debug-latency.html", kind: "debug", cat: "debug", title: "Debugging Latency & p99 Spikes", tags: ["latency","p99","performance","tracing","gc","sre","observability"], excerpt: "Tail latency, tracing, GC pauses, lock contention, N+1 queries, cold caches, queueing." },
+  { path: "posts/debug-database.html", kind: "debug", cat: "debug", title: "Debugging Database Issues", tags: ["database","postgres","sql","slow-query","deadlock","connection-pool","replication","sre"], excerpt: "Slow queries + EXPLAIN, connection-pool exhaustion, locks/deadlocks, replication lag." },
+  { path: "posts/debug-pipeline.html", kind: "debug", cat: "debug", title: "Debugging CI/CD Pipeline Failures", tags: ["ci-cd","pipeline","builds","flaky-tests","cache","secrets","devops"], excerpt: "Flaky tests, works-locally drift, cache poisoning, secrets/permissions, runner OOM." },
+  { path: "posts/debug-terraform.html", kind: "debug", cat: "debug", title: "Debugging Terraform — State, Locks, Drift", tags: ["terraform","iac","state","drift","lock","import","devops"], excerpt: "Stuck state lock, drift, import existing resources, replace/taint, dependency cycles, state repair." },
+  { path: "posts/debug-incident.html", kind: "debug", cat: "debug", title: "Incident Triage & Cascading Failures", tags: ["incident","sre","oncall","postmortem","reliability","retry-storm"], excerpt: "First 5 minutes, blast-radius scoping, retry storms, thundering herd, rollback vs forward-fix, postmortem." },
+  { path: "posts/debug-kafka.html", kind: "debug", cat: "debug", title: "Debugging Kafka", tags: ["kafka","messaging","consumer-lag","rebalance","isr","replication","sre"], excerpt: "Consumer lag, rebalancing storms, under-replicated partitions, ISR shrink, broker down." },
+  { path: "posts/debug-redis.html", kind: "debug", cat: "debug", title: "Debugging Redis", tags: ["redis","cache","oom","eviction","persistence","replication","hot-keys","sre"], excerpt: "OOM/eviction, slow commands, blocking ops, RDB/AOF persistence, replication lag, hot keys." },
+  { path: "posts/debug-rabbitmq.html", kind: "debug", cat: "debug", title: "Debugging RabbitMQ", tags: ["rabbitmq","messaging","queue","unacked","flow-control","dead-letter","sre"], excerpt: "Queue buildup, unacked messages, memory/disk alarms, flow control, dead-letter loops, connection churn." },
+];

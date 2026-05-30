@@ -40,6 +40,23 @@
     </a>`;
   }
 
+  // resource card (cheatsheets / debug guides) — links by full path
+  function renderResourceCard(r) {
+    var badge = r.kind === "cheatsheet" ? "cheatsheet" : "debug guide";
+    return `<a href="${escapeHtml(r.path)}" class="post-card">
+      <span class="cat">${escapeHtml(badge)}</span>
+      <h3>${escapeHtml(r.title)}</h3>
+      <p class="card-excerpt">${escapeHtml(r.excerpt || "")}</p>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${r.tags.slice(0, 4).map(t => `<span class="tag">#${escapeHtml(t)}</span>`).join("")}
+      </div>
+      <div class="card-meta">
+        <span>${escapeHtml(badge)}</span>
+        <span>· Discover</span>
+      </div>
+    </a>`;
+  }
+
   // ── sidebar categories ──
   const sidebarCats = document.getElementById("sidebar-cats");
   if (sidebarCats && typeof POSTS !== "undefined") {
@@ -113,17 +130,19 @@
       searchResults.hidden = false;
       if (searchClear) searchClear.hidden = false;
       const terms = q.split(/\s+/);
-      const matches = POSTS.filter(p => {
-        const hay = (p.title + " " + p.excerpt + " " + p.cat + " " + p.tags.join(" ")).toLowerCase();
+      // search posts + Discover resources (cheatsheets + debug guides)
+      const corpus = POSTS.concat(typeof RESOURCES !== "undefined" ? RESOURCES : []);
+      const matches = corpus.filter(p => {
+        const hay = (p.title + " " + (p.excerpt || "") + " " + p.cat + " " + p.tags.join(" ")).toLowerCase();
         return terms.every(term => hay.includes(term));
       });
       if (!matches.length) {
-        searchResults.innerHTML = `<div class="search-empty">no articles match "${escapeHtml(q)}" — try a broader term.</div>`;
+        searchResults.innerHTML = `<div class="search-empty">no results match "${escapeHtml(q)}" — try a broader term.</div>`;
         return;
       }
       searchResults.innerHTML =
         `<p class="search-count">${matches.length} result${matches.length !== 1 ? "s" : ""} for "${escapeHtml(q)}"</p>` +
-        `<div class="search-grid">${matches.map(renderPostCard).join("")}</div>`;
+        `<div class="search-grid">${matches.map(m => m.path ? renderResourceCard(m) : renderPostCard(m)).join("")}</div>`;
     }
     searchInput.addEventListener("input", function () { runSearch(this.value); });
     if (searchClear) searchClear.addEventListener("click", function () {

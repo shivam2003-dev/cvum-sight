@@ -50,95 +50,203 @@
       <div class="post-body">
 
         <blockquote>
-          Terraform is <strong>declarative IaC</strong>: you write desired state in HCL, it diffs against
-          <strong>state</strong> (a JSON record of what it manages) and makes real infra match. The loop is
-          <code>init &rarr; plan &rarr; apply</code>. Everything hard is about state.
+          Terraform is <strong>declarative IaC</strong>: you write desired infrastructure in HCL, it diffs
+          against <strong>state</strong> (a JSON record of what it manages) and makes the real world match.
+          The loop is <code>init &rarr; plan &rarr; apply</code>. Almost everything hard is about state.
         </blockquote>
 
-        <h2 id="concepts">Core concepts</h2>
+        <h2 id="concepts">1. Core concepts</h2>
         <table>
           <thead><tr><th>Term</th><th>What</th></tr></thead>
           <tbody>
-            <tr><td><strong>Provider</strong></td><td>Plugin for a platform (aws, google, kubernetes). Exposes resources.</td></tr>
-            <tr><td><strong>Resource</strong></td><td>A managed infra object (<code>aws_instance</code>).</td></tr>
-            <tr><td><strong>Data source</strong></td><td>Read-only lookup of existing infra.</td></tr>
-            <tr><td><strong>State</strong></td><td>JSON mapping config &rarr; real resources. Source of truth for Terraform.</td></tr>
-            <tr><td><strong>Module</strong></td><td>Reusable group of resources (a folder of .tf).</td></tr>
-            <tr><td><strong>Backend</strong></td><td>Where state lives (local, S3+DynamoDB lock, TF Cloud).</td></tr>
+            <tr><td><strong>Provider</strong></td><td>Plugin for a platform (aws, google, azurerm, kubernetes). Exposes resources + data sources.</td></tr>
+            <tr><td><strong>Resource</strong></td><td>A managed infra object (<code>aws_instance.web</code>) — type + local name = address.</td></tr>
+            <tr><td><strong>Data source</strong></td><td>Read-only lookup of existing infra (<code>data.aws_ami.x</code>).</td></tr>
+            <tr><td><strong>State</strong></td><td>JSON mapping config &rarr; real resource IDs + cached attributes. Terraform's source of truth.</td></tr>
+            <tr><td><strong>Module</strong></td><td>Reusable folder of .tf with inputs (variables) + outputs.</td></tr>
+            <tr><td><strong>Backend</strong></td><td>Where state lives (local, S3+DynamoDB lock, GCS, Terraform Cloud).</td></tr>
+            <tr><td><strong>Plan</strong></td><td>The computed diff (create/update/replace/destroy) before applying.</td></tr>
           </tbody>
         </table>
+        <p><strong>How a run works:</strong> Terraform reads config + refreshes state against real infra,
+        builds a dependency graph, computes a diff, and applies it in dependency order (parallel where
+        possible). Dependencies are <em>implicit</em> when one resource references another's attribute.</p>
 
-        <h2 id="workflow">Workflow</h2>
-        <pre data-lang="bash">terraform init        # download providers, configure backend
-terraform fmt         # format ; terraform validate  # check syntax
-terraform plan        # preview diff (read this every time)
-terraform apply       # make it so
-terraform destroy     # tear down
-terraform apply -target=aws_instance.web   # narrow (use sparingly)</pre>
+        <h2 id="workflow">2. Workflow &amp; CLI</h2>
+        <pre data-lang="bash">terraform init        # download providers, configure backend, install modules
+terraform fmt -recursive    # canonical formatting
+terraform validate          # syntax + internal consistency
+terraform plan              # preview diff (read this EVERY time)
+terraform plan -out=tfplan  # save a plan
+terraform apply tfplan      # apply exactly that plan (CI-safe)
+terraform apply -auto-approve
+terraform destroy           # tear down everything in state
+terraform apply -target=aws_instance.web   # narrow (use sparingly — hides drift)
+terraform output            # show outputs ; -json for machines
+terraform console           # REPL to test expressions
+terraform graph | dot -Tsvg > graph.svg
+terraform providers ; terraform version</pre>
 
-        <h2 id="hcl">HCL essentials</h2>
-        <pre data-lang="hcl">variable "region" { type = string  default = "us-east-1" }
-locals { name = "app-${var.env}" }
-resource "aws_instance" "web" {
-  ami           = data.aws_ami.ubuntu.id
-  instance_type = "t3.micro"
-  tags = { Name = local.name }
+        <h2 id="hcl">3. HCL essentials</h2>
+        <pre data-lang="hcl">terraform {
+  required_version = ">= 1.6"
+  required_providers {
+    aws = { source = "hashicorp/aws", version = "~> 5.0" }
+  }
 }
-output "ip" { value = aws_instance.web.public_ip }
-data "aws_ami" "ubuntu" { most_recent = true  owners = ["099720109477"] }</pre>
-        <p>Variable precedence: CLI <code>-var</code> &gt; <code>*.auto.tfvars</code> &gt;
-        <code>terraform.tfvars</code> &gt; env <code>TF_VAR_*</code> &gt; default.</p>
+provider "aws" { region = var.region }
 
-        <h2 id="meta">Meta-arguments</h2>
+variable "env"    { type = string  default = "dev" }
+variable "tags"   { type = map(string)  default = {} }
+locals { name = "app-${var.env}" }
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"]
+  filter { name = "name"  values = ["ubuntu/images/*-24.04-*"] }
+}
+
+resource "aws_instance" "web" {
+  ami           = data.aws_ami.ubuntu.id     # implicit dependency
+  instance_type = "t3.micro"
+  tags          = merge(var.tags, { Name = local.name })
+}
+
+output "ip" {
+  value     = aws_instance.web.public_ip
+  sensitive = false
+}</pre>
+        <p><strong>Types:</strong> string, number, bool, list, set, map, object, tuple. Common functions:
+        <code>merge</code>, <code>lookup</code>, <code>coalesce</code>, <code>try</code>,
+        <code>for</code> expressions, <code>jsonencode</code>, <code>templatefile</code>.</p>
+        <p><strong>Variable precedence</strong> (high &rarr; low): CLI <code>-var</code> /
+        <code>-var-file</code> &gt; <code>*.auto.tfvars</code> &gt; <code>terraform.tfvars</code> &gt; env
+        <code>TF_VAR_*</code> &gt; default.</p>
+
+        <h2 id="meta">4. Meta-arguments</h2>
         <table>
           <thead><tr><th>Arg</th><th>Use</th></tr></thead>
           <tbody>
-            <tr><td><code>count</code></td><td>N copies by index. Good for identical resources.</td></tr>
-            <tr><td><code>for_each</code></td><td>One per map/set key — stable addresses, preferred over count.</td></tr>
-            <tr><td><code>depends_on</code></td><td>Explicit ordering when there's no implicit reference.</td></tr>
-            <tr><td><code>lifecycle</code></td><td><code>create_before_destroy</code>, <code>prevent_destroy</code>, <code>ignore_changes</code>.</td></tr>
+            <tr><td><code>count</code></td><td>N copies by index. Address <code>res[0]</code>. Good for identical resources.</td></tr>
+            <tr><td><code>for_each</code></td><td>One per map/set key. Address <code>res["key"]</code> — stable. Preferred.</td></tr>
+            <tr><td><code>depends_on</code></td><td>Explicit ordering when there's no attribute reference.</td></tr>
+            <tr><td><code>provider</code></td><td>Pick a non-default provider alias (e.g. multi-region).</td></tr>
+            <tr><td><code>lifecycle</code></td><td><code>create_before_destroy</code>, <code>prevent_destroy</code>, <code>ignore_changes</code>, <code>replace_triggered_by</code>.</td></tr>
           </tbody>
         </table>
+        <pre data-lang="hcl">resource "aws_iam_user" "u" {
+  for_each = toset(["alice", "bob"])
+  name     = each.key
+}
+resource "aws_instance" "web" {
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = [tags["LastModified"]]
+  }
+}</pre>
         <div class="gotcha"><span class="gotcha-label">count vs for_each</span>
-          <code>count</code> keys by index — remove the middle item and everything after it shifts and gets
-          recreated. <code>for_each</code> keys by name — stable. Prefer <code>for_each</code> for sets.</div>
+          <code>count</code> keys by index — remove the middle item and everything after shifts and gets
+          recreated. <code>for_each</code> keys by name — stable, no churn. Prefer <code>for_each</code>
+          for anything you'll add to/remove from.</div>
 
-        <h2 id="state">State management</h2>
-        <pre data-lang="bash">terraform state list           # what's managed
-terraform state show &lt;addr&gt;
-terraform import &lt;addr&gt; &lt;id&gt;    # adopt existing resource
-terraform state mv A B         # rename without recreate
-terraform state rm &lt;addr&gt;       # stop managing (doesn't delete real infra)
-terraform force-unlock &lt;id&gt;     # stuck lock (carefully)</pre>
-        <div class="gotcha"><span class="gotcha-label">remote state + locking</span>
-          Local state breaks teams. Use a remote backend (S3 + DynamoDB lock, or TF Cloud) so concurrent
-          applies don't corrupt state.</div>
+        <h2 id="state">5. State management</h2>
+        <pre data-lang="bash">terraform state list                 # what's managed
+terraform state show <addr>          # full attributes of one resource
+terraform import <addr> <real-id>    # adopt an existing resource into state
+terraform state mv <a> <b>           # rename/move without recreating
+terraform state rm <addr>            # stop managing (does NOT delete real infra)
+terraform refresh                    # (or plan -refresh-only) sync state to reality
+terraform force-unlock <LOCK_ID>     # release a stuck lock (only if sure)</pre>
+        <pre data-lang="hcl"># remote, locked, versioned backend (the right setup for teams)
+terraform {
+  backend "s3" {
+    bucket         = "my-tf-state"
+    key            = "prod/app.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "tf-locks"     # state locking
+    encrypt        = true
+  }
+}</pre>
+        <div class="gotcha"><span class="gotcha-label">state is sensitive + must be locked</span>
+          State can contain secrets in plaintext — never commit it to git; encrypt the backend. Local
+          state breaks teams; use a remote backend with locking so two applies can't corrupt it.</div>
 
-        <h2 id="modules">Modules</h2>
+        <h2 id="drift">6. Drift &amp; imports</h2>
+        <p><strong>Drift</strong> = real infra changed outside Terraform (a console click). Detect:
+        <code>terraform plan -refresh-only</code>. Reconcile by updating config to match reality, or let
+        Terraform revert the manual change. <strong>Import</strong> existing resources so TF manages them:</p>
+        <pre data-lang="hcl"># import block (TF 1.5+) — reviewable, in code
+import {
+  to = aws_s3_bucket.logs
+  id = "my-existing-bucket"
+}
+# then: terraform plan -generate-config-out=generated.tf</pre>
+
+        <h2 id="modules">7. Modules</h2>
         <pre data-lang="hcl">module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "5.0.0"
+  version = "5.5.0"
+  name    = "main"
   cidr    = "10.0.0.0/16"
+  azs     = ["us-east-1a", "us-east-1b"]
 }
-# reference outputs: module.vpc.vpc_id</pre>
-
-        <h2 id="best">Best practices</h2>
+# consume outputs elsewhere:
+resource "aws_instance" "web" { subnet_id = module.vpc.public_subnets[0] }</pre>
         <ul>
-          <li>Remote, locked, <strong>versioned</strong> state backend.</li>
-          <li>Pin provider + module versions.</li>
-          <li>Never commit secrets/state to git; never hand-edit state.</li>
-          <li><code>plan</code> in CI, gated <code>apply</code>; separate state per environment.</li>
-          <li>Prefer data sources + <code>for_each</code> over copy-paste; avoid provisioners (last resort).</li>
+          <li>Module sources: local path, Terraform Registry, Git, S3.</li>
+          <li>Inputs = <code>variable</code> blocks; returns = <code>output</code> blocks.</li>
+          <li>Pin <code>version</code> on registry modules; keep modules small + composable.</li>
         </ul>
 
-        <h2 id="qa">Rapid-fire Q&amp;A</h2>
+        <h2 id="workspaces">8. Environments &amp; workspaces</h2>
+        <pre data-lang="bash">terraform workspace list / new staging / select prod
+# terraform.workspace is available in config</pre>
+        <p>Workspaces give multiple states from one config — fine for light dev/staging splits. For real
+        prod isolation prefer <strong>separate state files / directories per environment</strong> (and
+        often separate backends/accounts) so a mistake in dev can't touch prod.</p>
+
+        <h2 id="provisioners">9. Provisioners (last resort)</h2>
+        <p><code>local-exec</code> / <code>remote-exec</code> run scripts during create/destroy. Avoid them
+        — they're not tracked in state, break idempotency, and fail unpredictably. Prefer cloud-init /
+        user_data, configuration management, or baked images (Packer). If you must, pair with
+        <code>null_resource</code> + triggers.</p>
+
+        <h2 id="best">10. Best practices</h2>
+        <ul>
+          <li>Remote, locked, <strong>versioned</strong> state backend; one state per environment.</li>
+          <li>Pin <code>required_version</code>, provider versions, and module versions.</li>
+          <li>Never commit secrets or state to git; mark sensitive outputs <code>sensitive = true</code>.</li>
+          <li><code>plan</code> in CI on every PR; gated <code>apply</code> on merge (apply the saved plan).</li>
+          <li>Prefer data sources + <code>for_each</code> over copy-paste; small modules.</li>
+          <li>Use <code>-target</code> and <code>force-unlock</code> rarely — they hide problems.</li>
+          <li><code>terraform fmt</code> + <code>validate</code> + a linter (tflint) + a policy gate (OPA/Sentinel) in CI.</li>
+        </ul>
+
+        <h2 id="debug">11. Troubleshooting</h2>
+        <table>
+          <thead><tr><th>Problem</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td>Error acquiring the state lock</td><td>Another apply running, or a crashed one. Confirm, then <code>force-unlock &lt;id&gt;</code>.</td></tr>
+            <tr><td>Plan wants to change untouched things</td><td>Drift — <code>plan -refresh-only</code>; reconcile config or accept reality.</td></tr>
+            <tr><td>AlreadyExists on apply</td><td>Resource exists outside state — <code>terraform import</code>.</td></tr>
+            <tr><td>Cycle error</td><td>Bad <code>depends_on</code> / mutual reference — let implicit deps order it.</td></tr>
+            <tr><td>Forces replacement unexpectedly</td><td>An immutable attribute changed; check the plan's "# forces replacement". Use <code>create_before_destroy</code>.</td></tr>
+            <tr><td>Need verbose logs</td><td><code>TF_LOG=DEBUG terraform apply</code> (provider API calls).</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="qa">12. Rapid-fire Q&amp;A</h2>
         <ul class="cheat-qa">
-          <li><span class="q">What is state and why does it matter?</span><span class="a">JSON mapping config to real resources. It's how Terraform knows what exists, computes diffs, and avoids recreating things. Lose/corrupt it and TF loses track of your infra.</span></li>
-          <li><span class="q">count vs for_each?</span><span class="a">count = index-keyed (shifts on removal); for_each = key-keyed (stable). Prefer for_each.</span></li>
-          <li><span class="q">plan vs apply?</span><span class="a">plan previews the diff; apply executes it. Always read plan first.</span></li>
-          <li><span class="q">How to manage existing infra?</span><span class="a">terraform import (or import blocks) to bring it under state.</span></li>
-          <li><span class="q">How do teams share state safely?</span><span class="a">Remote backend with locking (S3+DynamoDB / TF Cloud) so applies serialize.</span></li>
-          <li><span class="q">local vs variable vs output?</span><span class="a">local = computed value reused in config; variable = input; output = exposed value (and module return).</span></li>
+          <li><span class="q">What is state and why does it matter?</span><span class="a">JSON mapping config to real resource IDs. It's how TF knows what exists, computes diffs, and avoids recreating things. Lose/corrupt it and TF loses track of your infra.</span></li>
+          <li><span class="q">count vs for_each?</span><span class="a">count = index-keyed (shifts on removal &rarr; recreation); for_each = key-keyed (stable). Prefer for_each.</span></li>
+          <li><span class="q">plan vs apply?</span><span class="a">plan computes/preview the diff; apply executes it. In CI, save a plan and apply exactly that.</span></li>
+          <li><span class="q">How do you manage existing infra?</span><span class="a">terraform import (or import blocks) to bring it under state, then plan should be a no-op.</span></li>
+          <li><span class="q">How do teams share state safely?</span><span class="a">Remote backend with locking (S3+DynamoDB / TF Cloud) so applies serialize; encrypted, versioned.</span></li>
+          <li><span class="q">local vs variable vs output vs data?</span><span class="a">local = computed reuse; variable = input; output = exposed/module return; data = read existing infra.</span></li>
+          <li><span class="q">What is drift?</span><span class="a">Real infra changed outside Terraform. Detect with plan -refresh-only; reconcile.</span></li>
+          <li><span class="q">create_before_destroy?</span><span class="a">Lifecycle rule to make the replacement before destroying the old — avoids downtime on replace.</span></li>
+          <li><span class="q">Why avoid provisioners?</span><span class="a">Not in state, not idempotent, fail unpredictably. Prefer user_data / images / config management.</span></li>
+          <li><span class="q">How is dependency order decided?</span><span class="a">Implicitly, by attribute references between resources; depends_on only when there's no reference.</span></li>
         </ul>
 
       </div>

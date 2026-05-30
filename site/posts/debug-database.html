@@ -50,44 +50,287 @@
       <div class="post-body">
 
         <blockquote>
-          Most "DB is slow" tickets: a query missing an index, the pool exhausted, lock/deadlock contention,
-          or replication lag serving stale reads. Find the slow query, read its plan, check pool + locks.
-          Examples lean Postgres; the shape is universal.
+          A PostgreSQL incident is almost always one of: a query missing an index, the connection pool
+          exhausted, lock contention, <strong>table/index bloat from MVCC + lazy autovacuum</strong>,
+          replication lag, or cache/IO pressure. This guide is Postgres-specific — the catalog views,
+          the MVCC quirks, and the knobs that actually move the needle.
         </blockquote>
 
-        <h2 id="slow">Slow queries</h2>
-        <pre data-lang="sql">SELECT pid, now()-query_start AS dur, state, query
-FROM pg_stat_activity WHERE state!='idle' ORDER BY dur DESC;
-EXPLAIN (ANALYZE, BUFFERS) SELECT ...;     -- Seq Scan on big table = missing index</pre>
-        <p><strong>Fix.</strong> Add the index the plan wants; rewrite sargable; avoid <code>SELECT *</code>;
-        use <code>pg_stat_statements</code> to rank worst queries.</p>
-        <div class="gotcha"><span class="gotcha-label">EXPLAIN ANALYZE is the answer</span>
-          Don't guess — run <code>EXPLAIN (ANALYZE, BUFFERS)</code>. Bad row estimates → run
-          <code>ANALYZE</code>.</div>
+        <h2 id="mvcc">First: how MVCC shapes everything</h2>
+        <p>
+          Postgres uses <strong>MVCC</strong> (Multi-Version Concurrency Control). An <code>UPDATE</code>
+          doesn't overwrite a row — it writes a <em>new</em> version (tuple) and marks the old one dead.
+          A <code>DELETE</code> just marks dead. Readers never block writers because each transaction sees
+          a snapshot. Two consequences drive most Postgres pathology:
+        </p>
+        <ul>
+          <li><strong>Dead tuples accumulate</strong> → tables and indexes <em>bloat</em> until
+            <code>VACUUM</code> reclaims them. Bloat = wasted disk + slower scans.</li>
+          <li><strong>Every row carries transaction IDs</strong> (xmin/xmax). XIDs are 32-bit and wrap →
+            <code>VACUUM</code> must "freeze" old rows or the DB shuts down to protect data.</li>
+        </ul>
+        <p>So "my DB got slow over weeks" is usually bloat/autovacuum, not the query. Keep MVCC in mind.</p>
+
+        <h2 id="slow">Slow queries — find them</h2>
+        <p>Two angles: what's slow <em>right now</em>, and what's slow <em>cumulatively</em>.</p>
+        <pre data-lang="sql">-- running now, longest first
+SELECT pid, now() - query_start AS dur, state, wait_event_type, wait_event,
+       left(query, 80) AS query
+FROM pg_stat_activity
+WHERE state <> 'idle'
+ORDER BY dur DESC;
+
+-- cumulative worst offenders (needs pg_stat_statements extension)
+SELECT calls, round(total_exec_time::numeric, 1) AS total_ms,
+       round(mean_exec_time::numeric, 2) AS mean_ms, rows,
+       left(query, 80) AS query
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC
+LIMIT 20;</pre>
+        <p>
+          <code>pg_stat_statements</code> is the single most useful thing to enable. Sort by
+          <code>total_exec_time</code> (frequent + cheap can outweigh rare + slow). Also log slow ones:
+          <code>log_min_duration_statement = 500ms</code>. Note <code>wait_event</code> — it tells you
+          <em>why</em> it's slow (Lock, IO, BufferPin, etc.) without guessing.
+        </p>
+
+        <h2 id="explain">Read the plan — EXPLAIN deeply</h2>
+        <pre data-lang="sql">EXPLAIN (ANALYZE, BUFFERS, VERBOSE) SELECT ...;</pre>
+        <p>What to look for, in order:</p>
+        <table>
+          <thead><tr><th>Signal</th><th>Meaning / action</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Seq Scan</strong> on a big table</td><td>No usable index for the filter — add one (if selective).</td></tr>
+            <tr><td><strong>rows estimated</strong> ≫ or ≪ <strong>actual</strong></td><td>Stale stats — run <code>ANALYZE</code>; the planner is flying blind.</td></tr>
+            <tr><td><strong>Nested Loop</strong> with huge row count</td><td>Planner expected few rows, got many — bad estimate → wrong join.</td></tr>
+            <tr><td><strong>Rows Removed by Filter</strong> high</td><td>Reading rows then throwing them away — index the filter.</td></tr>
+            <tr><td>Heap Fetches high on Index Only Scan</td><td>Visibility map stale — VACUUM the table.</td></tr>
+            <tr><td><strong>external merge Disk</strong> in sort</td><td>Sort spilled to disk — raise <code>work_mem</code> for this query.</td></tr>
+          </tbody>
+        </table>
+        <div class="gotcha"><span class="gotcha-label">estimate vs actual is the tell</span>
+          The planner picks plans from row <em>estimates</em>. If <code>EXPLAIN ANALYZE</code> shows
+          estimated 10 / actual 2,000,000, the stats are stale or skewed — <code>ANALYZE</code> the table,
+          or raise the column's statistics target. Fix the estimate and the plan fixes itself.</div>
+
+        <h2 id="indexes">Indexes — missing, unused, wrong, bloated</h2>
+        <p><strong>Find missing indexes</strong> (tables taking lots of sequential scans):</p>
+        <pre data-lang="sql">SELECT relname, seq_scan, idx_scan, seq_tup_read
+FROM pg_stat_user_tables
+WHERE seq_scan > 0
+ORDER BY seq_tup_read DESC
+LIMIT 20;     -- high seq_scan + seq_tup_read on a big table = candidate</pre>
+        <p><strong>Find unused indexes</strong> (dead weight — they slow writes + waste space):</p>
+        <pre data-lang="sql">SELECT relname, indexrelname, idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) AS size
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0
+ORDER BY pg_relation_size(indexrelid) DESC;</pre>
+        <ul>
+          <li>Index <strong>type matters</strong>: B-tree (default, equality/range), GIN (jsonb, arrays,
+            full-text), GiST (geo/ranges), BRIN (huge append-only tables), Hash (equality only).</li>
+          <li><strong>Composite order matters</strong>: index <code>(a,b)</code> serves filters on
+            <code>a</code> and <code>a,b</code> — not <code>b</code> alone.</li>
+          <li><strong>Partial / covering</strong> indexes: <code>WHERE status='active'</code>, or
+            <code>INCLUDE (col)</code> for index-only scans.</li>
+          <li>Build without locking writes: <code>CREATE INDEX CONCURRENTLY</code>.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">sargability</span>
+          A function on the column kills the index: <code>WHERE lower(email)=...</code> won't use an index
+          on <code>email</code> — index the expression, or store normalized. Same for leading wildcards
+          <code>LIKE '%foo'</code> and implicit type casts.</div>
+
+        <h2 id="bloat">Bloat &amp; autovacuum (the silent killer)</h2>
+        <p><strong>Symptom.</strong> Table/index much bigger than its live rows; scans slow down over
+        weeks; disk creeps; a table that "should be small" is gigabytes.</p>
+        <pre data-lang="sql">-- dead tuples + last (auto)vacuum per table
+SELECT relname, n_live_tup, n_dead_tup,
+       round(n_dead_tup*100.0/nullif(n_live_tup,0),1) AS dead_pct,
+       last_autovacuum, last_autoanalyze
+FROM pg_stat_user_tables
+ORDER BY n_dead_tup DESC
+LIMIT 20;
+SELECT pg_size_pretty(pg_total_relation_size('mytable'));</pre>
+        <p><strong>Causes.</strong> Autovacuum can't keep up with churn (high update/delete rate); a
+        <strong>long-running transaction or idle-in-transaction</strong> holds the xmin horizon so vacuum
+        <em>can't remove</em> dead tuples; autovacuum throttled too conservatively.</p>
+        <p><strong>Fix.</strong></p>
+        <ul>
+          <li>Kill long/idle-in-transaction sessions (they pin vacuum — see below).</li>
+          <li>Tune autovacuum: lower <code>autovacuum_vacuum_scale_factor</code> for hot tables, raise
+            <code>autovacuum_max_workers</code> / cost limits so it keeps up.</li>
+          <li>Reclaim existing bloat: <code>VACUUM (ANALYZE)</code> for stats + visibility;
+            <code>REINDEX CONCURRENTLY</code> for index bloat; <code>pg_repack</code> to compact a table
+            without an exclusive lock (plain <code>VACUUM FULL</code> takes an <code>ACCESS EXCLUSIVE</code>
+            lock — blocks everything).</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">VACUUM FULL locks the table</span>
+          <code>VACUUM</code> reclaims space for reuse (online). <code>VACUUM FULL</code> rewrites the
+          table and takes an exclusive lock — never run it on a live hot table. Use <code>pg_repack</code>.</div>
+
+        <h2 id="wraparound">Transaction ID wraparound</h2>
+        <p><strong>Symptom.</strong> Warnings "database must be vacuumed within N transactions"; worst case
+        Postgres refuses writes to protect data.</p>
+        <pre data-lang="sql">SELECT datname, age(datfrozenxid) AS xid_age
+FROM pg_database ORDER BY xid_age DESC;   -- approaching ~2 billion = danger</pre>
+        <p><strong>Fix.</strong> This means autovacuum's <em>freeze</em> work fell behind (usually the same
+        root cause: long transactions, or autovacuum disabled/starved). Let autovacuum catch up, or run a
+        manual <code>VACUUM (FREEZE)</code>. Don't disable autovacuum — this is what it prevents.</p>
+
+        <h2 id="connstates">Connection states &amp; idle-in-transaction</h2>
+        <pre data-lang="sql">SELECT state, count(*) FROM pg_stat_activity GROUP BY state;</pre>
+        <table>
+          <thead><tr><th>state</th><th>meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>active</code></td><td>running a query right now</td></tr>
+            <tr><td><code>idle</code></td><td>connected, no transaction — fine</td></tr>
+            <tr><td><code>idle in transaction</code></td><td><strong>danger</strong> — open transaction doing nothing; holds locks + pins vacuum</td></tr>
+            <tr><td><code>idle in transaction (aborted)</code></td><td>failed transaction not rolled back</td></tr>
+          </tbody>
+        </table>
+        <div class="gotcha"><span class="gotcha-label">idle in transaction is poison</span>
+          An app that <code>BEGIN</code>s then waits (slow client, missing commit/rollback) holds its
+          snapshot — blocking vacuum cluster-wide and possibly holding row locks. Set
+          <code>idle_in_transaction_session_timeout</code> to auto-kill them.</div>
 
         <h2 id="pool">Connection pool exhaustion</h2>
-        <pre data-lang="sql">SELECT count(*), state FROM pg_stat_activity GROUP BY state;
-SHOW max_connections;</pre>
-        <p>App instances &times; pool size &gt; <code>max_connections</code>; leaked connections; long
-        transactions. Fix: pooler (PgBouncer); size pools; release connections (try/finally); kill
-        idle-in-transaction.</p>
+        <p><strong>Symptom.</strong> "FATAL: sorry, too many clients already"; "remaining connection slots
+        are reserved"; latency cliff under load while DB CPU is low.</p>
+        <pre data-lang="sql">SHOW max_connections;
+SELECT count(*) FROM pg_stat_activity;
+SELECT count(*), state, wait_event FROM pg_stat_activity GROUP BY state, wait_event;</pre>
+        <p><strong>Causes &amp; fix.</strong></p>
+        <ul>
+          <li>App-instances × per-instance pool size exceeds <code>max_connections</code>. Each Postgres
+            connection is a <em>process</em> with real memory cost — you don't want thousands.</li>
+          <li>Use a pooler: <strong>PgBouncer</strong> in <code>transaction</code> mode lets hundreds of
+            app connections share a small server pool. This is the standard fix, not raising
+            <code>max_connections</code> to 5000.</li>
+          <li>Leaked connections — ensure release in <code>finally</code>; cap pool size; set
+            <code>idle_in_transaction_session_timeout</code>.</li>
+        </ul>
 
-        <h2 id="locks">Locks &amp; deadlocks</h2>
-        <pre data-lang="sql">SELECT blocked.pid, blocking.pid, blocked.query
+        <h2 id="locks">Locks, blocking &amp; deadlocks</h2>
+        <p><strong>Find who blocks whom:</strong></p>
+        <pre data-lang="sql">SELECT blocked.pid AS blocked_pid, blocked.query AS blocked_query,
+       blocking.pid AS blocking_pid, blocking.query AS blocking_query,
+       blocked.wait_event
 FROM pg_stat_activity blocked
-JOIN pg_stat_activity blocking ON blocking.pid = ANY(pg_blocking_pids(blocked.pid));</pre>
-        <p><strong>Fix.</strong> Short transactions; acquire locks in the <em>same order</em>; add indexes to
-        narrow lock scope; retry on deadlock (transient).</p>
+JOIN pg_stat_activity blocking
+  ON blocking.pid = ANY(pg_blocking_pids(blocked.pid))
+WHERE blocked.wait_event_type = 'Lock';</pre>
+        <p><strong>Lock modes that bite:</strong> plain <code>SELECT</code> takes
+        <code>ACCESS SHARE</code> (conflicts with almost nothing). <code>UPDATE/DELETE</code> take a
+        <code>ROW EXCLUSIVE</code> + per-row locks. Schema changes (<code>ALTER TABLE</code>,
+        <code>VACUUM FULL</code>, <code>CREATE INDEX</code> non-concurrent) take <code>ACCESS EXCLUSIVE</code>
+        — they block <em>everything</em>, including reads.</p>
+        <p><strong>Deadlocks.</strong> Two transactions grab locks in opposite order. Postgres detects it,
+        kills one with "deadlock detected" (SQLSTATE 40P01). Fix: acquire locks/rows in a
+        <em>consistent order</em>; keep transactions short; <code>SELECT ... FOR UPDATE</code> carefully;
+        <strong>retry</strong> the loser (it's expected and transient).</p>
+        <div class="gotcha"><span class="gotcha-label">migrations need a lock_timeout</span>
+          An <code>ALTER TABLE</code> waits behind one slow query for its <code>ACCESS EXCLUSIVE</code>
+          lock — and meanwhile queues every new query behind <em>it</em>, freezing the table. Always set
+          <code>lock_timeout</code> (and <code>statement_timeout</code>) before migrations.</div>
+
+        <h2 id="cache">Cache hit ratio &amp; I/O</h2>
+        <p><strong>Symptom.</strong> Queries slow with high I/O wait; <code>wait_event</code> shows
+        <code>DataFileRead</code>. Working set doesn't fit in memory.</p>
+        <pre data-lang="sql">SELECT sum(heap_blks_hit) / nullif(sum(heap_blks_hit)+sum(heap_blks_read),0) AS cache_hit_ratio
+FROM pg_statio_user_tables;   -- want > 0.99 for OLTP</pre>
+        <p><strong>Fix.</strong> Raise <code>shared_buffers</code> (~25% of RAM is a common start); ensure
+        the OS page cache has room; faster disks (SSD/NVMe, more IOPS); reduce the data scanned (indexes,
+        partitioning). <code>effective_cache_size</code> should reflect total cache so the planner prefers
+        index scans.</p>
+
+        <h2 id="config">Key config knobs</h2>
+        <table>
+          <thead><tr><th>Setting</th><th>What it controls</th></tr></thead>
+          <tbody>
+            <tr><td><code>shared_buffers</code></td><td>Postgres's own page cache (~25% RAM).</td></tr>
+            <tr><td><code>work_mem</code></td><td>Per-sort/hash memory before spilling to disk. Per operation — careful × connections.</td></tr>
+            <tr><td><code>effective_cache_size</code></td><td>Planner's estimate of total cache → index-scan bias.</td></tr>
+            <tr><td><code>max_connections</code></td><td>Hard cap (use a pooler instead of cranking this).</td></tr>
+            <tr><td><code>random_page_cost</code></td><td>Lower (e.g. 1.1) on SSD so the planner uses indexes.</td></tr>
+            <tr><td><code>statement_timeout</code> / <code>lock_timeout</code> / <code>idle_in_transaction_session_timeout</code></td><td>Guardrails against runaway queries, lock waits, and zombie transactions.</td></tr>
+          </tbody>
+        </table>
 
         <h2 id="replag">Replication lag / stale reads</h2>
-        <pre data-lang="sql">SELECT now() - pg_last_xact_replay_timestamp() AS lag;</pre>
-        <p><strong>Fix.</strong> Route read-after-write to primary; fix replica resource/network limits.</p>
+        <p><strong>Symptom.</strong> Read replica returns data the primary already has; "row not found"
+        right after a write that was routed to a replica; failover risks losing recent writes.</p>
+        <pre data-lang="sql">-- on the primary: per-replica lag in bytes
+SELECT client_addr, state, sent_lsn, replay_lsn,
+       pg_wal_lsn_diff(sent_lsn, replay_lsn) AS replay_lag_bytes
+FROM pg_stat_replication;
+
+-- on a replica: time lag
+SELECT now() - pg_last_xact_replay_timestamp() AS replay_lag;</pre>
+        <p><strong>Causes &amp; fix.</strong> Replica underpowered (CPU/disk) or network-saturated; a big
+        write burst; long queries on the replica pausing replay (<code>max_standby_streaming_delay</code>).
+        Fix: route read-after-write to the primary; size the replica; for failover safety consider
+        synchronous replication on critical writes (trades latency for zero data loss).</p>
+
+        <h2 id="monitoring">The monitoring views to know</h2>
+        <table>
+          <thead><tr><th>View / function</th><th>Tells you</th></tr></thead>
+          <tbody>
+            <tr><td><code>pg_stat_activity</code></td><td>Live sessions: state, query, wait_event, age.</td></tr>
+            <tr><td><code>pg_stat_statements</code></td><td>Cumulative query cost ranking.</td></tr>
+            <tr><td><code>pg_stat_user_tables</code></td><td>Seq vs index scans, dead tuples, last vacuum.</td></tr>
+            <tr><td><code>pg_stat_user_indexes</code></td><td>Index usage (find unused).</td></tr>
+            <tr><td><code>pg_statio_user_tables</code></td><td>Cache hit vs disk reads.</td></tr>
+            <tr><td><code>pg_stat_replication</code></td><td>Replica state + lag.</td></tr>
+            <tr><td><code>pg_locks</code> + <code>pg_blocking_pids()</code></td><td>Who holds/waits on locks.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="triage">Triage flow</h2>
+        <ol>
+          <li><strong>What's happening now?</strong> <code>pg_stat_activity</code> — long/active queries,
+            their <code>wait_event</code>, idle-in-transaction count.</li>
+          <li><strong>Blocked?</strong> <code>pg_blocking_pids()</code> — find the blocker; decide to wait
+            or <code>pg_terminate_backend()</code> it.</li>
+          <li><strong>Slow query?</strong> <code>EXPLAIN (ANALYZE, BUFFERS)</code> — estimate vs actual,
+            Seq Scan, sort spill. Add index / ANALYZE / raise work_mem.</li>
+          <li><strong>Slow over time?</strong> Bloat + autovacuum (<code>n_dead_tup</code>, last_autovacuum),
+            cache hit ratio.</li>
+          <li><strong>Too many connections?</strong> Pooler + idle-in-transaction timeout.</li>
+        </ol>
 
         <h2 id="ref">Quick reference</h2>
-        <pre data-lang="sql">SELECT * FROM pg_stat_activity ORDER BY query_start;
-EXPLAIN (ANALYZE, BUFFERS) &lt;query&gt;;
-SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10;
--- SELECT pg_terminate_backend(pid);</pre>
+        <pre data-lang="sql">-- live activity + waits
+SELECT pid, now()-query_start AS dur, state, wait_event, left(query,60)
+FROM pg_stat_activity WHERE state<>'idle' ORDER BY dur DESC;
+-- worst cumulative queries
+SELECT calls, total_exec_time, mean_exec_time, query
+FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;
+-- blocking tree
+SELECT pg_blocking_pids(pid), pid, query FROM pg_stat_activity
+WHERE wait_event_type='Lock';
+-- bloat / vacuum
+SELECT relname, n_dead_tup, last_autovacuum FROM pg_stat_user_tables
+ORDER BY n_dead_tup DESC LIMIT 20;
+-- cache hit ratio
+SELECT sum(heap_blks_hit)/nullif(sum(heap_blks_hit)+sum(heap_blks_read),0)
+FROM pg_statio_user_tables;
+-- plan
+EXPLAIN (ANALYZE, BUFFERS) <query>;
+-- terminate / cancel
+SELECT pg_cancel_backend(pid);     -- cancel current query (gentle)
+SELECT pg_terminate_backend(pid);  -- kill the connection</pre>
+
+        <h2 id="qa">Rapid-fire Q&amp;A</h2>
+        <ul class="cheat-qa">
+          <li><span class="q">Why does Postgres bloat?</span><span class="a">MVCC: updates/deletes leave dead tuples. VACUUM reclaims them; if autovacuum can't keep up (or a long transaction pins the xmin horizon), tables/indexes bloat.</span></li>
+          <li><span class="q">VACUUM vs VACUUM FULL?</span><span class="a">VACUUM reclaims space for reuse online. VACUUM FULL rewrites the table under an ACCESS EXCLUSIVE lock — blocks everything. Use pg_repack instead.</span></li>
+          <li><span class="q">Why is "idle in transaction" dangerous?</span><span class="a">It holds a snapshot + possibly locks, blocking vacuum and other writers. Set idle_in_transaction_session_timeout.</span></li>
+          <li><span class="q">How do you fix too-many-connections?</span><span class="a">A pooler (PgBouncer transaction mode), not a huge max_connections — each connection is a process with memory cost.</span></li>
+          <li><span class="q">First thing on a slow query?</span><span class="a">EXPLAIN (ANALYZE, BUFFERS); compare estimated vs actual rows; look for Seq Scan / sort spill. Stale stats → ANALYZE.</span></li>
+          <li><span class="q">How are deadlocks handled?</span><span class="a">Postgres auto-detects and kills one transaction (40P01). Lock in consistent order, keep txns short, retry the loser.</span></li>
+          <li><span class="q">What is transaction ID wraparound?</span><span class="a">XIDs are 32-bit; VACUUM must freeze old rows. If freezing falls behind, Postgres stops writes to prevent data loss. Keep autovacuum healthy.</span></li>
+          <li><span class="q">Multi-AZ/standby vs read replica?</span><span class="a">Sync standby = HA failover (durability). Async read replica = scale reads but can serve stale data (replay lag).</span></li>
+          <li><span class="q">cancel vs terminate backend?</span><span class="a">pg_cancel_backend cancels the running query; pg_terminate_backend kills the whole connection.</span></li>
+        </ul>
 
       </div>
 

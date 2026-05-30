@@ -707,4 +707,5 @@ const RESOURCES = [
 
   // ── awesome lists ──
   { path: "posts/awesome-cv.html", kind: "awesome", cat: "awesome", title: "Awesome Computer Vision — Curated Resources", tags: ["computer-vision","cv","deep-learning","detection","segmentation","diffusion","clip","awesome","resources"], excerpt: "Curated CV path: courses (CS231n/fast.ai), books (Szeliski/HZ), frameworks (PyTorch/OpenCV/timm/Detectron2/YOLO), datasets (ImageNet/COCO), and canonical papers across backbones, detection, segmentation, generative, 3D, and vision-language." },
+  { path: "posts/awesome-rl.html", kind: "awesome", cat: "awesome", title: "Awesome Reinforcement Learning — Curated Resources", tags: ["reinforcement-learning","rl","deep-rl","ppo","sac","dqn","rlhf","offline-rl","awesome","resources"], excerpt: "Curated RL path: courses (Silver/Spinning Up/CS285), books (Sutton & Barto), libraries (SB3/CleanRL/RLlib/TRL), environments (Gymnasium/MuJoCo/D4RL), and landmark papers across value-based, policy-gradient, model-based, offline, multi-agent, and RLHF." },
 ];

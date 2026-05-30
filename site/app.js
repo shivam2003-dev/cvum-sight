@@ -42,7 +42,7 @@
 
   // resource card (cheatsheets / debug guides) — links by full path
   function renderResourceCard(r) {
-    var badge = r.kind === "cheatsheet" ? "cheatsheet" : r.kind === "toolbox" ? "toolbox" : r.kind === "awesome" ? "awesome list" : r.kind === "extra" ? "resource list" : "debug guide";
+    var badge = r.kind === "cheatsheet" ? "cheatsheet" : r.kind === "toolbox" ? "toolbox" : r.kind === "awesome" ? "awesome list" : r.kind === "extra" ? "resource list" : r.kind === "interview" ? "interview Q&A" : "debug guide";
     return `<a href="${escapeHtml(r.path)}" class="post-card">
       <span class="cat">${escapeHtml(badge)}</span>
       <h3>${escapeHtml(r.title)}</h3>

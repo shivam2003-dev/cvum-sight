@@ -38,7 +38,7 @@
 
       <div class="post-header">
         <p class="meta">CHEATSHEET &middot; GENAI &middot; GPU PERFORMANCE</p>
-        <h1>GPU Optimization — The Engineer's Cheatsheet.</h1>
+        <h1>GPU Optimization — The Deep Cheatsheet.</h1>
         <div class="tag-row">
           <span class="tag fill">gpu</span>
           <span class="tag">cuda</span>
@@ -50,152 +50,237 @@
       <div class="post-body">
 
         <blockquote>
-          Almost every "slow GPU" is one of three things: you're <strong>memory-bandwidth bound</strong> (not
-          compute), you're <strong>starving the GPU</strong> (data pipeline / CPU / sync), or you <strong>never
-          enabled the fast path</strong> (Tensor Cores, fused kernels, the right dtype). Find which one before
-          you touch a kernel.
+          Almost every "slow GPU" reduces to one of three diagnoses: you're <strong>memory-bandwidth bound</strong>
+          (waiting on HBM, not math), you're <strong>starving the GPU</strong> (data pipeline / CPU / host-device
+          syncs leave it idle), or you <strong>never enabled the fast path</strong> (Tensor Cores, fused kernels,
+          the right dtype). This sheet goes layer by layer — hardware, memory, precision, kernels, the data
+          pipeline, multi-GPU, and the profilers that tell you which diagnosis is true. Measure first; optimize
+          the thing the profiler points at, never your guess.
         </blockquote>
 
-        <h2 id="model">1. The mental model</h2>
+        <h2 id="hardware">1. GPU hardware model</h2>
+        <p>A GPU is a throughput machine. It hides latency with massive parallelism instead of big caches and
+        out-of-order execution like a CPU.</p>
         <ul>
-          <li>A GPU is many <strong>SMs</strong> (streaming multiprocessors). Each runs threads in groups of 32 — a <strong>warp</strong>. Thousands of warps hide latency by swapping in when one stalls on memory.</li>
-          <li>Throughput machine, not latency machine. You win by keeping it <strong>fed and busy</strong>, not by making one op fast.</li>
-          <li>The real wall is usually <strong>HBM bandwidth</strong> (moving data to/from global memory), not FLOPs. Modern accelerators have far more compute than bandwidth.</li>
+          <li><strong>SM (Streaming Multiprocessor)</strong> — the basic compute block. A data-center GPU has 100+ SMs. Each holds many CUDA cores, Tensor Cores, register file, shared memory, warp schedulers.</li>
+          <li><strong>Warp</strong> — 32 threads executed in lockstep (SIMT). The scheduler issues one instruction for the whole warp. If threads in a warp take different branches (<strong>warp divergence</strong>), both paths run serially — wasted lanes.</li>
+          <li><strong>Thread block</strong> — group of warps that run on one SM and can share <strong>shared memory</strong> + synchronize (<code>__syncthreads()</code>). The grid is all blocks of a kernel launch.</li>
+          <li><strong>Latency hiding</strong> — when one warp stalls on a memory load, the scheduler swaps in another ready warp. Enough resident warps (high <strong>occupancy</strong>) → the memory latency is hidden and the SM stays busy.</li>
+          <li><strong>CUDA core vs Tensor Core</strong> — CUDA cores do scalar/vector FP32/INT ops; Tensor Cores do small matrix-multiply-accumulate tiles per instruction and deliver the bulk of DL FLOPs at low precision.</li>
         </ul>
+        <p>Why it matters: you optimize by <em>keeping SMs fed</em> (enough parallel work, enough warps, no
+        stalls) — not by making any single thread fast.</p>
 
-        <h2 id="memory">2. Memory hierarchy (fast → slow)</h2>
+        <h2 id="memory">2. Memory hierarchy &amp; bandwidth</h2>
         <table>
-          <thead><tr><th>Tier</th><th>What / cost</th></tr></thead>
+          <thead><tr><th>Tier</th><th>Scope</th><th>Speed / size</th><th>Notes</th></tr></thead>
           <tbody>
-            <tr><td><strong>Registers</strong></td><td>Per-thread, fastest. Spilling to "local" memory (really global) kills perf.</td></tr>
-            <tr><td><strong>Shared memory / L1</strong></td><td>Per-SM scratchpad (~tens–100s KB). The key to tiling — reuse data across a block.</td></tr>
-            <tr><td><strong>L2 cache</strong></td><td>Chip-wide, a few MB. Shared by all SMs.</td></tr>
-            <tr><td><strong>Global (HBM)</strong></td><td>GBs, high bandwidth but high latency. The bottleneck for most kernels.</td></tr>
+            <tr><td><strong>Registers</strong></td><td>Per-thread</td><td>Fastest, tiny</td><td>Spilling → "local memory" (really global) tanks perf.</td></tr>
+            <tr><td><strong>Shared / L1</strong></td><td>Per-SM</td><td>~Very fast, 10s–100s KB</td><td>Software-managed scratchpad. The lever for tiling/reuse.</td></tr>
+            <tr><td><strong>L2 cache</strong></td><td>Chip-wide</td><td>Fast, a few–tens MB</td><td>Shared by all SMs.</td></tr>
+            <tr><td><strong>Global (HBM)</strong></td><td>Device</td><td>High BW, high latency, 10s–100s GB</td><td>The bottleneck for most DL kernels.</td></tr>
+            <tr><td><strong>Host (system RAM)</strong></td><td>CPU</td><td>Crosses PCIe/NVLink-C2C</td><td>Transfers are slow; overlap or avoid.</td></tr>
           </tbody>
         </table>
-        <p><strong>Coalescing:</strong> threads in a warp should read <em>contiguous</em> addresses so loads
-        merge into a few wide transactions. Strided/scattered access wastes bandwidth.</p>
-
-        <h2 id="bound">3. Memory-bound vs compute-bound (roofline)</h2>
         <ul>
-          <li><strong>Arithmetic intensity</strong> = FLOPs ÷ bytes moved. Low intensity (elementwise add, layernorm, activation) → <strong>memory-bound</strong>. High intensity (big GEMM, conv) → <strong>compute-bound</strong>.</li>
-          <li>Memory-bound kernels are fixed by <strong>fusion</strong> (do more per byte loaded) and better access patterns — <em>not</em> faster math.</li>
-          <li>Compute-bound kernels are fixed by <strong>Tensor Cores</strong>, better tiling, and lower precision.</li>
+          <li><strong>Coalescing</strong> — threads in a warp should touch <em>contiguous</em> addresses so the hardware merges them into a few wide transactions. Strided / scattered / misaligned access multiplies the number of transactions → wasted bandwidth.</li>
+          <li><strong>Bank conflicts</strong> — shared memory is split into banks; if threads in a warp hit the same bank with different addresses, accesses serialize. Pad shared arrays to avoid it.</li>
+          <li><strong>Tiling</strong> — load a block of data into shared memory once, reuse it across many threads, write back once. This is how a good GEMM turns a memory problem into a compute problem.</li>
+        </ul>
+
+        <h2 id="roofline">3. The roofline: memory-bound vs compute-bound</h2>
+        <ul>
+          <li><strong>Arithmetic intensity (AI)</strong> = FLOPs performed ÷ bytes moved from HBM. It's the x-axis of the roofline model.</li>
+          <li>Low AI → <strong>memory-bound</strong>: you finish the math long before the data arrives. Examples: elementwise add, activation (GELU/ReLU), layernorm/RMSNorm, softmax, dropout, embedding lookup, attention.</li>
+          <li>High AI → <strong>compute-bound</strong>: enough math per byte to saturate the ALUs. Examples: large GEMMs (the QKV/MLP projections), big convolutions.</li>
+          <li>The roofline: achievable FLOPs = min(peak FLOPs, AI × peak bandwidth). Below the ridge point you're bandwidth-limited; raising FLOPs does nothing.</li>
         </ul>
         <div class="gotcha"><span class="gotcha-label">most ML ops are memory-bound</span>
-          Attention, layernorm, GELU, softmax, residual adds — all memory-bound. That's why FlashAttention
-          (fusion + no materialized N×N matrix) is a huge win and why <code>torch.compile</code> fuses
-          pointwise chains. Stacking more FLOPs doesn't help these.</div>
+          Attention, norms, activations, residual adds, elementwise scaling — all low AI, all bandwidth-bound.
+          That's exactly why <strong>fusion</strong> (do more work per byte loaded) and <strong>FlashAttention</strong>
+          (never write the N×N matrix to HBM) are the big wins. Adding FLOPs to a memory-bound kernel changes
+          nothing — you must cut bytes moved.</div>
 
-        <h2 id="precision">4. Precision — pick the right dtype</h2>
+        <h2 id="precision">4. Numeric precision — pick the right dtype</h2>
         <table>
-          <thead><tr><th>dtype</th><th>When / why</th></tr></thead>
+          <thead><tr><th>dtype</th><th>Bits (E/M)</th><th>When / why</th></tr></thead>
           <tbody>
-            <tr><td><strong>FP32</strong></td><td>Default but slow. Rarely needed end-to-end for DL.</td></tr>
-            <tr><td><strong>TF32</strong></td><td>Ampere+ auto-mode for matmuls — ~FP32 accuracy, big speedup. Enable it.</td></tr>
-            <tr><td><strong>FP16</strong></td><td>Half memory + Tensor Cores. Narrow range → needs loss scaling.</td></tr>
-            <tr><td><strong>BF16</strong></td><td>Same exponent range as FP32 (no loss scaling), less mantissa. Default for modern training.</td></tr>
-            <tr><td><strong>FP8</strong></td><td>Hopper+/Blackwell. Training &amp; inference with per-tensor/per-block scaling. Biggest throughput, most fragile.</td></tr>
-            <tr><td><strong>INT8/INT4</strong></td><td>Inference quantization (weights and/or activations). Memory + bandwidth win.</td></tr>
+            <tr><td><strong>FP32</strong></td><td>8/23</td><td>Full precision, slow, 4 bytes. Master weights, reductions, loss. Rarely needed for the whole net.</td></tr>
+            <tr><td><strong>TF32</strong></td><td>8/10</td><td>Ampere+ matmul mode: FP32 range, reduced mantissa. ~FP32 accuracy, big speedup. Opt-in.</td></tr>
+            <tr><td><strong>FP16</strong></td><td>5/10</td><td>2 bytes, Tensor Cores. Narrow exponent range → underflow/overflow → needs <strong>loss scaling</strong>.</td></tr>
+            <tr><td><strong>BF16</strong></td><td>8/7</td><td>2 bytes, FP32's exponent range (no loss scaling), fewer mantissa bits. Default for modern training.</td></tr>
+            <tr><td><strong>FP8 (E4M3 / E5M2)</strong></td><td>4/3, 5/2</td><td>1 byte. Hopper/Ada/Blackwell. E4M3 for fwd, E5M2 for grads. Needs per-tensor/block scaling. Max throughput, most fragile.</td></tr>
+            <tr><td><strong>INT8 / INT4</strong></td><td>—</td><td>Inference quantization (weights and/or activations). Memory + bandwidth win; needs calibration.</td></tr>
           </tbody>
         </table>
-        <pre data-lang="python"># PyTorch: enable the fast matmul paths
-import torch
-torch.set_float32_matmul_precision("high")   # TF32 for fp32 matmuls
+        <pre data-lang="python">import torch
+# Turn on the fast matmul paths (Ampere+)
+torch.set_float32_matmul_precision("high")     # TF32 for fp32 matmuls
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
-# Mixed precision (BF16 preferred on Ampere+)
+# Autocast: ops run in low precision where safe, FP32 where needed
 with torch.autocast("cuda", dtype=torch.bfloat16):
-    out = model(x)</pre>
+    logits = model(x)
+    loss = loss_fn(logits, y)
+# FP16 path needs a GradScaler; BF16 usually does not
+scaler = torch.cuda.amp.GradScaler(enabled=(dtype==torch.float16))
+scaler.scale(loss).backward(); scaler.step(opt); scaler.update()</pre>
+        <p><strong>Mantissa vs exponent intuition:</strong> exponent bits = dynamic range (how big/small);
+        mantissa bits = precision (how fine). BF16 keeps range (stable) but is coarse; FP16 is finer but can
+        overflow — hence loss scaling. Reductions (sums of many terms) should accumulate in FP32 even when
+        inputs are BF16.</p>
 
         <h2 id="tensorcores">5. Tensor Cores — the fast path</h2>
         <ul>
-          <li>Dedicated matrix-multiply-accumulate units. They do the heavy GEMMs in FP16/BF16/FP8/INT8 — orders faster than CUDA cores in FP32.</li>
-          <li>They engage only with low precision <em>and</em> friendly shapes. Keep matmul dimensions multiples of <strong>8 (FP16)</strong> / <strong>16</strong> — pad vocab sizes, hidden dims, batch.</li>
-          <li>Check they're actually used: Nsight Compute "Tensor" pipe utilization, or torch profiler kernel names (<code>*s16816gemm*</code>, <code>*_tensor_*</code>).</li>
+          <li>Dedicated units doing a small matrix multiply-accumulate (e.g. 16×16 tiles) per instruction. They deliver an order of magnitude more throughput than CUDA cores for GEMMs.</li>
+          <li>They engage only with (a) a supported low precision (FP16/BF16/FP8/INT8/TF32) <em>and</em> (b) friendly shapes. Keep matmul dims multiples of <strong>8</strong> (FP16/BF16) or <strong>16</strong> — pad vocab size, hidden dim, sequence, batch.</li>
+          <li>Verify they're used: Nsight Compute "Tensor" pipe utilization, or torch profiler kernel names containing <code>s16816gemm</code>, <code>_tensor_</code>, <code>hmma</code>, <code>imma</code>.</li>
         </ul>
+        <div class="gotcha"><span class="gotcha-label">odd dimensions silently kill Tensor Cores</span>
+          A vocab of 50257 or a hidden dim not divisible by 8 forces a slow fallback or wastes lanes. Pad to
+          the next multiple of 8/16 (e.g. vocab → 50304). Free speedup, no accuracy change.</div>
 
-        <h2 id="fusion">6. Fusion &amp; kernels</h2>
+        <h2 id="fusion">6. Kernel fusion &amp; launch overhead</h2>
         <ul>
-          <li><strong>Kernel launch overhead</strong> is real (~µs each). Thousands of tiny ops = death by launches. Fuse them.</li>
-          <li><code>torch.compile(model)</code> — fuses pointwise chains, picks better kernels, reduces launches. First win to try.</li>
-          <li><strong>FlashAttention</strong> — fused, IO-aware attention; never materializes the N×N score matrix → memory and speed win, longer contexts.</li>
-          <li><strong>CUDA Graphs</strong> — capture a static sequence of launches, replay as one. Removes per-launch CPU overhead for small-batch inference.</li>
-          <li>Use fused optimizers (<code>fused=True</code> AdamW), fused layernorm/RMSNorm (apex / Triton).</li>
+          <li>Each kernel launch costs a few microseconds of CPU + driver overhead and a round trip of intermediate tensors to HBM. Thousands of tiny ops = death by a thousand launches <em>and</em> a thousand HBM round-trips.</li>
+          <li><strong><code>torch.compile(model)</code></strong> — TorchInductor traces the graph, fuses pointwise chains, picks better kernels (often Triton), reduces launches. First thing to try; use <code>mode="max-autotune"</code> for inference.</li>
+          <li><strong>FlashAttention</strong> — fused, IO-aware attention. Tiles Q/K/V in SRAM, computes softmax online, never materializes the N×N score matrix in HBM → memory drops from O(N²) to O(N), and it's faster. Enables long context.</li>
+          <li><strong>CUDA Graphs</strong> — capture a fixed sequence of launches once, replay as a single graph launch. Removes per-kernel CPU overhead; big for small-batch inference / RL rollouts where launch overhead dominates.</li>
+          <li><strong>Fused kernels</strong> — fused AdamW (<code>fused=True</code>), fused LayerNorm/RMSNorm, fused dropout+add+norm (apex / Triton / xFormers).</li>
+        </ul>
+        <pre data-lang="python">model = torch.compile(model)                 # fuse + autotune
+# inference-only graph capture (static shapes)
+g = torch.cuda.CUDAGraph()
+with torch.cuda.graph(g): static_out = model(static_in)
+g.replay()                                   # replays all launches as one</pre>
+
+        <h2 id="occupancy">7. Occupancy &amp; launch configuration</h2>
+        <ul>
+          <li><strong>Occupancy</strong> = active warps per SM ÷ max warps per SM. Limited by registers/thread, shared memory/block, and block size. Higher occupancy = more warps to hide latency — but it's not the only goal.</li>
+          <li>More occupancy helps memory-bound kernels (more in-flight loads to hide latency). Compute-bound kernels can run great at <em>lower</em> occupancy if each thread does enough independent work (instruction-level parallelism).</li>
+          <li>Register spilling drops occupancy and adds local-memory traffic — watch it in ncu.</li>
+          <li>You rarely tune this by hand in PyTorch (the libraries do), but you read it in profiles to explain why a custom/Triton kernel is slow.</li>
         </ul>
 
-        <h2 id="pipeline">7. Don't starve the GPU</h2>
+        <h2 id="memcap">8. Fit a bigger model / batch (memory techniques)</h2>
+        <table>
+          <thead><tr><th>Technique</th><th>Trades</th><th>Use</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Mixed precision (BF16)</strong></td><td>~½ memory for weights/grads/activations</td><td>Always, on Ampere+.</td></tr>
+            <tr><td><strong>Gradient checkpointing</strong></td><td>~33% more compute for ~√N activation memory</td><td>Long sequences, deep nets.</td></tr>
+            <tr><td><strong>Gradient accumulation</strong></td><td>More steps for a big effective batch</td><td>Big batch on small VRAM.</td></tr>
+            <tr><td><strong>FSDP / ZeRO sharding</strong></td><td>Comms for memory (shard params/grads/opt)</td><td>Model too big to replicate.</td></tr>
+            <tr><td><strong>8-bit optimizer</strong></td><td>Tiny quality risk for ½–¾ optimizer memory</td><td>bitsandbytes Adam.</td></tr>
+            <tr><td><strong>CPU/NVMe offload</strong></td><td>Big slowdown for huge capacity</td><td>Last resort (ZeRO-Offload).</td></tr>
+            <tr><td><strong>Quantization (INT8/4)</strong></td><td>Quality vs memory/bandwidth</td><td>Inference, QLoRA base.</td></tr>
+          </tbody>
+        </table>
+        <pre data-lang="bash"># reduce fragmentation OOMs ("X free but can't allocate Y")
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True</pre>
+        <pre data-lang="python">from torch.utils.checkpoint import checkpoint
+out = checkpoint(block, x, use_reentrant=False)   # recompute in backward</pre>
+
+        <h2 id="pipeline">9. Don't starve the GPU (data pipeline)</h2>
         <pre data-lang="python">DataLoader(ds, batch_size=B,
-           num_workers=8, pin_memory=True,
-           persistent_workers=True, prefetch_factor=4)
-# move to device async, overlap with compute
-x = x.to("cuda", non_blocking=True)</pre>
+           num_workers=8,            # CPU workers feeding batches
+           pin_memory=True,          # page-locked host mem → faster H2D
+           persistent_workers=True,  # don't respawn each epoch
+           prefetch_factor=4)        # batches queued ahead per worker
+x = x.to("cuda", non_blocking=True) # async copy, overlaps with compute</pre>
         <ul>
-          <li>If <code>nvidia-smi</code> shows low GPU-util with spiky pattern → input pipeline or CPU preprocessing is the bottleneck, not the model.</li>
-          <li>Avoid host&harr;device <strong>syncs</strong> in the hot loop: <code>.item()</code>, <code>.cpu()</code>, <code>print(loss)</code>, <code>tensor.numpy()</code>, Python <code>if</code> on a GPU value — each forces a stall.</li>
-          <li>Keep tensors on-GPU; accumulate metrics on device and sync once per N steps.</li>
+          <li>Low + spiky GPU-util → the feeder is the bottleneck, not the model. Raise workers, prefetch, move CPU preprocessing off the hot path (or onto the GPU with DALI/Kornia).</li>
+          <li><strong>Host&harr;device syncs</strong> stall the pipeline: <code>.item()</code>, <code>.cpu()</code>, <code>.numpy()</code>, <code>print(loss)</code>, <code>tensor.tolist()</code>, a Python <code>if</code> on a GPU scalar, <code>torch.cuda.synchronize()</code> — each forces the CPU to wait for the GPU, breaking overlap.</li>
+          <li>Keep metrics on-GPU; accumulate and sync once per N steps.</li>
         </ul>
-        <div class="gotcha"><span class="gotcha-label">.item() in the training loop is a silent killer</span>
-          Calling <code>loss.item()</code> every step forces a device sync — the CPU waits for the GPU,
-          breaking overlap. Log every N steps, or stash losses on-GPU and sync in a batch.</div>
+        <div class="gotcha"><span class="gotcha-label">.item() every step is a silent killer</span>
+          <code>loss.item()</code> in the loop forces a device sync — the CPU blocks until the GPU finishes,
+          destroying compute/transfer overlap. Log every N steps, or stash losses in a GPU tensor and sync in
+          one batch. This alone can be a 20–40% throughput swing.</div>
 
-        <h2 id="memcap">8. Fit a bigger model / batch</h2>
+        <h2 id="streams">10. CUDA streams &amp; async execution</h2>
         <ul>
-          <li><strong>Gradient checkpointing</strong> — recompute activations in backward instead of storing them. Trade compute for memory; fits much larger models.</li>
-          <li><strong>Gradient accumulation</strong> — simulate a big batch with several small forward/backward passes before <code>step()</code>.</li>
-          <li><strong>Activation/optimizer offload</strong> — push states to CPU/NVMe (ZeRO-Offload) when VRAM is tight.</li>
-          <li><code>PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True</code> reduces fragmentation OOMs.</li>
-          <li>Free cache between phases with <code>torch.cuda.empty_cache()</code> (doesn't fix leaks, just fragmentation).</li>
+          <li>Operations on the same <strong>stream</strong> run in order; different streams can overlap. The default stream serializes everything.</li>
+          <li>Use a copy stream to overlap H2D/D2H transfers with compute (prefetch next batch while the current one trains).</li>
+          <li>Events (<code>torch.cuda.Event</code>) time GPU work correctly — wall-clock <code>time.time()</code> around a kernel is wrong because launches are async. Always <code>synchronize()</code> or use events when benchmarking.</li>
         </ul>
+        <pre data-lang="python">start, end = torch.cuda.Event(True), torch.cuda.Event(True)
+start.record(); out = model(x); end.record()
+torch.cuda.synchronize(); print(start.elapsed_time(end), "ms")  # correct GPU timing</pre>
 
-        <h2 id="multi">9. Multi-GPU &amp; communication</h2>
+        <h2 id="multi">11. Multi-GPU &amp; communication</h2>
         <ul>
-          <li><strong>Data parallel (DDP/FSDP)</strong> — each GPU a shard of the batch; gradients all-reduced. FSDP also shards params/optimizer states (ZeRO-style) to fit large models.</li>
-          <li><strong>NCCL</strong> does the collectives (all-reduce, all-gather). Goal: <strong>overlap comms with compute</strong> so the network is hidden.</li>
-          <li>Topology matters: NVLink &gt; PCIe &gt; network. Check <code>nvidia-smi topo -m</code>. Cross-node needs fast fabric (InfiniBand/RoCE) or comms dominates.</li>
-          <li>Tune <code>NCCL_*</code> env (e.g. algorithms, buffer sizes) only after confirming comms is the bottleneck.</li>
+          <li><strong>Data parallel (DDP)</strong> — each GPU a full model + a shard of the batch; gradients all-reduced each step. DDP overlaps the all-reduce with backward by bucketing gradients.</li>
+          <li><strong>FSDP / ZeRO</strong> — shard params/grads/optimizer states; all-gather a layer's params just-in-time for compute, free after. Fits huge models, more comms.</li>
+          <li><strong>Tensor parallel</strong> — split each layer's matmuls across GPUs (needs NVLink, intra-node). <strong>Pipeline parallel</strong> — split layers into stages (cross-node, watch the bubble).</li>
+          <li><strong>NCCL</strong> runs the collectives (all-reduce, all-gather, reduce-scatter). Goal: overlap comms with compute so the network is hidden under math.</li>
+          <li>Topology: NVLink/NVSwitch &gt;&gt; PCIe &gt;&gt; Ethernet. Cross-node needs InfiniBand/RoCE or comms dominates. Check <code>nvidia-smi topo -m</code>.</li>
         </ul>
+        <pre data-lang="bash">nvidia-smi topo -m         # NV# = NVLink hops, PIX/PXB = PCIe, SYS = cross-socket
+export NCCL_DEBUG=INFO     # confirm ring/tree + which transport NCCL chose</pre>
 
-        <h2 id="profile">10. Profiling — measure, don't guess</h2>
-        <pre data-lang="bash">nvidia-smi dmon -s pucvmet      # live: power, util, mem, clocks, throttle
-nvidia-smi -q -d CLOCK,PERFORMANCE  # clocks + throttle reasons
-nsys profile -o out python train.py   # timeline: kernels, gaps, syncs, NCCL
-ncu --set full -k regex:gemm python x.py  # per-kernel: occupancy, mem, pipes</pre>
-        <pre data-lang="python"># PyTorch profiler — find the expensive ops
-from torch.profiler import profile, ProfilerActivity
+        <h2 id="profile">12. Profiling — measure, never guess</h2>
+        <pre data-lang="bash">nvidia-smi dmon -s pucvmet            # live: power util mem clocks throttle
+nvidia-smi -q -d CLOCK,PERFORMANCE    # current clocks + throttle reasons
+nsys profile -o out python train.py   # timeline: kernels, gaps, syncs, NCCL, H2D
+ncu --set full -k regex:gemm python x.py  # one kernel: occupancy, mem%, pipes, stalls</pre>
+        <pre data-lang="python">from torch.profiler import profile, ProfilerActivity, schedule
 with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-             record_shapes=True) as p:
-    model(x)
-print(p.key_averages().table(sort_by="cuda_time_total", row_limit=20))</pre>
-        <ul>
-          <li><strong>Nsight Systems (nsys)</strong> — timeline; spot gaps (starvation), syncs, CPU bottleneck, comms not overlapping.</li>
-          <li><strong>Nsight Compute (ncu)</strong> — single-kernel deep dive; occupancy, memory throughput, Tensor pipe usage, stall reasons.</li>
-        </ul>
+             record_shapes=True, with_stack=True,
+             schedule=schedule(wait=1, warmup=1, active=3)) as p:
+    for _ in range(5): model(x); p.step()
+print(p.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+p.export_chrome_trace("trace.json")   # open in chrome://tracing / perfetto</pre>
+        <table>
+          <thead><tr><th>Symptom in profile</th><th>Diagnosis</th></tr></thead>
+          <tbody>
+            <tr><td>Gaps between kernels on the GPU timeline</td><td>Starvation (data/CPU) or host-device sync</td></tr>
+            <tr><td>Many tiny kernels back-to-back</td><td>Launch overhead → fuse / torch.compile / CUDA graphs</td></tr>
+            <tr><td>High memory throughput, low compute</td><td>Memory-bound → fuse, cut bytes, FlashAttention</td></tr>
+            <tr><td>Low Tensor pipe utilization</td><td>Wrong dtype or bad shapes → BF16 + pad dims</td></tr>
+            <tr><td>NCCL kernels not under compute</td><td>Comms not overlapped → bucketing / topology / stage</td></tr>
+            <tr><td>SM clocks below boost, calm load</td><td>Power/thermal throttle, not your code</td></tr>
+          </tbody>
+        </table>
 
-        <h2 id="ref">11. Quick reference</h2>
-        <pre data-lang="bash">nvidia-smi                          # util, mem, processes, temp, power
-nvidia-smi dmon -s pucvmet          # rolling counters
-nvidia-smi topo -m                  # GPU interconnect topology
-watch -n1 nvidia-smi                # poor man's monitor
+        <h2 id="checklist">13. Optimization checklist (in order)</h2>
+        <ol>
+          <li>Profile a few steps (nsys + torch profiler). Identify: starved, memory-bound, or no fast path?</li>
+          <li>Enable BF16/TF32 + <code>torch.compile</code>. Confirm Tensor Cores engage; pad odd dims.</li>
+          <li>Fix the data pipeline: workers, pin_memory, prefetch; remove <code>.item()</code>/prints from the loop.</li>
+          <li>Use FlashAttention; fuse norms/optimizer.</li>
+          <li>If OOM: BF16 → checkpointing → accumulation → FSDP/ZeRO → offload.</li>
+          <li>Multi-GPU: confirm comms overlaps compute; check topology; tune stage to interconnect.</li>
+          <li>Re-profile. Repeat on the new bottleneck. Stop when you hit a hardware roofline.</li>
+        </ol>
+
+        <h2 id="ref">14. Quick reference</h2>
+        <pre data-lang="bash">nvidia-smi ; nvidia-smi dmon -s pucvmet ; nvidia-smi topo -m
+nvidia-smi -q -d CLOCK,PERFORMANCE      # throttle reasons
+nsys profile -o out python train.py     # timeline
+ncu --set full -k regex:gemm python x.py # per-kernel deep dive
+CUDA_LAUNCH_BLOCKING=1                   # true failing line on async error
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True   # frag OOM
 # PyTorch knobs
 torch.set_float32_matmul_precision("high")
-torch.compile(model)
+torch.compile(model, mode="max-autotune")
 torch.autocast("cuda", dtype=torch.bfloat16)
-torch.utils.checkpoint(...)         # gradient checkpointing
-PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True</pre>
+torch.utils.checkpoint.checkpoint(block, x, use_reentrant=False)</pre>
 
-        <h2 id="qa">12. Interview Q&amp;A</h2>
+        <h2 id="qa">15. Interview Q&amp;A</h2>
         <ul class="cheat-qa">
-          <li><span class="q">Memory-bound vs compute-bound — how do you tell?</span><span class="a">Arithmetic intensity (FLOPs/byte) and the roofline. Profiler shows high memory throughput + low compute (or vice versa). Elementwise/norm/attention = memory-bound; big GEMMs = compute-bound.</span></li>
-          <li><span class="q">GPU-util is 100% but training is slow — why?</span><span class="a">Util just means a kernel is resident, not efficient. Could be a memory-bound kernel saturating bandwidth, tiny kernels with launch overhead, or no Tensor Cores. Profile with nsys/ncu.</span></li>
-          <li><span class="q">GPU-util is low and spiky — why?</span><span class="a">Starvation: data pipeline too slow, CPU preprocessing, host↔device syncs (.item()), or small batch. Fix the feeder, not the model.</span></li>
-          <li><span class="q">BF16 vs FP16 for training?</span><span class="a">BF16 has FP32's exponent range → no loss scaling, more stable. FP16 needs loss scaling to avoid underflow. On Ampere+ default to BF16.</span></li>
-          <li><span class="q">What does FlashAttention actually optimize?</span><span class="a">It's IO-aware: tiles the computation in SRAM and never writes the N×N score matrix to HBM. Removes the memory bottleneck of attention → faster + far less memory → longer context.</span></li>
-          <li><span class="q">How do you fit a model that doesn't fit in VRAM?</span><span class="a">Gradient checkpointing, gradient accumulation, mixed precision, FSDP/ZeRO sharding, optimizer/activation offload to CPU/NVMe, quantization for inference.</span></li>
-          <li><span class="q">Why do matmul dims being multiples of 8/16 matter?</span><span class="a">Tensor Cores need aligned tile shapes; odd dims fall back to slower paths or waste lanes. Pad vocab/hidden/batch.</span></li>
-          <li><span class="q">What is CPU steal / throttling on a GPU box?</span><span class="a">GPUs throttle on power/thermal limits — nvidia-smi shows the clock-throttle reason. Distinct from being compute-bound; check clocks before optimizing code.</span></li>
-          <li><span class="q">How do you hide multi-GPU communication?</span><span class="a">Overlap NCCL all-reduce with backward compute (DDP buckets do this), use NVLink, and ensure cross-node fabric is fast. Confirm in an nsys timeline that comms sits under compute.</span></li>
+          <li><span class="q">Memory-bound vs compute-bound — how do you tell?</span><span class="a">Arithmetic intensity (FLOPs/byte) on the roofline. The profiler shows it: high memory throughput + low compute = memory-bound; ALUs/Tensor pipes saturated = compute-bound. Norms/activations/attention are memory-bound; big GEMMs are compute-bound.</span></li>
+          <li><span class="q">GPU-util is 100% but it's slow — why?</span><span class="a">Util just means a kernel is resident, not that it's efficient. Could be a memory-bound kernel saturating bandwidth, many tiny kernels with launch overhead, no Tensor Cores, or throttled clocks. ncu tells you which.</span></li>
+          <li><span class="q">GPU-util is low and spiky — why?</span><span class="a">Starvation: slow data pipeline, CPU-bound preprocessing, host-device syncs (.item()), or batch too small. Fix the feeder, not the model.</span></li>
+          <li><span class="q">What is coalesced memory access?</span><span class="a">Threads in a warp reading contiguous addresses so the hardware merges them into a few wide HBM transactions. Strided/scattered access multiplies transactions and wastes bandwidth.</span></li>
+          <li><span class="q">Why is occupancy not the only goal?</span><span class="a">It helps hide latency for memory-bound kernels, but a compute-bound kernel with enough instruction-level parallelism per thread can be fast at lower occupancy. Chasing 100% occupancy by shrinking per-thread work can hurt.</span></li>
+          <li><span class="q">BF16 vs FP16 for training?</span><span class="a">BF16 keeps FP32's exponent range → no loss scaling, far fewer overflow NaNs. FP16 is finer-grained but needs dynamic loss scaling. Default to BF16 on Ampere+.</span></li>
+          <li><span class="q">What does FlashAttention actually optimize?</span><span class="a">It's IO-aware: tiles Q/K/V in SRAM and computes softmax online, never writing the N×N score matrix to HBM. Turns attention's memory from O(N²) to O(N) → faster + far less memory → long context.</span></li>
+          <li><span class="q">Why must matmul dims be multiples of 8/16?</span><span class="a">Tensor Cores operate on fixed tile shapes; misaligned dims fall back to slower kernels or waste lanes. Pad vocab/hidden/batch to the next multiple — free speedup.</span></li>
+          <li><span class="q">How do you correctly time a GPU op?</span><span class="a">Launches are async, so wall-clock around a kernel is wrong. Use CUDA events (record/elapsed_time) or torch.cuda.synchronize() before stopping the timer.</span></li>
+          <li><span class="q">How do you hide multi-GPU communication?</span><span class="a">Overlap NCCL all-reduce with backward (DDP gradient buckets do this), use NVLink intra-node and fast fabric cross-node, and pick a ZeRO stage matched to the interconnect. Confirm in an nsys timeline that comms sits under compute.</span></li>
+          <li><span class="q">Throttling vs compute-bound — both look 'maxed'. Difference?</span><span class="a">Throttling = the GPU capped its clocks for power/thermal reasons (visible in nvidia-smi throttle reasons); the silicon could go faster. Compute-bound = clocks are at boost and the ALUs are genuinely saturated. Check clocks before touching code.</span></li>
+          <li><span class="q">CUDA cores vs Tensor Cores?</span><span class="a">CUDA cores do general scalar/vector FP/INT ops; Tensor Cores do small matrix multiply-accumulate tiles at low precision and provide most DL FLOPs. The fast path runs GEMMs on Tensor Cores.</span></li>
         </ul>
 
       </div>

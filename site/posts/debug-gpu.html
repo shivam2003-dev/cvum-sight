@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging GPU & CUDA — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">&larr; Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE &middot; GENAI &middot; GPU PLAYBOOK</p>
+        <h1>Debugging GPU &amp; CUDA Failures.</h1>
+        <div class="tag-row">
+          <span class="tag fill">gpu</span>
+          <span class="tag">cuda</span>
+          <span class="tag">nccl</span>
+          <span class="tag">ml-engineering</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          GPU bugs split into four buckets: <strong>OOM</strong> (out of memory), <strong>underutilization</strong>
+          (GPU idle/slow), <strong>multi-GPU comms</strong> (NCCL hangs), and <strong>environment</strong> (driver /
+          CUDA / version mismatch). Identify the bucket from <code>nvidia-smi</code> + the error string before
+          changing code.</blockquote>
+
+        <h2 id="first">First moves</h2>
+        <pre data-lang="bash">nvidia-smi                       # mem used, util, processes, temp, throttle
+nvidia-smi dmon -s pucvmet       # rolling: power, util, mem, clocks, throttle
+nvidia-smi topo -m               # interconnect (NVLink/PCIe) for multi-GPU
+python -c "import torch;print(torch.__version__,torch.version.cuda,torch.cuda.is_available())"</pre>
+        <div class="gotcha"><span class="gotcha-label">async errors lie about the line number</span>
+          CUDA kernels run asynchronously, so a stack trace often points at the wrong line. Re-run with
+          <code>CUDA_LAUNCH_BLOCKING=1</code> to get the true failing op. For device-side asserts add
+          <code>TORCH_USE_CUDA_DSA=1</code>.</div>
+
+        <h2 id="oom">CUDA out of memory</h2>
+        <p><strong>Symptom.</strong> <code>torch.OutOfMemoryError: CUDA out of memory. Tried to allocate …</code></p>
+        <p><strong>Causes &amp; fixes.</strong></p>
+        <ul>
+          <li><strong>Batch / sequence too big</strong> → lower batch, use gradient accumulation, shorten context.</li>
+          <li><strong>Activations</strong> → enable gradient checkpointing; use mixed precision (BF16).</li>
+          <li><strong>Fragmentation</strong> ("X free but can't allocate Y") → <code>PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True</code>.</li>
+          <li><strong>Cached/leaked tensors</strong> → don't hold references (e.g. appending <code>loss</code> not <code>loss.item()</code>); call <code>torch.cuda.empty_cache()</code> between phases.</li>
+          <li><strong>Eval without no_grad</strong> → wrap inference in <code>torch.no_grad()</code>/<code>inference_mode()</code> (autograd graph eats memory).</li>
+          <li><strong>Inference</strong> → KV cache is the hog: cap context, lower concurrency, quantize weights + KV.</li>
+        </ul>
+        <pre data-lang="bash">nvidia-smi --query-gpu=memory.used,memory.total --format=csv -l 1
+# PyTorch: see what's allocated
+python -c "import torch;print(torch.cuda.memory_summary())"
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True</pre>
+        <div class="gotcha"><span class="gotcha-label">"GPU memory not freed" after a crash</span>
+          A dead process can leave VRAM held. <code>nvidia-smi</code> → find the PID → <code>kill -9</code>.
+          Zombie holding the device after OOM is common in notebooks; restart the kernel.</div>
+
+        <h2 id="util">GPU underutilized / training slow</h2>
+        <p><strong>Symptom.</strong> Low or spiky GPU-util; throughput far below the hardware.</p>
+        <ul>
+          <li><strong>Low + spiky util</strong> → input pipeline starvation. Raise DataLoader <code>num_workers</code>, <code>pin_memory=True</code>, <code>prefetch_factor</code>; move preprocessing off the hot path.</li>
+          <li><strong>Host&harr;device syncs</strong> → remove <code>.item()</code>/<code>.cpu()</code>/<code>print(loss)</code> from the loop; log every N steps. Profile with <code>nsys</code> to see the gaps.</li>
+          <li><strong>100% util but slow</strong> → memory-bound or no Tensor Cores. Enable TF32/BF16, <code>torch.compile</code>, FlashAttention; pad dims to multiples of 8/16. Confirm with <code>ncu</code>.</li>
+          <li><strong>Tiny kernels</strong> → launch overhead; fuse ops or use CUDA graphs.</li>
+        </ul>
+
+        <h2 id="throttle">Clock throttling (slow with no code change)</h2>
+        <pre data-lang="bash">nvidia-smi -q -d CLOCK,PERFORMANCE   # 'Clocks Throttle Reasons'
+nvidia-smi --query-gpu=clocks.sm,temperature.gpu,power.draw --format=csv -l 1</pre>
+        <ul>
+          <li><strong>SW/HW thermal slowdown</strong> → cooling/airflow; clean dust; check inlet temp.</li>
+          <li><strong>SW power cap</strong> → power limit too low (<code>nvidia-smi -pl</code>), PSU/rack budget.</li>
+          <li>Throttling looks like "compute-bound" but it's the hardware capping clocks — check this before optimizing kernels.</li>
+        </ul>
+
+        <h2 id="nccl">Multi-GPU: NCCL hangs &amp; errors</h2>
+        <p><strong>Symptom.</strong> Training stalls at start or first all-reduce; <code>NCCL timeout</code>,
+        <code>watchdog</code> hang, or <code>unhandled system error</code>.</p>
+        <pre data-lang="bash">export NCCL_DEBUG=INFO          # see ring/tree setup + where it stalls
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export NCCL_DEBUG_SUBSYS=ALL</pre>
+        <ul>
+          <li><strong>Hang at init</strong> → mismatched world size / a rank crashed / firewall on the rendezvous port. Check every rank started and <code>MASTER_ADDR</code>/<code>MASTER_PORT</code>.</li>
+          <li><strong>Collective mismatch</strong> → ranks call different ops or shapes (e.g. a conditional that runs on some ranks only). All ranks must hit the same collectives in the same order.</li>
+          <li><strong>Cross-node slow/hang</strong> → wrong interface; set <code>NCCL_SOCKET_IFNAME</code>; enable IB or set <code>NCCL_IB_DISABLE=0</code>. PCIe-only is slow.</li>
+          <li><strong>P2P issues</strong> → try <code>NCCL_P2P_DISABLE=1</code> to isolate (slower but proves the cause).</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">one rank dies, the rest hang</span>
+          If a single rank throws (OOM, bad batch) mid-collective, the others wait at the barrier until the
+          NCCL timeout. The real error is in <em>that</em> rank's log — grep all rank logs for the first
+          traceback, not the timeout.</div>
+
+        <h2 id="env">Environment &amp; driver mismatch</h2>
+        <ul>
+          <li><code>CUDA driver version is insufficient for CUDA runtime</code> → driver older than the CUDA toolkit the build needs. Update driver or use a matching container.</li>
+          <li><code>no kernel image is available</code> → the build doesn't include your GPU's compute capability (<code>sm_XX</code>). Use a wheel/image built for your arch.</li>
+          <li><code>libcudnn / libcublas not found</code> → missing/mismatched CUDA libs; prefer the official PyTorch/CUDA container.</li>
+          <li>Multi-GPU visibility → <code>CUDA_VISIBLE_DEVICES</code> set wrong hides or reorders GPUs.</li>
+        </ul>
+
+        <h2 id="xid">Hardware faults (Xid errors)</h2>
+        <pre data-lang="bash">dmesg -T | grep -i xid          # GPU hardware/driver faults
+nvidia-smi -q | grep -i -A2 "ecc\|retired"   # ECC errors, retired pages</pre>
+        <p>Xid 13/31/43/45 often = app/memory fault; Xid 48/63/64/79 = ECC / fallen-off-bus / hardware.
+        Repeated uncorrectable ECC or "GPU has fallen off the bus" → drain the node and replace the card.</p>
+
+        <h2 id="ref">Quick reference</h2>
+        <pre data-lang="bash">nvidia-smi ; nvidia-smi dmon -s pucvmet ; nvidia-smi topo -m
+CUDA_LAUNCH_BLOCKING=1 python x.py        # real failing line
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True   # frag OOM
+NCCL_DEBUG=INFO TORCH_DISTRIBUTED_DEBUG=DETAIL     # comms
+nvidia-smi -q -d CLOCK,PERFORMANCE        # throttle reasons
+dmesg -T | grep -i xid                    # hardware faults
+python -c "import torch;print(torch.cuda.memory_summary())"</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../debug-guides.html">&larr; Debug Guides</a>
+        <a href="debug-llm-inference.html">next: LLM Inference &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

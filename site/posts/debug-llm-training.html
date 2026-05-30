@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging LLM Training — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">&larr; Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE &middot; GENAI &middot; TRAINING PLAYBOOK</p>
+        <h1>Debugging LLM &amp; Model Training.</h1>
+        <div class="tag-row">
+          <span class="tag fill">training</span>
+          <span class="tag">distributed</span>
+          <span class="tag">nan</span>
+          <span class="tag">ml-engineering</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Training failures fall into five families: <strong>loss is wrong</strong> (NaN / diverging / not
+          decreasing), <strong>OOM</strong>, <strong>too slow</strong> (low MFU), <strong>distributed hangs</strong>,
+          and <strong>can't reproduce / resume</strong>. Watch <em>loss, grad-norm, LR, and tokens/sec</em> —
+          they tell you which family before you dig.</blockquote>
+
+        <h2 id="nan">Loss → NaN / Inf</h2>
+        <p><strong>Symptom.</strong> Loss becomes <code>nan</code>/<code>inf</code>, often after a grad-norm spike.</p>
+        <ul>
+          <li><strong>LR too high / no warmup</strong> → add warmup, lower peak LR. Most common cause.</li>
+          <li><strong>No gradient clipping</strong> → clip global grad-norm (1.0). A spike precedes the NaN.</li>
+          <li><strong>FP16 overflow</strong> → switch to <strong>BF16</strong> (wider range, no loss scaling), or fix the dynamic loss scaler.</li>
+          <li><strong>Bad data</strong> → a corrupt sample, inf/NaN in inputs, empty sequence, or label out of range. Inspect the exact batch at the failing step.</li>
+          <li><strong>Numerics in custom layers</strong> → log(0), divide-by-zero, sqrt of negative, unstable softmax; add epsilons.</li>
+        </ul>
+        <pre data-lang="python">torch.autograd.set_detect_anomaly(True)   # find the op that makes NaN (slow)
+# log the early-warning signal
+print(step, loss.item(), torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0).item())</pre>
+        <div class="gotcha"><span class="gotcha-label">grad-norm is your smoke alarm</span>
+          Plot grad-norm. A sudden spike one step before the NaN tells you it's an optimization blow-up
+          (LR/clip/precision), not a data bug. A NaN with flat grad-norm points at a bad sample or a layer
+          numerics bug instead.</div>
+
+        <h2 id="noprogress">Loss not decreasing</h2>
+        <ul>
+          <li><strong>LR too low / too high</strong> → run an LR range test; too low crawls, too high bounces.</li>
+          <li><strong>Data/label bug</strong> → shuffled labels, wrong loss masking (e.g. not masking prompt tokens in SFT), targets shifted wrong. Overfit a single batch first — if it can't, it's a bug, not tuning.</li>
+          <li><strong>Frozen params</strong> → check <code>requires_grad</code>; verify the optimizer actually has the params (common with LoRA/PEFT wiring).</li>
+          <li><strong>Bad init / no normalization</strong> → check init scheme, layernorm placement.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">overfit one batch — the fastest sanity check</span>
+          Before scaling, train on a single batch repeatedly. Loss should drop to ~0. If it can't memorize one
+          batch, the bug is in the model/loss/data wiring — no hyperparameter will save it.</div>
+
+        <h2 id="oom">OOM during training</h2>
+        <ul>
+          <li><strong>Activations</strong> dominate → gradient checkpointing; reduce batch/seq; BF16.</li>
+          <li><strong>Optimizer states</strong> (Adam ≈ 12 B/param) → FSDP/ZeRO sharding; 8-bit Adam; CPU offload.</li>
+          <li><strong>OOM only in backward / later step</strong> → fragmentation or accumulation holding graphs; <code>expandable_segments:True</code>, don't retain the graph.</li>
+          <li><strong>OOM at validation</strong> → wrap eval in <code>torch.no_grad()</code>.</li>
+          <li>Effective big batch without VRAM → gradient accumulation.</li>
+        </ul>
+
+        <h2 id="slow">Training too slow (low MFU)</h2>
+        <ul>
+          <li><strong>Data starvation</strong> → more DataLoader workers, prefetch, pin_memory, sequence packing to kill padding waste.</li>
+          <li><strong>Host&harr;device syncs</strong> → remove <code>.item()</code>/prints from the hot loop; log every N steps.</li>
+          <li><strong>No fast path</strong> → BF16/TF32, <code>torch.compile</code>, FlashAttention, fused optimizer; pad dims to multiples of 8/16.</li>
+          <li><strong>Comms-bound</strong> (multi-GPU) → ZeRO stage too high for the interconnect, or no compute/comms overlap. Lower the stage if it still fits; check NVLink vs PCIe with <code>nvidia-smi topo -m</code>.</li>
+          <li>Profile a few steps with <code>nsys</code> — look for gaps (starvation), syncs, and NCCL not overlapping.</li>
+        </ul>
+
+        <h2 id="hang">Distributed hang</h2>
+        <p><strong>Symptom.</strong> Run freezes (often at start or first all-reduce); no progress, no crash.</p>
+        <pre data-lang="bash">export NCCL_DEBUG=INFO
+export TORCH_DISTRIBUTED_DEBUG=DETAIL    # flags collective mismatches</pre>
+        <ul>
+          <li><strong>Collective mismatch</strong> → ranks run different code paths (a conditional, uneven batches, logging only on rank 0 inside a collective). All ranks must call the same collectives in the same order.</li>
+          <li><strong>Uneven data</strong> → last batch differs per rank → one rank does an extra/short step. Use <code>DistributedSampler</code>; drop_last or the <code>join()</code> context.</li>
+          <li><strong>A rank died silently</strong> → an OOM/exception on one rank leaves the rest at the barrier until timeout. The real traceback is in that rank's log — search all of them.</li>
+          <li><strong>Init hang</strong> → wrong <code>MASTER_ADDR/PORT</code>, world size, or a blocked rendezvous port.</li>
+        </ul>
+
+        <h2 id="resume">Can't reproduce / resume</h2>
+        <ul>
+          <li><strong>Resume restarts the optimizer</strong> → you saved weights but not optimizer state (Adam momentum/variance) or the LR-scheduler/step. Checkpoint all of them.</li>
+          <li><strong>Data position lost</strong> → save the sampler/data iterator state too, or you re-see the same early data.</li>
+          <li><strong>Nondeterminism</strong> → set seeds, <code>torch.use_deterministic_algorithms(True)</code>; note some CUDA kernels remain nondeterministic and that's expected.</li>
+          <li><strong>Checkpoint cadence</strong> → long runs hit node failures; checkpoint often and test the resume path before you need it.</li>
+        </ul>
+
+        <h2 id="ref">Quick reference</h2>
+        <pre data-lang="bash"># health signals to log every run
+loss, grad_norm, lr, tokens/sec, MFU, eval_loss
+# NaN → warmup + clip 1.0 + BF16 + inspect failing batch
+torch.autograd.set_detect_anomaly(True)
+# not learning → overfit one batch; check masking/requires_grad
+# OOM → checkpointing + accumulation + FSDP/ZeRO + no_grad eval
+# slow → workers/prefetch, kill .item() syncs, torch.compile, BF16
+# hang → NCCL_DEBUG=INFO, TORCH_DISTRIBUTED_DEBUG=DETAIL, grep all ranks
+# resume → save weights+optimizer+scheduler+sampler state</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="debug-llm-inference.html">&larr; prev: LLM Inference</a>
+        <a href="../debug-guides.html">all debug guides &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

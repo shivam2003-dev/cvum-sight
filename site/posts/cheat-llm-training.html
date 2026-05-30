@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Training Cheatsheet — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../cheatsheets.html" style="color:var(--ink-faint);text-decoration:none">&larr; Cheatsheets</a></p>
+
+      <div class="post-header">
+        <p class="meta">CHEATSHEET &middot; GENAI &middot; MODEL TRAINING</p>
+        <h1>LLM Training — The Scaling Cheatsheet.</h1>
+        <div class="tag-row">
+          <span class="tag fill">training</span>
+          <span class="tag">distributed</span>
+          <span class="tag">fsdp</span>
+          <span class="tag">fine-tuning</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Training at scale is a memory and communication problem before it's a math problem. You spend VRAM
+          on <strong>weights + gradients + optimizer states + activations</strong>, and you spend wall-clock on
+          <strong>moving gradients between GPUs</strong>. Every technique below is buying back one of those two.
+        </blockquote>
+
+        <h2 id="memory">1. Where the VRAM goes</h2>
+        <table>
+          <thead><tr><th>Consumer</th><th>Rough cost (Adam, mixed precision)</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Weights</strong></td><td>2 bytes/param (BF16)</td></tr>
+            <tr><td><strong>Gradients</strong></td><td>2 bytes/param</td></tr>
+            <tr><td><strong>Optimizer states</strong></td><td>Adam: 8–12 bytes/param (FP32 momentum + variance + master weights)</td></tr>
+            <tr><td><strong>Activations</strong></td><td>Scales with batch × seq_len × layers — often the biggest, and the most controllable</td></tr>
+          </tbody>
+        </table>
+        <p>Hence ~16–18 bytes/param just for states with Adam. A 7B model needs ~110GB+ before activations —
+        which is why sharding (ZeRO/FSDP) exists.</p>
+
+        <h2 id="parallel">2. Parallelism strategies</h2>
+        <table>
+          <thead><tr><th>Strategy</th><th>Splits</th><th>When</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Data parallel (DDP)</strong></td><td>The batch; full model replicated per GPU</td><td>Model fits on one GPU; scale throughput</td></tr>
+            <tr><td><strong>ZeRO / FSDP</strong></td><td>Optimizer states → grads → params (stages 1/2/3)</td><td>Model too big to replicate; default for large training</td></tr>
+            <tr><td><strong>Tensor parallel</strong></td><td>Each layer's matmuls across GPUs</td><td>Huge layers; needs NVLink (intra-node)</td></tr>
+            <tr><td><strong>Pipeline parallel</strong></td><td>Layers into stages</td><td>Cross-node; mind the bubble</td></tr>
+            <tr><td><strong>Sequence/context parallel</strong></td><td>The sequence dimension</td><td>Very long context</td></tr>
+          </tbody>
+        </table>
+        <p><strong>3D parallelism</strong> = TP × PP × DP, used for the largest models. FSDP alone covers most
+        sub-100B fine-tuning needs.</p>
+
+        <h2 id="zero">3. ZeRO / FSDP stages</h2>
+        <ul>
+          <li><strong>Stage 1</strong> — shard optimizer states across GPUs. Cheapest, big memory win for Adam.</li>
+          <li><strong>Stage 2</strong> — also shard gradients.</li>
+          <li><strong>Stage 3</strong> — also shard parameters; each GPU holds only a slice, all-gathers layers on demand. Max memory savings, more communication.</li>
+          <li><strong>Offload</strong> — push states/params to CPU or NVMe when even sharding isn't enough (slower).</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">sharding trades memory for comms</span>
+          ZeRO-3 lets you fit enormous models but all-gathers params every layer. If your interconnect is
+          slow (PCIe, cross-node without fast fabric), comms dominates and GPUs idle. Match the stage to your
+          hardware; prefer a lower stage that still fits.</div>
+
+        <h2 id="memtricks">4. Memory-saving techniques</h2>
+        <ul>
+          <li><strong>Mixed precision (BF16)</strong> — half the weight/grad/activation bytes; BF16 avoids loss scaling.</li>
+          <li><strong>Gradient (activation) checkpointing</strong> — don't store activations; recompute in backward. ~√N memory for ~33% more compute. Huge for long sequences.</li>
+          <li><strong>Gradient accumulation</strong> — big effective batch without big VRAM; accumulate over micro-batches before <code>step()</code>.</li>
+          <li><strong>Fused optimizers</strong>, <strong>8-bit Adam</strong> (bitsandbytes) — shrink optimizer states.</li>
+          <li><strong>FlashAttention</strong> — removes the O(N²) attention memory.</li>
+        </ul>
+
+        <h2 id="stability">5. Training stability</h2>
+        <ul>
+          <li><strong>Loss scaling</strong> (FP16 only) — scale loss up before backward to stop gradient underflow; dynamic scaler backs off on overflow.</li>
+          <li><strong>Gradient clipping</strong> — clip global grad norm (e.g. 1.0) to survive spikes.</li>
+          <li><strong>Warmup + cosine decay</strong> — ramp LR over the first steps, then decay. Skipping warmup causes early divergence.</li>
+          <li><strong>Z-loss / qk-norm / careful init</strong> — large-model stabilizers against logit blow-up.</li>
+          <li>Watch <strong>grad norm</strong> as your early-warning signal — a spike precedes a NaN.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">loss goes to NaN — usual suspects</span>
+          LR too high, no warmup, no grad clipping, FP16 overflow (use BF16 or loss scaling), bad data
+          (corrupt sample, inf in inputs), or division by zero in a custom layer. Bisect: lower LR, clip,
+          switch to BF16, check the batch at the failing step.</div>
+
+        <h2 id="finetune">6. Fine-tuning (PEFT)</h2>
+        <table>
+          <thead><tr><th>Method</th><th>What</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Full fine-tune</strong></td><td>Update all weights. Best quality, most VRAM, risk of forgetting.</td></tr>
+            <tr><td><strong>LoRA</strong></td><td>Freeze base, train small low-rank adapters (A·B). ~0.1–1% params trained; mergeable at inference.</td></tr>
+            <tr><td><strong>QLoRA</strong></td><td>4-bit quantized frozen base + LoRA. Fine-tune big models on one GPU.</td></tr>
+            <tr><td><strong>Adapters / prefix / IA³</strong></td><td>Other parameter-efficient variants.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="posttrain">7. Post-training / alignment</h2>
+        <ul>
+          <li><strong>SFT</strong> — supervised fine-tune on instruction/response pairs. The foundation of "chat".</li>
+          <li><strong>RLHF (PPO)</strong> — train a reward model from preferences, optimize the policy against it. Powerful, complex, unstable.</li>
+          <li><strong>DPO</strong> — direct preference optimization; skips the reward model, optimizes preferences directly. Simpler, popular default.</li>
+          <li><strong>Others</strong> — ORPO, KTO, GRPO (reasoning/RLVR). The space moves fast; DPO-family is the pragmatic baseline.</li>
+        </ul>
+
+        <h2 id="data">8. Data &amp; checkpointing</h2>
+        <ul>
+          <li><strong>Data is the product.</strong> Dedup, quality-filter, decontaminate against eval sets, mix domains deliberately. Garbage in scales to garbage out.</li>
+          <li><strong>Sequence packing</strong> — concatenate samples to fill context, avoid padding waste.</li>
+          <li><strong>Checkpoint often</strong> — long runs WILL hit a node failure. Save optimizer state too; support resume. Async/sharded checkpointing avoids stalls.</li>
+          <li>Log <strong>loss, grad-norm, LR, tokens/sec, MFU</strong> (model FLOPs utilization) — MFU tells you how much of the hardware you're actually using.</li>
+        </ul>
+
+        <h2 id="ref">9. Quick reference</h2>
+        <pre data-lang="text">VRAM ≈ params×(2+2+~12) + activations   # weights+grad+Adam states
+Fit bigger: BF16 + checkpointing + accumulation + FSDP/ZeRO(+offload)
+Stability: warmup + cosine, clip grad-norm 1.0, BF16, watch grad-norm
+Fine-tune cheap: QLoRA (4-bit base + LoRA)
+Align: SFT → DPO (or PPO/GRPO)
+Health: tokens/sec, MFU, grad-norm, eval loss
+Resume: checkpoint weights+optimizer; expect failures</pre>
+
+        <h2 id="qa">10. Interview Q&amp;A</h2>
+        <ul class="cheat-qa">
+          <li><span class="q">Where does training memory actually go?</span><span class="a">Weights + gradients + optimizer states (Adam ≈ 12 bytes/param) + activations. With Adam in mixed precision it's ~16–18 bytes/param before activations — which is why we shard and checkpoint.</span></li>
+          <li><span class="q">DDP vs FSDP/ZeRO?</span><span class="a">DDP replicates the full model per GPU and all-reduces grads — needs the model to fit. FSDP/ZeRO shards optimizer states/grads/params so each GPU holds a slice — fits much bigger models, at the cost of more communication.</span></li>
+          <li><span class="q">What do the ZeRO stages shard?</span><span class="a">Stage 1: optimizer states. Stage 2: + gradients. Stage 3: + parameters (all-gather per layer on demand). Higher stage = less memory, more comms.</span></li>
+          <li><span class="q">How does gradient checkpointing help?</span><span class="a">It discards activations in forward and recomputes them in backward — roughly √N memory for ~33% more compute. Essential for long sequences / large models.</span></li>
+          <li><span class="q">BF16 vs FP16 for training stability?</span><span class="a">BF16 keeps FP32's exponent range, so no loss scaling and far fewer overflow NaNs. FP16 needs dynamic loss scaling. Default to BF16 on Ampere+.</span></li>
+          <li><span class="q">Loss spiked to NaN — how do you debug?</span><span class="a">Check LR/warmup, add grad clipping, switch to BF16, inspect grad-norm before the spike, and audit the batch at that step for corrupt/inf inputs. Bisect by lowering LR.</span></li>
+          <li><span class="q">LoRA vs full fine-tuning — when?</span><span class="a">LoRA/QLoRA when you want cheap, fast, mergeable adaptation with limited VRAM and lower forgetting risk. Full fine-tune when you need maximum quality and have the compute.</span></li>
+          <li><span class="q">DPO vs RLHF/PPO?</span><span class="a">PPO trains a reward model then optimizes a policy against it — powerful but complex and unstable. DPO optimizes preferences directly without a reward model or RL loop — simpler and a strong default.</span></li>
+          <li><span class="q">What is MFU and why track it?</span><span class="a">Model FLOPs Utilization — achieved FLOPs ÷ hardware peak. It tells you how efficiently you're using the GPUs; low MFU means comms/starvation/bad kernels, not a model problem.</span></li>
+          <li><span class="q">Why checkpoint optimizer state, not just weights?</span><span class="a">Adam's momentum/variance define the trajectory; resuming from weights alone restarts the optimizer and disrupts training. Save both for a clean resume after the inevitable node failure.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="cheat-llm-inference.html">&larr; prev: LLM Inference</a>
+        <a href="cheat-genai-engineering.html">next: GenAI Engineering &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

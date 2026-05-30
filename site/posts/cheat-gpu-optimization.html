@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPU Optimization Cheatsheet — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../cheatsheets.html" style="color:var(--ink-faint);text-decoration:none">&larr; Cheatsheets</a></p>
+
+      <div class="post-header">
+        <p class="meta">CHEATSHEET &middot; GENAI &middot; GPU PERFORMANCE</p>
+        <h1>GPU Optimization — The Engineer's Cheatsheet.</h1>
+        <div class="tag-row">
+          <span class="tag fill">gpu</span>
+          <span class="tag">cuda</span>
+          <span class="tag">performance</span>
+          <span class="tag">ml-engineering</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Almost every "slow GPU" is one of three things: you're <strong>memory-bandwidth bound</strong> (not
+          compute), you're <strong>starving the GPU</strong> (data pipeline / CPU / sync), or you <strong>never
+          enabled the fast path</strong> (Tensor Cores, fused kernels, the right dtype). Find which one before
+          you touch a kernel.
+        </blockquote>
+
+        <h2 id="model">1. The mental model</h2>
+        <ul>
+          <li>A GPU is many <strong>SMs</strong> (streaming multiprocessors). Each runs threads in groups of 32 — a <strong>warp</strong>. Thousands of warps hide latency by swapping in when one stalls on memory.</li>
+          <li>Throughput machine, not latency machine. You win by keeping it <strong>fed and busy</strong>, not by making one op fast.</li>
+          <li>The real wall is usually <strong>HBM bandwidth</strong> (moving data to/from global memory), not FLOPs. Modern accelerators have far more compute than bandwidth.</li>
+        </ul>
+
+        <h2 id="memory">2. Memory hierarchy (fast → slow)</h2>
+        <table>
+          <thead><tr><th>Tier</th><th>What / cost</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Registers</strong></td><td>Per-thread, fastest. Spilling to "local" memory (really global) kills perf.</td></tr>
+            <tr><td><strong>Shared memory / L1</strong></td><td>Per-SM scratchpad (~tens–100s KB). The key to tiling — reuse data across a block.</td></tr>
+            <tr><td><strong>L2 cache</strong></td><td>Chip-wide, a few MB. Shared by all SMs.</td></tr>
+            <tr><td><strong>Global (HBM)</strong></td><td>GBs, high bandwidth but high latency. The bottleneck for most kernels.</td></tr>
+          </tbody>
+        </table>
+        <p><strong>Coalescing:</strong> threads in a warp should read <em>contiguous</em> addresses so loads
+        merge into a few wide transactions. Strided/scattered access wastes bandwidth.</p>
+
+        <h2 id="bound">3. Memory-bound vs compute-bound (roofline)</h2>
+        <ul>
+          <li><strong>Arithmetic intensity</strong> = FLOPs ÷ bytes moved. Low intensity (elementwise add, layernorm, activation) → <strong>memory-bound</strong>. High intensity (big GEMM, conv) → <strong>compute-bound</strong>.</li>
+          <li>Memory-bound kernels are fixed by <strong>fusion</strong> (do more per byte loaded) and better access patterns — <em>not</em> faster math.</li>
+          <li>Compute-bound kernels are fixed by <strong>Tensor Cores</strong>, better tiling, and lower precision.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">most ML ops are memory-bound</span>
+          Attention, layernorm, GELU, softmax, residual adds — all memory-bound. That's why FlashAttention
+          (fusion + no materialized N×N matrix) is a huge win and why <code>torch.compile</code> fuses
+          pointwise chains. Stacking more FLOPs doesn't help these.</div>
+
+        <h2 id="precision">4. Precision — pick the right dtype</h2>
+        <table>
+          <thead><tr><th>dtype</th><th>When / why</th></tr></thead>
+          <tbody>
+            <tr><td><strong>FP32</strong></td><td>Default but slow. Rarely needed end-to-end for DL.</td></tr>
+            <tr><td><strong>TF32</strong></td><td>Ampere+ auto-mode for matmuls — ~FP32 accuracy, big speedup. Enable it.</td></tr>
+            <tr><td><strong>FP16</strong></td><td>Half memory + Tensor Cores. Narrow range → needs loss scaling.</td></tr>
+            <tr><td><strong>BF16</strong></td><td>Same exponent range as FP32 (no loss scaling), less mantissa. Default for modern training.</td></tr>
+            <tr><td><strong>FP8</strong></td><td>Hopper+/Blackwell. Training &amp; inference with per-tensor/per-block scaling. Biggest throughput, most fragile.</td></tr>
+            <tr><td><strong>INT8/INT4</strong></td><td>Inference quantization (weights and/or activations). Memory + bandwidth win.</td></tr>
+          </tbody>
+        </table>
+        <pre data-lang="python"># PyTorch: enable the fast matmul paths
+import torch
+torch.set_float32_matmul_precision("high")   # TF32 for fp32 matmuls
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
+# Mixed precision (BF16 preferred on Ampere+)
+with torch.autocast("cuda", dtype=torch.bfloat16):
+    out = model(x)</pre>
+
+        <h2 id="tensorcores">5. Tensor Cores — the fast path</h2>
+        <ul>
+          <li>Dedicated matrix-multiply-accumulate units. They do the heavy GEMMs in FP16/BF16/FP8/INT8 — orders faster than CUDA cores in FP32.</li>
+          <li>They engage only with low precision <em>and</em> friendly shapes. Keep matmul dimensions multiples of <strong>8 (FP16)</strong> / <strong>16</strong> — pad vocab sizes, hidden dims, batch.</li>
+          <li>Check they're actually used: Nsight Compute "Tensor" pipe utilization, or torch profiler kernel names (<code>*s16816gemm*</code>, <code>*_tensor_*</code>).</li>
+        </ul>
+
+        <h2 id="fusion">6. Fusion &amp; kernels</h2>
+        <ul>
+          <li><strong>Kernel launch overhead</strong> is real (~µs each). Thousands of tiny ops = death by launches. Fuse them.</li>
+          <li><code>torch.compile(model)</code> — fuses pointwise chains, picks better kernels, reduces launches. First win to try.</li>
+          <li><strong>FlashAttention</strong> — fused, IO-aware attention; never materializes the N×N score matrix → memory and speed win, longer contexts.</li>
+          <li><strong>CUDA Graphs</strong> — capture a static sequence of launches, replay as one. Removes per-launch CPU overhead for small-batch inference.</li>
+          <li>Use fused optimizers (<code>fused=True</code> AdamW), fused layernorm/RMSNorm (apex / Triton).</li>
+        </ul>
+
+        <h2 id="pipeline">7. Don't starve the GPU</h2>
+        <pre data-lang="python">DataLoader(ds, batch_size=B,
+           num_workers=8, pin_memory=True,
+           persistent_workers=True, prefetch_factor=4)
+# move to device async, overlap with compute
+x = x.to("cuda", non_blocking=True)</pre>
+        <ul>
+          <li>If <code>nvidia-smi</code> shows low GPU-util with spiky pattern → input pipeline or CPU preprocessing is the bottleneck, not the model.</li>
+          <li>Avoid host&harr;device <strong>syncs</strong> in the hot loop: <code>.item()</code>, <code>.cpu()</code>, <code>print(loss)</code>, <code>tensor.numpy()</code>, Python <code>if</code> on a GPU value — each forces a stall.</li>
+          <li>Keep tensors on-GPU; accumulate metrics on device and sync once per N steps.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">.item() in the training loop is a silent killer</span>
+          Calling <code>loss.item()</code> every step forces a device sync — the CPU waits for the GPU,
+          breaking overlap. Log every N steps, or stash losses on-GPU and sync in a batch.</div>
+
+        <h2 id="memcap">8. Fit a bigger model / batch</h2>
+        <ul>
+          <li><strong>Gradient checkpointing</strong> — recompute activations in backward instead of storing them. Trade compute for memory; fits much larger models.</li>
+          <li><strong>Gradient accumulation</strong> — simulate a big batch with several small forward/backward passes before <code>step()</code>.</li>
+          <li><strong>Activation/optimizer offload</strong> — push states to CPU/NVMe (ZeRO-Offload) when VRAM is tight.</li>
+          <li><code>PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True</code> reduces fragmentation OOMs.</li>
+          <li>Free cache between phases with <code>torch.cuda.empty_cache()</code> (doesn't fix leaks, just fragmentation).</li>
+        </ul>
+
+        <h2 id="multi">9. Multi-GPU &amp; communication</h2>
+        <ul>
+          <li><strong>Data parallel (DDP/FSDP)</strong> — each GPU a shard of the batch; gradients all-reduced. FSDP also shards params/optimizer states (ZeRO-style) to fit large models.</li>
+          <li><strong>NCCL</strong> does the collectives (all-reduce, all-gather). Goal: <strong>overlap comms with compute</strong> so the network is hidden.</li>
+          <li>Topology matters: NVLink &gt; PCIe &gt; network. Check <code>nvidia-smi topo -m</code>. Cross-node needs fast fabric (InfiniBand/RoCE) or comms dominates.</li>
+          <li>Tune <code>NCCL_*</code> env (e.g. algorithms, buffer sizes) only after confirming comms is the bottleneck.</li>
+        </ul>
+
+        <h2 id="profile">10. Profiling — measure, don't guess</h2>
+        <pre data-lang="bash">nvidia-smi dmon -s pucvmet      # live: power, util, mem, clocks, throttle
+nvidia-smi -q -d CLOCK,PERFORMANCE  # clocks + throttle reasons
+nsys profile -o out python train.py   # timeline: kernels, gaps, syncs, NCCL
+ncu --set full -k regex:gemm python x.py  # per-kernel: occupancy, mem, pipes</pre>
+        <pre data-lang="python"># PyTorch profiler — find the expensive ops
+from torch.profiler import profile, ProfilerActivity
+with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+             record_shapes=True) as p:
+    model(x)
+print(p.key_averages().table(sort_by="cuda_time_total", row_limit=20))</pre>
+        <ul>
+          <li><strong>Nsight Systems (nsys)</strong> — timeline; spot gaps (starvation), syncs, CPU bottleneck, comms not overlapping.</li>
+          <li><strong>Nsight Compute (ncu)</strong> — single-kernel deep dive; occupancy, memory throughput, Tensor pipe usage, stall reasons.</li>
+        </ul>
+
+        <h2 id="ref">11. Quick reference</h2>
+        <pre data-lang="bash">nvidia-smi                          # util, mem, processes, temp, power
+nvidia-smi dmon -s pucvmet          # rolling counters
+nvidia-smi topo -m                  # GPU interconnect topology
+watch -n1 nvidia-smi                # poor man's monitor
+# PyTorch knobs
+torch.set_float32_matmul_precision("high")
+torch.compile(model)
+torch.autocast("cuda", dtype=torch.bfloat16)
+torch.utils.checkpoint(...)         # gradient checkpointing
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True</pre>
+
+        <h2 id="qa">12. Interview Q&amp;A</h2>
+        <ul class="cheat-qa">
+          <li><span class="q">Memory-bound vs compute-bound — how do you tell?</span><span class="a">Arithmetic intensity (FLOPs/byte) and the roofline. Profiler shows high memory throughput + low compute (or vice versa). Elementwise/norm/attention = memory-bound; big GEMMs = compute-bound.</span></li>
+          <li><span class="q">GPU-util is 100% but training is slow — why?</span><span class="a">Util just means a kernel is resident, not efficient. Could be a memory-bound kernel saturating bandwidth, tiny kernels with launch overhead, or no Tensor Cores. Profile with nsys/ncu.</span></li>
+          <li><span class="q">GPU-util is low and spiky — why?</span><span class="a">Starvation: data pipeline too slow, CPU preprocessing, host↔device syncs (.item()), or small batch. Fix the feeder, not the model.</span></li>
+          <li><span class="q">BF16 vs FP16 for training?</span><span class="a">BF16 has FP32's exponent range → no loss scaling, more stable. FP16 needs loss scaling to avoid underflow. On Ampere+ default to BF16.</span></li>
+          <li><span class="q">What does FlashAttention actually optimize?</span><span class="a">It's IO-aware: tiles the computation in SRAM and never writes the N×N score matrix to HBM. Removes the memory bottleneck of attention → faster + far less memory → longer context.</span></li>
+          <li><span class="q">How do you fit a model that doesn't fit in VRAM?</span><span class="a">Gradient checkpointing, gradient accumulation, mixed precision, FSDP/ZeRO sharding, optimizer/activation offload to CPU/NVMe, quantization for inference.</span></li>
+          <li><span class="q">Why do matmul dims being multiples of 8/16 matter?</span><span class="a">Tensor Cores need aligned tile shapes; odd dims fall back to slower paths or waste lanes. Pad vocab/hidden/batch.</span></li>
+          <li><span class="q">What is CPU steal / throttling on a GPU box?</span><span class="a">GPUs throttle on power/thermal limits — nvidia-smi shows the clock-throttle reason. Distinct from being compute-bound; check clocks before optimizing code.</span></li>
+          <li><span class="q">How do you hide multi-GPU communication?</span><span class="a">Overlap NCCL all-reduce with backward compute (DDP buckets do this), use NVLink, and ensure cross-node fabric is fast. Confirm in an nsys timeline that comms sits under compute.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../cheatsheets.html">&larr; Cheatsheets</a>
+        <a href="cheat-llm-inference.html">next: LLM Inference &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging LLM Inference — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../debug-guides.html" style="color:var(--ink-faint);text-decoration:none">&larr; Debug Guides</a></p>
+
+      <div class="post-header">
+        <p class="meta">DEBUG GUIDE &middot; GENAI &middot; SERVING PLAYBOOK</p>
+        <h1>Debugging LLM Inference &amp; Serving.</h1>
+        <div class="tag-row">
+          <span class="tag fill">inference</span>
+          <span class="tag">llm</span>
+          <span class="tag">vllm</span>
+          <span class="tag">latency</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          Serving complaints are almost always one of: <strong>slow first token</strong> (TTFT),
+          <strong>slow per token</strong> (TPOT), <strong>low throughput</strong> under load,
+          <strong>OOM</strong> (usually KV cache), or <strong>bad output</strong> (quality/garbled). Each has a
+          different cause. Measure TTFT and TPOT separately first.</blockquote>
+
+        <h2 id="triage">Triage: which number is bad?</h2>
+        <pre data-lang="bash"># measure the split, not just total latency
+curl -N -s -w '\nTTFT/total via timing\n' .../v1/chat/completions -d '{...,"stream":true}'
+# vLLM exposes Prometheus metrics
+curl -s localhost:8000/metrics | grep -E 'time_to_first_token|time_per_output_token|num_requests|gpu_cache_usage'</pre>
+        <ul>
+          <li>High <strong>TTFT</strong>, fine TPOT → prefill / queue / long prompt problem.</li>
+          <li>Fine TTFT, high <strong>TPOT</strong> → decode bottleneck (model size, batch, bandwidth).</li>
+          <li>Both fine single-user, bad under load → batching / concurrency / KV pool.</li>
+        </ul>
+
+        <h2 id="ttft">Slow first token (TTFT)</h2>
+        <ul>
+          <li><strong>Long prompts</strong> → prefill is compute-heavy. Enable <strong>chunked prefill</strong> and <strong>prefix caching</strong> for shared system prompts / RAG context.</li>
+          <li><strong>Queue wait</strong> → requests piling up before scheduling; check queue depth / <code>num_requests_waiting</code>. Add capacity or cap concurrency.</li>
+          <li><strong>Cold start</strong> → first request after load compiles/warms kernels (CUDA graphs, Triton autotune). Warm up on boot.</li>
+        </ul>
+
+        <h2 id="tpot">Slow per token (TPOT)</h2>
+        <ul>
+          <li>Decode is <strong>bandwidth-bound</strong> → quantize weights (AWQ/GPTQ 4-bit) to cut per-token reads.</li>
+          <li>Model too big for the GPU count → add tensor parallelism (within node, NVLink).</li>
+          <li>Batch too large pushing TPOT up → there's a throughput/latency knee; lower <code>max-num-seqs</code> to meet the SLO.</li>
+          <li>Try <strong>speculative decoding</strong> (draft model) to cut latency without quality loss.</li>
+        </ul>
+
+        <h2 id="throughput">Low throughput under concurrency</h2>
+        <ul>
+          <li><strong>Static batching</strong> → switch to a server with <strong>continuous batching</strong> (vLLM/TGI/TRT-LLM). Biggest single win.</li>
+          <li><strong>KV pool too small</strong> → can't hold enough concurrent sequences; raise <code>gpu-memory-utilization</code> or shrink <code>max-model-len</code>.</li>
+          <li><strong>Head-of-line blocking</strong> from a few huge requests → enforce max output tokens; isolate long jobs.</li>
+          <li>Confirm the GPU is the bottleneck (high util) vs the API/tokenizer/network around it.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">throughput collapses as context grows</span>
+          KV cache scales with context × concurrency. Long prompts shrink how many requests fit in the KV
+          pool, so effective concurrency (and throughput) drops even though the GPU isn't "full". Cap
+          <code>max-model-len</code> to what you actually need.</div>
+
+        <h2 id="oom">OOM during serving</h2>
+        <p><strong>Symptom.</strong> Crash on a long prompt or at high concurrency; <code>CUDA out of memory</code>
+        after running fine at low load.</p>
+        <ul>
+          <li>It's the <strong>KV cache</strong>, not the weights. Lower <code>max-model-len</code>, lower <code>max-num-seqs</code>, enable KV-cache quantization.</li>
+          <li><code>gpu-memory-utilization</code> too high leaves no room for activation spikes → back it off (e.g. 0.85–0.90).</li>
+          <li>Set a hard <strong>max output tokens</strong> so a runaway generation can't grow KV unbounded.</li>
+        </ul>
+
+        <h2 id="quality">Bad / garbled output</h2>
+        <ul>
+          <li><strong>Wrong chat template</strong> → garbage or ignored instructions. Match the model's exact prompt format / special tokens. Most "model is broken" reports are template bugs.</li>
+          <li><strong>Tokenizer mismatch</strong> → use the tokenizer that ships with the checkpoint.</li>
+          <li><strong>Quantization too aggressive</strong> → quality drop; try a higher-bit scheme or different method (AWQ vs GPTQ), compare on an eval set.</li>
+          <li><strong>Repetition / rambling</strong> → check sampling params (temperature, top-p, repetition/frequency penalty, stop tokens). A missing stop token = never-ending output.</li>
+          <li><strong>Truncation</strong> → prompt + max_tokens exceeds context window; it silently drops the start. Budget tokens.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">wrong stop token = runaway cost</span>
+          If the stop sequence / EOS isn't configured, generation runs to <code>max_tokens</code> every time —
+          latency, cost, and KV all balloon. Verify stop tokens against the model card.</div>
+
+        <h2 id="nondeterm">"Same prompt, different answer"</h2>
+        <ul>
+          <li>Sampling is stochastic → set <code>temperature=0</code> (greedy) for reproducibility tests.</li>
+          <li>Even at temp 0, <strong>batching can shift results</strong> — floating-point reduction order depends on batch composition. Small numerical differences are expected, not a bug.</li>
+        </ul>
+
+        <h2 id="ref">Quick reference</h2>
+        <pre data-lang="bash">curl -s localhost:8000/metrics | grep -E 'first_token|per_output_token|cache_usage|waiting'
+# TTFT bad → chunked prefill + prefix cache + warmup + capacity
+# TPOT bad → 4-bit weights + tensor-parallel + speculative + smaller batch
+# throughput → continuous batching + bigger KV pool, cap output tokens
+# OOM → lower max-model-len / max-num-seqs, KV quant, gpu-mem-util 0.85
+# bad output → chat template + tokenizer + sampling params + stop tokens
+nvidia-smi dmon -s u            # is the GPU actually the bottleneck?</pre>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="debug-gpu.html">&larr; prev: GPU &amp; CUDA</a>
+        <a href="debug-llm-training.html">next: LLM Training &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

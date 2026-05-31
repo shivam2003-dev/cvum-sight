@@ -166,7 +166,9 @@
   if (archiveList && typeof POSTS !== "undefined") {
     const params = new URLSearchParams(window.location.search);
     const filterCat = params.get("cat");
-    const filtered = filterCat ? POSTS.filter(p => p.cat === filterCat) : POSTS;
+    // AI Native tool pages live in their own dedicated hub and are hidden from Archive.
+    const archiveSource = POSTS.filter(p => !p.slug.startsWith("ain-"));
+    const filtered = filterCat ? archiveSource.filter(p => p.cat === filterCat) : archiveSource;
 
     // Collapse every series into ONE entry: series name, linking to its FIRST article.
     const seriesNames = {

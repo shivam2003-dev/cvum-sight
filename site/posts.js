@@ -661,6 +661,7 @@ const TOPICS = [
   { id: "postgres",   name: "Postgres",    desc: "Queries, replication, indexing — the database I keep coming back to." },
   { id: "security",   name: "Security",    desc: "Threat models, hardening, and the stuff that keeps things safe." },
   { id: "resources",  name: "Resources",   desc: "Books, papers, courses, and tools I actually use." },
+  { id: "ai-native",  name: "AI Native",   desc: "The cloud-native AI stack, tool by tool — crash courses across agents, infra, data, and inference." },
 ];
 
 /*

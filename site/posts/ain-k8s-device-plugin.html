@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes Device Plugin — AI Native Crash Course — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .ain-banner{border:1px solid var(--rule,#d8cfb8);border-radius:10px;padding:14px 16px;margin:0 0 22px;background:rgba(240,192,64,.08)}
+  .ain-banner-label{font-size:.72rem;letter-spacing:.08em;color:var(--ink-faint);margin:0 0 4px}
+  .ain-banner-path{font-size:.88rem;margin:0}
+  .ain-banner-path a{color:var(--accent,#c96442);text-decoration:none}
+  .ain-tldr{border-left:3px solid #f0c040;padding:4px 0 4px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .ain-ver{display:inline-block;font-family:var(--font-mono);font-size:11px;border:1.2px solid var(--ink);border-radius:4px;padding:1px 7px;background:var(--paper)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+
+      <div class="ain-banner">
+        <p class="ain-banner-label">// AI NATIVE STACK</p>
+        <p class="ain-banner-path"><a href="../ai-native.html">AI Native</a> &rsaquo; AI Native Infra &rsaquo; Accelerator and SuperPod &rsaquo; <strong>K8s Device Plugin</strong></p>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">CRASH COURSE · AI-NATIVE · <span class="difficulty intermediate">intermediate</span> · 9 min read · <span class="ain-ver">kubelet API</span></p>
+        <h1>The Kubernetes Device Plugin — how a GPU becomes schedulable.</h1>
+        <div class="tag-row">
+          <span class="tag fill">accelerator</span>
+          <span class="tag">ai-native</span>
+          <span class="tag">device-plugin</span>
+          <span class="tag">gpu</span>
+          <span class="tag">kubernetes</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="ain-tldr"><strong>TL;DR —</strong> Kubernetes has no built-in idea of a GPU. The <strong>device plugin framework</strong> is the kubelet API that lets a vendor advertise hardware as a schedulable resource like <code>nvidia.com/gpu</code>. NVIDIA's <code>k8s-device-plugin</code> implements it, and can oversubscribe a GPU via <strong>time-slicing</strong> or <strong>MPS</strong> — sharing without isolation. It's the foundational layer the GPU Operator and DRA build on.</p>
+
+        <h2 id="what-it-is">What it is</h2>
+        <p>The device plugin framework is a Kubernetes interface for advertising non-CPU/memory resources — GPUs, NICs, FPGAs — to the kubelet so the scheduler can allocate them. The <strong>NVIDIA k8s-device-plugin</strong> is the GPU implementation: a DaemonSet that discovers GPUs on each node and exposes them as <code>nvidia.com/gpu</code>. In the AI Native landscape it's the bedrock piece of <em>AI Native Infra &rsaquo; Accelerator and SuperPod</em>.</p>
+
+        <h2 id="why-it-exists">Why it exists</h2>
+        <p>The scheduler only understands CPU and memory natively. Without a device plugin, a GPU on a node is invisible — pods can't request it and the scheduler can't place GPU work. The plugin closes that gap by registering the device type with the kubelet and reporting how many are available, turning hardware into a first-class, requestable resource.</p>
+
+        <h2 id="how-it-works">How it works</h2>
+        <p>The plugin registers with the kubelet over a gRPC socket, lists the GPUs it found, and on allocation hands the kubelet the device IDs + mounts a container needs. The kubelet reports the count to the API server; the scheduler then treats <code>nvidia.com/gpu</code> like any countable resource in pod requests.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 150" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bx{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.5}
+              .gw{fill:#f0c040;stroke:#2a2620;stroke-width:1.5}
+              .tx{font-family:monospace;font-size:12px;fill:#2a2620}
+              .tt{font-family:monospace;font-size:10px;fill:#948a78}
+              .aw{stroke:#2a2620;stroke-width:1.5;fill:none;marker-end:url(#a)}
+            </style>
+            <defs><marker id="a" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2a2620"/></marker></defs>
+            <rect class="gw" x="20" y="55" width="140" height="46" rx="4"/><text class="tx" x="34" y="76">device plugin</text><text class="tt" x="34" y="92">finds GPUs</text>
+            <rect class="bx" x="250" y="55" width="120" height="46" rx="4"/><text class="tx" x="276" y="76">kubelet</text><text class="tt" x="264" y="92">registers</text>
+            <rect class="bx" x="450" y="20" width="200" height="40" rx="4"/><text class="tx" x="464" y="44">scheduler: nvidia.com/gpu</text>
+            <rect class="bx" x="450" y="92" width="200" height="40" rx="4"/><text class="tx" x="464" y="116">pod gets GPU mounts</text>
+            <path class="aw" d="M160 78 L248 78"/>
+            <path class="aw" d="M370 70 L448 44"/>
+            <path class="aw" d="M370 86 L448 110"/>
+          </svg>
+          <p class="diagram-label">Fig 1 — Plugin → kubelet → scheduler: hardware becomes a requestable resource.</p>
+        </div>
+
+        <h2 id="sharing">Oversubscription: time-slicing &amp; MPS</h2>
+        <p>By default one GPU = one allocatable unit. The NVIDIA plugin can <em>oversubscribe</em> it by advertising replicas:</p>
+        <ul>
+          <li><strong>Time-slicing</strong> — declare N replicas of a GPU; pods get a replica each and CUDA time-slices between them. Simple, but <em>no isolation</em> — they share memory and fault domain.</li>
+          <li><strong>MPS (Multi-Process Service)</strong> — run kernels concurrently with some resource partitioning; better than raw time-slicing for certain workloads.</li>
+        </ul>
+        <p>Enabling replicas relabels the node (<code>nvidia.com/gpu.replicas</code>, product tagged <code>-SHARED</code>) so you can target shared vs whole GPUs.</p>
+
+        <h2 id="quick-start">Quick start</h2>
+        <p>If you run the <a href="../ain-nvidia-gpu-operator.html">GPU Operator</a>, the device plugin is already installed — you rarely deploy it alone. Standalone, it's a DaemonSet:</p>
+        <pre><code class="language-bash">kubectl create -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.17.0/deployments/static/nvidia-device-plugin.yml
+kubectl describe node &lt;gpu-node&gt; | grep nvidia.com/gpu     # see advertised GPUs</code></pre>
+        <p>Then a pod requests <code>limits: nvidia.com/gpu: 1</code> as usual. Time-slicing is enabled via a small ConfigMap setting the replica count.</p>
+
+        <h2 id="when-to-use">When to use, when to skip</h2>
+        <p><strong>Use it</strong> — you effectively always do: it's the mechanism that makes GPUs schedulable. The real decisions are <em>how</em> you run it (bundled in the GPU Operator) and whether to enable time-slicing/MPS for cheap sharing of light workloads.</p>
+        <p><strong>Move beyond it</strong> when you need real isolation or quotas: time-slicing has none — reach for MIG or <a href="../ain-hami.html">HAMi</a>. And the device plugin model is being superseded by <a href="../ain-kubernetes.html">DRA</a> (GA in v1.34) for richer, constraint-based allocation.</p>
+        <div class="gotcha"><span class="gotcha-label">heads up</span>
+          Time-slicing gives <em>no</em> memory or fault isolation — one pod can OOM the GPU and crash its neighbors. Use it only for trusted, light, bursty workloads (dev, small inference), never for strict multi-tenant isolation.</div>
+
+        <h2 id="alternatives">Where it sits</h2>
+        <table>
+          <thead><tr><th>Layer</th><th>Role</th><th>Note</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Device Plugin</strong></td><td>Advertise + allocate GPUs to the scheduler</td><td>The foundation</td></tr>
+            <tr><td><a href="../ain-nvidia-gpu-operator.html">GPU Operator</a></td><td>Installs the plugin + driver + monitoring</td><td>Bundles it</td></tr>
+            <tr><td><a href="../ain-hami.html">HAMi</a> / MIG</td><td>Isolated sharing</td><td>Beyond time-slicing</td></tr>
+            <tr><td><a href="../ain-kubernetes.html">DRA</a></td><td>Constraint-based native allocation</td><td>The successor</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="references">References</h2>
+        <ul class="reflist">
+          <li><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/" target="_blank" rel="noopener">Device plugin framework</a> <span>— the kubelet API.</span></li>
+          <li><a href="https://github.com/NVIDIA/k8s-device-plugin" target="_blank" rel="noopener">NVIDIA/k8s-device-plugin</a> <span>— source + config.</span></li>
+          <li><a href="https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-sharing.html" target="_blank" rel="noopener">Time-slicing GPUs</a> <span>— oversubscription setup.</span></li>
+        </ul>
+
+        <h2 id="extra-reads">Extra reads</h2>
+        <ul class="reflist">
+          <li><a href="https://developer.nvidia.com/blog/improving-gpu-utilization-in-kubernetes/" target="_blank" rel="noopener">Improving GPU utilization</a> <span>— NVIDIA on sharing.</span></li>
+          <li><a href="https://www.vcluster.com/blog/diy-gpu-sharing-in-kubernetes" target="_blank" rel="noopener">DIY GPU sharing</a> <span>— time-slicing, MIG, workarounds.</span></li>
+          <li><a href="https://superorbital.io/blog/gpu-kubernetes-nvidia-advanced-troubleshooting/" target="_blank" rel="noopener">Advanced device plugin usage</a> <span>— troubleshooting.</span></li>
+        </ul>
+
+        <p style="margin-top:24px;color:var(--ink-faint);font-size:.9rem">Verified against kubernetes.io and the NVIDIA k8s-device-plugin docs, May 2026.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../ai-native.html">&larr; AI Native Stack</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

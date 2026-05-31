@@ -167,7 +167,8 @@
     const params = new URLSearchParams(window.location.search);
     const filterCat = params.get("cat");
     // AI Native tool pages live in their own dedicated hub and are hidden from Archive.
-    const archiveSource = POSTS.filter(p => !p.slug.startsWith("ain-"));
+    const hiddenArchiveDates = new Set(["May 31, 2026", "Jun 1, 2026"]);
+    const archiveSource = POSTS.filter(p => !p.slug.startsWith("ain-") && !hiddenArchiveDates.has(p.date));
     const filtered = filterCat ? archiveSource.filter(p => p.cat === filterCat) : archiveSource;
 
     // Collapse every series into ONE entry: series name, linking to its FIRST article.

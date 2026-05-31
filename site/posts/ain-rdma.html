@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RDMA — AI Native Crash Course — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .ain-banner{border:1px solid var(--rule,#d8cfb8);border-radius:10px;padding:14px 16px;margin:0 0 22px;background:rgba(240,192,64,.08)}
+  .ain-banner-label{font-size:.72rem;letter-spacing:.08em;color:var(--ink-faint);margin:0 0 4px}
+  .ain-banner-path{font-size:.88rem;margin:0}
+  .ain-banner-path a{color:var(--accent,#c96442);text-decoration:none}
+  .ain-tldr{border-left:3px solid #f0c040;padding:4px 0 4px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .ain-ver{display:inline-block;font-family:var(--font-mono);font-size:11px;border:1.2px solid var(--ink);border-radius:4px;padding:1px 7px;background:var(--paper)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+
+      <div class="ain-banner">
+        <p class="ain-banner-label">// AI NATIVE STACK</p>
+        <p class="ain-banner-path"><a href="../ai-native.html">AI Native</a> &rsaquo; AI Native Infra &rsaquo; Network &rsaquo; <strong>RDMA</strong></p>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">CRASH COURSE · AI-NATIVE · <span class="difficulty advanced">advanced</span> · 11 min read · <span class="ain-ver">concept</span></p>
+        <h1>RDMA — zero-copy, kernel-bypass networking that makes GPU training scale.</h1>
+        <div class="tag-row">
+          <span class="tag fill">network</span>
+          <span class="tag">ai-native</span>
+          <span class="tag">rdma</span>
+          <span class="tag">infiniband</span>
+          <span class="tag">nccl</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="ain-tldr"><strong>TL;DR —</strong> RDMA (Remote Direct Memory Access) lets one machine read/write another machine's memory directly — bypassing the CPU, kernel, and TCP/IP stack on both sides. For distributed GPU training, NCCL uses RDMA (over InfiniBand or RoCEv2) for all-reduce and gradient sync at 200–400 Gbps with single-digit microsecond latency. On Kubernetes, RDMA interfaces are exposed to pods via <a href="ain-sriov.html">SR-IOV</a> + <a href="ain-multus.html">Multus</a>.</p>
+
+        <h2 id="what-it-is">What it is</h2>
+        <p>RDMA is a networking protocol that allows direct memory-to-memory data transfer between machines without involving the operating system's kernel network stack. The NIC (called an HCA — Host Channel Adapter — in InfiniBand) reads from or writes to application memory via DMA, completely bypassing the CPU and kernel on both the sender and receiver. In the AI Native landscape it's the foundational protocol in <em>AI Native Infra &rsaquo; Network</em> — the reason GPU clusters can train at scale.</p>
+
+        <h2 id="why-it-exists">Why it exists</h2>
+        <p>Distributed training sends terabytes of gradients between GPUs every minute. TCP/IP adds ~30 µs latency per hop and saturates CPUs with copy/context-switch overhead. RDMA cuts latency to ~1–2 µs and achieves line-rate throughput (200–400 Gbps) with near-zero CPU usage — because the NIC handles everything. Without RDMA, multi-node GPU training would be orders of magnitude slower.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 150" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bx{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.5}
+              .gw{fill:#f0c040;stroke:#2a2620;stroke-width:1.5}
+              .tx{font-family:monospace;font-size:11px;fill:#2a2620}
+              .tt{font-family:monospace;font-size:10px;fill:#948a78}
+              .aw{stroke:#2a2620;stroke-width:1.5;fill:none;marker-end:url(#a)}
+              .bw{stroke:#2a2620;stroke-width:1.5;fill:none;marker-end:url(#a);marker-start:url(#b)}
+            </style>
+            <defs>
+              <marker id="a" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2a2620"/></marker>
+              <marker id="b" markerWidth="9" markerHeight="9" refX="3" refY="3" orient="auto"><path d="M6,0 L0,3 L6,6 Z" fill="#2a2620"/></marker>
+            </defs>
+            <rect class="bx" x="14" y="30" width="170" height="90" rx="4"/>
+            <text class="tx" x="58" y="52">Node A</text>
+            <rect class="gw" x="28" y="62" width="80" height="28" rx="3"/><text class="tx" x="46" y="80">GPU</text>
+            <rect class="bx" x="120" y="62" width="52" height="28" rx="3"/><text class="tt" x="128" y="80">HCA</text>
+
+            <rect class="bx" x="490" y="30" width="170" height="90" rx="4"/>
+            <text class="tx" x="534" y="52">Node B</text>
+            <rect class="gw" x="504" y="62" width="80" height="28" rx="3"/><text class="tx" x="522" y="80">GPU</text>
+            <rect class="bx" x="596" y="62" width="52" height="28" rx="3"/><text class="tt" x="604" y="80">HCA</text>
+
+            <path class="bw" d="M172 76 L490 76"/>
+            <text class="tt" x="270" y="68">RDMA — direct memory transfer</text>
+            <text class="tt" x="274" y="98">no CPU, no kernel, no TCP</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — RDMA: the NIC reads GPU memory on Node A and writes it directly to GPU memory on Node B.</p>
+        </div>
+
+        <h2 id="how-it-works">How it works</h2>
+        <p>The application registers a memory region with the RDMA NIC. To send data, it posts a work request to a <strong>Queue Pair</strong> (QP) — the NIC reads from the registered memory, sends it over the wire, and the remote NIC writes it directly into the destination's registered memory. Neither CPU touches the data. Completion notifications happen via completion queues (CQs). NCCL uses this for all-reduce, all-gather, and reduce-scatter in distributed training.</p>
+
+        <h2 id="transports">Transport options</h2>
+        <table>
+          <thead><tr><th>Transport</th><th>Network</th><th>Note</th></tr></thead>
+          <tbody>
+            <tr><td><strong>InfiniBand</strong></td><td>Dedicated IB fabric</td><td>Highest performance, purpose-built for RDMA. NDR: 400 Gbps.</td></tr>
+            <tr><td><strong>RoCEv2</strong></td><td>Standard Ethernet</td><td>RDMA over Ethernet; needs lossless config (PFC/ECN). Common in cloud.</td></tr>
+            <tr><td>iWARP</td><td>Standard Ethernet</td><td>RDMA over TCP; simpler config, lower performance.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="features">Key concepts for AI</h2>
+        <ul>
+          <li><strong>GPUDirect RDMA</strong> — NIC reads/writes GPU memory directly (no CPU staging buffer). Requires NVIDIA GPU + Mellanox NIC + CUDA drivers.</li>
+          <li><strong>NCCL</strong> — NVIDIA's collective communication library uses RDMA for all-reduce, all-gather across GPUs on different nodes.</li>
+          <li><strong>Queue Pairs (QPs)</strong> — the RDMA equivalent of a TCP connection. Each pair of communicating processes gets a QP.</li>
+          <li><strong>Lossless Ethernet</strong> — RoCEv2 needs Priority Flow Control (PFC) and ECN configured on switches to avoid packet drops.</li>
+        </ul>
+
+        <h2 id="on-kubernetes">RDMA on Kubernetes</h2>
+        <p>Exposing RDMA to pods requires:</p>
+        <ol>
+          <li><strong><a href="ain-multus.html">Multus</a></strong> — attach a secondary NIC to the pod.</li>
+          <li><strong><a href="ain-sriov.html">SR-IOV</a></strong> — pass through a VF with RDMA capability.</li>
+          <li><strong>RDMA device plugin</strong> — expose <code>/dev/infiniband/</code> devices to the pod.</li>
+          <li><strong><a href="ain-nvidia-gpu-operator.html">GPU Operator</a></strong> — for GPUDirect RDMA, the GPU driver must be configured with peer memory.</li>
+        </ol>
+        <p>The NVIDIA Network Operator bundles Multus, SR-IOV, and RDMA device plugins into one operator for GPU clusters.</p>
+
+        <h2 id="when-to-use">When to use, when to skip</h2>
+        <p><strong>Use it</strong> for multi-node distributed training (data-parallel, model-parallel, pipeline-parallel) — it's not optional at scale, it's the standard. Any serious GPU cluster uses RDMA.</p>
+        <p><strong>Skip it</strong> for single-node training, inference-only workloads, or managed cloud environments where the provider handles the network fabric. Also unnecessary for CPU-only workloads.</p>
+        <div class="gotcha"><span class="gotcha-label">heads up</span>
+          RoCEv2 on standard Ethernet requires careful switch configuration (PFC, ECN, buffer tuning). Misconfigured lossless Ethernet is <em>worse</em> than TCP — you get pauses and deadlocks instead of graceful retransmits. Test thoroughly or use InfiniBand.</div>
+
+        <h2 id="alternatives">vs / alongside</h2>
+        <table>
+          <thead><tr><th>Approach</th><th>Latency</th><th>Throughput</th><th>Note</th></tr></thead>
+          <tbody>
+            <tr><td><strong>RDMA (IB)</strong></td><td>~1 µs</td><td>400 Gbps</td><td>Gold standard for training</td></tr>
+            <tr><td><strong>RDMA (RoCEv2)</strong></td><td>~2–3 µs</td><td>200 Gbps</td><td>Ethernet-based, needs lossless config</td></tr>
+            <tr><td>TCP/IP</td><td>~30 µs</td><td>100 Gbps</td><td>Fallback; usable for small-scale</td></tr>
+            <tr><td>NVLink / NVSwitch</td><td>sub-µs</td><td>900 Gbps</td><td>Intra-node GPU-to-GPU only</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="references">References</h2>
+        <ul class="reflist">
+          <li><a href="https://docs.nvidia.com/networking/display/rdmacore60" target="_blank" rel="noopener">NVIDIA RDMA documentation</a> <span>— RDMA concepts and drivers.</span></li>
+          <li><a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/index.html" target="_blank" rel="noopener">NCCL user guide</a> <span>— collective communication over RDMA.</span></li>
+          <li><a href="https://github.com/Mellanox/k8s-rdma-shared-dev-plugin" target="_blank" rel="noopener">RDMA shared device plugin</a> <span>— K8s RDMA device exposure.</span></li>
+        </ul>
+
+        <h2 id="extra-reads">Extra reads</h2>
+        <ul class="reflist">
+          <li><a href="https://docs.nvidia.com/networking/display/kubernetes2024" target="_blank" rel="noopener">NVIDIA Network Operator</a> <span>— bundles Multus + SR-IOV + RDMA for GPU K8s.</span></li>
+          <li><a href="https://www.rdmamojo.com/" target="_blank" rel="noopener">RDMAmojo</a> <span>— community RDMA knowledge base.</span></li>
+        </ul>
+
+        <p style="margin-top:24px;color:var(--ink-faint);font-size:.9rem">Verified against NVIDIA networking docs and RDMA specifications, May 2026.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../ai-native.html">&larr; AI Native Stack</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

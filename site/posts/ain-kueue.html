@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kueue — AI Native Crash Course — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .ain-banner{border:1px solid var(--rule,#d8cfb8);border-radius:10px;padding:14px 16px;margin:0 0 22px;background:rgba(240,192,64,.08)}
+  .ain-banner-label{font-size:.72rem;letter-spacing:.08em;color:var(--ink-faint);margin:0 0 4px}
+  .ain-banner-path{font-size:.88rem;margin:0}
+  .ain-banner-path a{color:var(--accent,#c96442);text-decoration:none}
+  .ain-tldr{border-left:3px solid #f0c040;padding:4px 0 4px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .ain-ver{display:inline-block;font-family:var(--font-mono);font-size:11px;border:1.2px solid var(--ink);border-radius:4px;padding:1px 7px;background:var(--paper)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+
+      <div class="ain-banner">
+        <p class="ain-banner-label">// AI NATIVE STACK</p>
+        <p class="ain-banner-path"><a href="../ai-native.html">AI Native</a> &rsaquo; AI Native Infra &rsaquo; Orchestration and Scheduling &rsaquo; <strong>Kueue</strong></p>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">CRASH COURSE · AI-NATIVE · <span class="difficulty intermediate">intermediate</span> · 10 min read · <span class="ain-ver">SIG</span></p>
+        <h1>Kueue — who gets the GPUs, and when.</h1>
+        <div class="tag-row">
+          <span class="tag fill">orchestration</span>
+          <span class="tag">ai-native</span>
+          <span class="tag">kueue</span>
+          <span class="tag">quota</span>
+          <span class="tag">kubernetes</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="ain-tldr"><strong>TL;DR —</strong> Kueue is a Kubernetes-native <strong>job queueing</strong> system. It doesn't place pods (the scheduler does that) — it decides <em>when a whole job is allowed to start</em>, based on quotas and fairness across teams. <code>ClusterQueue</code> defines a resource pool, <code>LocalQueue</code> is a team's entry point, and <strong>cohorts</strong> let queues borrow each other's idle GPUs. It's an official Kubernetes SIG project.</p>
+
+        <h2 id="what-it-is">What it is</h2>
+        <p>Kueue is a job-queueing and quota-management layer that sits <em>above</em> the Kubernetes scheduler. A job submitted to Kueue waits in a queue until its quota is available; only then does Kueue admit it and let the normal scheduler place the pods. It's maintained by <code>kubernetes-sigs</code> — as close to "official" as add-ons get. In the AI Native landscape it's in <em>AI Native Infra &rsaquo; Orchestration and Scheduling</em>.</p>
+
+        <h2 id="why-it-exists">Why it exists</h2>
+        <p>On a shared GPU cluster the real question isn't "where does this pod go" but "whose job runs now, and how much can each team consume." Without that control, whoever submits first grabs all the GPUs and everyone else starves. Kueue adds the missing governance: per-team quotas, fair sharing, priorities, and borrowing — so an expensive cluster stays both fully used and fairly used.</p>
+
+        <h2 id="how-it-works">How it works — the objects</h2>
+        <table>
+          <thead><tr><th>Object</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td><code>ResourceFlavor</code></td><td>A flavor of hardware — e.g. A100 vs H100 vs spot — so quota can target specific accelerators.</td></tr>
+            <tr><td><code>ClusterQueue</code></td><td>Cluster-scoped resource pool: how much CPU/mem/GPU of each flavor is available, plus policies.</td></tr>
+            <tr><td><code>LocalQueue</code></td><td>Namespaced pointer a team submits to; routes their jobs to a ClusterQueue.</td></tr>
+            <tr><td><code>Cohort</code></td><td>A group of ClusterQueues that can borrow one another's unused quota.</td></tr>
+            <tr><td><code>Workload</code></td><td>Kueue's internal record of a queued job awaiting admission.</td></tr>
+          </tbody>
+        </table>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bx{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.5}
+              .gw{fill:#f0c040;stroke:#2a2620;stroke-width:1.5}
+              .tx{font-family:monospace;font-size:12px;fill:#2a2620}
+              .tt{font-family:monospace;font-size:10px;fill:#948a78}
+              .aw{stroke:#2a2620;stroke-width:1.5;fill:none;marker-end:url(#a)}
+            </style>
+            <defs><marker id="a" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2a2620"/></marker></defs>
+            <rect class="bx" x="20" y="30" width="120" height="40" rx="4"/><text class="tx" x="34" y="55">team A job</text>
+            <rect class="bx" x="20" y="120" width="120" height="40" rx="4"/><text class="tx" x="34" y="145">team B job</text>
+            <rect class="bx" x="185" y="30" width="120" height="40" rx="4"/><text class="tx" x="199" y="50">LocalQueue</text><text class="tt" x="199" y="64">(ns A)</text>
+            <rect class="bx" x="185" y="120" width="120" height="40" rx="4"/><text class="tx" x="199" y="140">LocalQueue</text><text class="tt" x="199" y="154">(ns B)</text>
+            <rect class="gw" x="350" y="60" width="150" height="70" rx="4"/><text class="tx" x="368" y="88">ClusterQueues</text><text class="tt" x="368" y="106">cohort: borrow</text><text class="tt" x="368" y="120">quota · fair-share</text>
+            <rect class="bx" x="545" y="74" width="115" height="42" rx="4"/><text class="tx" x="559" y="92">scheduler</text><text class="tt" x="559" y="108">places pods</text>
+            <path class="aw" d="M140 50 L183 50"/>
+            <path class="aw" d="M140 140 L183 140"/>
+            <path class="aw" d="M305 50 L360 80"/>
+            <path class="aw" d="M305 140 L360 112"/>
+            <path class="aw" d="M500 95 L543 95"/>
+          </svg>
+          <p class="diagram-label">Fig 1 — Teams submit to LocalQueues; Kueue admits jobs by quota, then the scheduler places them.</p>
+        </div>
+
+        <h2 id="features">Key features</h2>
+        <ul>
+          <li><strong>Quotas &amp; fair sharing</strong> — per-team caps with weighted fairness across the cohort.</li>
+          <li><strong>Borrowing &amp; preemption</strong> — idle quota is lent to busy queues, then reclaimed (preempting borrowed jobs) when the owner needs it.</li>
+          <li><strong>Partial admission &amp; dynamic reclaim</strong> — run a job at reduced parallelism if full quota isn't free; release quota as pods finish.</li>
+          <li><strong>ResourceFlavor fungibility</strong> — fall back across hardware types (e.g. spill to spot or a different GPU).</li>
+          <li><strong>Broad job support</strong> — BatchJob, Kubeflow training jobs, RayJob, RayCluster, JobSet, plain Pods and Pod groups.</li>
+          <li><strong>MultiKueue</strong> — dispatch jobs across multiple clusters (a 2026 focus area).</li>
+        </ul>
+
+        <h2 id="quick-start">Quick start</h2>
+        <p>Install the controller, then create one ClusterQueue + a LocalQueue and submit jobs against it:</p>
+        <pre><code class="language-bash">kubectl apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/latest/download/manifests.yaml
+
+kubectl get pods -n kueue-system        # controller up
+kubectl get clusterqueues               # after you create one</code></pre>
+        <p>A job opts in by labeling itself with its LocalQueue; Kueue suspends it until quota frees up, then releases it to the scheduler:</p>
+        <pre><code class="language-yaml">metadata:
+  labels:
+    kueue.x-k8s.io/queue-name: team-a-lq</code></pre>
+
+        <h2 id="when-to-use">When to use, when to skip</h2>
+        <p><strong>Use it</strong> when multiple teams share a GPU/TPU cluster and you need quotas, fairness, and borrowing — the classic "platform team rations scarce accelerators" problem. It layers cleanly on the existing scheduler, so adoption is low-risk.</p>
+        <p><strong>Pair, don't pick.</strong> Kueue handles <em>admission</em>; it doesn't gang-schedule placement. For distributed training you often run Kueue <em>with</em> <a href="../ain-volcano.html">Volcano</a> (Kueue for quota, Volcano for gang). For a single-tenant cluster with no quota needs, you may not need Kueue at all.</p>
+        <div class="gotcha"><span class="gotcha-label">heads up</span>
+          Kueue decides <em>when</em> jobs run, not <em>where</em> pods land — that's still the scheduler's job. If you expected it to do topology-aware gang placement on its own, you want Volcano (or both together).</div>
+
+        <h2 id="alternatives">vs the alternatives</h2>
+        <table>
+          <thead><tr><th>Tool</th><th>Best for</th><th>Trade-off</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Kueue</strong></td><td>Job queueing, quota, fair-share, borrowing</td><td>Admission only — not a placement scheduler</td></tr>
+            <tr><td><a href="../ain-volcano.html">Volcano</a></td><td>Gang scheduling + rich placement policies</td><td>A full scheduler to run</td></tr>
+            <tr><td><a href="../ai-native.html">YuniKorn</a></td><td>Unified batch+service scheduling with queues</td><td>Replaces the scheduler</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="references">References</h2>
+        <ul class="reflist">
+          <li><a href="https://kueue.sigs.k8s.io/docs/overview/" target="_blank" rel="noopener">Official documentation</a> <span>— overview &amp; tutorials.</span></li>
+          <li><a href="https://kueue.sigs.k8s.io/docs/concepts/" target="_blank" rel="noopener">Concepts</a> <span>— queues, flavors, cohorts.</span></li>
+          <li><a href="https://kueue.sigs.k8s.io/docs/concepts/cluster_queue/" target="_blank" rel="noopener">ClusterQueue</a> <span>— quota model in detail.</span></li>
+          <li><a href="https://github.com/kubernetes-sigs/kueue" target="_blank" rel="noopener">kubernetes-sigs/kueue</a> <span>— source.</span></li>
+        </ul>
+
+        <h2 id="extra-reads">Extra reads</h2>
+        <ul class="reflist">
+          <li><a href="https://docs.cloud.google.com/kubernetes-engine/docs/tutorials/kueue-cohort" target="_blank" rel="noopener">Quota sharing across namespaces on GKE</a> <span>— cohort tutorial.</span></li>
+          <li><a href="https://easontechtalk.com/kueue-quick-start-fair-sharing-gpu-tpu-kubernetes/" target="_blank" rel="noopener">Fair-share GPU/TPU queueing</a> <span>— hands-on quick start.</span></li>
+          <li><a href="https://www.infracloud.io/blogs/batch-scheduling-on-kubernetes/" target="_blank" rel="noopener">Batch scheduling on K8s compared</a> <span>— Kueue vs Volcano vs YuniKorn.</span></li>
+        </ul>
+
+        <p style="margin-top:24px;color:var(--ink-faint);font-size:.9rem">Verified against the official Kueue docs (kueue.sigs.k8s.io), May 2026.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../ai-native.html">&larr; AI Native Stack</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

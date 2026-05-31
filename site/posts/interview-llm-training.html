@@ -100,6 +100,27 @@ details.qa .ans p{margin:0 0 10px}details.qa .ans p:last-child{margin-bottom:0}
         <details class="qa"><summary><span>What is gradient accumulation? <span class="diff easy">easy</span></span></summary>
           <div class="ans"><p>A way to simulate a large batch when it won't fit in memory: run several smaller micro-batches, summing (accumulating) their gradients, and only call the optimizer step + zero-grad after N of them. The effective batch size is micro_batch × N, giving large-batch training dynamics without the memory cost of a large batch — at the price of more forward/backward passes per update.</p></div></details>
 
+                <details class="qa"><summary><span>How much memory does training a model take? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>~16 bytes/param with Adam mixed precision: FP16 weights(2)+grads(2)+FP32 master(4)+Adam m,v(8) — plus activations scaling with batch and sequence.</p></div></details>
+        <details class="qa"><summary><span>What is gradient accumulation? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Summing gradients over several micro-batches before one optimizer step, simulating a large batch without its memory.</p></div></details>
+        <details class="qa"><summary><span>What is learning-rate warmup? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Ramping LR from ~0 over the first steps to avoid destabilizing the fresh model, then decaying (cosine/linear).</p></div></details>
+        <details class="qa"><summary><span>What is gradient clipping? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Capping gradient norm (e.g. 1.0) to stop exploding gradients from blowing up a step — key for stability.</p></div></details>
+        <details class="qa"><summary><span>What is a checkpoint? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>A snapshot of weights + optimizer state + scheduler + step (+RNG) so training resumes exactly after a crash.</p></div></details>
+        <details class="qa"><summary><span>What is LoRA? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Low-Rank Adaptation: freeze base weights, train small low-rank A·B matrices on chosen layers — few trainable params, cheap fine-tuning.</p></div></details>
+        <details class="qa"><summary><span>What is QLoRA? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>LoRA on a 4-bit (NF4) frozen base with paged optimizers — fine-tune very large models on modest GPUs.</p></div></details>
+        <details class="qa"><summary><span>SFT vs pretraining? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Pretraining learns general language from huge unlabeled text (next-token); SFT teaches instruction-following on curated prompt→response pairs.</p></div></details>
+        <details class="qa"><summary><span>Epoch vs step? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>A step is one optimizer update on one batch; an epoch is one full pass over the dataset.</p></div></details>
+        <details class="qa"><summary><span>What is MFU? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Model FLOPs Utilization — fraction of peak GPU FLOPs actually achieved; low MFU = starved/stalled GPUs.</p></div></details>
+
         <h2 id="medium">Medium — applied training</h2>
 
         <details class="qa"><summary><span>How does gradient checkpointing reduce memory, and what's the cost? <span class="diff medium">medium</span></span></summary>
@@ -116,6 +137,27 @@ details.qa .ans p{margin:0 0 10px}details.qa .ans p:last-child{margin-bottom:0}
 
         <details class="qa"><summary><span>Your training loss suddenly goes to NaN. How do you debug it? <span class="diff medium">medium</span></span></summary>
           <div class="ans"><p>First look at <strong>grad-norm</strong> just before the NaN. A spike there means an optimization blow-up: LR too high / no warmup → lower LR, add warmup; no gradient clipping → clip global grad-norm to ~1.0; FP16 overflow → switch to BF16 or fix the loss scaler. A NaN with <em>flat</em> grad-norm points elsewhere: a bad data sample (inf/NaN in inputs, empty/over-long sequence, label out of range) — inspect the exact batch at the failing step; or numerics in a custom layer (log(0), divide-by-zero, unstable softmax) — add epsilons. <code>torch.autograd.set_detect_anomaly(True)</code> pinpoints the offending op (slow, for a repro run).</p></div></details>
+
+                <details class="qa"><summary><span>Explain the ZeRO stages / FSDP. <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>ZeRO shards optimizer state (1), gradients (2), and parameters (3) across DP ranks to cut per-GPU memory; FSDP is PyTorch's stage-3 full sharding.</p></div></details>
+        <details class="qa"><summary><span>What is activation checkpointing? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Drop intermediate activations in forward, recompute them in backward — trades compute for big activation-memory savings.</p></div></details>
+        <details class="qa"><summary><span>BF16 vs FP16 for training? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>BF16 preferred: FP32 exponent range, rarely overflows, no loss scaling; FP16 has more precision but narrow range causes instability.</p></div></details>
+        <details class="qa"><summary><span>What is 3D parallelism? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Data + tensor + pipeline parallelism combined to scale to thousands of GPUs, mapped to interconnect topology (TP in-node, PP/DP across).</p></div></details>
+        <details class="qa"><summary><span>RLHF vs DPO? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>RLHF trains a reward model then PPO-optimizes the policy (complex/unstable); DPO optimizes preferences directly with a simple loss, no reward model.</p></div></details>
+        <details class="qa"><summary><span>Why offload optimizer state? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Adam moments are 8 bytes/param — the biggest chunk; offloading to CPU/NVMe (ZeRO-Offload) frees GPU memory at a bandwidth cost.</p></div></details>
+        <details class="qa"><summary><span>How do you debug a loss spike? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Check bad batch, LR too high, missing clip, FP16 overflow; resume from last good checkpoint with clip/BF16 and inspect gradient norms.</p></div></details>
+        <details class="qa"><summary><span>What is DoRA and why beyond LoRA? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Weight-Decomposed LoRA adapts magnitude and direction separately, often closing the gap to full fine-tuning better than vanilla LoRA.</p></div></details>
+        <details class="qa"><summary><span>How is pretraining data quality managed? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Dedup, quality/toxicity/PII filtering, domain mixing/weighting, and eval-set decontamination — quality often beats raw quantity.</p></div></details>
+        <details class="qa"><summary><span>What is a cosine LR schedule with warmup? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Warm up linearly then decay following a cosine curve to a small final LR — smooth decay that empirically trains well for LLMs.</p></div></details>
 
         <h2 id="hard">Hard — senior &amp; distributed</h2>
 
@@ -138,6 +180,27 @@ details.qa .ans p{margin:0 0 10px}details.qa .ans p:last-child{margin-bottom:0}
           <div class="ans"><p>Adam's per-parameter <strong>momentum and variance</strong> define the optimization trajectory; resuming from weights alone resets them, so the optimizer effectively restarts cold and you get a loss bump and disrupted dynamics. A correct checkpoint saves weights + optimizer state + <strong>LR-scheduler step</strong> + <strong>RNG seeds</strong> + the <strong>data iterator/sampler position</strong> (so you don't re-see early data or skip data) + the step/token count. For large models, optimizer state is sharded too, so use distributed/sharded checkpointing (and async checkpointing to avoid stalling the run). Because long runs <em>will</em> hit node failures, checkpoint frequently and test the resume path before you depend on it.</p></div></details>
 
         
+                <details class="qa"><summary><span>How do you compute and improve MFU? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>MFU = achieved/peak FLOPs; improve via bigger batch, kernel fusion (FlashAttention, torch.compile), comm/compute overlap, fixing the input pipeline, BF16/Tensor Cores.</p></div></details>
+        <details class="qa"><summary><span>How does pipeline parallelism avoid bubbles? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Split the batch into micro-batches and interleave forward/backward (GPipe/1F1B schedules) so stages stay busy, shrinking the idle pipeline bubble.</p></div></details>
+        <details class="qa"><summary><span>Reward hacking in RLHF — how prevent it? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>KL penalty to the reference policy, improve/retrain the reward model on exploited cases, diverse evals, and consider DPO for stability.</p></div></details>
+        <details class="qa"><summary><span>How do scaling laws guide a training run? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Chinchilla-style laws balance params vs tokens for a compute budget (~20 tokens/param); they tell you the optimal model size and dataset size to not under/over-train.</p></div></details>
+        <details class="qa"><summary><span>What causes NCCL hangs/deadlocks and how to debug? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Ranks out of sync (one crashed/skipped a collective), mismatched shapes, or network issues; debug with NCCL_DEBUG=INFO, collective timeouts, ensuring all ranks call collectives identically.</p></div></details>
+        <details class="qa"><summary><span>Full fine-tune vs PEFT — when each? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Full FT for big domain shifts with ample compute/data; PEFT (LoRA/QLoRA) when compute-limited, many task variants, or to avoid catastrophic forgetting — near-FT quality at a fraction of cost.</p></div></details>
+        <details class="qa"><summary><span>How do you handle catastrophic forgetting? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Lower LR, fewer epochs, PEFT (less invasive), replay/mix general data, and eval base capabilities — SFT can erode pretrained skills.</p></div></details>
+        <details class="qa"><summary><span>What is sequence/context parallelism? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Splitting the sequence dimension across GPUs so each holds part of the tokens' activations/attention — enables very long context training beyond one GPU's activation memory.</p></div></details>
+        <details class="qa"><summary><span>How do you choose batch size and LR together? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Larger batch needs higher LR (linear/sqrt scaling) + warmup; too-large batch can hurt generalization. Tune via LR sweep at the chosen batch and watch grad-norm stability.</p></div></details>
+        <details class="qa"><summary><span>How do you make a long multi-node run robust? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Frequent full checkpoints to durable storage, automatic resume (incl. dataloader position + RNG), elastic/fault-tolerant training, health checks, and straggler detection.</p></div></details>
+
         <h2 id="scenario">Scenario-based</h2>
 
         <details class="qa"><summary><span>Loss goes to NaN around step 5000. Walk through the fix. <span class="diff hard">hard</span></span></summary>
@@ -152,6 +215,27 @@ details.qa .ans p{margin:0 0 10px}details.qa .ans p:last-child{margin-bottom:0}
           <div class="ans"><p>Full fine-tune is impossible there (16 bytes/param ≈ 1.1TB). Use <strong>QLoRA</strong>: load the base model in <strong>4-bit</strong> (NF4), freeze it, and train small <strong>LoRA adapters</strong> in BF16 — cuts trainable params and optimizer state by orders of magnitude. Add <strong>gradient checkpointing</strong> and <strong>paged optimizers</strong> for memory spikes. You train only the adapters (a few % of params) and merge or serve them. Trade-off: slightly below full-FT quality, but fits and is cheap.</p></div></details>
         <details class="qa"><summary><span>Your SFT model overfits — train loss drops, eval degrades. Fix it. <span class="diff medium">medium</span></span></summary>
           <div class="ans"><p>Classic overfit on a small instruction set. Reduce <strong>epochs</strong> (SFT often needs only 1–3), lower the <strong>LR</strong>, add <strong>early stopping</strong> on a held-out eval set, and get <strong>more/diverse data</strong>. Use a held-out eval and check actual generations, not just loss. LoRA with a modest rank also regularizes vs full fine-tune. Watch for <strong>catastrophic forgetting</strong> of base capabilities — mix in some general data if needed.</p></div></details>
+
+                <details class="qa"><summary><span>Throughput low, GPUs at 40% util. Diagnose. <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Input-pipeline or comm bound: profile, add dataloader workers/prefetch, raise batch, overlap all-reduce — then re-measure MFU.</p></div></details>
+        <details class="qa"><summary><span>Pretrain a model that doesn't fit one node. Plan? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>FSDP/ZeRO-3 sharding + tensor parallelism in-node + pipeline across nodes, mapped to NVLink/IB, with activation checkpointing.</p></div></details>
+        <details class="qa"><summary><span>Loss fine but downstream quality poor. What's wrong? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Train/eval mismatch, data contamination, overfitting, wrong eval format, or wrong objective — inspect generations and held-out metrics, not just loss.</p></div></details>
+        <details class="qa"><summary><span>10-day run crashes at day 8. Avoid losing it? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Frequent full checkpoints (weights+optimizer+scheduler+RNG+dataloader pos) and tested auto-resume.</p></div></details>
+        <details class="qa"><summary><span>Fine-tune is good but forgot base abilities. Fix? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Catastrophic forgetting — lower LR, fewer epochs, use LoRA, and mix in general data.</p></div></details>
+        <details class="qa"><summary><span>Consumer GPUs only, must fine-tune 13B. How? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>QLoRA: 4-bit frozen base + LoRA + gradient checkpointing + paged 8-bit optimizer; train adapters and merge.</p></div></details>
+        <details class="qa"><summary><span>Reward hacking during RLHF. Response? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>KL penalty to reference model, retrain reward model on exploited cases, add diverse evals, consider DPO.</p></div></details>
+        <details class="qa"><summary><span>Gradients explode only on some batches. Diagnose. <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Outlier/garbage samples or long-sequence spikes; add clipping, inspect/filter those batches, check tokenization/label bugs.</p></div></details>
+        <details class="qa"><summary><span>Distributed run hangs with no error. Likely cause? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>NCCL collective deadlock — a rank crashed/desynced or shape mismatch; check NCCL logs, ensure identical collective calls, set timeouts.</p></div></details>
+        <details class="qa"><summary><span>Cut training cost 2x without hurting quality much. Levers? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Raise MFU (pipeline/comm/batch), BF16/FP8, cleaner-but-less data, spot instances with checkpointing, right-size model/tokens via scaling laws.</p></div></details>
 
         <div class="gotcha"><span class="gotcha-label">what industry actually asks</span>
           <p>For <strong>research-engineer / training-infra</strong> roles (frontier labs, large model teams),

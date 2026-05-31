@@ -100,6 +100,27 @@ details.qa .ans p{margin:0 0 10px}details.qa .ans p:last-child{margin-bottom:0}
         <details class="qa"><summary><span>What does a server like vLLM give you over a plain <code>model.generate()</code> loop? <span class="diff easy">easy</span></span></summary>
           <div class="ans"><p>Production serving features a naive loop lacks: <strong>continuous batching</strong> (pack many concurrent requests efficiently), <strong>PagedAttention</strong> (memory-efficient KV cache), prefix caching, an OpenAI-compatible API, streaming, and tensor parallelism. The result is far higher throughput and GPU utilization at scale, plus the operational glue you'd otherwise build yourself.</p></div></details>
 
+                <details class="qa"><summary><span>What are the two phases of LLM inference? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p><strong>Prefill</strong> (process the whole prompt in parallel, compute-bound, fills KV cache) and <strong>decode</strong> (one token at a time, memory-bandwidth-bound).</p></div></details>
+        <details class="qa"><summary><span>What is the KV cache? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Cached key/value tensors for past tokens so each new token's attention skips recompute — trades memory to avoid O(n²) work during decode.</p></div></details>
+        <details class="qa"><summary><span>TTFT vs TPOT? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Time To First Token (prefill-dominated) vs Time Per Output Token (decode-dominated); both make up end-to-end latency.</p></div></details>
+        <details class="qa"><summary><span>What is batching in inference? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Processing multiple requests together to amortize loading the weights from HBM, massively raising throughput.</p></div></details>
+        <details class="qa"><summary><span>What is quantization in serving? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Storing/computing weights (and sometimes KV/activations) in lower precision (INT8/FP8/INT4) to cut memory and raise throughput, with accuracy risk.</p></div></details>
+        <details class="qa"><summary><span>Greedy vs sampling decoding? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Greedy takes the argmax each step (deterministic); sampling draws from the distribution (temperature/top-k/top-p) for diversity.</p></div></details>
+        <details class="qa"><summary><span>What is temperature? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>A scalar dividing logits before softmax: lower → sharper/deterministic, higher → flatter/random.</p></div></details>
+        <details class="qa"><summary><span>Top-k vs top-p sampling? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Top-k samples from the k likeliest tokens; top-p (nucleus) from the smallest set whose cumulative probability ≥ p.</p></div></details>
+        <details class="qa"><summary><span>Why is decode memory-bandwidth-bound? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>Each step streams the full model weights to produce one token (at low batch), so HBM bandwidth, not FLOPs, is the limit.</p></div></details>
+        <details class="qa"><summary><span>What is a context window? <span class="diff easy">easy</span></span></summary>
+          <div class="ans"><p>The max tokens (prompt + output) the model attends to; exceeding it needs truncation, sliding window, or a longer-context model.</p></div></details>
+
         <h2 id="medium">Medium — applied serving</h2>
 
         <details class="qa"><summary><span>Explain continuous (in-flight) batching and why it beats static batching. <span class="diff medium">medium</span></span></summary>
@@ -116,6 +137,27 @@ details.qa .ans p{margin:0 0 10px}details.qa .ans p:last-child{margin-bottom:0}
 
         <details class="qa"><summary><span>How does weight-only 4-bit quantization speed up decode specifically? <span class="diff medium">medium</span></span></summary>
           <div class="ans"><p>Decode is memory-bandwidth-bound: each generated token requires reading the entire weight matrix from HBM, and there's very little math per byte. If weights are stored 4-bit instead of 16-bit, you move ~4× fewer bytes per token, so the bandwidth-limited step finishes faster — a near-linear win on per-token latency for memory-bound decode. Activations stay higher precision (weight-only), and methods like AWQ/GPTQ keep quality high by protecting salient weights / calibrating. Prefill (compute-bound) benefits less.</p></div></details>
+
+                <details class="qa"><summary><span>What is continuous (in-flight) batching? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>A scheduler that adds/removes requests from the running batch each decode step, keeping the GPU full under mixed-length traffic instead of waiting for the whole batch.</p></div></details>
+        <details class="qa"><summary><span>What is PagedAttention? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>KV cache managed in fixed-size pages like virtual memory, eliminating fragmentation and enabling higher concurrency (vLLM).</p></div></details>
+        <details class="qa"><summary><span>Give the KV-cache size formula. <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p><code>2 × n_layers × n_kv_heads × head_dim × seq_len × batch × dtype_bytes</code> (2 = K and V); grows linearly with sequence length and batch.</p></div></details>
+        <details class="qa"><summary><span>MHA vs MQA vs GQA? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>MHA: per-head K/V. MQA: all heads share one K/V (tiny cache, quality cost). GQA: head groups share K/V — the practical middle ground.</p></div></details>
+        <details class="qa"><summary><span>What is speculative decoding? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>A small draft model proposes tokens the big model verifies in one pass, accepting the longest correct prefix — fewer big-model steps, same distribution.</p></div></details>
+        <details class="qa"><summary><span>How does tensor parallelism help inference? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Splits each layer's weights across GPUs so a too-big model fits and matmuls run in parallel, at the cost of per-layer all-reduce.</p></div></details>
+        <details class="qa"><summary><span>What is chunked prefill? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Splitting a long prompt's prefill across scheduler steps so it interleaves with decodes instead of monopolizing the GPU and spiking others' latency.</p></div></details>
+        <details class="qa"><summary><span>How do you size the KV cache for a deployment? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Per-token KV bytes × max context × concurrency, subtracted from (GPU memory − weights), gives the concurrency ceiling; paged + quantized KV stretches it.</p></div></details>
+        <details class="qa"><summary><span>What is prefix/prompt caching? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Reusing the KV for a shared prefix (e.g. system prompt) across requests so it's computed once — big prefill savings.</p></div></details>
+        <details class="qa"><summary><span>How do batch size and the throughput/latency trade-off interact? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Bigger batch raises tokens/sec but increases per-request latency/TTFT; tune max batch + scheduling to meet the SLA while maximizing utilization.</p></div></details>
 
         <h2 id="hard">Hard — senior &amp; systems</h2>
 
@@ -138,6 +180,27 @@ details.qa .ans p{margin:0 0 10px}details.qa .ans p:last-child{margin-bottom:0}
           <div class="ans"><p><strong>Tensor parallel (TP)</strong> splits each layer's matmuls across GPUs and all-reduces activations every layer — low added latency but chatty, so it needs fast intra-node interconnect (NVLink); ideal for latency-sensitive serving on one node. <strong>Pipeline parallel (PP)</strong> splits layers into sequential stages across GPUs/nodes — communication is just activations handed between stages (less bandwidth), so it crosses nodes well, but it adds pipeline latency and needs request/micro-batch concurrency to keep all stages busy (otherwise bubbles). For inference: prefer TP within a node for low latency; add PP to span nodes when a model is too big for one node's GPUs. Expert parallel handles MoE routing on top.</p></div></details>
 
         
+                <details class="qa"><summary><span>What is disaggregated prefill/decode serving? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Run compute-bound prefill and bandwidth-bound decode on separate GPU pools so each is optimized independently, avoiding prefill stalling decode — at the cost of KV transfer between them.</p></div></details>
+        <details class="qa"><summary><span>Compare AWQ, GPTQ, and SmoothQuant. <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>GPTQ: layer-wise error-minimizing weight quant. AWQ: activation-aware, protects salient weight channels. SmoothQuant: shifts activation outliers into weights to enable INT8 activation+weight — pick by target precision and W vs A/KV needs.</p></div></details>
+        <details class="qa"><summary><span>Trade-offs of FP8/INT8 KV cache? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Roughly halves/quarters KV memory → more concurrency/longer context, but can hurt long-context recall; mitigate with per-channel scaling and keeping sensitive layers higher precision, validated on real tasks.</p></div></details>
+        <details class="qa"><summary><span>How does multi-LoRA serving work? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Keep one base model resident and apply per-request LoRA adapters (batched via segmented/grouped GEMM), serving many fine-tunes cheaply without loading N full models.</p></div></details>
+        <details class="qa"><summary><span>How do you engineer for a strict tail-latency (p99) SLA? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Cap max batch to bound per-step time, chunked prefill so big prompts can't monopolize, admission control/queueing, separate prefill/decode, and autoscale on queue depth.</p></div></details>
+        <details class="qa"><summary><span>What is constrained / structured decoding and its cost? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Masking logits to a grammar/JSON schema (e.g. via a finite-state machine) guarantees valid output; cost is per-step mask computation and reduced sampling freedom.</p></div></details>
+        <details class="qa"><summary><span>How does request scheduling/preemption work under KV pressure? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>When KV cache is full, the scheduler preempts/evicts a sequence (swap or recompute) to admit/continue others; recompute is expensive, so policy tuning and capacity matter.</p></div></details>
+        <details class="qa"><summary><span>How do you serve a model across multiple nodes? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Tensor parallelism within a node (NVLink) + pipeline parallelism across nodes, with fast interconnect (IB); minimize cross-node KV movement and balance pipeline stages.</p></div></details>
+        <details class="qa"><summary><span>What is KV-cache offloading and when is it worth it? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Spilling cold KV pages to CPU/NVMe to extend effective capacity for very long contexts; worth it when bandwidth to fetch back is cheaper than recompute, else it hurts latency.</p></div></details>
+        <details class="qa"><summary><span>How do you benchmark an inference server meaningfully? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Measure under realistic request distributions: TTFT and TPOT percentiles, tokens/sec/GPU, and goodput at the latency SLA across concurrency levels — not single-request best case.</p></div></details>
+
         <h2 id="scenario">Scenario-based</h2>
 
         <details class="qa"><summary><span>TTFT is high but per-token latency (TPOT) is fine. Where do you look? <span class="diff medium">medium</span></span></summary>
@@ -152,6 +215,27 @@ details.qa .ans p{margin:0 0 10px}details.qa .ans p:last-child{margin-bottom:0}
           <div class="ans"><p>Raise <strong>utilization</strong> first: better continuous batching = more tokens per GPU-second. Then <strong>quantize</strong> (INT8/FP8/AWQ) to fit a smaller/cheaper GPU or higher batch. <strong>Speculative decoding</strong> (small draft model) cuts decode steps for big speedups. <strong>Prompt/prefix caching</strong> avoids recomputing shared system prompts. Consider a <strong>smaller or distilled model</strong> if quality allows, and route easy queries to it. Measure tokens/sec/$ before and after each change.</p></div></details>
         <details class="qa"><summary><span>Accuracy dropped after you quantized to INT4. How do you recover quality? <span class="diff hard">hard</span></span></summary>
           <div class="ans"><p>Naive round-to-nearest INT4 loses too much. Use a <strong>calibration-based method</strong>: <strong>GPTQ</strong> or <strong>AWQ</strong> (activation-aware — protects salient weight channels), which keep quality far better than RTN. Keep <strong>outlier-sensitive layers</strong> (e.g. attention, first/last) in higher precision (mixed-precision quant). Or step back to <strong>INT8/FP8</strong> which is nearly lossless. Always evaluate on a real task set, not just perplexity, and compare per-task before shipping.</p></div></details>
+
+                <details class="qa"><summary><span>GPU memory is full and requests get preempted/recomputed. Fix? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Enable PagedAttention, quantize KV, cap concurrent long-context requests, or add tensor parallelism — preemption means KV cache is oversubscribed.</p></div></details>
+        <details class="qa"><summary><span>Streaming responses but TTFT feels slow. Tune what? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Reduce prefill cost: chunked prefill, prefix caching for the system prompt, shorter prompts, batched prefill; stream the first token ASAP.</p></div></details>
+        <details class="qa"><summary><span>Serve many fine-tuned variants of one base model cheaply. How? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Multi-LoRA serving: one base model + hot-swappable adapters per request instead of N full models.</p></div></details>
+        <details class="qa"><summary><span>Outputs vary across runs and QA complains. Why/fix? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Sampling (temp&gt;0) is nondeterministic; use temperature 0/greedy or fixed seed — note batching/FP can still cause minor nondeterminism.</p></div></details>
+        <details class="qa"><summary><span>Latency is fine at low load but collapses past N users. Diagnose. <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>You hit the KV-cache concurrency ceiling — requests queue or evict/recompute; raise capacity (paged/quantized KV, GQA, more GPUs) or admission-control load.</p></div></details>
+        <details class="qa"><summary><span>Cost per million tokens too high. Levers? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Improve batching/utilization, quantize, speculative decoding, cache shared prefixes, and route easy queries to a smaller model.</p></div></details>
+        <details class="qa"><summary><span>Serve a 70B model on a single 80GB GPU. How? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Quantize to INT8/FP8 (~70GB) so weights fit, size KV for concurrency; if still tight, 4-bit or two GPUs with tensor parallelism.</p></div></details>
+        <details class="qa"><summary><span>p99 TTFT spikes when long prompts arrive. Fix? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Chunked prefill so a huge prompt can't monopolize a step, plus scheduling/prioritization and a max-prompt cap.</p></div></details>
+        <details class="qa"><summary><span>Accuracy regressed after enabling FP8 KV cache. Check? <span class="diff medium">medium</span></span></summary>
+          <div class="ans"><p>Verify scaling factors, keep sensitive layers/KV higher precision or fall back to INT8/FP16 KV, and evaluate on real long-context tasks.</p></div></details>
+        <details class="qa"><summary><span>Guarantee a strict per-token latency SLA under bursty traffic. Design? <span class="diff hard">hard</span></span></summary>
+          <div class="ans"><p>Bounded max batch, continuous batching with admission control, separate prefill/decode, and replica autoscaling on queue depth.</p></div></details>
 
         <div class="gotcha"><span class="gotcha-label">what industry actually asks</span>
           <p>For <strong>inference/serving</strong> roles (model-serving teams, inference startups, cloud

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vLLM — AI Native Crash Course — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .ain-banner{border:1px solid var(--rule,#d8cfb8);border-radius:10px;padding:14px 16px;margin:0 0 22px;background:rgba(240,192,64,.08)}
+  .ain-banner-label{font-size:.72rem;letter-spacing:.08em;color:var(--ink-faint);margin:0 0 4px}
+  .ain-banner-path{font-size:.88rem;margin:0}
+  .ain-banner-path a{color:var(--accent,#c96442);text-decoration:none}
+  .ain-tldr{border-left:3px solid #f0c040;padding:4px 0 4px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .ain-ver{display:inline-block;font-family:var(--font-mono);font-size:11px;border:1.2px solid var(--ink);border-radius:4px;padding:1px 7px;background:var(--paper)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+
+      <div class="ain-banner">
+        <p class="ain-banner-label">// AI NATIVE STACK</p>
+        <p class="ain-banner-path"><a href="../ai-native.html">AI Native</a> &rsaquo; AI Native Infra &rsaquo; Workload Runtime &rsaquo; <strong>vLLM</strong></p>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">CRASH COURSE · AI-NATIVE · <span class="difficulty intermediate">intermediate</span> · 11 min read · <span class="ain-ver">V1</span></p>
+        <h1>vLLM — the inference engine that stopped wasting your GPU.</h1>
+        <div class="tag-row">
+          <span class="tag fill">workload-runtime</span>
+          <span class="tag">ai-native</span>
+          <span class="tag">vllm</span>
+          <span class="tag">inference</span>
+          <span class="tag">gpu</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="ain-tldr"><strong>TL;DR —</strong> vLLM is a high-throughput LLM inference engine. Two ideas make it fast: <strong>PagedAttention</strong> (treat the KV cache like paged virtual memory, killing fragmentation) and <strong>continuous batching</strong> (slot new requests into the running batch instead of waiting). Together they deliver up to ~24× the throughput of naive serving. Run it as a Python library or as a drop-in OpenAI-compatible server.</p>
+
+        <h2 id="what-it-is">What it is</h2>
+        <p>vLLM is an open-source library and server for fast LLM inference and serving. It loads a model (Hugging Face weights, many architectures) and serves completions at high throughput, exposing an OpenAI-compatible API so existing clients just point at it. Its re-architected <strong>V1</strong> engine is the current core. In the AI Native landscape it's in <em>AI Native Infra &rsaquo; Workload Runtime</em> — and it's the engine inside many higher-level serving stacks.</p>
+
+        <h2 id="why-it-exists">Why it exists</h2>
+        <p>Naive LLM serving leaves GPUs badly underused. The KV cache (per-request attention memory) is allocated in big contiguous chunks, so memory fragments and you can't fit many concurrent requests; and static batching makes finished requests wait for the slowest in the batch. vLLM attacks both — at the memory layer and the scheduler layer — so the same GPU serves far more traffic.</p>
+
+        <h2 id="paged-attention">PagedAttention</h2>
+        <p>The KV cache is split into small fixed-size <em>blocks</em> (pages) allocated on demand, like OS virtual memory — instead of one contiguous block per sequence. No pre-reserving for max length, almost no fragmentation, and blocks can even be shared across requests (prefix caching). The result: bigger batches in the same GPU memory.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 150" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .waste{fill:#f3d6cc;stroke:#2a2620;stroke-width:1.3}
+              .used{fill:#d6e8d0;stroke:#2a2620;stroke-width:1.3}
+              .tt{font-family:monospace;font-size:10px;fill:#948a78}
+              .tx{font-family:monospace;font-size:11px;fill:#2a2620}
+            </style>
+            <text class="tt" x="20" y="24">contiguous KV — reserve for max length, most wasted</text>
+            <rect class="used" x="20" y="34" width="70" height="28"/><rect class="waste" x="90" y="34" width="230" height="28"/>
+            <text class="tx" x="40" y="53">used</text><text class="tt" x="160" y="53">reserved / wasted</text>
+            <text class="tt" x="20" y="104">PagedAttention — small pages, allocated as needed</text>
+            <rect class="used" x="20" y="114" width="36" height="26"/><rect class="used" x="60" y="114" width="36" height="26"/><rect class="used" x="100" y="114" width="36" height="26"/><rect class="used" x="140" y="114" width="36" height="26"/>
+            <rect class="used" x="200" y="114" width="36" height="26"/><rect class="used" x="240" y="114" width="36" height="26"/>
+            <text class="tt" x="300" y="132">→ more sequences fit, bigger batches</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Paging the KV cache removes the reserved-but-unused waste.</p>
+        </div>
+
+        <h2 id="continuous-batching">Continuous batching</h2>
+        <p>Rather than fixing a batch and waiting for every sequence to finish, vLLM's scheduler runs a rolling batch: the moment one request completes a token-generation slot, a waiting request takes its place. The GPU stays saturated, p50 latency drops, and bursty production traffic is absorbed smoothly — reportedly up to ~23× throughput vs static batching.</p>
+
+        <h2 id="more">More that's in the box</h2>
+        <ul>
+          <li><strong>OpenAI-compatible server</strong> — <code>/v1/chat/completions</code> &amp; <code>/v1/completions</code>, streaming.</li>
+          <li><strong>Tensor / pipeline parallelism</strong> — shard big models across multiple GPUs.</li>
+          <li><strong>Quantization</strong> — FP8/INT8/AWQ/GPTQ to fit more in memory.</li>
+          <li><strong>Prefix caching &amp; chunked prefill</strong> — reuse shared prompt prefixes; interleave prefill with decode for steadier latency.</li>
+          <li><strong>Speculative decoding &amp; LoRA</strong> — faster decode; serve many adapters on one base model.</li>
+        </ul>
+
+        <h2 id="quick-start">Quick start</h2>
+        <p>Install, serve a model with one command, then call it like OpenAI:</p>
+        <pre><code class="language-bash">pip install vllm
+vllm serve meta-llama/Llama-3.1-8B-Instruct      # OpenAI server on :8000
+
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"meta-llama/Llama-3.1-8B-Instruct","messages":[{"role":"user","content":"hi"}]}'</code></pre>
+        <p>Any OpenAI client works by setting <code>base_url</code> to the vLLM server. For multi-GPU, add <code>--tensor-parallel-size N</code>.</p>
+
+        <h2 id="when-to-use">When to use, when to skip</h2>
+        <p><strong>Use it</strong> when you self-host LLMs and care about throughput and GPU cost — high-concurrency inference, batch generation, or as the engine behind a serving platform. It's the default high-performance choice for production OSS inference.</p>
+        <p><strong>Skip it</strong> for casual local use on a laptop — <a href="../ai-native.html">Ollama</a> is friendlier. For full cluster lifecycle (autoscaling, canary, multi-model) put vLLM <em>under</em> <a href="../ain-kserve.html">KServe</a> rather than running it bare. <a href="../ai-native.html">SGLang</a> and TGI are close alternatives worth benchmarking for your workload.</p>
+        <div class="gotcha"><span class="gotcha-label">heads up</span>
+          Throughput vs latency is a tradeoff you tune: <code>gpu-memory-utilization</code>, <code>max-num-seqs</code>, and chunked-prefill settings change the balance. And model + GPU memory must actually fit — quantize or shard with tensor parallelism for big models.</div>
+
+        <h2 id="alternatives">vs the alternatives</h2>
+        <table>
+          <thead><tr><th>Tool</th><th>Best for</th><th>Trade-off</th></tr></thead>
+          <tbody>
+            <tr><td><strong>vLLM</strong></td><td>High-throughput self-hosted LLM serving</td><td>You operate the GPU box/cluster</td></tr>
+            <tr><td><a href="../ai-native.html">SGLang</a></td><td>Structured/agentic workloads, RadixAttention</td><td>Benchmark per workload</td></tr>
+            <tr><td><a href="../ai-native.html">Ollama</a></td><td>Easy local/dev model running</td><td>Not built for high concurrency</td></tr>
+            <tr><td><a href="../ain-kserve.html">KServe</a></td><td>Cluster serving platform (wraps vLLM)</td><td>More infra to run</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="references">References</h2>
+        <ul class="reflist">
+          <li><a href="https://docs.vllm.ai/" target="_blank" rel="noopener">vLLM docs</a> <span>— official documentation.</span></li>
+          <li><a href="https://docs.vllm.ai/en/latest/getting_started/quickstart.html" target="_blank" rel="noopener">Quickstart</a> <span>— serve a model fast.</span></li>
+          <li><a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vllm-project/vllm</a> <span>— source.</span></li>
+          <li><a href="https://arxiv.org/abs/2309.06180" target="_blank" rel="noopener">PagedAttention paper</a> <span>— the core idea.</span></li>
+        </ul>
+
+        <h2 id="extra-reads">Extra reads</h2>
+        <ul class="reflist">
+          <li><a href="https://www.runpod.io/articles/guides/vllm-pagedattention-continuous-batching" target="_blank" rel="noopener">PagedAttention &amp; continuous batching explained</a> <span>— deep dive.</span></li>
+          <li><a href="https://www.spheron.network/blog/llm-serving-optimization-continuous-batching-paged-attention/" target="_blank" rel="noopener">LLM serving optimization on H100</a> <span>— tuning in practice.</span></li>
+          <li><a href="https://www.hyperstack.cloud/blog/case-study/what-is-vllm-a-guide-to-quick-inference" target="_blank" rel="noopener">A quick guide to vLLM</a> <span>— intro overview.</span></li>
+        </ul>
+
+        <p style="margin-top:24px;color:var(--ink-faint);font-size:.9rem">Verified against the official vLLM docs (docs.vllm.ai), May 2026.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../ai-native.html">&larr; AI Native Stack</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

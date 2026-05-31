@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SR-IOV — AI Native Crash Course — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .ain-banner{border:1px solid var(--rule,#d8cfb8);border-radius:10px;padding:14px 16px;margin:0 0 22px;background:rgba(240,192,64,.08)}
+  .ain-banner-label{font-size:.72rem;letter-spacing:.08em;color:var(--ink-faint);margin:0 0 4px}
+  .ain-banner-path{font-size:.88rem;margin:0}
+  .ain-banner-path a{color:var(--accent,#c96442);text-decoration:none}
+  .ain-tldr{border-left:3px solid #f0c040;padding:4px 0 4px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .ain-ver{display:inline-block;font-family:var(--font-mono);font-size:11px;border:1.2px solid var(--ink);border-radius:4px;padding:1px 7px;background:var(--paper)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+
+      <div class="ain-banner">
+        <p class="ain-banner-label">// AI NATIVE STACK</p>
+        <p class="ain-banner-path"><a href="../ai-native.html">AI Native</a> &rsaquo; AI Native Infra &rsaquo; Network &rsaquo; <strong>SR-IOV</strong></p>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">CRASH COURSE · AI-NATIVE · <span class="difficulty advanced">advanced</span> · 10 min read · <span class="ain-ver">k8s plugin</span></p>
+        <h1>SR-IOV — hardware-virtualized NICs that give pods bare-metal network speed.</h1>
+        <div class="tag-row">
+          <span class="tag fill">network</span>
+          <span class="tag">ai-native</span>
+          <span class="tag">sr-iov</span>
+          <span class="tag">rdma</span>
+          <span class="tag">kubernetes</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="ain-tldr"><strong>TL;DR —</strong> SR-IOV (Single Root I/O Virtualization) splits one physical NIC into multiple Virtual Functions (VFs), each passthrough-attached to a pod. The pod gets near-bare-metal network performance — no software switch overhead — which is critical for RDMA-based GPU collective communication. On Kubernetes, the SR-IOV Network Operator + device plugin + CNI automate VF creation, discovery, and pod attachment.</p>
+
+        <h2 id="what-it-is">What it is</h2>
+        <p>SR-IOV is a PCI specification that lets a single physical network adapter present itself as multiple virtual adapters (VFs). Each VF can be passed directly into a container or VM, bypassing the host's software network stack. The <strong>SR-IOV Network Operator</strong> for Kubernetes automates the entire lifecycle: enabling SR-IOV on NICs, creating VFs, advertising them as schedulable resources, and attaching them to pods via <a href="ain-multus.html">Multus</a>. In the AI Native landscape it's in <em>AI Native Infra &rsaquo; Network</em>.</p>
+
+        <h2 id="why-it-exists">Why it exists</h2>
+        <p>GPU training with NCCL all-reduce needs maximum network bandwidth and minimum latency between nodes. Standard pod networking (veth pairs, bridge, overlay) adds microseconds of latency and caps throughput. SR-IOV VFs bypass all of that — the NIC DMA's packets directly into the pod's memory. Combined with RDMA, this is how GPU clusters achieve 200–400 Gbps inter-node communication for distributed training.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 160" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .bx{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.5}
+              .gw{fill:#f0c040;stroke:#2a2620;stroke-width:1.5}
+              .a{fill:#d6e8d0;stroke:#2a2620;stroke-width:1.4}
+              .tx{font-family:monospace;font-size:11px;fill:#2a2620}
+              .tt{font-family:monospace;font-size:10px;fill:#948a78}
+              .aw{stroke:#2a2620;stroke-width:1.5;fill:none;marker-end:url(#a)}
+            </style>
+            <defs><marker id="a" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2a2620"/></marker></defs>
+            <rect class="bx" x="14" y="20" width="120" height="40" rx="4"/><text class="tx" x="34" y="44">pod A</text>
+            <rect class="bx" x="14" y="80" width="120" height="40" rx="4"/><text class="tx" x="34" y="104">pod B</text>
+            <rect class="gw" x="200" y="20" width="80" height="40" rx="3"/><text class="tx" x="218" y="44">VF 0</text>
+            <rect class="gw" x="200" y="80" width="80" height="40" rx="3"/><text class="tx" x="218" y="104">VF 1</text>
+            <rect class="a" x="360" y="30" width="200" height="90" rx="4"/><text class="tx" x="388" y="58">Physical NIC (PF)</text><text class="tt" x="378" y="78">ConnectX-7 / E810</text><text class="tt" x="378" y="96">200/400 Gbps</text>
+            <path class="aw" d="M134 40 L198 40"/>
+            <path class="aw" d="M134 100 L198 100"/>
+            <path class="aw" d="M280 40 L358 60"/>
+            <path class="aw" d="M280 100 L358 90"/>
+          </svg>
+          <p class="diagram-label">Fig 1 — Each pod gets a VF passthrough-attached; traffic bypasses the host kernel stack.</p>
+        </div>
+
+        <h2 id="how-it-works">How it works</h2>
+        <p>The SR-IOV Network Operator runs on each node and: (1) configures the PF (Physical Function) to create VFs, (2) runs the SR-IOV device plugin to advertise VFs as extended resources (e.g., <code>intel.com/sriov_rdma</code>), and (3) provides the SR-IOV CNI plugin that <a href="ain-multus.html">Multus</a> invokes to plumb a VF into the pod's network namespace. Pods request VFs like GPUs — as a resource limit — and get a bare-metal NIC.</p>
+
+        <h2 id="features">Key features</h2>
+        <ul>
+          <li><strong>Near-bare-metal performance</strong> — VF passthrough bypasses veth, bridge, overlay. Direct DMA.</li>
+          <li><strong>RDMA capable</strong> — VFs support RoCE/InfiniBand for GPU collective ops.</li>
+          <li><strong>Operator-managed</strong> — SR-IOV Network Operator automates VF lifecycle, driver binding, and config.</li>
+          <li><strong>Schedulable resource</strong> — Kubernetes scheduler places pods on nodes with available VFs.</li>
+          <li><strong>Works with Multus</strong> — secondary interface alongside primary CNI.</li>
+        </ul>
+
+        <h2 id="quick-start">Quick start</h2>
+        <p>Install the SR-IOV Network Operator, define a policy, and request VFs in pods:</p>
+        <pre><code class="language-bash"># install operator (via OLM or Helm)
+kubectl apply -f https://github.com/k8snetworkplumbingwg/sriov-network-operator/releases/latest/download/sriov-network-operator.yaml</code></pre>
+        <pre><code class="language-yaml"># SriovNetworkNodePolicy — create 8 VFs on ens3f0
+apiVersion: sriovnetwork.openshift.io/v1
+kind: SriovNetworkNodePolicy
+metadata:
+  name: rdma-policy
+spec:
+  nodeSelector:
+    feature.node.kubernetes.io/network-sriov.capable: "true"
+  numVfs: 8
+  nicSelector:
+    pfNames: ["ens3f0"]
+  deviceType: netdevice
+  isRdma: true
+  resourceName: sriov_rdma</code></pre>
+        <pre><code class="language-yaml"># pod spec — request a VF
+resources:
+  limits:
+    openshift.io/sriov_rdma: "1"
+metadata:
+  annotations:
+    k8s.v1.cni.cncf.io/networks: sriov-rdma-net</code></pre>
+
+        <h2 id="when-to-use">When to use, when to skip</h2>
+        <p><strong>Use it</strong> on bare-metal or VM-passthrough GPU clusters where NCCL/RDMA performance is critical — distributed training at scale. SR-IOV + RDMA is the standard network stack for multi-node GPU training on Kubernetes.</p>
+        <p><strong>Skip it</strong> for inference-only clusters, single-node training, or cloud-managed Kubernetes where the provider handles GPU networking. Also unnecessary if your NIC doesn't support SR-IOV.</p>
+        <div class="gotcha"><span class="gotcha-label">heads up</span>
+          SR-IOV requires hardware support (NIC + BIOS/IOMMU enabled). VFs are finite — plan your VF count per PF to match the number of pods you'll schedule per node.</div>
+
+        <h2 id="alternatives">vs / alongside</h2>
+        <table>
+          <thead><tr><th>Tool</th><th>Role</th><th>Note</th></tr></thead>
+          <tbody>
+            <tr><td><strong>SR-IOV</strong></td><td>Hardware NIC virtualization</td><td>VF passthrough for bare-metal speed</td></tr>
+            <tr><td>macvlan/ipvlan</td><td>Software sub-interfaces</td><td>Simpler, less performance</td></tr>
+            <tr><td><a href="ain-multus.html">Multus</a></td><td>Multi-NIC orchestrator</td><td>Uses SR-IOV CNI as a secondary plugin</td></tr>
+            <tr><td><a href="ain-rdma.html">RDMA</a></td><td>Zero-copy protocol</td><td>Runs over SR-IOV VFs</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="references">References</h2>
+        <ul class="reflist">
+          <li><a href="https://github.com/k8snetworkplumbingwg/sriov-network-operator" target="_blank" rel="noopener">SR-IOV Network Operator</a> <span>— source and docs.</span></li>
+          <li><a href="https://github.com/k8snetworkplumbingwg/sriov-cni" target="_blank" rel="noopener">SR-IOV CNI plugin</a> <span>— the CNI that plumbs VFs.</span></li>
+          <li><a href="https://github.com/k8snetworkplumbingwg/sriov-network-device-plugin" target="_blank" rel="noopener">SR-IOV device plugin</a> <span>— advertises VFs to the scheduler.</span></li>
+        </ul>
+
+        <h2 id="extra-reads">Extra reads</h2>
+        <ul class="reflist">
+          <li><a href="https://docs.nvidia.com/networking/display/kubernetes2024/sr-iov-network-operator" target="_blank" rel="noopener">NVIDIA networking — SR-IOV</a> <span>— GPU cluster networking guide.</span></li>
+          <li><a href="https://www.intel.com/content/www/us/en/developer/articles/technical/configure-sr-iov-network-virtual-functions-in-linux-kvm.html" target="_blank" rel="noopener">Intel SR-IOV guide</a> <span>— hardware setup fundamentals.</span></li>
+        </ul>
+
+        <p style="margin-top:24px;color:var(--ink-faint);font-size:.9rem">Verified against SR-IOV Network Operator docs (github.com/k8snetworkplumbingwg), May 2026.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../ai-native.html">&larr; AI Native Stack</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

@@ -52,7 +52,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Jun 3, 2026 · devops · 34 min read · 7200 words <span class="difficulty intermediate">intermediate</span></p>
+        <p class="meta">Jun 3, 2026 · devops · 52 min read · 11500 words <span class="difficulty intermediate">intermediate</span></p>
         <h1>The Complete AMD EPYC "Turin" (5th Gen) Tuning Guide — for your whole org.</h1>
         <div class="tag-row">
           <span class="tag fill">devops</span>
@@ -493,6 +493,188 @@ uname -r</code></pre>
           <li>☐ Baselined → changed one knob at a time → re-ran 5–10× → checked power/heat</li>
           <li>☐ Monitoring in place (steal, numa_miss, throttle, swap)</li>
           <li>☐ Settings committed as IaC; re-check scheduled after firmware/kernel updates</li>
+        </ul>
+
+        <h2 id="sku">Choosing the right Turin SKU</h2>
+        <p>Tuning starts at the purchase order — the wrong SKU can't be fixed in BIOS. Turin parts split into families optimized for different things:</p>
+        <table>
+          <thead><tr><th>Family</th><th>Optimized for</th><th>Pick when</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Core-optimized (high core count)</strong></td><td>Total throughput (up to 128 Zen 5 / 192 Zen 5c cores)</td><td>Scale-out, containers, web fleets, virtualization density</td></tr>
+            <tr><td><strong>Frequency-optimized (F-series)</strong></td><td>High per-core clock, fewer cores</td><td>Per-core-licensed databases (Oracle/SQL Server), latency-critical, EDA</td></tr>
+            <tr><td><strong>Single-socket (P-series)</strong></td><td>Cost — 1P platforms, no 2nd socket premium</td><td>You don't need dual-socket; saves licensing + platform cost</td></tr>
+            <tr><td><strong>Zen 5c "Dense"</strong></td><td>Max cores/watt (192 cores)</td><td>Cloud-native, massive concurrency, throughput per rack-U</td></tr>
+          </tbody>
+        </table>
+        <p>Key trade-off: <strong>more cores per CCD vs fewer.</strong> A 32-core part spread over 8 CCDs gives each core more L3 and memory bandwidth than a 32-core part on 2 CCDs — better for bandwidth-bound and per-core work, even at the same core count. Check the CCD count, not just the core count, for bandwidth-sensitive workloads.</p>
+
+        <h2 id="dimm">Memory population rules (the hidden bandwidth killer)</h2>
+        <p>Turin's 12 channels only deliver full bandwidth if you <em>populate all 12</em>. Half-populated memory = roughly half the bandwidth, no matter how you tune the OS. Rules:</p>
+        <ul>
+          <li><strong>Populate all 12 channels per socket</strong> (12 DIMMs, or 24 in 2 DIMMs-per-channel). Balanced population is mandatory for peak bandwidth.</li>
+          <li><strong>1 DIMM per channel (1DPC)</strong> runs at the highest speed (up to DDR5-6000). <strong>2DPC</strong> adds capacity but may drop the clock — check your platform's supported speed at 2DPC.</li>
+          <li><strong>Match DIMMs</strong> — same size, rank, and speed across all channels. Mixed/unbalanced configs force the controller to the lowest common denominator.</li>
+          <li><strong>Rank matters</strong> — dual-rank DIMMs often give slightly more bandwidth than single-rank via better interleaving.</li>
+          <li>Confirm the populated speed: <code>dmidecode -t memory | grep -E "Speed|Locator|Rank"</code>.</li>
+        </ul>
+        <div class="gotcha"><span class="gotcha-label">most common hardware mistake</span>
+          Buying a 12-channel CPU and populating 8 DIMMs "to save money." You just threw away a third of your memory bandwidth — and no BIOS or sysctl setting gets it back. Populate all channels.</div>
+
+        <h2 id="bios-extra">More BIOS knobs + confidential computing</h2>
+        <p>Beyond the core knobs, a full BIOS pass for Turin also touches:</p>
+        <ul>
+          <li><strong>Global C-state Control / DF C-states</strong> — allow or forbid package/fabric idle states. Forbid for latency (with APBDIS), allow for power savings.</li>
+          <li><strong>Fixed SOC/Uncore P-state</strong> — pin the I/O die clock high to remove memory-latency jitter (latency/HPC).</li>
+          <li><strong>CPPC (Collaborative Processor Performance Control)</strong> — lets the OS (<code>amd-pstate</code>) drive frequency cooperatively; enable for best OS-level power/perf control.</li>
+          <li><strong>TSME (Transparent SME)</strong> — always-on main-memory encryption with minimal overhead; enable for data-at-rest-in-RAM protection.</li>
+          <li><strong>SEV / SEV-SNP</strong> — confidential VMs: each guest's memory is encrypted and integrity-protected from the host. Enable for multi-tenant/regulated workloads; expect a small overhead and set <code>IOMMU</code> + sufficient ASIDs.</li>
+          <li><strong>x2AVIC</strong> — hardware-accelerated interrupt virtualization for dense VM hosts.</li>
+        </ul>
+
+        <h3>BIOS master quick-reference</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>General</th><th>Database</th><th>HPC</th><th>Latency</th></tr></thead>
+          <tbody>
+            <tr><td>NPS</td><td>1</td><td>2–4</td><td>4</td><td>4</td></tr>
+            <tr><td>SMT</td><td>On</td><td>On</td><td>Off</td><td>Off</td></tr>
+            <tr><td>Determinism</td><td>Perf</td><td>Perf</td><td>Perf</td><td>Perf</td></tr>
+            <tr><td>cTDP</td><td>Default/Max</td><td>Max</td><td>Max</td><td>Max</td></tr>
+            <tr><td>Core Perf Boost</td><td>On</td><td>On</td><td>On</td><td>On</td></tr>
+            <tr><td>DF C-states</td><td>Auto</td><td>Auto</td><td>Disabled</td><td>Disabled</td></tr>
+            <tr><td>APBDIS / fixed DF P0</td><td>Off</td><td>Off</td><td>On</td><td>On</td></tr>
+            <tr><td>LLC as NUMA</td><td>Off</td><td>Test</td><td>On</td><td>On</td></tr>
+            <tr><td>IOMMU</td><td>On (if virt)</td><td>Off/On</td><td>Off</td><td>Off</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="power-thermal">Power, frequency &amp; thermal management</h2>
+        <p>Performance is bounded by power and heat. Modern EPYC tuning leans on the <strong>amd-pstate</strong> driver and its energy-performance-preference (EPP):</p>
+        <pre><code class="language-bash"># confirm the modern driver is active (better than legacy acpi-cpufreq on EPYC)
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_driver   # want amd-pstate-epp
+# set energy-performance preference: performance | balance_performance | power
+echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference
+# watch real clocks, C-states, and power live
+turbostat --interval 1            # per-core MHz, busy%, PkgWatt, CoreTmp
+sensors                           # temperatures
+# RAPL power readings
+cat /sys/class/powercap/intel-rapl*/energy_uj 2>/dev/null  # (AMD exposes via hwmon/k10temp)</code></pre>
+        <p><strong>AVX-512 on Zen 5 is a gift:</strong> unlike older Intel parts, Turin runs full-width AVX-512 without a severe all-core frequency drop, so vectorized HPC/AI code gets the throughput <em>without</em> the clock penalty. Build with AVX-512 and don't fear it. To find throttling: if <code>turbostat</code> shows clocks well below expected under load, you're power- or thermal-limited — improve cooling, raise cTDP only if cooling allows, and check airflow/fan curves in BIOS.</p>
+
+        <h2 id="virt">Virtualization (KVM) tuning</h2>
+        <p>For KVM/QEMU hosts, the guest only goes as fast as the host lets it:</p>
+        <ul>
+          <li><strong>Pin vCPUs to physical cores</strong> (and keep them on one NUMA node) with <code>&lt;cputune&gt;&lt;vcpupin&gt;</code> in libvirt; expose the real topology with <code>&lt;cpu mode='host-passthrough'&gt;</code> so the guest sees Zen 5 + AVX-512.</li>
+          <li><strong>Back guest RAM with hugepages</strong> (<code>&lt;memoryBacking&gt;&lt;hugepages/&gt;</code>) and bind guest memory to the same NUMA node as its vCPUs.</li>
+          <li><strong>NUMA-align</strong> — never let a VM straddle NUMA nodes unless it's NUMA-aware inside.</li>
+          <li><strong>SR-IOV / vhost-net</strong> for fast guest networking; <code>IOMMU</code> on in BIOS.</li>
+          <li><strong>Isolate host housekeeping</strong> from vCPU cores (emulator pinning, <code>isolcpus</code>).</li>
+        </ul>
+        <pre><code class="language-xml">&lt;cpu mode='host-passthrough'/&gt;
+&lt;cputune&gt;
+  &lt;vcpupin vcpu='0' cpuset='8'/&gt;
+  &lt;vcpupin vcpu='1' cpuset='9'/&gt;
+&lt;/cputune&gt;
+&lt;memoryBacking&gt;&lt;hugepages/&gt;&lt;/memoryBacking&gt;
+&lt;numatune&gt;&lt;memory mode='strict' nodeset='1'/&gt;&lt;/numatune&gt;</code></pre>
+
+        <h2 id="k8s">Kubernetes / container tuning</h2>
+        <p>Containers add a scheduling layer that, by default, ignores NUMA and CCD locality. To get bare-metal-like performance for latency-sensitive pods:</p>
+        <ul>
+          <li><strong>CPU Manager static policy</strong> — give Guaranteed pods exclusive whole cores (kubelet <code>--cpu-manager-policy=static</code>, integer CPU requests = limits).</li>
+          <li><strong>Topology Manager</strong> — align CPU, memory, and device (NIC/GPU) allocations to the same NUMA node (<code>--topology-manager-policy=single-numa-node</code>).</li>
+          <li><strong>HugePages</strong> — expose as a schedulable resource (<code>hugepages-2Mi</code>) and request them in the pod spec.</li>
+          <li><strong>Node tuning</strong> — apply the governor/sysctl/THP settings via the <strong>Tuned Operator</strong> (NTO) or a privileged DaemonSet, not by hand.</li>
+          <li><strong>Reserve system cores</strong> — <code>--reserved-cpus</code> / <code>isolcpus</code> so kubelet and the OS don't steal app cores.</li>
+        </ul>
+        <pre><code class="language-yaml"># Guaranteed pod gets exclusive cores + hugepages + NUMA alignment
+resources:
+  requests: { cpu: "8", memory: "16Gi", hugepages-2Mi: "4Gi" }
+  limits:   { cpu: "8", memory: "16Gi", hugepages-2Mi: "4Gi" }</code></pre>
+
+        <h2 id="net">Network tuning (deep)</h2>
+        <p>For high-throughput or low-latency networking, the NIC and kernel path need work beyond the sysctls already covered:</p>
+        <pre><code class="language-bash"># bigger NIC ring buffers (fewer drops under bursts)
+ethtool -G eth0 rx 4096 tx 4096
+# interrupt coalescing: more for throughput, less (or adaptive) for latency
+ethtool -C eth0 adaptive-rx on adaptive-tx on
+# spread RX across cores (RSS); check/set queues
+ethtool -L eth0 combined 16
+# offloads on for throughput (GRO/GSO/TSO); off for ultra-low latency
+ethtool -K eth0 gro on gso on tso on
+# jumbo frames if the whole path supports them
+ip link set eth0 mtu 9000</code></pre>
+        <ul>
+          <li><strong>RSS/RPS/XPS</strong> — distribute receive/transmit across cores; pin queues to cores near the app's NUMA node.</li>
+          <li><strong>Busy polling</strong> (<code>net.core.busy_poll</code>) for the lowest latency at the cost of CPU.</li>
+          <li><strong>Kernel bypass</strong> — DPDK or AF_XDP for millions of packets/sec; on cloud, EFA for HPC/ML collectives.</li>
+          <li><strong>Pin IRQs</strong> to cores on the NIC's local NUMA node (see §3.7) so packet processing stays local.</li>
+        </ul>
+
+        <h2 id="compilers">Compilers &amp; parallel runtimes</h2>
+        <p>Getting the most from the cores means telling the toolchain about Zen 5 and binding threads correctly.</p>
+        <pre><code class="language-bash"># aggressive, Zen-5-targeted build with link-time optimization
+gcc -O3 -march=znver5 -flto -mprefer-vector-width=512 app.c -o app
+# profile-guided optimization (PGO): build, run a representative load, rebuild
+gcc -O3 -march=znver5 -fprofile-generate app.c -o app && ./app &lt;workload&gt;
+gcc -O3 -march=znver5 -fprofile-use app.c -o app
+# AOCC (AMD's Clang) and AOCL math libs squeeze more on EPYC</code></pre>
+        <p><strong>OpenMP</strong> — bind threads to cores/CCDs so they don't migrate:</p>
+        <pre><code class="language-bash">export OMP_NUM_THREADS=32
+export OMP_PROC_BIND=close      # keep threads near each other (shared L3)
+export OMP_PLACES=cores         # one thread per physical core</code></pre>
+        <p><strong>MPI</strong> — map and bind ranks to NUMA domains / CCDs:</p>
+        <pre><code class="language-bash">mpirun --map-by numa --bind-to core -np 16 ./solver   # Open MPI example</code></pre>
+
+        <h2 id="runtimes">Language-runtime tuning</h2>
+        <ul>
+          <li><strong>JVM</strong> — enable large pages (<code>-XX:+UseTransparentHugePages</code> or <code>-XX:+UseLargePages</code> with explicit hugepages), pick a modern GC (<code>-XX:+UseZGC</code> or G1), and consider NUMA-aware allocation (<code>-XX:+UseNUMA</code>) when the heap spans nodes. Size the heap to fit a NUMA node where possible.</li>
+          <li><strong>Go</strong> — set <code>GOMAXPROCS</code> to the cores you actually pinned (not the box's total) so the runtime doesn't oversubscribe; pin with <code>taskset</code>.</li>
+          <li><strong>Python</strong> — NumPy/SciPy use BLAS under the hood: link AOCL/BLIS and set <code>OMP_NUM_THREADS</code>/<code>OPENBLAS_NUM_THREADS</code> to avoid thread storms; pin worker processes to NUMA nodes.</li>
+          <li><strong>.NET</strong> — enable Server GC and (on NUMA) GC affinitization; .NET on Zen 5 benefits from the high per-core throughput.</li>
+        </ul>
+
+        <h2 id="databases">Database-specific recipes</h2>
+        <p>Databases are the workload that gains most from correct EPYC tuning. Common ground: <strong>THP off</strong>, explicit hugepages, low swappiness, strict overcommit, NUMA pinning, NVMe with <code>none</code>/<code>mq-deadline</code>.</p>
+        <ul>
+          <li><strong>PostgreSQL</strong> — <code>huge_pages=on</code>; <code>shared_buffers</code> ≈ 25% RAM (fit within a NUMA node if possible); raise <code>effective_cache_size</code>, <code>max_parallel_workers</code>, <code>work_mem</code>; pin via <code>numactl</code>.</li>
+          <li><strong>MySQL/InnoDB</strong> — <code>innodb_buffer_pool_size</code> ≈ 50–75% RAM with multiple <code>innodb_buffer_pool_instances</code>; <code>innodb_numa_interleave=ON</code>; large pages on; O_DIRECT flush.</li>
+          <li><strong>Redis</strong> — <strong>THP must be off</strong> (latency spikes on fork/save); pin to cores on one NUMA node; watch fork latency during RDB/AOF.</li>
+          <li><strong>MongoDB</strong> — THP off (vendor requirement); WiredTiger cache sized to local memory; XFS recommended.</li>
+        </ul>
+
+        <h2 id="bench-tools">The benchmarking toolbox</h2>
+        <table>
+          <thead><tr><th>Tool</th><th>Measures</th></tr></thead>
+          <tbody>
+            <tr><td><strong>STREAM</strong></td><td>Memory bandwidth (and noisy-neighbour detection)</td></tr>
+            <tr><td><strong>stress-ng</strong></td><td>Stress + micro-benchmark almost any subsystem</td></tr>
+            <tr><td><strong>sysbench</strong></td><td>CPU, memory, and OLTP database throughput</td></tr>
+            <tr><td><strong>HPL / HPCG</strong></td><td>HPC floating-point (Linpack) and memory-bound HPC</td></tr>
+            <tr><td><strong>CoreMark / SPEC CPU</strong></td><td>Standardized integer/FP CPU scores</td></tr>
+            <tr><td><strong>fio</strong></td><td>Storage IOPS / bandwidth / latency</td></tr>
+            <tr><td><strong>netperf / iperf3</strong></td><td>Network throughput and latency</td></tr>
+            <tr><td><strong>wrk / k6</strong></td><td>HTTP service throughput + p99 latency</td></tr>
+          </tbody>
+        </table>
+        <p>Always finish with your <em>own application</em> under realistic load — synthetic tools explain <em>why</em>, your app decides <em>whether</em>. (Full method: <a href="bench-4-your-workload.html">benchmark your own workload</a>.)</p>
+
+        <h2 id="profiling-deep">Deep profiling</h2>
+        <pre><code class="language-bash"># IPC, cache + branch misses (low IPC + high L3 miss = memory-bound)
+perf stat -e cycles,instructions,cache-misses,LLC-load-misses ./app
+# where time goes
+perf top
+# AMD's own profiler understands EPYC PMU events well
+# (AMD uProf: CPU profiling, IBS sampling, power profiling)
+# memory-bandwidth + cache analysis per NUMA node
+likwid-perfctr -g MEM ./app</code></pre>
+        <p>Watch <strong>IPC</strong> (instructions per cycle): high IPC = compute-bound (more cores/clock help); low IPC with high cache/memory misses = memory-bound (fix NUMA/bandwidth/pinning, more cores won't help).</p>
+
+        <h2 id="firmware">Firmware, microcode &amp; updates</h2>
+        <ul>
+          <li>Keep <strong>BIOS/AGESA</strong> current — AMD ships performance, stability, and security fixes; Zen 5 platforms improve meaningfully across early AGESA versions.</li>
+          <li>Update <strong>CPU microcode</strong> (via OS package or BIOS) for errata and security fixes.</li>
+          <li>Re-baseline after any firmware/microcode/kernel update — behaviour can shift, for better or worse.</li>
+          <li>Check <code>dmesg</code> / <code>journalctl -k</code> and <code>mcelog</code> for ECC/MCE errors; a flaky DIMM tanks bandwidth and stability.</li>
         </ul>
 
         <h2 id="glossary">Glossary (plain words)</h2>

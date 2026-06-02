@@ -21,9 +21,9 @@ const POSTS = [
     date: "Jun 3, 2026",
     cat: "devops",
     tags: ["devops", "amd-epyc", "turin", "performance", "bios", "linux"],
-    time: 34,
-    words: 7200,
-    excerpt: "The one page your team can return to: BIOS (NUMA/SMT/determinism/power), a deep Operating-System-Optimizations section (governor, C-states, sysctl explained line by line, THP, tuned, GRUB, IRQ, mitigations), CPU/memory/storage/latency tuning, per-workload recipes, monitoring, noisy-neighbour fixes, and an org rollout checklist."
+    time: 52,
+    words: 11500,
+    excerpt: "The one-stop EPYC Turin reference: SKU selection, DIMM population, full BIOS (incl. SEV-SNP/TSME), a deep OS-optimizations section (governor, C-states, sysctl line-by-line, THP, tuned, GRUB, IRQ), power/thermal & amd-pstate, KVM, Kubernetes, deep networking, compilers/OpenMP/MPI, language runtimes, database recipes, profiling, firmware — every layer, plain words."
   },
   {
     slug: "bench-4-your-workload",

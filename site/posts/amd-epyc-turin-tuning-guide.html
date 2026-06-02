@@ -20,12 +20,15 @@
   .reflist{list-style:none;padding:0;margin:0}
   .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.9rem}
   .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
   table{font-size:.9rem}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
 </style>
 </head>
 <body>
   <div class="progress-bar"></div>
-  <div class="layout has-vocab">
+  <div class="layout has-toc">
     <aside class="sidebar">
       <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
       <p class="sidebar-sub">blog from a devops + ml apprentice</p>
@@ -49,174 +52,486 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Jun 3, 2026 · devops · 16 min read · 3300 words <span class="difficulty intermediate">intermediate</span></p>
-        <h1>Tuning AMD EPYC "Turin" (5th Gen) for your org — in plain words.</h1>
+        <p class="meta">Jun 3, 2026 · devops · 34 min read · 7200 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>The Complete AMD EPYC "Turin" (5th Gen) Tuning Guide — for your whole org.</h1>
         <div class="tag-row">
           <span class="tag fill">devops</span>
           <span class="tag">amd-epyc</span>
           <span class="tag">turin</span>
           <span class="tag">performance</span>
           <span class="tag">bios</span>
+          <span class="tag">linux</span>
         </div>
       </div>
 
       <div class="post-body">
 
-        <p class="bm-tldr"><strong>TL;DR —</strong> A new EPYC "Turin" server doesn't run its fastest out of the box — the safe defaults leave performance on the table. The biggest wins come from a handful of BIOS switches (<strong>NUMA layout, SMT, determinism, power/TDP</strong>) plus a few Linux settings (<strong>CPU governor, NUMA pinning, hugepages</strong>). The single most important rule: <strong>tune for your workload</strong> — a database, a web fleet, an HPC job, and an AI server all want different settings. This guide explains each knob in everyday language and gives ready recipes.</p>
+        <p class="bm-tldr"><strong>TL;DR —</strong> A fresh EPYC "Turin" (EPYC 9005, Zen 5) server runs at maybe 70–90% of what it could. The defaults play it safe. Real gains come from three layers: <strong>BIOS/UEFI</strong> (NUMA layout, SMT, determinism, power), the <strong>operating system</strong> (CPU governor, C-states, sysctl, tuned, hugepages, NUMA, IRQ), and <strong>your application</strong> (compiler flags, pinning, memory layout). This guide walks every layer in plain words, with copy-paste commands, per-workload recipes, and a deep Operating-System-Optimizations section. The golden rule throughout: <strong>tune for your workload and measure every change.</strong></p>
 
-        <h2 id="what">What "Turin" is, briefly</h2>
-        <p>"Turin" is AMD's 5th-generation EPYC server chip (the <strong>EPYC 9005</strong> family), built on the <strong>Zen 5</strong> core. Versus the previous generation at the same power, it delivers roughly <strong>20% more integer and 34% more floating-point performance</strong> on a 64-core part. It comes in two flavours: standard Zen 5 (up to 128 cores, best per-core speed) and dense Zen 5c (up to 192 cores, best total throughput). It uses 12 channels of fast DDR5 memory and the same SP5 socket as the prior generation.</p>
-        <p>Inside, the chip is built from several <strong>chiplets</strong> (AMD calls them CCDs) of cores around a central I/O die that talks to memory. That layout is <em>why</em> the tuning knobs below matter — they control how cores, cache, and memory are grouped and fed.</p>
+        <h2 id="how-to-use">How to use this guide</h2>
+        <p>This is long on purpose — it's meant to be the one page your whole team can return to. You don't read it top to bottom. You:</p>
+        <ol>
+          <li>Read <a href="#mental-model">the mental model</a> and <a href="#workflow">the workflow</a> once, so the rest makes sense.</li>
+          <li>Jump to <a href="#bios">BIOS</a> and <a href="#os">Operating System</a> for the knobs.</li>
+          <li>Find your workload in <a href="#recipes">the recipes</a> and copy the starting settings.</li>
+          <li>Use <a href="#verify">the verify loop</a> and <a href="#checklist">the checklist</a> to roll it out safely.</li>
+        </ol>
+        <p>Every command here is safe to read; test each on a non-production box first. Where the cloud takes a knob away from you (you can't open BIOS on EC2), the guide says so and gives the cloud equivalent.</p>
+
+        <h2 id="what">What "Turin" actually is</h2>
+        <p>"Turin" is the codename for AMD's <strong>5th-generation EPYC 9005 series</strong>, built on the <strong>Zen 5</strong> core. Compared with the previous generation at the same power envelope, a 64-core part delivers roughly <strong>20% more integer and 34% more floating-point performance</strong>. Two important sub-families:</p>
+        <ul>
+          <li><strong>Turin (classic Zen 5)</strong> — up to <strong>128 cores</strong>, the best per-core speed and highest clocks. Pick this for latency-sensitive, per-core-licensed, and mixed work.</li>
+          <li><strong>Turin Dense (Zen 5c)</strong> — up to <strong>192 cores</strong>, maximum total throughput per socket. Pick this for scale-out, containers, and throughput-bound services.</li>
+        </ul>
+        <p>It uses the <strong>SP5 socket</strong> (same as the prior gen, so many platforms drop-in upgrade), <strong>12 channels of DDR5</strong> memory (up to DDR5-6000), and PCIe Gen5. Zen 5 also has a <strong>full-width AVX-512 datapath</strong>, which matters a lot for HPC and AI math.</p>
+
+        <h2 id="mental-model">The mental model: chiplets, the I/O die, and NUMA</h2>
+        <p>You can't tune what you don't picture. A Turin chip is not one slab of silicon. It's several <strong>core chiplets (CCDs)</strong> — each a cluster of cores with its own slice of L3 cache — arranged around one central <strong>I/O die (IOD)</strong>. The IOD owns the memory controllers (those 12 DDR5 channels) and the PCIe/Infinity Fabric links. Cores talk to memory <em>through</em> the IOD.</p>
+        <p>Two consequences drive almost every tuning decision:</p>
+        <ul>
+          <li><strong>Cache locality.</strong> Each CCD has an exclusive L3 (about 32 MB). Threads that share data run fastest when pinned to the <em>same</em> CCD/L3. Spreading them across CCDs adds cross-chiplet hops.</li>
+          <li><strong>Memory locality (NUMA).</strong> How the chip groups its cores and memory into NUMA nodes (the <strong>NPS</strong> setting) decides whether a core's data sits "next door" or "across town." NUMA-aware software that keeps work near its memory wins big; software that ignores NUMA can be hurt by aggressive splitting.</li>
+        </ul>
 
         <div class="diagram-container">
-          <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
             <style>
               .ccd{fill:#d6e8d0;stroke:#2a2620;stroke-width:1.3}
               .io{fill:#f0c040;stroke:#2a2620;stroke-width:1.4}
               .mem{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.2}
               .t{font-family:monospace;font-size:9px;fill:#2a2620;text-anchor:middle}
-              .tt{font-family:monospace;font-size:10px;fill:#948a78;text-anchor:middle}
+              .tt{font-family:monospace;font-size:9px;fill:#948a78;text-anchor:middle}
             </style>
-            <rect class="io" x="270" y="60" width="140" height="60" rx="4"/><text class="t" x="340" y="86">central I/O die</text><text class="t" x="340" y="100">(memory + links)</text>
-            <rect class="ccd" x="60" y="30" width="80" height="34" rx="3"/><text class="t" x="100" y="51">CCD cores</text>
-            <rect class="ccd" x="60" y="115" width="80" height="34" rx="3"/><text class="t" x="100" y="136">CCD cores</text>
-            <rect class="ccd" x="160" y="30" width="80" height="34" rx="3"/><text class="t" x="200" y="51">CCD cores</text>
-            <rect class="ccd" x="160" y="115" width="80" height="34" rx="3"/><text class="t" x="200" y="136">CCD cores</text>
-            <rect class="ccd" x="440" y="30" width="80" height="34" rx="3"/><text class="t" x="480" y="51">CCD cores</text>
-            <rect class="ccd" x="440" y="115" width="80" height="34" rx="3"/><text class="t" x="480" y="136">CCD cores</text>
-            <rect class="ccd" x="540" y="30" width="80" height="34" rx="3"/><text class="t" x="580" y="51">CCD cores</text>
-            <rect class="ccd" x="540" y="115" width="80" height="34" rx="3"/><text class="t" x="580" y="136">CCD cores</text>
-            <rect class="mem" x="285" y="10" width="110" height="16"/><text class="tt" x="340" y="22" style="font-size:8px">DDR5 channels</text>
-            <rect class="mem" x="285" y="154" width="110" height="16"/><text class="tt" x="340" y="166" style="font-size:8px">DDR5 channels</text>
-            <line x1="140" y1="60" x2="270" y2="80" stroke="#948a78"/><line x1="140" y1="135" x2="270" y2="100" stroke="#948a78"/>
-            <line x1="440" y1="60" x2="410" y2="80" stroke="#948a78"/><line x1="440" y1="135" x2="410" y2="100" stroke="#948a78"/>
+            <rect class="io" x="270" y="70" width="140" height="60" rx="4"/><text class="t" x="340" y="96">central I/O die</text><text class="t" x="340" y="110">12× DDR5 + PCIe5</text>
+            <rect class="ccd" x="50" y="30" width="86" height="32" rx="3"/><text class="t" x="93" y="50">CCD · L3</text>
+            <rect class="ccd" x="50" y="138" width="86" height="32" rx="3"/><text class="t" x="93" y="158">CCD · L3</text>
+            <rect class="ccd" x="150" y="30" width="86" height="32" rx="3"/><text class="t" x="193" y="50">CCD · L3</text>
+            <rect class="ccd" x="150" y="138" width="86" height="32" rx="3"/><text class="t" x="193" y="158">CCD · L3</text>
+            <rect class="ccd" x="444" y="30" width="86" height="32" rx="3"/><text class="t" x="487" y="50">CCD · L3</text>
+            <rect class="ccd" x="444" y="138" width="86" height="32" rx="3"/><text class="t" x="487" y="158">CCD · L3</text>
+            <rect class="ccd" x="544" y="30" width="86" height="32" rx="3"/><text class="t" x="587" y="50">CCD · L3</text>
+            <rect class="ccd" x="544" y="138" width="86" height="32" rx="3"/><text class="t" x="587" y="158">CCD · L3</text>
+            <line x1="136" y1="50" x2="270" y2="90" stroke="#948a78"/><line x1="136" y1="154" x2="270" y2="110" stroke="#948a78"/>
+            <line x1="444" y1="50" x2="410" y2="90" stroke="#948a78"/><line x1="444" y1="154" x2="410" y2="110" stroke="#948a78"/>
+            <text class="tt" x="340" y="190">~80 GB/s per CCD to the IOD · NPS decides how this groups into NUMA nodes</text>
           </svg>
-          <p class="diagram-label">Fig 1 — Turin = many core chiplets (CCDs) around one I/O die. NUMA settings decide how this gets grouped for software.</p>
+          <p class="diagram-label">Fig 1 — Turin's chiplet layout. Each CCD holds cores + exclusive L3; all memory traffic flows through the central I/O die.</p>
         </div>
 
-        <h2 id="why">Why tuning matters (and the one rule)</h2>
-        <p>Server defaults are chosen to be <em>safe and broadly OK</em>, not fastest. They favour power saving and compatibility. Real workloads can gain 10–40%+ from correct settings — or <em>lose</em> performance from wrong ones. So the one rule above all:</p>
-        <blockquote>There is no universal "fast" setting. Tune for the workload you actually run. Then measure — never trust a setting you didn't benchmark on your own job.</blockquote>
+        <h2 id="workflow">The tuning workflow (read this before changing anything)</h2>
+        <p>Tuning without measuring is just superstition. Follow the loop every time:</p>
+        <ol>
+          <li><strong>Baseline.</strong> Record your real metric on defaults — requests/sec, query p99 latency, job wall-time, tokens/sec. Write it down with the exact config.</li>
+          <li><strong>Change one thing.</strong> One BIOS or OS setting at a time. If you change five at once and it gets faster, you've learned nothing about <em>why</em>.</li>
+          <li><strong>Re-run 5–10 times.</strong> Servers and especially clouds vary run to run. Report the median and the spread, never a single lucky number.</li>
+          <li><strong>Watch the costs.</strong> Power draw, temperature, and consistency — not just peak speed. A setting that wins benchmarks but throttles under sustained load is a loss.</li>
+          <li><strong>Write it as config.</strong> Bake the winning settings into infrastructure-as-code / BIOS templates so every node is identical and reproducible.</li>
+        </ol>
+        <blockquote>There is no universal "fast." A database, a web fleet, an HPC job, and an AI server each want different settings — sometimes opposite ones. Optimize for the workload in front of you.</blockquote>
 
-        <h2 id="bios">The BIOS knobs that matter most</h2>
-        <p>These live in your server's BIOS/UEFI (often under "AMD CBS" or the vendor's performance menu). Each explained simply:</p>
+        <h2 id="bios">Layer 1 — BIOS / UEFI tuning</h2>
+        <p>These knobs live in the firmware (often under "AMD CBS" or your vendor's performance menu). They set how the silicon presents itself before the OS even boots. On bare metal you control them directly; on the cloud you usually choose them indirectly via instance type and CPU options.</p>
 
-        <h3>1. NPS — how memory is grouped (NUMA Nodes Per Socket)</h3>
-        <p>The chip can present its memory as <strong>one big pool (NPS=1)</strong> or split into <strong>2 or 4 smaller, closer pools (NPS=2 / NPS=4)</strong>. Smaller pools mean each group of cores has memory right next to it — faster <em>if</em> your software is "NUMA-aware" and keeps work near its own memory.</p>
+        <h3>NPS — NUMA Nodes Per Socket (the big one)</h3>
+        <p>NPS decides how the chip's memory and cores are grouped into NUMA nodes:</p>
         <ul>
-          <li><strong>NPS=1</strong> — simplest, good default for mixed/cloud and software that isn't NUMA-aware.</li>
-          <li><strong>NPS=4</strong> — best for HPC and well-optimized databases that pin memory locally. Each quadrant gets its own slice of cores, cache, and memory channels.</li>
+          <li><strong>NPS=1</strong> — one big memory pool per socket. Simplest, most forgiving. Best default for general/cloud and software that isn't NUMA-aware.</li>
+          <li><strong>NPS=2</strong> — two pools. A middle ground.</li>
+          <li><strong>NPS=4</strong> — four "quadrants," each with its own cores, L3 region, and memory channels. Lowest local-memory latency and highest aggregate bandwidth <em>if</em> your software keeps work local. Best for HPC and well-tuned databases.</li>
+        </ul>
+        <p>Rule of thumb: NUMA-aware app → NPS=4; NUMA-blind app → NPS=1.</p>
+
+        <h3>SMT — two threads per core</h3>
+        <p>SMT (AMD's name for hyper-threading) lets each physical core run two threads. Leave it <strong>on</strong> for most servers — it raises total throughput. Turn it <strong>off</strong> for: pure HPC code that wants full uncontended cores, hard real-time latency, or to <strong>cut per-thread software licence costs</strong> (some databases bill per hardware thread).</p>
+
+        <h3>Determinism — steady vs maximum</h3>
+        <p><strong>Power determinism</strong> makes every identical chip behave the same (predictable, slightly slower). <strong>Performance determinism</strong> lets each chip run as fast as its silicon and power budget allow. For maximum performance choose <strong>Performance</strong>; for fleets that must be cycle-for-cycle identical, choose Power.</p>
+
+        <h3>cTDP and Package Power — how much wattage you allow</h3>
+        <p>Each Turin SKU has a configurable power range (<strong>cTDP</strong>, e.g. up to 400W on top parts). Setting it to the <strong>maximum supported</strong> lets the chip sustain higher clocks under all-core load. The catch: only do this if your <strong>cooling and power delivery can handle it</strong> — otherwise the chip just thermally throttles and you lose the gain (and waste watts).</p>
+
+        <h3>Core Performance Boost (CPB) and power profile</h3>
+        <p>Keep <strong>CPB enabled</strong> so cores can opportunistically clock above base. Choose the <strong>high-performance</strong> system power profile. Energy-saving profiles cap clocks and add latency — fine for idle-heavy fleets, bad for anything user-facing.</p>
+
+        <h3>Fabric and latency knobs</h3>
+        <ul>
+          <li><strong>APBDIS=1 + fixed Data Fabric P-state (DF P-state 0)</strong> — stops the internal fabric from dropping into low-power states, removing latency jitter. Set for HPC and low-latency workloads.</li>
+          <li><strong>LLC (L3) as NUMA</strong> — exposes each L3/CCD cluster as its own NUMA node. Helps cache-sensitive and some HPC apps that benefit from tight locality; can confuse NUMA-blind apps, so test.</li>
+          <li><strong>Memory interleaving</strong> — leave at the auto value matched to your NPS choice.</li>
+          <li><strong>DRAM / hardware prefetchers</strong> — usually best left enabled; a few streaming HPC kernels benefit from tuning them, but only after measuring.</li>
         </ul>
 
-        <h3>2. SMT — two threads per core, on or off</h3>
-        <p><strong>SMT</strong> lets each physical core run two tasks at once (like hyper-threading). It usually <em>helps</em> total throughput, so leave it <strong>on</strong> for most servers. Turn it <strong>off</strong> for two reasons: pure HPC code that wants full, uncontended cores, or to <strong>cut software licence costs</strong> when a vendor charges per thread.</p>
-
-        <h3>3. Determinism — steady vs maximum speed</h3>
-        <p>"<strong>Power determinism</strong>" makes every chip behave identically (predictable, slightly slower). "<strong>Performance determinism</strong>" lets each chip run as fast as its power budget allows. For top speed pick <strong>Performance</strong>; for fleets where every node must match exactly, pick Power.</p>
-
-        <h3>4. cTDP / Power limit — how much wattage the chip may use</h3>
-        <p>Each Turin part has a configurable power range (<strong>cTDP</strong>). Setting it to the <strong>maximum</strong> lets the chip hold higher clocks under load — more performance, more heat and power draw. Only do this if your cooling and power supply can handle it.</p>
-
-        <h3>5. Power profile / boost</h3>
-        <p>Choose the <strong>high-performance</strong> power profile and keep <strong>Core Performance Boost</strong> enabled so cores can clock up. Energy-saving profiles trade speed for watts — fine for idle-heavy fleets, bad for latency-sensitive work.</p>
-
-        <h3>6. A few more, quickly</h3>
+        <h3>Platform / virtualization knobs</h3>
         <ul>
-          <li><strong>LLC (L3) as NUMA</strong> — exposes each cache cluster as its own NUMA node; helps some latency-sensitive and HPC apps that benefit from cache locality.</li>
-          <li><strong>APBDIS / fixed DF P-state</strong> — stops the internal fabric from dropping to low-power states, removing latency jitter (good for HPC/low-latency).</li>
-          <li><strong>x2APIC + IOMMU</strong> — enable for high core counts and virtualization/device isolation.</li>
-          <li><strong>Memory interleaving</strong> — leave at the auto/recommended value for your NPS choice.</li>
+          <li><strong>x2APIC</strong> — enable; required for high core counts (interrupt addressing).</li>
+          <li><strong>IOMMU</strong> — enable for virtualization, device passthrough, and isolation. Pair with hugepages for guests.</li>
+          <li><strong>SR-IOV</strong> — enable for high-performance NIC passthrough into VMs/containers.</li>
         </ul>
 
-        <div class="bm-note"><strong>Where to find exact names.</strong> BIOS labels differ by vendor (Dell, HPE, Lenovo, Supermicro) and on clouds you often can't touch BIOS at all — there you pick the right <em>instance type</em> instead (e.g. AWS Nitro EPYC instances expose NPS/SMT choices via instance family and CPU options). AMD publishes per-workload tuning guides with the precise setting names — linked at the end.</p></div>
+        <div class="bm-note"><strong>On the cloud you usually can't open BIOS.</strong> Providers preset most of this. What you control instead: the <strong>instance family</strong> (e.g. AWS <code>c7a/c8a</code> general, <code>r7a/r8a</code> memory-heavy, <code>hpc7a</code> for HPC), and <strong>CPU options</strong> like threads-per-core (effectively SMT on/off) at launch. Note many cloud AMD instances ship <strong>SMT off</strong> by default, so 1 vCPU = 1 full physical core. Match the instance to the workload the way you'd match BIOS settings on metal.</p></div>
 
-        <h2 id="recipes">Ready-made recipes by workload</h2>
+        <h2 id="cpu-opt">Layer 2a — CPU optimizations</h2>
+        <p>Once the firmware is right, squeeze the cores.</p>
+
+        <h3>Find CPU-bound work</h3>
+        <pre><code class="language-bash"># near-100% utilization = CPU-bound; load average >> core count = oversubscribed
+htop
+uptime          # load averages vs nproc
+mpstat -P ALL 1 # per-core utilization and steal</code></pre>
+
+        <h3>Build for Zen 5 specifically</h3>
+        <p>Compilers generate faster code when told the exact target. For Turin use <code>znver5</code> and enable the wide vector units:</p>
+        <pre><code class="language-bash"># target Zen 5 (Turin). Use znver4 for prior gen, znver3/znver2 for older.
+gcc -O3 -march=znver5 your_program.c -o your_program
+# enable AVX2 / AVX-512 (Zen 5 has a full-width AVX-512 datapath)
+gcc -O3 -march=znver5 -mavx2 -mavx512f your_program.c -o your_program</code></pre>
+        <p>For math-heavy code, link the <strong>AMD Optimizing CPU Libraries (AOCL)</strong> — tuned BLAS, FFT, libm, etc.:</p>
+        <pre><code class="language-bash">gcc -I$AOCL_ROOT/include -L$AOCL_ROOT/lib -lamdlibm -lm your_program.c -o your_program
+# faster (lower-precision) math variants:
+gcc ... -lamdlibm -fveclib=AMDLIBM -lm        # vectorized libm
+gcc ... -lamdlibm -fsclrlib=AMDLIBM -lamdlibmfast -lm</code></pre>
+
+        <h3>Respect the L3 / CCD — pin hot threads together</h3>
+        <p>Threads sharing data should stay on the same CCD so they share its L3 cache instead of bouncing across the fabric:</p>
+        <pre><code class="language-bash">lscpu            # see CPU topology
+lstopo           # visualize CCD / cache / NUMA layout (hwloc)
+# pin a process to cores that share one L3 domain
+taskset -c 0-7 your_application
+# pin Docker containers
+docker run --cpuset-cpus="0-7" my-container</code></pre>
+        <p>CPU pinning also stops the scheduler from migrating a process away from its warm cache — a common silent performance leak.</p>
+
+        <h2 id="mem-opt">Layer 2b — Memory optimizations</h2>
+        <p>Turin has huge memory bandwidth (12 DDR5 channels); the trick is feeding all of it.</p>
+
+        <h3>Use all the channels and CCDs</h3>
+        <p>Each CCD has ~80 GB/s to the I/O die; per-core usable bandwidth is roughly ~10 GB/s (reads ~2× writes). To saturate bandwidth-hungry apps, spread allocations across all NUMA nodes:</p>
+        <pre><code class="language-bash"># interleave memory across all NUMA nodes — best for high-bandwidth, low-sharing apps
+numactl --interleave=all your_application
+# or bind a process to one node's CPUs AND memory (best locality, NUMA-aware apps)
+numactl --cpunodebind=0 --membind=0 your_application</code></pre>
+
+        <h3>Hugepages — cut TLB misses</h3>
+        <p>Large pages reduce address-translation overhead for big working sets (databases, JVMs, HPC):</p>
+        <pre><code class="language-bash"># reserve explicit 2MB hugepages
+echo 1024 > /proc/sys/vm/nr_hugepages
+mount -t hugetlbfs nodev /mnt/huge
+# verify
+grep Huge /proc/meminfo</code></pre>
+        <p>Some databases prefer <em>explicit</em> hugepages and want <em>Transparent</em> Huge Pages off (next section) — follow the DB vendor's guidance.</p>
+
+        <h3>Swappiness and overcommit</h3>
+        <pre><code class="language-bash"># keep the kernel from swapping out hot pages
+sysctl -w vm.swappiness=10
+# database-style strict overcommit (don't promise memory you don't have)
+sysctl -w vm.overcommit_memory=2
+sysctl -w vm.overcommit_ratio=95</code></pre>
+
+        <h3>Watch memory live</h3>
+        <pre><code class="language-bash">free -h
+vmstat 1
+sar -r 1
+numastat        # per-NUMA-node hits/misses — watch numa_miss climb if pinning is wrong</code></pre>
+
+        <h2 id="storage-opt">Layer 2c — Storage / I/O optimizations</h2>
+        <ul>
+          <li><strong>Pick the right device.</strong> Local NVMe for hottest data; provisioned-IOPS volumes for demanding DBs; general SSD for the rest. On cloud, ensure the instance is storage/EBS-optimized.</li>
+          <li><strong>I/O scheduler.</strong> For NVMe SSDs, <code>none</code> (or <code>mq-deadline</code>) usually beats the rotational schedulers:</li>
+        </ul>
+        <pre><code class="language-bash"># modern kernels: 'none' for NVMe, 'mq-deadline' for mixed
+echo none > /sys/block/nvme0n1/queue/scheduler
+cat /sys/block/nvme0n1/queue/scheduler</code></pre>
+        <ul>
+          <li><strong>Stripe for throughput.</strong> RAID 0 across volumes raises aggregate IOPS/bandwidth (no redundancy — use for scratch/replicated data):</li>
+        </ul>
+        <pre><code class="language-bash">mdadm --create /dev/md0 --level=0 --raid-devices=2 /dev/nvme1n1 /dev/nvme2n1</code></pre>
+        <ul>
+          <li><strong>RAM disk</strong> for extreme, ephemeral I/O: <code>mount -t tmpfs -o size=4G tmpfs /mnt/ramdisk</code>.</li>
+          <li><strong>Async I/O + buffering</strong> in the app; minimize random I/O.</li>
+          <li><strong>Monitor:</strong> <code>iostat -x 1</code>, <code>iotop</code>, <code>pidstat -d 1</code> to find the bottleneck device/process.</li>
+        </ul>
+
+        <h2 id="latency-opt">Layer 2d — Latency-sensitive optimizations</h2>
+        <p>For trading, real-time bidding, gaming, and tight-SLA services, you trade throughput for <em>predictability</em>.</p>
+        <pre><code class="language-bash"># 1. real-time scheduling priority for the hot process
+chrt -f -p 90 &lt;PID&gt;            # SCHED_FIFO priority 90
+# 2. disable deep idle C-states (they add wake-up latency)
+cpupower idle-set -d 2
+# 3. SMT off for uncontended cores
+echo off > /sys/devices/system/cpu/smt/control
+cat /sys/devices/system/cpu/smt/active     # 0 = disabled
+# 4. lock clocks high
+cpupower frequency-set -g performance
+# 5. Transparent Huge Pages off (avoids allocation stalls/jitter)
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+echo never > /sys/kernel/mm/transparent_hugepage/defrag</code></pre>
+        <p>Also: pin the app to isolated cores (<code>isolcpus=</code> kernel param), keep interrupts off those cores (next section), use a low-latency/real-time kernel if microseconds matter, and prefer fast networking (on cloud, ENA; EFA for HPC/ML). Profile with <code>perf</code>, <code>ftrace</code>, and <code>cyclictest</code> (rt-tests) to find jitter sources.</p>
+
+        <h2 id="os">Layer 3 — Operating System optimizations (the deep section)</h2>
+        <p>This is the part most guides skim and the one that quietly decides whether all your BIOS work pays off. The OS sits between the silicon and your app; a perfect BIOS still loses if Linux is in power-save mode. We'll cover: the CPU governor, idle states, <strong>sysctl</strong> kernel parameters, Transparent Huge Pages, <strong>tuned</strong> profiles, kernel boot parameters, IRQ affinity, the scheduler, security mitigations, and how to make it all persist.</p>
+
+        <h3 id="os-governor">3.1 — CPU frequency governor</h3>
+        <p>The governor is Linux's policy for clock speed. <code>powersave</code> (a common default) down-clocks idle cores and adds latency; <code>performance</code> keeps them ready. For servers that care about speed:</p>
+        <pre><code class="language-bash"># set all cores to performance
+cpupower frequency-set -g performance
+# verify
+cpupower frequency-info | grep -i governor
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq
+# persist across reboots (enable the service that re-applies it)
+systemctl enable --now cpupower</code></pre>
+
+        <h3 id="os-cstates">3.2 — Idle (C-)states</h3>
+        <p>Deep C-states save power but cost microseconds to wake from. For latency-critical nodes, limit how deep cores may sleep:</p>
+        <pre><code class="language-bash"># disable the deepest idle state (index varies by platform; check first)
+cpupower idle-info
+cpupower idle-set -d 2
+# or cap at boot with a kernel param (see GRUB below): processor.max_cstate=1</code></pre>
+        <p>Leave C-states enabled on power-sensitive, throughput-only fleets — the latency cost doesn't matter there and the power savings are real.</p>
+
+        <h3 id="os-sysctl">3.3 — sysctl: kernel parameters at runtime</h3>
+        <p><code>sysctl</code> changes kernel behaviour live. Below are battle-tested starting values for EPYC servers, grouped and <em>explained</em> so you change them with intent, not by cargo-cult. Apply with <code>sysctl -w</code>; persist by writing to <code>/etc/sysctl.d/99-epyc.conf</code>.</p>
+
+        <p><strong>Networking</strong> — for high-connection, high-throughput services:</p>
+        <pre><code class="language-bash"># more open file descriptors (every socket is an fd)
+sysctl -w fs.file-max=2097152
+# bigger socket buffers — lets high-bandwidth/high-latency links fill the pipe
+sysctl -w net.core.rmem_max=16777216
+sysctl -w net.core.wmem_max=16777216
+sysctl -w net.ipv4.tcp_rmem="4096 87380 16777216"
+sysctl -w net.ipv4.tcp_wmem="4096 65536 16777216"
+# TCP Fast Open — skip a round-trip on repeat connections
+sysctl -w net.ipv4.tcp_fastopen=3
+# allow a deep accept queue so bursts of new connections aren't dropped
+sysctl -w net.core.somaxconn=65535</code></pre>
+        <p><em>What each does:</em> <code>file-max</code> raises the system-wide fd ceiling (busy servers exhaust the default). <code>rmem/wmem_max</code> and the <code>tcp_rmem/tcp_wmem</code> triples size receive/send buffers (min, default, max) so a single connection can hold enough in-flight data to saturate a fast link. <code>tcp_fastopen=3</code> enables TFO for client and server. <code>somaxconn</code> is the max backlog of pending connections — too small and you drop traffic spikes.</p>
+
+        <p><strong>Virtual memory</strong> — paging and write-back behaviour:</p>
+        <pre><code class="language-bash"># avoid swapping hot pages (10 = only swap under real pressure)
+sysctl -w vm.swappiness=10
+# how much dirty data may accumulate before forced write-back
+sysctl -w vm.dirty_ratio=60
+sysctl -w vm.dirty_background_ratio=2
+# strict overcommit for databases (don't over-promise memory)
+sysctl -w vm.overcommit_memory=2
+sysctl -w vm.overcommit_ratio=95</code></pre>
+        <p><em>What each does:</em> <code>swappiness</code> trades off swapping vs reclaiming cache; low keeps your working set in RAM. <code>dirty_ratio</code>/<code>dirty_background_ratio</code> control when the kernel flushes dirty pages — a high foreground ratio lets writes batch (good for bursty write throughput), while the low background ratio starts flushing early to avoid a big stall. <code>overcommit_memory=2</code> + <code>overcommit_ratio</code> make the kernel refuse allocations beyond a hard limit, which databases prefer over the OOM-killer surprising them.</p>
+
+        <p><strong>Filesystem / I/O</strong> — for heavy async-I/O apps:</p>
+        <pre><code class="language-bash"># raise the async I/O request ceiling (databases, high-QD storage)
+sysctl -w fs.aio-max-nr=1048576
+# express write-back limits in bytes instead of % (precise on big-RAM boxes)
+sysctl -w vm.dirty_bytes=1073741824
+sysctl -w vm.dirty_background_bytes=536870912</code></pre>
+        <p><em>Note:</em> set the <code>*_bytes</code> or the <code>*_ratio</code> pair, not both — the kernel uses whichever you set last. On large-memory Turin nodes the byte form is more predictable (60% of 1.5 TB is a <em>lot</em> of dirty data).</p>
+
+        <p><strong>NUMA balancing</strong>:</p>
+        <pre><code class="language-bash"># let the kernel migrate pages toward the cores using them
+sysctl -w kernel.numa_balancing=1</code></pre>
+        <p><em>Caveat:</em> automatic NUMA balancing helps general workloads but its background page migration can <em>hurt</em> apps you've already pinned by hand (and some HPC/DB workloads). If you do explicit <code>numactl</code> pinning, test with it <strong>off</strong> (<code>=0</code>) too.</p>
+
+        <p><strong>Persist it all:</strong></p>
+        <pre><code class="language-bash"># write to a drop-in file so it survives reboot
+sudo tee /etc/sysctl.d/99-epyc.conf >/dev/null &lt;&lt;'EOF'
+fs.file-max=2097152
+net.core.rmem_max=16777216
+net.core.wmem_max=16777216
+net.core.somaxconn=65535
+vm.swappiness=10
+vm.overcommit_memory=2
+vm.overcommit_ratio=95
+kernel.numa_balancing=1
+EOF
+sudo sysctl --system     # apply now</code></pre>
+
+        <h3 id="os-thp">3.4 — Transparent Huge Pages (THP)</h3>
+        <p>THP automatically backs memory with 2MB pages. It <em>helps</em> bandwidth-bound batch/HPC work but its background defrag can cause <strong>latency spikes</strong> — bad for databases (Redis, Mongo, Oracle all recommend disabling it) and tight-SLA services.</p>
+        <pre><code class="language-bash"># runtime: turn THP off for latency-sensitive / DB workloads
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+# permanent: add to the kernel boot line (GRUB)
+#   transparent_hugepage=never
+# check current state
+cat /sys/kernel/mm/transparent_hugepage/enabled</code></pre>
+        <p>Rule of thumb: <strong>batch/HPC → THP on (madvise)</strong>; <strong>database/latency → THP off</strong>.</p>
+
+        <h3 id="os-tuned">3.5 — tuned profiles (the easy button)</h3>
+        <p><code>tuned</code> is a daemon that applies dozens of these knobs at once via a named profile — governor, C-states, sysctl, scheduler, disk readahead, and more. The fastest way to a sane baseline:</p>
+        <pre><code class="language-bash"># list and apply
+tuned-adm list
+tuned-adm profile throughput-performance   # general compute
+# other good choices:
+#   balanced               -> general purpose (default)
+#   latency-performance    -> low-latency services
+#   accelerator-performance-> GPU/accelerator hosts
+#   network-throughput     -> heavy network I/O
+tuned-adm active           # confirm</code></pre>
+        <p>You can build a <strong>custom profile</strong> that inherits a stock one and overrides specifics — the right way to ship org-standard tuning:</p>
+        <pre><code class="language-bash"># /etc/tuned/epyc-db/tuned.conf
+[main]
+include=throughput-performance
+[sysctl]
+vm.swappiness=10
+vm.overcommit_memory=2
+[vm]
+transparent_hugepages=never
+# then: tuned-adm profile epyc-db</code></pre>
+
+        <h3 id="os-grub">3.6 — Kernel boot parameters (GRUB)</h3>
+        <p>Some settings can only be set at boot. Edit <code>GRUB_CMDLINE_LINUX</code> in <code>/etc/default/grub</code>, then <code>update-grub</code> / <code>grub2-mkconfig</code> and reboot. Common EPYC entries:</p>
+        <pre><code class="language-bash"># examples (combine only what you need):
+transparent_hugepage=never        # DB/latency hosts
+processor.max_cstate=1            # latency: shallow idle only
+isolcpus=8-15 nohz_full=8-15 rcu_nocbs=8-15   # dedicate cores to an app
+iommu=pt                         # passthrough mode (virtualization)
+numa_balancing=disable           # if you pin by hand
+mitigations=off                  # ONLY on isolated, trusted HPC clusters</code></pre>
+
+        <h3 id="os-irq">3.7 — IRQ affinity</h3>
+        <p>By default, device interrupts (network, storage) can land on any core — including your hot application cores, stealing cycles and adding jitter. Steer them deliberately:</p>
+        <pre><code class="language-bash"># let the irqbalance daemon spread IRQs across cores
+systemctl enable --now irqbalance
+# OR pin a NIC queue's IRQ to specific (non-app) cores manually
+# find the IRQ, then:
+echo 3 > /proc/irq/&lt;IRQ&gt;/smp_affinity_list   # bind to core 3
+# keep app cores interrupt-free by binding all movable IRQs elsewhere</code></pre>
+        <p>For latency work: pin NIC IRQs to a few housekeeping cores and run the app on isolated cores (<code>isolcpus</code>) so they're never interrupted.</p>
+
+        <h3 id="os-sched">3.8 — Scheduler and process placement</h3>
+        <ul>
+          <li><strong>Pin with <code>numactl</code>/<code>taskset</code></strong> (shown earlier) so the scheduler can't migrate hot processes off their warm cache/NUMA node.</li>
+          <li><strong><code>chrt</code></strong> for real-time priority on the critical path (<code>SCHED_FIFO</code>/<code>SCHED_RR</code>).</li>
+          <li><strong>cgroups v2</strong> to cap/partition CPU, memory, and I/O between tenants — and to reserve cores for a latency-critical service.</li>
+          <li><strong>Watch CPU steal</strong> (<code>mpstat -P ALL 1</code>, the <code>%steal</code> column). On bare metal it should be ~0; on shared cloud, non-zero steal means a noisy neighbour (see troubleshooting).</li>
+        </ul>
+
+        <h3 id="os-mitigations">3.9 — Security mitigations</h3>
+        <div class="gotcha"><span class="gotcha-label">security trade-off — read carefully</span>
+          CPU vulnerability mitigations (Spectre, etc.) cost a few percent performance. You <strong>can</strong> disable them with <code>mitigations=off</code> for a speed bump, but only do so on <strong>isolated, single-tenant, trusted</strong> clusters (e.g. an air-gapped HPC partition) where you fully accept the risk. <strong>Never</strong> disable mitigations on multi-tenant, internet-facing, or shared hosts. When in doubt, leave them on.</div>
+
+        <h3 id="os-kernel">3.10 — Use a recent kernel</h3>
+        <p>Newer kernels ship better Zen 5 enablement — smarter frequency scaling, scheduler awareness of the CCD topology, and the <code>amd-pstate</code> driver (often better than the legacy <code>acpi-cpufreq</code> on EPYC). Prefer a current LTS, and check the active driver:</p>
+        <pre><code class="language-bash">cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_driver   # expect amd-pstate(-epp)
+uname -r</code></pre>
+
+        <h2 id="recipes">Per-workload recipes</h2>
+        <p>Start from the matching row, then benchmark and adjust. "Power" assumes adequate cooling.</p>
         <table>
-          <thead><tr><th>Workload</th><th>NPS</th><th>SMT</th><th>Determinism</th><th>Power</th></tr></thead>
+          <thead><tr><th>Workload</th><th>NPS</th><th>SMT</th><th>Determinism</th><th>Governor / THP</th><th>tuned</th></tr></thead>
           <tbody>
-            <tr><td><strong>General / cloud / web</strong></td><td>1</td><td>On</td><td>Performance</td><td>High-perf, boost on</td></tr>
-            <tr><td><strong>Databases (NUMA-aware)</strong></td><td>2 or 4</td><td>On</td><td>Performance</td><td>High-perf, max cTDP</td></tr>
-            <tr><td><strong>HPC / scientific</strong></td><td>4</td><td>Off</td><td>Performance</td><td>Max cTDP, fixed DF P-state</td></tr>
-            <tr><td><strong>AI / ML (CPU inference)</strong></td><td>1 or 4</td><td>On</td><td>Performance</td><td>High-perf, boost on</td></tr>
-            <tr><td><strong>Per-thread licensed (e.g. some DBs)</strong></td><td>1</td><td>Off</td><td>Performance</td><td>High-perf</td></tr>
+            <tr><td><strong>General / cloud / web</strong></td><td>1</td><td>On</td><td>Performance</td><td>performance / THP on</td><td>throughput-performance</td></tr>
+            <tr><td><strong>Database (NUMA-aware)</strong></td><td>2–4</td><td>On</td><td>Performance</td><td>performance / <strong>THP off</strong></td><td>custom (DB)</td></tr>
+            <tr><td><strong>HPC / scientific</strong></td><td>4</td><td>Off</td><td>Performance</td><td>performance / THP on</td><td>throughput-performance + DF P0</td></tr>
+            <tr><td><strong>AI/ML CPU inference</strong></td><td>1 or 4</td><td>On</td><td>Performance</td><td>performance / THP on</td><td>accelerator-performance</td></tr>
+            <tr><td><strong>Latency-critical (trading/RTB)</strong></td><td>4 + LLC-as-NUMA</td><td>Off</td><td>Performance</td><td>performance / <strong>THP off</strong> / C-states off</td><td>latency-performance</td></tr>
+            <tr><td><strong>Per-thread licensed</strong></td><td>1</td><td>Off</td><td>Performance</td><td>performance</td><td>throughput-performance</td></tr>
           </tbody>
         </table>
-        <p>Start from the matching row, then benchmark and adjust. These are starting points, not gospel.</p>
 
-        <h2 id="os">Linux settings (the other half)</h2>
-        <p>BIOS sets the hardware; the OS decides how it's used. The high-value Linux changes:</p>
+        <h3>Deep dive: databases</h3>
+        <p>Pin the DB to one or more NUMA nodes (<code>numactl --cpunodebind --membind</code>), turn <strong>THP off</strong>, use <strong>explicit hugepages</strong> sized to the buffer pool, strict overcommit, low swappiness, and a deadline/none I/O scheduler on NVMe. Size the buffer pool/shared-buffers to fit a NUMA node's local memory where possible to avoid remote access.</p>
 
-        <h3>CPU governor — tell Linux to run fast</h3>
-        <pre><code class="language-bash"># set all cores to the performance governor (no down-clocking)
-sudo cpupower frequency-set -g performance
-# verify
-cpupower frequency-info | grep "governor"</code></pre>
+        <h3>Deep dive: HPC</h3>
+        <p>NPS=4, SMT off (full cores), Performance determinism, max cTDP, fixed DF P-state (APBDIS), THP on, mitigations off <em>only</em> if the cluster is isolated. Build with <code>-march=znver5</code> + AVX-512 and link AOCL. Pin ranks to CCDs and bind memory locally.</p>
 
-        <h3>Use tuned profiles (the easy button)</h3>
-        <pre><code class="language-bash"># RHEL/SLES ship workload profiles that set many knobs at once
-sudo tuned-adm profile throughput-performance   # or: accelerator-performance
-tuned-adm active</code></pre>
+        <h3>Deep dive: web / microservices fleet</h3>
+        <p>NPS=1, SMT on (throughput), performance governor, the <code>throughput-performance</code> tuned profile, the networking sysctls above (big buffers, high <code>somaxconn</code>, TFO). Don't over-engineer NUMA — these apps are rarely NUMA-aware; keep it simple and dense (Zen 5c parts shine here).</p>
 
-        <h3>Keep work near its memory (NUMA pinning)</h3>
-        <pre><code class="language-bash"># see the NUMA layout your NPS choice produced
-numactl --hardware
-lscpu | grep -i numa
-# pin a process to one NUMA node's CPUs + memory
-numactl --cpunodebind=0 --membind=0 ./your_app</code></pre>
+        <h3>Deep dive: AI / ML CPU inference</h3>
+        <p>Use AVX-512 / VNNI-aware builds and AMD's optimized libraries; pin threads to CCDs; consider NPS=4 with local binding for big models. For real training/large inference, accelerators still win — CPU tuning here is for data prep and light/edge inference.</p>
 
-        <h3>Hugepages for big-memory apps (databases, JVMs)</h3>
-        <pre><code class="language-bash"># transparent hugepages cut TLB misses for large working sets
-cat /sys/kernel/mm/transparent_hugepage/enabled
-# many DBs prefer explicit hugepages instead — set per vendor guidance</code></pre>
-
-        <h3>Other quick wins</h3>
+        <h2 id="monitoring">Monitoring &amp; observability</h2>
+        <p>You can't tune what you don't watch. Core tools:</p>
         <ul>
-          <li><strong>IRQ affinity</strong> — spread network/storage interrupts across cores (or pin away from app cores) for steady latency.</li>
-          <li><strong>Disable deep C-states</strong> for latency-critical apps (BIOS or kernel <code>processor.max_cstate</code>).</li>
-          <li><strong>Security mitigations</strong> — leave on by default; only disable in isolated, trusted HPC clusters where you accept the risk for speed.</li>
-          <li><strong>Recent kernel</strong> — newer kernels know Zen 5 better; use a current LTS for best scheduling and frequency behaviour.</li>
+          <li><strong>System:</strong> <code>htop</code>, <code>vmstat 1</code>, <code>iostat -x 1</code>, <code>mpstat -P ALL 1</code> (steal!), <code>sar</code>, <code>numastat</code>, <code>netstat</code>/<code>ss</code>.</li>
+          <li><strong>Profiling:</strong> <code>perf top</code> / <code>perf stat</code> (IPC, cache misses, branch misses), <code>ftrace</code>, <code>cyclictest</code> for latency jitter.</li>
+          <li><strong>Fleet:</strong> Prometheus + Grafana (node_exporter), or Datadog/Dynatrace. On AWS, CloudWatch (detailed 1-min metrics) + Systems Manager.</li>
+          <li><strong>AMD-specific:</strong> AMD μProf for low-level CPU profiling on EPYC.</li>
+        </ul>
+        <p>Key signals: sustained ~100% CPU (CPU-bound), high <code>%steal</code> (noisy neighbour), rising <code>numa_miss</code> (bad pinning), swap activity (memory pressure), high iowait (storage-bound).</p>
+
+        <h2 id="troubleshooting">Troubleshooting: the noisy neighbour</h2>
+        <p>On shared cloud hosts, other tenants on the same physical box can steal memory bandwidth — very visible on EPYC's multi-CCD design. To detect and fix:</p>
+        <ol>
+          <li>Run <strong>STREAM</strong> to measure actual memory bandwidth.</li>
+          <li>Compare to the expected figure for your instance (e.g. a single-CCD placement on a small instance should hit tens of GB/s; a full socket approaches the ~hundreds GB/s range).</li>
+          <li>If you're well below expectation: <strong>stop and relaunch the instance</strong> until you land on a quiet host, or move to a <strong>dedicated / bare-metal</strong> instance for consistent performance.</li>
+        </ol>
+        <p>Also check <code>%steal</code> in <code>mpstat</code> and CPU throttling (<code>cpupower frequency-info</code>, thermal logs) — a maxed cTDP with poor cooling silently throttles and erases your gains.</p>
+
+        <h2 id="cost">Cost considerations</h2>
+        <p>Performance tuning and cost tuning go together — the goal is <em>performance per dollar</em>, not raw speed.</p>
+        <ul>
+          <li><strong>Right-size.</strong> Monitor real utilization; downsize instances consistently below ~40% CPU. Match instance family to workload (compute <code>c</code>, memory <code>r</code>, HPC <code>hpc</code>).</li>
+          <li><strong>Commit where stable.</strong> Reserved Instances / Savings Plans for steady baseline load; Compute Savings Plans for flexibility across families.</li>
+          <li><strong>Spot for interruptible work.</strong> CI, batch, stateless web — big discounts, accept eviction.</li>
+          <li><strong>Re-review every 3–6 months</strong> or after major app changes; new EPYC generations and price changes shift the optimum.</li>
+        </ul>
+        <p>(For the full method of measuring performance-per-dollar on <em>your</em> workload, see the <a href="bench-4-your-workload.html">benchmark-your-own-workload playbook</a>.)</p>
+
+        <h2 id="verify">The verify loop (again, because it matters)</h2>
+        <ol>
+          <li>Baseline the real metric on defaults.</li>
+          <li>Change one knob.</li>
+          <li>Re-run 5–10×; report median + spread.</li>
+          <li>Check power, heat, and consistency, not just peak.</li>
+          <li>Keep it only if it helps <em>your</em> workload; revert if not.</li>
+        </ol>
+
+        <h2 id="checklist">The org rollout checklist</h2>
+        <ul>
+          <li>☐ Classified each server group by workload type</li>
+          <li>☐ Picked the matching recipe (NPS / SMT / determinism / power)</li>
+          <li>☐ BIOS template captured as code per group (or correct cloud instance + CPU options)</li>
+          <li>☐ Governor = performance; verified <code>amd-pstate</code> driver active</li>
+          <li>☐ tuned profile applied (stock or custom org profile)</li>
+          <li>☐ sysctl drop-in deployed and <code>sysctl --system</code> applied</li>
+          <li>☐ THP set correctly for the workload (off for DB/latency)</li>
+          <li>☐ NUMA layout confirmed (<code>numactl --hardware</code>); pinning where needed</li>
+          <li>☐ IRQ affinity set; app cores isolated for latency work</li>
+          <li>☐ Mitigations decision documented (default: leave on)</li>
+          <li>☐ Baselined → changed one knob at a time → re-ran 5–10× → checked power/heat</li>
+          <li>☐ Monitoring in place (steal, numa_miss, throttle, swap)</li>
+          <li>☐ Settings committed as IaC; re-check scheduled after firmware/kernel updates</li>
         </ul>
 
-        <h2 id="verify">How to verify you actually gained something</h2>
-        <p>Tuning without measuring is guessing. The loop:</p>
-        <ol>
-          <li><strong>Baseline first</strong> — record your real metric (requests/sec, query latency p99, job time) on defaults.</li>
-          <li><strong>Change one thing</strong> — one BIOS or OS setting at a time, so you know what did what.</li>
-          <li><strong>Re-run 5–10 times</strong> — clouds and servers vary; report the median, not one lucky run.</li>
-          <li><strong>Watch the side effects</strong> — power draw, temperature, and consistency, not just peak speed.</li>
-        </ol>
-        <p>Quick sanity tools: <code>sysbench</code> (CPU/memory), <code>stress-ng</code>, and STREAM for memory bandwidth — but your <em>own application</em> under real load is the verdict that counts. (There's a whole <a href="bench-4-your-workload.html">playbook for benchmarking your own workload</a> if you want the full method.)</p>
-
-        <div class="gotcha"><span class="gotcha-label">common mistakes</span>
-          Changing many BIOS settings at once (you can't tell what helped) · maxing cTDP without checking cooling (the chip throttles and you lose the gain) · setting NPS=4 for software that isn't NUMA-aware (you add latency for nothing) · forgetting the Linux governor (a perfect BIOS still down-clocks if Linux says "powersave").</div>
-
-        <h2 id="checklist">The org checklist</h2>
+        <h2 id="glossary">Glossary (plain words)</h2>
         <ul>
-          <li>☐ Identified the workload type for each server group</li>
-          <li>☐ Picked the matching recipe (NPS / SMT / determinism / power)</li>
-          <li>☐ Set Linux governor to performance + applied a tuned profile</li>
-          <li>☐ Confirmed NUMA layout with <code>numactl --hardware</code> and pinned where needed</li>
-          <li>☐ Baselined on defaults, then changed one knob at a time</li>
-          <li>☐ Re-ran 5–10×, checked power/heat/consistency too</li>
-          <li>☐ Documented the final settings as code/config so every node is identical</li>
-          <li>☐ Scheduled a re-check after BIOS/firmware/kernel updates</li>
+          <li><strong>Turin / Zen 5</strong> — AMD's 5th-gen EPYC 9005 CPUs. Faster cores, full AVX-512, 12 DDR5 channels.</li>
+          <li><strong>CCD (chiplet)</strong> — a cluster of cores with its own L3 cache. Turin has several.</li>
+          <li><strong>I/O die (IOD)</strong> — the central hub with memory controllers and PCIe; all memory traffic flows through it.</li>
+          <li><strong>NUMA</strong> — cores reach nearby memory faster than far memory.</li>
+          <li><strong>NPS</strong> — NUMA Nodes Per Socket; how memory is grouped (1 = one big pool, 4 = four close pools).</li>
+          <li><strong>SMT</strong> — two threads per core; usually on, off for HPC/licensing.</li>
+          <li><strong>Determinism</strong> — Power (identical, steady) vs Performance (as fast as each chip allows).</li>
+          <li><strong>cTDP</strong> — the wattage limit you allow the chip; max it for sustained clocks if cooling allows.</li>
+          <li><strong>Governor</strong> — Linux clock policy; <code>performance</code> keeps clocks high.</li>
+          <li><strong>C-states</strong> — idle sleep levels; deep ones save power but add wake-up latency.</li>
+          <li><strong>THP</strong> — Transparent Huge Pages; helps batch, hurts latency/DBs.</li>
+          <li><strong>sysctl</strong> — runtime kernel parameters.</li>
+          <li><strong>tuned</strong> — daemon that applies a whole profile of tuning at once.</li>
+          <li><strong>CPU steal</strong> — time a noisy neighbour took your core (cloud).</li>
+          <li><strong>AOCL</strong> — AMD's optimized math libraries.</li>
         </ul>
 
         <h2 id="references">References</h2>
         <ul class="reflist">
-          <li><a href="https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/tuning-guides/58467_amd-epyc-9005-tg-bios-and-workload.pdf" target="_blank" rel="noopener">AMD EPYC 9005 BIOS &amp; Workload Tuning Guide (58467)</a> <span>— the official source for exact setting names.</span></li>
+          <li><a href="https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/tuning-guides/58467_amd-epyc-9005-tg-bios-and-workload.pdf" target="_blank" rel="noopener">AMD EPYC 9005 BIOS &amp; Workload Tuning Guide (58467)</a> <span>— exact BIOS setting names.</span></li>
           <li><a href="https://docs.amd.com/v/u/en-US/58479_amd-epyc-9005-tg-hpc" target="_blank" rel="noopener">AMD EPYC 9005 HPC Tuning Guide (58479)</a> <span>— HPC-specific.</span></li>
+          <li><a href="https://docs.amd.com/v/u/en-US/58465_amd-epyc-9005-tg-nvme" target="_blank" rel="noopener">AMD EPYC 9005 NVMe Tuning Guide (58465)</a> <span>— storage path.</span></li>
           <li><a href="https://www.phoronix.com/review/amd-epyc-9005-hpc-tuning" target="_blank" rel="noopener">Phoronix: BIOS optimizations for 5th Gen EPYC</a> <span>— measured impact.</span></li>
-          <li><a href="https://lenovopress.lenovo.com/lp2210-tuning-uefi-settings-5th-gen-amd-epyc-processor-servers" target="_blank" rel="noopener">Lenovo: Tuning UEFI for 5th Gen EPYC</a> <span>— vendor BIOS names.</span></li>
+          <li><a href="https://lenovopress.lenovo.com/lp2210-tuning-uefi-settings-5th-gen-amd-epyc-processor-servers" target="_blank" rel="noopener">Lenovo: Tuning UEFI for 5th Gen EPYC</a> <span>— vendor BIOS labels.</span></li>
+          <li><a href="https://documentation.suse.com/sbp/tuning-performance/html/SBP-AMD-EPYC-5-SLES15SP6/index.html" target="_blank" rel="noopener">Optimizing Linux for EPYC 9005 (SUSE)</a> <span>— OS-level tuning.</span></li>
         </ul>
 
         <h2 id="extra">Extra reads</h2>
         <ul class="reflist">
-          <li><a href="https://documentation.suse.com/sbp/tuning-performance/html/SBP-AMD-EPYC-5-SLES15SP6/index.html" target="_blank" rel="noopener">Optimizing Linux for EPYC 9005 (SUSE)</a> <span>— OS-level tuning.</span></li>
-          <li><a href="https://docs.amd.com/v/u/en-US/58465_amd-epyc-9005-tg-nvme" target="_blank" rel="noopener">AMD EPYC 9005 NVMe Tuning Guide (58465)</a> <span>— storage path.</span></li>
+          <li><a href="bench-4-your-workload.html">Benchmark Your Own Workload</a> <span>— the method to prove a setting helped.</span></li>
+          <li><a href="bench-3-aws-vs-oci-amd.html">AWS vs OCI on AMD</a> <span>— picking the cheapest EPYC cloud.</span></li>
+          <li><a href="https://www.amd.com/en/developer/aocl.html" target="_blank" rel="noopener">AMD Optimizing CPU Libraries (AOCL)</a> <span>— tuned math libs.</span></li>
         </ul>
 
-        <p style="margin-top:22px;color:var(--ink-faint);font-size:.88rem">Settings reflect AMD EPYC 9005 (Turin / Zen 5) guidance, June 2026. BIOS labels vary by server vendor and may be unavailable on cloud instances — always confirm against your vendor's and AMD's official tuning guides, and benchmark on your own workload.</p>
+        <p style="margin-top:22px;color:var(--ink-faint);font-size:.88rem">Built from AMD's EPYC 9005 (Turin / Zen 5) and EC2 EPYC tuning guidance, June 2026. BIOS labels vary by vendor and may be unavailable on cloud instances; sysctl/THP/governor commands assume a recent Linux. Always confirm against your vendor's and AMD's official guides — and benchmark on your own workload before rolling out.</p>
 
       </div>
 
@@ -231,33 +546,16 @@ cat /sys/kernel/mm/transparent_hugepage/enabled
     </footer>
     </div>
 
-  <aside class="vocab-panel" id="vocab-panel">
-    <p class="vocab-panel-label">// vocab</p>
-    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Turin / Zen 5</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">AMD's 5th-gen EPYC 9005 server CPUs, built on the Zen 5 core. ~20% more integer / 34% more FP than the prior gen at the same power.</div></div>
-    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">CCD / chiplet</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">A small die of CPU cores. Turin packs several CCDs around one central I/O die — the reason NUMA settings exist.</div></div>
-    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">NUMA</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Non-Uniform Memory Access — cores reach their own nearby memory faster than far memory. "NUMA-aware" software keeps work near its memory.</div></div>
-    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">NPS</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">NUMA Nodes Per Socket. NPS=1 = one big memory pool (simple). NPS=4 = four smaller, closer pools (faster for NUMA-aware apps).</div></div>
-    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">SMT</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Simultaneous Multithreading — two threads per physical core. Usually on (more throughput); off for pure HPC or per-thread licensing.</div></div>
-    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Determinism</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Power = every chip behaves identically (predictable, a bit slower). Performance = each chip runs as fast as its power budget allows.</div></div>
-    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">cTDP</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Configurable Thermal Design Power — the wattage limit you allow the chip. Max it for more sustained clocks, if cooling/power can handle it.</div></div>
-    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">CPU governor</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Linux's frequency policy. "performance" keeps clocks high; "powersave" down-clocks. A great BIOS still loses if the governor saves power.</div></div>
-    <div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">Hugepages</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">Larger memory pages that cut address-translation misses (TLB), helping big-memory apps like databases and JVMs.</div></div>
-  </aside>
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
   </div>
 
   <script src="../posts.js"></script>
   <script src="../stats.js"></script>
   <script src="../app.js?v=9"></script>
-  <script>
-    document.querySelectorAll('.vocab-term').forEach(function(term) {
-      term.querySelector('.vocab-term-header').addEventListener('click', function() {
-        var isOpen = term.classList.contains('open');
-        document.querySelectorAll('.vocab-term').forEach(function(t) { t.classList.remove('open'); });
-        if (!isOpen) term.classList.add('open');
-      });
-    });
-  </script>
-<script defer src="../settings.js?v=4"></script>
+  <script defer src="../settings.js?v=4"></script>
 <script type="module" src="../highlighter.js"></script>
 <script defer src="../reader.js"></script>
 </body>

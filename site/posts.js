@@ -17,13 +17,13 @@
 const POSTS = [
   {
     slug: "amd-epyc-turin-tuning-guide",
-    title: "Tuning AMD EPYC \"Turin\" (5th Gen) for your org — in plain words.",
+    title: "The Complete AMD EPYC \"Turin\" (5th Gen) Tuning Guide — for your whole org.",
     date: "Jun 3, 2026",
     cat: "devops",
-    tags: ["devops", "amd-epyc", "turin", "performance", "bios"],
-    time: 16,
-    words: 3300,
-    excerpt: "A new EPYC Turin server doesn't run its fastest by default. The biggest wins are a few BIOS switches (NUMA, SMT, determinism, power) plus Linux settings (governor, NUMA pinning, hugepages). Every knob explained in everyday language, with ready recipes per workload."
+    tags: ["devops", "amd-epyc", "turin", "performance", "bios", "linux"],
+    time: 34,
+    words: 7200,
+    excerpt: "The one page your team can return to: BIOS (NUMA/SMT/determinism/power), a deep Operating-System-Optimizations section (governor, C-states, sysctl explained line by line, THP, tuned, GRUB, IRQ, mitigations), CPU/memory/storage/latency tuning, per-workload recipes, monitoring, noisy-neighbour fixes, and an org rollout checklist."
   },
   {
     slug: "bench-4-your-workload",

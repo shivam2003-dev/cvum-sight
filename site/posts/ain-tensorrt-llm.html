@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TensorRT-LLM — AI Native Crash Course — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .ain-banner{border:1px solid var(--rule,#d8cfb8);border-radius:10px;padding:14px 16px;margin:0 0 22px;background:rgba(240,192,64,.08)}
+  .ain-banner-label{font-size:.72rem;letter-spacing:.08em;color:var(--ink-faint);margin:0 0 4px}
+  .ain-banner-path{font-size:.88rem;margin:0}
+  .ain-banner-path a{color:var(--accent,#c96442);text-decoration:none}
+  .ain-tldr{border-left:3px solid #f0c040;padding:4px 0 4px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .ain-ver{display:inline-block;font-family:var(--font-mono);font-size:11px;border:1.2px solid var(--ink);border-radius:4px;padding:1px 7px;background:var(--paper)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+
+      <div class="ain-banner">
+        <p class="ain-banner-label">// AI NATIVE STACK</p>
+        <p class="ain-banner-path"><a href="../ai-native.html">AI Native</a> &rsaquo; Inference &rsaquo; Framework &rsaquo; <strong>TensorRT-LLM</strong></p>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">CRASH COURSE · AI-NATIVE · <span class="difficulty advanced">advanced</span> · 10 min read · <span class="ain-ver">NVIDIA</span></p>
+        <h1>TensorRT-LLM — compile the model to squeeze every NVIDIA FLOP.</h1>
+        <div class="tag-row">
+          <span class="tag fill">framework</span>
+          <span class="tag">ai-native</span>
+          <span class="tag">tensorrt-llm</span>
+          <span class="tag">nvidia</span>
+          <span class="tag">inference</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="ain-tldr"><strong>TL;DR —</strong> TensorRT-LLM is NVIDIA's library for the fastest possible LLM inference on NVIDIA GPUs. Unlike interpret-at-runtime engines, it <strong>compiles</strong> your model into an optimized TensorRT engine — fused kernels, low-precision (FP8/FP4 on Hopper/Blackwell), and in-flight batching — for top-tier latency and throughput. The trade: a build step and NVIDIA-only lock-in.</p>
+
+        <h2 id="what-it-is">What it is</h2>
+        <p>TensorRT-LLM is an open-source library that takes a model definition and builds a hardware-tuned inference <em>engine</em> for a specific NVIDIA GPU. It pairs with NVIDIA's serving stack (Triton Inference Server, or the newer <code>trtllm-serve</code>) to expose an API. In the AI Native landscape it's <em>Inference &rsaquo; Framework</em> — the option you reach for when you've standardized on NVIDIA hardware and want the absolute ceiling on performance.</p>
+
+        <h2 id="why-it-exists">Why it exists</h2>
+        <p>Generic engines run the same model code on any GPU. TensorRT-LLM instead specializes: it knows the exact GPU's tensor cores, memory hierarchy, and supported precisions, and compiles fused, hardware-specific kernels ahead of time. That ahead-of-time specialization is where the extra performance over runtime-interpreted engines comes from — especially the low-precision formats only NVIDIA's newest silicon supports.</p>
+
+        <h2 id="how-it-works">How it works — build then serve</h2>
+        <p>The workflow has a distinct compile phase. You convert weights and <strong>build an engine</strong> for your target GPU + precision + batch settings, then load that engine to serve. The engine is GPU-specific — built for an H100, it won't run optimally (or at all) on a different architecture.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 110" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .b{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.4}
+              .bh{fill:#f0c040;stroke:#2a2620;stroke-width:1.4}
+              .t{font-family:monospace;font-size:10px;fill:#2a2620;text-anchor:middle}
+              .aw{stroke:#2a2620;stroke-width:1.4;fill:none;marker-end:url(#a)}
+            </style>
+            <defs><marker id="a" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2a2620"/></marker></defs>
+            <rect class="b" x="20" y="40" width="120" height="32" rx="4"/><text class="t" x="80" y="60">HF weights</text>
+            <rect class="bh" x="200" y="40" width="150" height="32" rx="4"/><text class="t" x="275" y="56">build engine</text><text class="t" x="275" y="68">(FP8, fuse, GPU-tuned)</text>
+            <rect class="b" x="410" y="40" width="130" height="32" rx="4"/><text class="t" x="475" y="60">.engine file</text>
+            <rect class="bh" x="580" y="40" width="90" height="32" rx="4"/><text class="t" x="625" y="60">serve</text>
+            <path class="aw" d="M140 56 L198 56"/><path class="aw" d="M350 56 L408 56"/><path class="aw" d="M540 56 L578 56"/>
+          </svg>
+          <p class="diagram-label">Fig 1 — Compile once for a target GPU, then serve the optimized engine.</p>
+        </div>
+
+        <h2 id="more">What it brings</h2>
+        <ul>
+          <li><strong>Low precision</strong> — FP8 and FP4 on Hopper/Blackwell, plus INT8/INT4 weight quantization, for big memory + speed wins.</li>
+          <li><strong>In-flight (continuous) batching</strong> — via the Triton backend / executor.</li>
+          <li><strong>Kernel fusion &amp; optimized attention</strong> — FlashAttention-class kernels, paged KV cache.</li>
+          <li><strong>Multi-GPU / multi-node</strong> — tensor and pipeline parallelism for huge models.</li>
+          <li><strong>Speculative decoding, LoRA, broad model coverage</strong> (LLMs + multimodal).</li>
+        </ul>
+
+        <h2 id="quick-start">Quick start</h2>
+        <p>The high-level <code>tensorrt_llm</code> Python API hides much of the build; <code>trtllm-serve</code> exposes an OpenAI-compatible endpoint:</p>
+        <pre><code class="language-bash">pip install tensorrt_llm     # NVIDIA GPU + CUDA required
+trtllm-serve meta-llama/Llama-3.1-8B-Instruct   # builds + serves on :8000
+
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"...","messages":[{"role":"user","content":"hi"}]}'</code></pre>
+        <p>For production, the Triton Inference Server with the TensorRT-LLM backend adds metrics, dynamic batching, and multi-model hosting.</p>
+
+        <h2 id="when-to-use">When to use, when to skip</h2>
+        <p><strong>Use it</strong> when you're all-in on NVIDIA GPUs and need maximum throughput/lowest latency — large-scale production serving, latency SLAs, or to exploit FP8/FP4 on Hopper/Blackwell.</p>
+        <p><strong>Skip it</strong> if you value portability, fast iteration, or non-NVIDIA hardware — the build step and GPU-specific engines add operational friction. For quick self-hosting, <a href="../ain-vllm.html">vLLM</a> or <a href="../ai-native.html">SGLang</a> are simpler and close in many cases.</p>
+        <div class="gotcha"><span class="gotcha-label">heads up</span>
+          Engines are built for a specific GPU, precision, and (often) max batch/sequence shape. Change hardware or bump those limits and you rebuild. Bake the build into CI so deploys stay reproducible.</div>
+
+        <h2 id="alternatives">vs the alternatives</h2>
+        <table>
+          <thead><tr><th>Tool</th><th>Best for</th><th>Trade-off</th></tr></thead>
+          <tbody>
+            <tr><td><strong>TensorRT-LLM</strong></td><td>Max speed on NVIDIA GPUs</td><td>Build step, NVIDIA-only</td></tr>
+            <tr><td><a href="../ain-vllm.html">vLLM</a></td><td>Portable high-throughput serving</td><td>Slightly less peak on NVIDIA</td></tr>
+            <tr><td><a href="../ai-native.html">SGLang</a></td><td>Prefix-heavy / structured serving</td><td>Benchmark per workload</td></tr>
+            <tr><td><a href="../ai-native.html">TGI</a></td><td>Hugging Face-native serving</td><td>Different perf profile</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="references">References</h2>
+        <ul class="reflist">
+          <li><a href="https://nvidia.github.io/TensorRT-LLM/" target="_blank" rel="noopener">TensorRT-LLM docs</a> <span>— official documentation.</span></li>
+          <li><a href="https://github.com/NVIDIA/TensorRT-LLM" target="_blank" rel="noopener">NVIDIA/TensorRT-LLM</a> <span>— source.</span></li>
+          <li><a href="https://docs.nvidia.com/tensorrt-llm/quick-start-guide.html" target="_blank" rel="noopener">Quick-start guide</a> <span>— build &amp; serve.</span></li>
+        </ul>
+
+        <h2 id="extra-reads">Extra reads</h2>
+        <ul class="reflist">
+          <li><a href="https://developer.nvidia.com/blog/tag/tensorrt-llm/" target="_blank" rel="noopener">NVIDIA TensorRT-LLM blog</a> <span>— perf deep dives.</span></li>
+          <li><a href="https://github.com/triton-inference-server/tensorrtllm_backend" target="_blank" rel="noopener">Triton TensorRT-LLM backend</a> <span>— production serving.</span></li>
+        </ul>
+
+        <p style="margin-top:24px;color:var(--ink-faint);font-size:.9rem">Verified against NVIDIA's TensorRT-LLM docs, June 2026.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../ai-native.html">&larr; AI Native Stack</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

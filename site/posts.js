@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "cloud-cpu-memory-benchmark-2026",
+    title: "Cloud CPU & Memory Benchmarks, 2026 — who really wins per vCPU, per GB, per dollar.",
+    date: "Jun 2, 2026",
+    cat: "devops",
+    tags: ["devops", "benchmarks", "aws", "azure", "gcp", "arm"],
+    time: 15,
+    words: 3100,
+    excerpt: "Google Axion edges Graviton4 on per-thread ARM, AMD EPYC Turin tops x86 single-thread, Graviton4 leads memory bandwidth — and Oracle quietly wins price-performance. A cited synthesis of 2025–26 cloud CPU/memory benchmarks across AWS, Azure, GCP, and OCI."
+  },
+  {
     slug: "ycpc-1-speculative-speculative-decoding",
     title: "Speculative Speculative Decoding — Guessing the Guess Before It Lands.",
     date: "May 29, 2026",

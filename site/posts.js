@@ -16,6 +16,30 @@
 
 const POSTS = [
   {
+    slug: "bench-4-your-workload",
+    title: "Benchmark Your Own Workload — a playbook for your org, not a leaderboard.",
+    date: "Jun 2, 2026",
+    cat: "devops",
+    tags: ["devops", "benchmarks", "methodology", "cloud", "cost"],
+    time: 13,
+    words: 2600,
+    excerpt: "Published benchmarks tell you who's fast in general; only your workload tells you who's fast for you. A repeatable playbook — define the metric, build a representative test, control variables, run many times, rank by performance-per-dollar at your prices.",
+    series: "benchmarking",
+    seriesNum: "4"
+  },
+  {
+    slug: "bench-3-aws-vs-oci-amd",
+    title: "AWS vs OCI on AMD — the price-performance duel nobody talks about.",
+    date: "Jun 2, 2026",
+    cat: "devops",
+    tags: ["devops", "benchmarks", "aws", "oci", "amd"],
+    time: 12,
+    words: 2400,
+    excerpt: "On identical AMD EPYC silicon, AWS is a touch faster (Nitro) but OCI is a lot cheaper — published data shows ~44% lower on-demand cost for near-identical runtime. Intel skipped: too pricey. The x86 value play, with the spot/reserved wrinkle.",
+    series: "benchmarking",
+    seriesNum: "3"
+  },
+  {
     slug: "cloud-cpu-memory-benchmark-2026",
     title: "Cloud CPU & Memory Benchmarks, 2026 — who really wins per vCPU, per GB, per dollar.",
     date: "Jun 2, 2026",
@@ -23,7 +47,21 @@ const POSTS = [
     tags: ["devops", "benchmarks", "aws", "azure", "gcp", "arm"],
     time: 15,
     words: 3100,
-    excerpt: "Google Axion edges Graviton4 on per-thread ARM, AMD EPYC Turin tops x86 single-thread, Graviton4 leads memory bandwidth — and Oracle quietly wins price-performance. A cited synthesis of 2025–26 cloud CPU/memory benchmarks across AWS, Azure, GCP, and OCI."
+    excerpt: "Google Axion edges Graviton4 on per-thread ARM, AMD EPYC Turin tops x86 single-thread, Graviton4 leads memory bandwidth — and Oracle quietly wins price-performance. A cited synthesis of 2025–26 cloud CPU/memory benchmarks across AWS, Azure, GCP, and OCI.",
+    series: "benchmarking",
+    seriesNum: "2"
+  },
+  {
+    slug: "bench-1-basics",
+    title: "Benchmarking Basics — what the numbers actually mean.",
+    date: "Jun 2, 2026",
+    cat: "devops",
+    tags: ["devops", "benchmarks", "performance", "glossary"],
+    time: 11,
+    words: 2200,
+    excerpt: "A benchmark turns 'feels fast' into a number you can compare — but only if you know what it measured and how. Synthetic vs real-world, throughput vs latency, p50 vs p99, the traps that produce lies, and a glossary for the whole series.",
+    series: "benchmarking",
+    seriesNum: "1"
   },
   {
     slug: "ycpc-1-speculative-speculative-decoding",

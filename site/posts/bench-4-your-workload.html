@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Benchmark Your Own Workload — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .gotcha{border:1.5px solid #c96442;border-radius:6px;padding:12px 16px;margin:20px 0;background:rgba(201,100,66,.08);font-size:.92rem}
+  .gotcha-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:#c96442;display:block;margin-bottom:4px}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.9rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  table{font-size:.9rem}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Cloud Benchmarking Series · Part 4</p>
+        <p class="series-banner-title">Benchmark Your Own Workload</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Article 4 of 4</p>
+        <div class="series-banner-nav">
+          <a href="bench-1-basics.html" class="done">1 Basics</a>
+          <a href="cloud-cpu-memory-benchmark-2026.html" class="done">2 Cloud Showdown</a>
+          <a href="bench-3-aws-vs-oci-amd.html" class="done">3 AWS vs OCI</a>
+          <a href="bench-4-your-workload.html" class="active">4 Your Workload</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 2, 2026 · devops · 13 min read · 2600 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Benchmark Your Own Workload — a playbook for your org, not a leaderboard.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">benchmarks</span>
+          <span class="tag">methodology</span>
+          <span class="tag">cloud</span>
+          <span class="tag">cost</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>TL;DR —</strong> Published benchmarks tell you who's fast in general; only <em>your</em> workload tells you who's fast for <em>you</em>. This is a repeatable playbook: define the workload and the metric that matters, build a representative test, control every variable, run it many times on candidate instances, and rank by performance-per-dollar at <em>your</em> prices. The output is a defensible decision, not a vibe.</p>
+
+        <h2>Why generic benchmarks aren't enough</h2>
+        <p>A leaderboard says "Axion beats Graviton4 on CoreMark." Useful — but your service might be memory-bound, I/O-bound, or pinned by a single-threaded section. The only benchmark that predicts your bill is the one that runs your code under your load. Treat published numbers (Parts 2–3) as a <strong>shortlist generator</strong>, then validate the shortlist yourself.</p>
+
+        <h2>Step 1 — Define the workload and the metric</h2>
+        <p>Before touching a cloud console, write down two things:</p>
+        <ul>
+          <li><strong>The workload profile.</strong> Is it CPU-bound (compute), memory-bound (caches, analytics), I/O-bound (databases), or network-bound? Single-threaded latency or parallel throughput? Steady or spiky?</li>
+          <li><strong>The metric and the SLO.</strong> Pick <em>one</em> primary metric tied to a business goal: p99 request latency under X ms, builds per hour, tokens/sec, cost per million operations. If you can't name the metric, you can't benchmark.</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 110" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .b{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.4}
+              .bh{fill:#f0c040;stroke:#2a2620;stroke-width:1.4}
+              .t{font-family:monospace;font-size:10px;fill:#2a2620;text-anchor:middle}
+              .aw{stroke:#2a2620;stroke-width:1.4;fill:none;marker-end:url(#a)}
+            </style>
+            <defs><marker id="a" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2a2620"/></marker></defs>
+            <rect class="bh" x="10" y="40" width="110" height="34" rx="4"/><text class="t" x="65" y="61">define metric</text>
+            <rect class="b" x="155" y="40" width="110" height="34" rx="4"/><text class="t" x="210" y="61">build test</text>
+            <rect class="b" x="300" y="40" width="110" height="34" rx="4"/><text class="t" x="355" y="61">control vars</text>
+            <rect class="b" x="445" y="40" width="110" height="34" rx="4"/><text class="t" x="500" y="61">run ×N</text>
+            <rect class="bh" x="585" y="40" width="85" height="34" rx="4"/><text class="t" x="627" y="56">rank by</text><text class="t" x="627" y="68">$/perf</text>
+            <path class="aw" d="M120 57 L153 57"/><path class="aw" d="M265 57 L298 57"/><path class="aw" d="M410 57 L443 57"/><path class="aw" d="M555 57 L583 57"/>
+          </svg>
+          <p class="diagram-label">Fig 1 — The loop. Skip a box and the result stops being trustworthy.</p>
+        </div>
+
+        <h2>Step 2 — Build a representative test</h2>
+        <p>Three tiers, weakest to strongest signal:</p>
+        <ul>
+          <li><strong>Synthetic</strong> to characterize the hardware — quick sanity check and to explain <em>why</em> later.</li>
+          <li><strong>Component</strong> tests of your bottleneck — e.g. <code>fio</code> if you're I/O-bound, <code>sysbench oltp</code> if database-bound.</li>
+          <li><strong>Application replay</strong> — the gold standard. Replay real traffic or a captured production load against your actual service.</li>
+        </ul>
+        <p>Quick-start commands for the common tools (install via your package manager):</p>
+        <pre><code class="language-bash"># CPU — single & multi-thread
+sysbench cpu --threads=$(nproc) --time=60 run
+
+# Memory bandwidth / latency
+sysbench memory --memory-block-size=1M --memory-total-size=100G run
+# (or the STREAM binary for canonical bandwidth)
+
+# Disk I/O — random read latency
+fio --name=randread --rw=randread --bs=4k --size=4G --runtime=60 --time_based
+
+# HTTP service load — throughput + p99 latency
+wrk -t8 -c200 -d60s --latency https://your-service.internal/health
+# k6 for scripted, realistic user journeys
+k6 run load-test.js</code></pre>
+        <p>For builds/CI, just time the real thing under controlled conditions: <code>time make -j$(nproc)</code>, <code>time cargo build --release</code>, <code>time mvn -T1C package</code>.</p>
+
+        <h2>Step 3 — Control every variable</h2>
+        <p>This is where most internal benchmarks quietly become wrong. Change <strong>one</strong> thing at a time. Hold constant:</p>
+        <ul>
+          <li>Same <strong>region / AZ</strong> (and ideally placement), same <strong>OS image, kernel, and tool versions</strong>.</li>
+          <li>Same <strong>compiler flags</strong> and runtime config (especially JVM/GC settings — they differ by arch).</li>
+          <li>Comparable <strong>instance size</strong> — and normalize ARM/x86/OCPU thread counts so you compare equal work, not equal labels.</li>
+          <li><strong>Avoid burstable instances</strong> (t-class, fractional OCPU) for sustained tests — burst credits make the first minutes lie.</li>
+        </ul>
+
+        <div class="gotcha"><span class="gotcha-label">most common mistake</span>
+          Running the test once. Cloud performance varies run to run from neighbours and throttling. Run <strong>5–10 iterations</strong>, discard the warm-up, and report the <strong>median and the spread</strong> (p99 / std-dev), never a single number. Also watch <code>vmstat 1</code> / <code>mpstat</code> for the <code>steal</code> column — non-zero steal means your number is about the host, not the chip.</div>
+
+        <h2>Step 4 — Run it (and automate so it's repeatable)</h2>
+        <p>Make the run reproducible from day one — you'll re-run it every time prices or instance families change. A minimal pattern:</p>
+        <pre><code class="language-bash"># spin candidates with IaC so configs are identical
+terraform apply -var 'instance=m8a.2xlarge'   # AWS Turin
+terraform apply -var 'instance=E6.Flex'       # OCI Turin
+
+# one script, run on each, emits JSON
+./bench.sh | tee results-$INSTANCE.json
+
+# tear down immediately — benchmarking idle instances burns money
+terraform destroy</code></pre>
+        <p>Capture per run: instance type, region, OS/kernel, tool versions, every iteration's result, and the <strong>on-demand price you actually pay</strong> (your negotiated/committed rate, not list).</p>
+
+        <h2>Step 5 — Rank by performance per dollar</h2>
+        <p>The decision metric, every time:</p>
+        <pre><code class="language-bash">perf_per_dollar = throughput / hourly_price
+# or for latency-bound work, the inverse cost:
+cost_per_million_ops = (hourly_price / 3600) / ops_per_sec * 1e6</code></pre>
+        <p>Build a small table: candidate × (your metric, hourly price, perf-per-dollar, monthly cost at your real utilization). The winner is rarely the fastest box — it's the best ratio at a commitment model you can actually sign (on-demand vs reserved vs spot; see Part 3).</p>
+
+        <table>
+          <thead><tr><th>Candidate</th><th>Your metric</th><th>$/hr</th><th>Perf/$</th><th>Verdict</th></tr></thead>
+          <tbody>
+            <tr><td>Fast/expensive</td><td>100</td><td>0.40</td><td>250</td><td>only if metric is sacred</td></tr>
+            <tr><td>Balanced</td><td>92</td><td>0.22</td><td>418</td><td>usually wins</td></tr>
+            <tr><td>Cheap/slow</td><td>70</td><td>0.14</td><td>500</td><td>wins if SLO still met</td></tr>
+          </tbody>
+        </table>
+        <p>Note the cheap/slow box has the best perf-per-dollar — but only choose it if its absolute metric (70) still clears your SLO. <strong>Perf-per-dollar ranks; the SLO is a hard gate.</strong></p>
+
+        <h2>Step 6 — Re-run on a schedule</h2>
+        <p>This is not a one-time exercise. New instance families ship quarterly, prices move, and your workload evolves. Wire the benchmark into CI (or a monthly cron) so a regression — or a newly cheaper option — surfaces automatically instead of being discovered in the bill.</p>
+
+        <h2>The checklist</h2>
+        <ul>
+          <li>☐ Named one primary metric tied to an SLO</li>
+          <li>☐ Test replays a representative (ideally real) load</li>
+          <li>☐ One variable changed at a time; OS/kernel/flags fixed</li>
+          <li>☐ Non-burstable instances; warm-up discarded</li>
+          <li>☐ 5–10 runs; median + spread reported; steal checked</li>
+          <li>☐ IaC-reproducible; instances torn down after</li>
+          <li>☐ Ranked by perf-per-dollar at <em>your</em> prices, SLO as gate</li>
+          <li>☐ Scheduled to re-run as families/prices change</li>
+        </ul>
+
+        <p>Do this and "which cloud should we use" stops being an argument and becomes a number with a date on it. That's the whole point of the series — from <a href="bench-1-basics.html">the vocabulary</a> through <a href="cloud-cpu-memory-benchmark-2026.html">the 2026 landscape</a> and <a href="bench-3-aws-vs-oci-amd.html">the AMD value duel</a> to a method you own.</p>
+
+        <h2 id="ref">References &amp; tools</h2>
+        <ul class="reflist">
+          <li><a href="https://github.com/akopytov/sysbench" target="_blank" rel="noopener">sysbench</a> — scriptable CPU / memory / OLTP benchmark.</li>
+          <li><a href="https://fio.readthedocs.io/" target="_blank" rel="noopener">fio</a> — flexible I/O tester for storage.</li>
+          <li><a href="https://github.com/wg/wrk" target="_blank" rel="noopener">wrk</a> / <a href="https://k6.io/" target="_blank" rel="noopener">k6</a> — HTTP load &amp; latency testing.</li>
+          <li><a href="https://www.cs.virginia.edu/stream/" target="_blank" rel="noopener">STREAM</a> — canonical memory-bandwidth benchmark.</li>
+          <li><a href="https://github.com/ColinIanKing/stress-ng" target="_blank" rel="noopener">stress-ng</a> — stress and micro-benchmark a huge range of subsystems.</li>
+        </ul>
+
+        <p style="margin-top:22px;color:var(--ink-faint);font-size:.88rem">Methodology playbook, June 2026. Commands are starting points — adapt sizes and durations to your workload and budget.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bench-3-aws-vs-oci-amd.html">← prev: AWS vs OCI on AMD</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+<script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "ebpf-database-troubleshooting",
+    title: "eBPF Observability for Real-Time, Kernel-Level Database Troubleshooting.",
+    date: "Jun 4, 2026",
+    cat: "devops",
+    tags: ["devops", "ebpf", "observability", "bpftrace", "postgres", "linux"],
+    time: 22,
+    words: 4600,
+    excerpt: "When the database is slow but the query plan is fine, the cause is below the app — disk, network, scheduler, CPU. Five eBPF tools (biolatency, fileslower, tcpretrans, runqlat, profile) with exact commands and real output from a live PostgreSQL + OpenTelemetry box. Near-zero overhead, no restart, no kernel patch."
+  },
+  {
     slug: "amd-epyc-turin-tuning-guide",
     title: "The Complete AMD EPYC \"Turin\" (5th Gen) Tuning Guide — for your whole org.",
     date: "Jun 3, 2026",

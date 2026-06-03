@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>eBPF Observability for Real-Time Database Troubleshooting — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:12px 16px;margin:20px 0;background:rgba(201,100,66,.07);font-size:.9rem}
+  .gotcha{border:1.5px solid #c96442;border-radius:6px;padding:12px 16px;margin:20px 0;background:rgba(201,100,66,.08);font-size:.92rem}
+  .gotcha-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:#c96442;display:block;margin-bottom:4px}
+  .verdict{border-left:3px solid #4a8a3a;padding:6px 0 6px 14px;margin:14px 0;color:var(--ink-faint);font-size:.92rem}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.9rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  table{font-size:.9rem}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .yellow{fill:#f0c040}
+  svg .accent{fill:#c96442}
+  svg .faint{fill:#948a78}
+  svg .lbl{font-family:monospace;font-size:12px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#948a78}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Jun 4, 2026 · devops · 22 min read · 4600 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>eBPF Observability for Real-Time, Kernel-Level Database Troubleshooting.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">ebpf</span>
+          <span class="tag">observability</span>
+          <span class="tag">bpftrace</span>
+          <span class="tag">postgres</span>
+          <span class="tag">linux</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>TL;DR —</strong> When a database is slow, the cause usually hides <em>below</em> the application: disk I/O, the network stack, the CPU run queue, or the scheduler. eBPF lets you ask the kernel exactly what's happening — with nanosecond precision and near-zero overhead — without patching the kernel or restarting the DB. This guide walks five tools (<code>biolatency</code>, <code>fileslower</code>, <code>tcpretrans</code>, <code>runqlat</code>, <code>profile</code>), the exact commands, real output from a live PostgreSQL + OpenTelemetry box, and how to read each result. The verdict of a healthy run: every layer green.</p>
+
+        <h2 id="why-ebpf">Why eBPF for database troubleshooting</h2>
+        <p>Your dashboards say the database is slow. The query planner looks fine. CPU sits at 30%. So where is the time going? Traditional tools (<code>top</code>, <code>iostat</code>, <code>vmstat</code>) give you averages over seconds — they tell you <em>that</em> something is slow, never <em>why</em>. The "why" lives in the kernel: a block I/O that took 80&nbsp;ms, a TCP retransmit on the replication socket, a thread stuck 2&nbsp;ms in the run queue.</p>
+        <p><strong>eBPF</strong> (extended Berkeley Packet Filter) runs small sandboxed programs <em>inside</em> the Linux kernel — no kernel rebuild, no modules, no DB restart. You attach a probe to a kernel function, the probe fires on every event, and you get histograms and per-event traces at nanosecond resolution with overhead low enough for production.</p>
+
+        <div class="bm-note"><strong>Environment for this guide:</strong> Ubuntu 24.04 · <code>bpfcc-tools</code> 0.29.1 · <code>bpftrace</code> 0.20.2. Target server <code>10.100.43.121</code> running PostgreSQL + an OpenTelemetry collector. Traced June&nbsp;3,&nbsp;2026.</div>
+
+        <h3>Two toolkits, one foundation</h3>
+        <table>
+          <thead><tr><th>Toolkit</th><th>What it is</th><th>Best for</th></tr></thead>
+          <tbody>
+            <tr><td><strong>BCC</strong> (<code>bpfcc-tools</code>)</td><td>Python-based tools, rich histograms</td><td>interactive deep dives</td></tr>
+            <tr><td><strong>bpftrace</strong></td><td>single-line tracing scripts</td><td>fast one-shots, works when BCC fails</td></tr>
+          </tbody>
+        </table>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <rect x="20" y="20" width="640" height="50" rx="5" class="box"/>
+            <text x="340" y="50" text-anchor="middle" class="lbl">PostgreSQL · OpenTelemetry collector  (user space)</text>
+            <rect x="20" y="95" width="640" height="80" rx="5" class="box" style="fill:rgba(240,192,64,.08)"/>
+            <text x="34" y="115" class="sm">LINUX KERNEL</text>
+            <rect x="40" y="125" width="120" height="38" rx="4" class="box"/><text x="100" y="148" text-anchor="middle" class="sm">block I/O</text>
+            <rect x="172" y="125" width="120" height="38" rx="4" class="box"/><text x="232" y="148" text-anchor="middle" class="sm">VFS read/write</text>
+            <rect x="304" y="125" width="120" height="38" rx="4" class="box"/><text x="364" y="148" text-anchor="middle" class="sm">TCP stack</text>
+            <rect x="436" y="125" width="100" height="38" rx="4" class="box"/><text x="486" y="148" text-anchor="middle" class="sm">run queue</text>
+            <rect x="548" y="125" width="92" height="38" rx="4" class="box"/><text x="594" y="148" text-anchor="middle" class="sm">CPU stacks</text>
+            <circle cx="100" cy="125" r="5" class="accent"/><circle cx="232" cy="125" r="5" class="accent"/><circle cx="364" cy="125" r="5" class="accent"/><circle cx="486" cy="125" r="5" class="accent"/><circle cx="594" cy="125" r="5" class="accent"/>
+            <rect x="20" y="195" width="640" height="20" rx="3" class="box" style="fill:rgba(201,100,66,.1)"/>
+            <text x="340" y="209" text-anchor="middle" class="sm">eBPF probes attach here  →  biolatency · fileslower · tcpretrans · runqlat · profile</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Five probe points across the kernel, one per resource dimension: storage, files, network, scheduling, CPU.</p>
+        </div>
+
+        <h2 id="install">Installation &amp; prerequisites</h2>
+        <p><strong>Ubuntu / Debian:</strong></p>
+        <pre><code class="language-bash"># BCC tools (biolatency, runqlat, profile, ...)
+sudo apt update
+sudo apt install -y bpfcc-tools python3-bpfcc
+# bpftrace (tcpretrans.bt, runqlat.bt, ...)
+sudo apt install -y bpftrace
+# verify
+biolatency-bpfcc --version
+bpftrace --version</code></pre>
+        <p><strong>RHEL / CentOS / Amazon Linux:</strong></p>
+        <pre><code class="language-bash">sudo dnf install -y bcc-tools bpftrace
+# tools land in /usr/share/bcc/tools/ — add to PATH:
+export PATH=$PATH:/usr/share/bcc/tools</code></pre>
+        <p><strong>Verify kernel support:</strong></p>
+        <pre><code class="language-bash">uname -r                       # need 4.9+ for BCC, 4.17+ for bpftrace
+ls /sys/kernel/debug/tracing    # debugfs must be mounted</code></pre>
+        <div class="bm-note">On Ubuntu 24.04 the BCC tools install with a <code>-bpfcc</code> suffix (<code>biolatency-bpfcc</code>, <code>runqlat-bpfcc</code>). On other distros they may be plain <code>biolatency</code>, <code>runqlat</code>. Adjust the command names to match.</div>
+
+        <h2 id="biolatency">01 · Disk I/O latency — <code>biolatency</code></h2>
+        <p><strong>What it does:</strong> traces every block-device I/O request and builds a latency histogram in microseconds. The single fastest way to tell whether storage is your bottleneck. Slow WAL, slow checkpoints, slow reads of cold pages — all show up here as long tails.</p>
+        <pre><code class="language-bash"># 5 intervals of 1 second each
+sudo biolatency-bpfcc 1 5
+# or bpftrace (no -bpfcc suffix needed)
+sudo bpftrace /usr/sbin/biolatency.bt</code></pre>
+        <p><strong>Healthy threshold:</strong> all I/O under 1&nbsp;ms (1000&nbsp;µs) is excellent NVMe/SSD territory. Consistent hits at 100&nbsp;ms+ mean a storage problem.</p>
+        <p><strong>Actual output from our server:</strong></p>
+        <pre><code class="language-text">Tracing block device I/O... Hit Ctrl-C to end.
+     usecs               : count     distribution
+         0 -> 1          : 0        |                                        |
+        ...
+       128 -> 255        : 0        |                                        |
+       256 -> 511        : 9        |****************************************|
+       512 -> 1023       : 2        |********                                |</code></pre>
+        <p><strong>Read it:</strong> all I/O clustered in 256–1023&nbsp;µs (0.25–1&nbsp;ms). Zero operations crossed 1&nbsp;ms. Bars are short — few operations total, so the disk is idle most of the time.</p>
+        <p class="verdict">✅ <strong>Verdict:</strong> storage healthy — NVMe/SSD-class latency.</p>
+
+        <h2 id="fileslower">02 · Slow file operations — <code>fileslower</code></h2>
+        <p><strong>What it does:</strong> surfaces individual file read/write operations slower than a threshold (default 10&nbsp;ms). This is the one that catches slow WAL writes, journal flushes, and fsync stalls — the events that block a commit but never show up in query stats.</p>
+        <pre><code class="language-bash"># BCC version (may fail on newer kernels with kprobe attach errors)
+sudo timeout 15 fileslower-bpfcc 10
+
+# bpftrace inline version (works on all kernels)
+sudo timeout 15 bpftrace -e '
+kprobe:vfs_read  { @s[tid]=nsecs; @c[tid]=comm; }
+kretprobe:vfs_read /@s[tid]/ {
+  $l=(nsecs-@s[tid])/1000000;
+  if($l>10){ printf("PID:%-6d COMM:%-20s OP:READ   LAT:%d ms\n",pid,@c[tid],$l); }
+  delete(@s[tid]); delete(@c[tid]);
+}
+kprobe:vfs_write { @s[tid]=nsecs; @c[tid]=comm; }
+kretprobe:vfs_write /@s[tid]/ {
+  $l=(nsecs-@s[tid])/1000000;
+  if($l>10){ printf("PID:%-6d COMM:%-20s OP:WRITE  LAT:%d ms\n",pid,@c[tid],$l); }
+  delete(@s[tid]); delete(@c[tid]);
+}'</code></pre>
+        <p><strong>What to look for:</strong> database processes (<code>postgres</code>, <code>mysqld</code>, <code>mongod</code>) doing slow writes = WAL/fsync bottleneck. <code>java</code>/<code>python</code> with frequent slow reads = app reading large config or log files.</p>
+        <p><strong>Actual output:</strong> zero file operations exceeded 10&nbsp;ms across the entire 15-second window. Only active processes were <code>otelcol-contrib</code> (lightweight reads) plus the tracing tools themselves. <code>postgres</code> had no slow file ops.</p>
+        <div class="gotcha"><span class="gotcha-label">kernel gotcha</span>On kernels 5.15+ the BCC <code>fileslower-bpfcc</code> can fail with <code>cannot attach kprobe</code> because the compiler inlined the target function. The bpftrace inline version above is functionally identical and always works.</div>
+        <p class="verdict">✅ <strong>Verdict:</strong> no slow file operations — filesystem responding instantly.</p>
+
+        <h2 id="tcpretrans">03 · TCP retransmissions — <code>tcpretrans</code></h2>
+        <p><strong>What it does:</strong> hooks the kernel TCP stack and prints every retransmitted packet with source, destination, port, and TCP state. The go-to for diagnosing replication lag, connection drops, and app-to-database timeouts that look like "random" slowness.</p>
+        <pre><code class="language-bash"># bpftrace version (recommended)
+sudo timeout 30 bpftrace /usr/sbin/tcpretrans.bt
+# BCC version
+sudo timeout 30 tcpretrans-bpfcc</code></pre>
+        <p><strong>TCP states to watch:</strong></p>
+        <table>
+          <thead><tr><th>State</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>ESTABLISHED</code></td><td>active connection dropping packets — serious</td></tr>
+            <tr><td><code>SYN_SENT</code></td><td>can't even connect — firewall or server down</td></tr>
+            <tr><td><code>CLOSE_WAIT</code></td><td>connection teardown issues</td></tr>
+          </tbody>
+        </table>
+        <p><strong>Actual output:</strong> zero TCP retransmissions in the trace window. Every connection (SSH, database, telemetry) delivered packets on first attempt. Clean RTT, no packet loss between this node and its peers.</p>
+        <div class="bm-note"><strong>For production monitoring:</strong> run for 60–120 seconds during peak load. Even 1–2 retransmissions/minute on a database <em>replication</em> port warrants investigation — that's where silent lag is born.</div>
+        <p class="verdict">✅ <strong>Verdict:</strong> network healthy — no retransmissions.</p>
+
+        <h2 id="runqlat">04 · Run-queue / scheduling latency — <code>runqlat</code></h2>
+        <p><strong>What it does:</strong> measures how long threads wait in the CPU run queue <em>before</em> getting scheduled. This is the metric that reveals CPU saturation and noisy-neighbour effects on shared infrastructure — the slowness that exists even when per-core utilization looks fine.</p>
+        <pre><code class="language-bash"># BCC version — 5 intervals of 1 second
+sudo runqlat-bpfcc 1 5
+# bpftrace version
+sudo timeout 15 bpftrace /usr/sbin/runqlat.bt</code></pre>
+        <p><strong>Read the histogram:</strong></p>
+        <ul>
+          <li><code>0–7&nbsp;µs</code> dominant → CPU almost always free when a thread wants to run ✅</li>
+          <li><code>100–1000&nbsp;µs</code> dominant → CPU moderately loaded, some waiting</li>
+          <li><code>1000&nbsp;µs+</code> present → CPU saturation, threads waiting 1&nbsp;ms+ to run ❌</li>
+        </ul>
+        <p><strong>Actual output (3 of 5 intervals):</strong></p>
+        <pre><code class="language-text">     usecs               : count     distribution
+         0 -> 1          : 126      |******************************          |
+         2 -> 3          : 166      |****************************************|
+         4 -> 7          : 18       |****                                    |
+         8 -> 15         : 6        |*                                       |
+        16 -> 31         : 1        |                                        |
+        32 -> 63         : 1        |                                        |
+     ... (interval 3 spike) ...
+         0 -> 1          : 1082     |****************************************|
+         2 -> 3          : 500      |******************                      |
+         4 -> 7          : 31       |*                                       |</code></pre>
+        <p><strong>Read it:</strong> the overwhelming majority of scheduling delays sit at 0–3&nbsp;µs (sub-microsecond to 3&nbsp;µs). One outlier at 32–63&nbsp;µs — negligible. The interval-3 spike to 1082 at 0–1&nbsp;µs is a brief burst of many short-lived threads all scheduling instantly — likely the OTel collector scraping metrics.</p>
+        <p class="verdict">✅ <strong>Verdict:</strong> no CPU saturation — scheduling is instant, no noisy neighbours.</p>
+
+        <h2 id="profile">05 · CPU flame profile — <code>profile</code></h2>
+        <p><strong>What it does:</strong> samples the kernel + user stack of every running thread at a fixed frequency (99&nbsp;Hz, deliberately off 100&nbsp;Hz to avoid lock-step with kernel timers). Aggregated stacks show exactly where CPU time goes. Feed the folded output into a flame-graph generator for a visual.</p>
+        <pre><code class="language-bash"># profile a specific PID at 99 Hz for 30s
+sudo profile-bpfcc -F 99 -p &lt;PID&gt; 30
+
+# system-wide, bpftrace version
+sudo timeout 15 bpftrace -e '
+  profile:hz:99 { @[comm, kstack] = count(); }
+  END { print(@); clear(@); }'
+
+# find the busiest PID first
+ps -eo pid,pcpu,comm --sort=-pcpu | head -5</code></pre>
+        <p><strong>Flame graph (optional):</strong></p>
+        <pre><code class="language-bash">git clone https://github.com/brendangregg/FlameGraph
+cd FlameGraph
+sudo profile-bpfcc -F 99 -f 30 > out.stacks
+./flamegraph.pl out.stacks > cpu_flame.svg</code></pre>
+        <p><strong>Actual output (top stacks by sample count):</strong></p>
+        <pre><code class="language-text">@[postgres,  do_user_addr_fault -> exc_page_fault -> asm_exc_page_fault ]: 2
+@[postgres,  zap_present_ptes -> zap_pte_range -> exit_mmap -> do_exit ]:   3
+@[systemd, ]: 3
+@[postgres, ]: 41
+@[otelcol-contrib, ]: 44
+@[swapper/1,  pv_native_safe_halt -> arch_cpu_idle -> cpuidle_idle_call ]: 1429
+@[swapper/2,  ... ]: 1451
+@[swapper/3,  ... ]: 1458</code></pre>
+        <table>
+          <thead><tr><th>Process</th><th>Samples</th><th>What it means</th></tr></thead>
+          <tbody>
+            <tr><td><code>swapper/0–3</code></td><td>5793 (97%)</td><td>all 4 CPUs idle — almost nothing to do</td></tr>
+            <tr><td><code>otelcol-contrib</code></td><td>44 (0.7%)</td><td>OTel collector, light metric scraping</td></tr>
+            <tr><td><code>postgres</code></td><td>44 (0.7%)</td><td>page-fault on exit (cleanup) + idle waits</td></tr>
+            <tr><td><code>systemd</code></td><td>3 (&lt;0.1%)</td><td>background housekeeping</td></tr>
+          </tbody>
+        </table>
+        <p><strong>Read it:</strong> the <code>postgres</code> stack shows <code>exit_mmap → do_exit</code> — a short-lived worker process exiting, not a query executing. Normal PostgreSQL behaviour. <code>otelcol-contrib</code> is the busiest "real" process — it's the monitoring agent scraping this very box.</p>
+        <p class="verdict">✅ <strong>Verdict:</strong> CPU almost completely idle — 97% of samples are idle/halt states.</p>
+
+        <h2 id="summary">Full performance summary</h2>
+        <table>
+          <thead><tr><th>#</th><th>Tool</th><th>Command</th><th>Result</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>01</td><td>Disk latency</td><td><code>biolatency-bpfcc 1 5</code></td><td>all I/O in 256–1023&nbsp;µs</td><td>✅</td></tr>
+            <tr><td>02</td><td>Slow file ops</td><td><code>bpftrace vfs_read/write &gt;10ms</code></td><td>zero slow ops</td><td>✅</td></tr>
+            <tr><td>03</td><td>TCP retransmits</td><td><code>bpftrace tcpretrans.bt</code></td><td>zero retransmits</td><td>✅</td></tr>
+            <tr><td>04</td><td>Scheduling delay</td><td><code>runqlat-bpfcc 1 5</code></td><td>0–3&nbsp;µs dominant</td><td>✅</td></tr>
+            <tr><td>05</td><td>CPU profile</td><td><code>bpftrace profile:hz:99</code></td><td>97% idle</td><td>✅</td></tr>
+          </tbody>
+        </table>
+        <p><strong>Overall:</strong> the server is in excellent health. PostgreSQL + an OpenTelemetry collector with plenty of headroom across all four resource dimensions — storage, network, CPU, scheduling.</p>
+
+        <h2 id="reference">Quick reference — when to reach for which tool</h2>
+        <table>
+          <thead><tr><th>Symptom</th><th>Tool</th></tr></thead>
+          <tbody>
+            <tr><td>queries slow, disk IOPS high</td><td><code>biolatency</code></td></tr>
+            <tr><td>slow WAL writes, fsync delays</td><td><code>fileslower 10</code></td></tr>
+            <tr><td>replication lag, connection drops</td><td><code>tcpretrans</code></td></tr>
+            <tr><td>CPU at 100%, response time variable</td><td><code>runqlat</code> then <code>profile</code></td></tr>
+            <tr><td>unknown CPU consumer</td><td><code>profile -F 99</code></td></tr>
+            <tr><td>want to know which file is slow</td><td><code>fileslower 1</code> with name filter</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="compat">Kernel compatibility notes</h2>
+        <p>On Ubuntu 24.04 with kernel 6.8+, some BCC tools fail with <code>cannot attach kprobe</code> because certain kernel functions were inlined by the compiler. The fallback is always the bpftrace <code>.bt</code> script versions:</p>
+        <pre><code class="language-bash"># if biolatency-bpfcc fails:
+sudo bpftrace /usr/sbin/biolatency.bt
+# if fileslower-bpfcc fails: use the inline bpftrace script from section 02
+# if tcpretrans-bpfcc fails:
+sudo bpftrace /usr/sbin/tcpretrans.bt
+# if runqlat-bpfcc fails:
+sudo bpftrace /usr/sbin/runqlat.bt</code></pre>
+        <p>Compiler warnings like <code>warning: multiple identical address spaces specified</code> are harmless — they come from the BCC JIT compiler processing kernel headers and don't affect output accuracy.</p>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Trace below the app.</strong> When the DB is slow and the query plan is fine, the answer is in the kernel — eBPF is how you read it live.</li>
+          <li><strong>One tool per dimension.</strong> <code>biolatency</code> = storage, <code>fileslower</code> = file/fsync, <code>tcpretrans</code> = network, <code>runqlat</code> = scheduling, <code>profile</code> = CPU. Run all five, get a full health picture in minutes.</li>
+          <li><strong>bpftrace is the safety net.</strong> When BCC can't attach a kprobe on a newer kernel, the <code>.bt</code> equivalents always work.</li>
+          <li><strong>Near-zero overhead.</strong> Safe to run on production — no restart, no module, no kernel patch.</li>
+        </ul>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="https://github.com/iovisor/bcc" target="_blank" rel="noopener">BCC Tools Reference</a> <span>— the full toolkit + per-tool docs.</span></li>
+          <li><a href="https://github.com/bpftrace/bpftrace" target="_blank" rel="noopener">bpftrace Reference Guide</a> <span>— probe types and one-liners.</span></li>
+          <li><a href="https://www.brendangregg.com/linuxperf.html" target="_blank" rel="noopener">Brendan Gregg — Linux Performance</a> <span>— the canonical methodology.</span></li>
+          <li><a href="https://www.brendangregg.com/bpf-performance-tools-book.html" target="_blank" rel="noopener">BPF Performance Tools (book)</a> <span>— the deep reference.</span></li>
+        </ul>
+
+        <h2 id="extra">Extra reads</h2>
+        <ul class="reflist">
+          <li><a href="amd-epyc-turin-tuning-guide.html">The Complete AMD EPYC "Turin" Tuning Guide</a> <span>— tune the box once eBPF finds the bottleneck.</span></li>
+          <li><a href="bench-4-your-workload.html">Benchmark Your Own Workload</a> <span>— prove a fix actually helped.</span></li>
+        </ul>
+
+        <p style="margin-top:22px;color:var(--ink-faint);font-size:.88rem">Traced on a live Ubuntu 24.04 server (PostgreSQL + OpenTelemetry), June 2026. Tool names assume the <code>-bpfcc</code> suffix of Ubuntu/Debian packaging; on RHEL-family distros drop the suffix. Always trace on a representative window during real load before drawing conclusions.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="amd-epyc-turin-tuning-guide.html">← prev: AMD EPYC Turin Tuning Guide</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

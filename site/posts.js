@@ -21,9 +21,9 @@ const POSTS = [
     date: "Jun 4, 2026",
     cat: "devops",
     tags: ["devops", "ebpf", "observability", "bpftrace", "postgres", "linux"],
-    time: 22,
-    words: 4600,
-    excerpt: "When the database is slow but the query plan is fine, the cause is below the app — disk, network, scheduler, CPU. Five eBPF tools (biolatency, fileslower, tcpretrans, runqlat, profile) with exact commands and real output from a live PostgreSQL + OpenTelemetry box. Near-zero overhead, no restart, no kernel patch."
+    time: 46,
+    words: 9300,
+    excerpt: "The one-stop guide: how eBPF works (verifier, JIT, maps, probe types), the USE-method troubleshooting workflow, then five tools in depth (biolatency, fileslower, tcpretrans, runqlat, profile) — each with exact commands plus both healthy AND unhealthy output and the fix when it's red. Overhead/safety, continuous profiling, FAQ. Real output from a live PostgreSQL + OpenTelemetry box."
   },
   {
     slug: "amd-epyc-turin-tuning-guide",

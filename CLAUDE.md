@@ -6,6 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Static blog ("cvam.sight") — no build tools, no frameworks. Pure HTML/CSS/vanilla JS, deployed to Vercel. The `site/` directory is the entire deployable artifact.
 
+## Article length & depth (REQUIRED — do not ask, just do)
+
+**Never write short articles.** Every post must be long, detailed, and a one-stop reference on its topic.
+
+- **Minimum 4,000 words** for a normal post; **8,000+ words** for any "guide" / "complete" / deep-dive post.
+- Do not just reproduce the user's raw notes — **expand** them: add background/theory, the *why* behind each step, deeper explanation of every command and its output, edge cases, gotchas, production caveats, alternatives, comparison tables, troubleshooting, FAQ, and a takeaways section.
+- Use the `has-toc` layout for any long post so the scroll-spy TOC works. Many `<h2>` sections (10+ for guides).
+- Include at least one inline SVG diagram, comparison/reference tables, and a References + Extra Reads section.
+- Plain, easy language so anyone can follow — but never sacrifice depth for brevity.
+- When in doubt, longer and more thorough wins. The user does not want to ask for "more detail" every time.
+
 ## Local dev
 
 ```sh

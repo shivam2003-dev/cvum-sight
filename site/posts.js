@@ -76,6 +76,54 @@ const POSTS = [
     seriesNum: "5"
   },
   {
+    slug: "linux-perf-6-perf-tools",
+    title: "perf-tools — tracing with what's already in the kernel.",
+    date: "Jun 5, 2026",
+    cat: "devops",
+    tags: ["devops", "linux", "performance", "ftrace", "tracing"],
+    time: 28,
+    words: 5500,
+    excerpt: "Before eBPF, Brendan Gregg's perf-tools delivered powerful tracing using only built-in ftrace and perf_events — no compiler, no BCC, no packages. The survival kit for old/locked-down kernels (RHEL 6/7, embedded). execsnoop, opensnoop, iosnoop/iolatency, tcpretrans, and the ftrace power-trio funccount/funcgraph/kprobe. Part 6.",
+    series: "linuxperf",
+    seriesNum: "6"
+  },
+  {
+    slug: "linux-perf-7-bcc-tools",
+    title: "bcc/BPF Tracing Tools — the full eBPF toolbox, by subsystem.",
+    date: "Jun 5, 2026",
+    cat: "devops",
+    tags: ["devops", "linux", "performance", "ebpf", "bcc"],
+    time: 36,
+    words: 7200,
+    excerpt: "BCC ships dozens of ready-made eBPF tools — one of the densest diagrams in the set. Organised by subsystem so it stops being a wall of names: filesystem & VFS, per-FS latency, block I/O, language runtimes (ugc, mysqld_qslower), syscalls, CPU & scheduler, memory (memleak, oomkill), the deep TCP stack, and the multi-tool builders. Part 7.",
+    series: "linuxperf",
+    seriesNum: "7"
+  },
+  {
+    slug: "linux-perf-8-bpftrace-tools",
+    title: "bpftrace — the one-liner language for tracing anything.",
+    date: "Jun 5, 2026",
+    cat: "devops",
+    tags: ["devops", "linux", "performance", "bpftrace", "ebpf"],
+    time: 32,
+    words: 6400,
+    excerpt: "BCC gives pre-made tools; bpftrace gives a tiny awk-like language to write your own eBPF tracing in one line. The whole language — probe syntax, filters, actions, built-ins, and @ maps + hist() for cheap in-kernel aggregation — plus the shipped .bt tools (tcpdrop, cpuwalk). By the end you read and write bpftrace, not just run it. Part 8.",
+    series: "linuxperf",
+    seriesNum: "8"
+  },
+  {
+    slug: "linux-perf-9-bpf-perf-tools",
+    title: "BPF Performance Tools — the definitive catalogue, and the series finale.",
+    date: "Jun 5, 2026",
+    cat: "devops",
+    tags: ["devops", "linux", "performance", "ebpf", "bpf"],
+    time: 34,
+    words: 6800,
+    excerpt: "The densest diagram of all: ~150 tools from Brendan Gregg's book, proving eBPF reaches every corner of the system — file internals, SCSI/NVMe latency, per-socket ops, typed page faults, hypervisor exits. A tour of the new depth (biostacks, biopattern, so1stbyte, vmscan, runqslower) plus the methodology that makes it useful — and the nine-part series finale. Part 9.",
+    series: "linuxperf",
+    seriesNum: "9"
+  },
+  {
     slug: "ebpf-database-troubleshooting",
     title: "eBPF Observability for Real-Time, Kernel-Level Database Troubleshooting.",
     date: "Jun 4, 2026",

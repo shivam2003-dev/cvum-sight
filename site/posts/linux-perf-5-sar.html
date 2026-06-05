@@ -267,6 +267,45 @@ sadf -d /var/log/sysstat/sa03 -- -u | head        # CSV via sadf</code></pre>
           <li><strong>vs a full TSDB (Prometheus/Grafana):</strong> a metrics stack is richer, queryable, and fleet-wide — but it's infrastructure you build and maintain. <code>sar</code> is one package, on every box, recording by default, with no server. It's the floor of historical observability; a TSDB is the ceiling. On any box, <code>sar</code> is already there when you need it.</li>
         </ul>
 
+        <h2 id="lab">Hands-on: troubleshoot last night's incident</h2>
+        <p>sar's whole value is replay. Here's the full flow — enable collection, then reconstruct a 3am slowdown at 9am from data that was already on disk.</p>
+
+        <h3>Step 1 — turn on collection (do this today, before you need it)</h3>
+        <pre><code class="language-bash">sudo apt install -y sysstat        # or: dnf install sysstat
+sudo sed -i 's/ENABLED="false"/ENABLED="true"/' /etc/default/sysstat
+sudo systemctl enable --now sysstat
+# tighten sampling to 2 min on a latency-sensitive box:
+sudo sed -i 's#5-55/10#*/2#' /etc/cron.d/sysstat 2>/dev/null
+ls /var/log/sysstat/                # saDD files appear, one per day</code></pre>
+
+        <h3>Step 2 — the incident: replay the window across subsystems</h3>
+        <pre><code class="language-bash"># "checkout was slow around 03:00 last night" — replay 02:55-03:30
+DAY=/var/log/sysstat/sa$(date -d yesterday +%d)
+sar -u    -f $DAY -s 02:55:00 -e 03:30:00    # CPU
+sar -d -p -f $DAY -s 02:55:00 -e 03:30:00    # disks
+sar -W    -f $DAY -s 02:55:00 -e 03:30:00    # swapping
+sar -n EDEV,ETCP -f $DAY -s 02:55:00 -e 03:30:00   # net errors/retransmits</code></pre>
+
+        <h3>Step 3 — read the smoking gun</h3>
+        <pre><code class="language-text"># sar -d output for the window:
+03:00:01  DEV       tps   await  aqu-sz  %util
+03:02:01  nvme0n1  812.0   42.6   18.9   99.4     &lt;- disk pegged, 42 ms waits
+03:04:01  nvme0n1  790.0   45.1   19.4   99.1
+
+# sar -W same window:
+03:02:01  pswpin/s  pswpout/s
+03:02:01     0.00    640.20      &lt;- it was swapping too</code></pre>
+        <p><strong>Read it:</strong> at 03:02 the disk hit 99% util with 42 ms await <em>and</em> the box was swapping (640 pages/s out) — a batch job grabbed RAM, forced swapping, and saturated the disk. That's the whole story, reconstructed hours later. <strong>Do this:</strong> cap the batch job's memory/IO (cgroup), lower <code>vm.swappiness</code> (Part 4), and schedule it off-peak.</p>
+
+        <h3>The everyday moves</h3>
+        <pre><code class="language-bash">sar -u 1 5                 # live CPU, like mpstat
+sar -r 1 5                 # live memory
+sar -n DEV 1 5             # live per-NIC throughput
+sar -A | less              # EVERYTHING recorded today — first replay
+# export for a graph:
+sadf -d $DAY -- -u | head  # CSV of CPU, pipe to your plotter</code></pre>
+        <p><strong>Read it:</strong> <code>sar -n TCP,ETCP</code> over an incident answers "was the network dropping packets?"; <code>sar -q</code> answers "was the run queue backed up?" — each flag a different layer, all from the same recorded file.</p>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>sar remembers.</strong> Its superpower is historical replay — troubleshoot last night's incident from data recorded before you knew it happened.</li>

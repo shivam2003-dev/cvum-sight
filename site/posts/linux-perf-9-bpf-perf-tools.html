@@ -242,6 +242,52 @@
           </ol>
         </div>
 
+        <h2 id="lab">Hands-on: the deeper tools that close real gaps</h2>
+        <p>The book's new tools answer questions the earlier toolboxes couldn't. Each example: command, output, decision. Most ship as bpftrace scripts in the book repo; all need root and a recent kernel.</p>
+
+        <h3>Who actually issued that slow I/O?</h3>
+        <pre><code class="language-bash">sudo biostacks.bt          # block I/O latency WITH the issuing stack</code></pre>
+        <pre><code class="language-text">@usecs[
+    blk_account_io_start
+    submit_bio
+    ext4_writepages
+    wb_workfn               &lt;- kernel writeback, not the obvious process
+]:
+[16K, 32K)  210 |@@@@@@@@@@@@@@@@@@@@@@|</code></pre>
+        <p><strong>Read it:</strong> <code>biolatency</code> says I/O is slow; <code>biostacks</code> says <em>writeback</em> issued it, not the process you suspected — async writeback detaches I/O from its caller. <strong>Do this:</strong> tune dirty-page writeback (<code>vm.dirty_ratio</code>) rather than chasing the wrong process.</p>
+
+        <h3>Random or sequential? (the access pattern, automatically)</h3>
+        <pre><code class="language-bash">sudo biopattern.bt</code></pre>
+        <pre><code class="language-text">%RND  %SEQ  COUNT  KBYTES
+  92     8   4021   32168     &lt;- 92% random</code></pre>
+        <p><strong>Read it:</strong> 92% random I/O — brutal on spinning disks, and a hint of missing indexes or a bad access pattern even on SSD. <strong>Do this:</strong> add indexes / improve locality, or size storage for random IOPS not sequential throughput.</p>
+
+        <h3>Slow handshake or slow server?</h3>
+        <pre><code class="language-bash">sudo soconnlat.bt        # connection setup latency
+sudo so1stbyte.bt        # time from connect to first byte back</code></pre>
+        <pre><code class="language-text"># soconnlat: mostly &lt; 1 ms  (handshake is fine)
+# so1stbyte: p99 = 240 ms   (server is slow to respond)</code></pre>
+        <p><strong>Read it:</strong> setup is fast but first-byte is slow — the network/DNS is fine, the <em>server</em> (app or DB) is the latency. This split is exactly what APM often blurs. <strong>Do this:</strong> profile the server, not the network.</p>
+
+        <h3>Memory pressure — who's paying for it?</h3>
+        <pre><code class="language-bash">sudo vmscan.bt           # kernel page-reclaim activity
+sudo swapin.bt           # which process is swapping back in</code></pre>
+        <pre><code class="language-text"># vmscan: direct reclaim firing repeatedly (CPU burned reclaiming)
+# swapin: postgres   12043   &lt;- postgres paying the swap-in cost</code></pre>
+        <p><strong>Read it:</strong> the kernel is in direct reclaim and Postgres is swapping back in — memory is over-committed and the DB pays. <strong>Do this:</strong> cap the memory hog, lower <code>swappiness</code> (Part 4), add RAM.</p>
+
+        <h3>Name the threads that waited too long for a CPU</h3>
+        <pre><code class="language-bash">sudo runqslower 10000    # run-queue waits over 10 ms (microseconds arg)</code></pre>
+        <pre><code class="language-text">TIME     COMM      PID    LAT(us)
+03:14:02 postgres  1843    18402     &lt;- waited 18 ms for a CPU
+03:14:02 node      9012    11240</code></pre>
+        <p><strong>Read it:</strong> turns Part 1's <code>runqlat</code> histogram into named events — <em>which</em> thread waited and how long. <strong>Do this:</strong> CPU is saturated; reduce concurrency or pin the latency-sensitive process to dedicated cores.</p>
+
+        <h3>Disk fine but I/O throttled? (containers/k8s)</h3>
+        <pre><code class="language-bash">sudo blkthrot.bt         # block cgroup throttling events</code></pre>
+        <pre><code class="language-text">@[cgroup: /kubepods/burstable/pod-abc]: 4120 throttle events</code></pre>
+        <p><strong>Read it:</strong> the device is healthy but a cgroup I/O limit is delaying this pod — a "slow disk" that's actually a policy. <strong>Do this:</strong> raise or remove the <code>blkio</code>/io.max limit on that cgroup.</p>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>eBPF reaches everywhere.</strong> The book's ~150 tools prove there's no layer — file internals, device protocols, socket ops, fault types, hypervisor exits — that you can't observe.</li>

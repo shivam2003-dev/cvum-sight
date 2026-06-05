@@ -247,6 +247,71 @@ sudo sysctl --system           # apply now, also loads on boot
 sudo apt install tuned &amp;&amp; sudo tuned-adm profile throughput-performance</code></pre>
         <p><strong><code>tuned</code></strong> is the right way to ship a coherent set of tuning as a named profile (governor, sysctls, THP, scheduler all together) — far cleaner than a pile of boot scripts. Build a custom org profile that inherits a stock one and overrides specifics; that's the production pattern detailed in the EPYC guide.</p>
 
+        <h2 id="lab">Hands-on: apply a knob, measure, keep or revert</h2>
+        <p>Every example follows the iron rule: note the old value, change one thing, measure against baseline, then keep or revert. Test on a non-production box first.</p>
+
+        <h3>CPU governor — the biggest single win</h3>
+        <pre><code class="language-bash"># baseline: what is it now?
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor   # -> powersave
+# change all cores to performance
+echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+# verify it took + see the clock jump
+grep MHz /proc/cpuinfo | sort -u | tail -3
+sudo turbostat --interval 1 2>/dev/null | grep Bzy_MHz | head -1</code></pre>
+        <pre><code class="language-text"># before: cores idling at 1500 MHz between bursts
+# after:  cores holding 3700 MHz — no throttle-down latency</code></pre>
+        <p><strong>Measure:</strong> re-run your latency benchmark (Part 3); p99 on bursty workloads often drops noticeably. <strong>Keep it</strong> via <code>tuned</code> (below) so it survives reboot.</p>
+
+        <h3>NUMA placement — pin CPU and memory together</h3>
+        <pre><code class="language-bash"># baseline: run unpinned, note throughput
+./bench
+# pin to node 0 CPUs AND node 0 memory (map nodes first: numactl -H)
+numactl --cpunodebind=0 --membind=0 ./bench
+# verify placement while it runs:
+numastat -p $(pgrep bench)    # want node0 high, node1 ~0</code></pre>
+        <p><strong>Read it:</strong> if <code>numastat</code> showed lots of remote-node memory before and local-only after, you've cut slow cross-node access. <strong>Do this:</strong> only pin to cores within one node (check <code>lscpu</code> from Part 2) — straddling nodes makes it worse.</p>
+
+        <h3>Connection backlog — the silent dropper</h3>
+        <pre><code class="language-bash"># symptom: clients get refused under a connection burst, app looks idle
+ss -ltn                              # check Recv-Q vs the listen backlog
+sysctl net.core.somaxconn            # -> 4096 (default, often too low)
+sudo sysctl net.core.somaxconn=65535
+sudo sysctl net.ipv4.tcp_max_syn_backlog=65535
+# also bump the app's own listen() backlog to match</code></pre>
+        <p><strong>Read it:</strong> a full accept queue means the kernel drops new connections before the app sees them — no CPU/disk graph explains it. <strong>Do this:</strong> raise both the kernel and the app backlog; re-test the connection storm.</p>
+
+        <h3>Swappiness + THP — database defaults</h3>
+        <pre><code class="language-bash">sysctl vm.swappiness                 # -> 60 (too eager for a DB)
+sudo sysctl vm.swappiness=1          # discourage swapping hot memory
+echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+# verify:
+cat /sys/kernel/mm/transparent_hugepage/enabled   # -> always [madvise] never</code></pre>
+        <p><strong>Measure:</strong> watch <code>vmstat 1</code> — <code>so</code> (swap-out) should sit at 0; THP stalls in the DB's latency histogram should disappear.</p>
+
+        <h3>I/O scheduler — match it to the device</h3>
+        <pre><code class="language-bash">cat /sys/block/nvme0n1/queue/scheduler    # -> [mq-deadline] kyber none
+# on fast NVMe, 'none' usually wins (device faster than kernel reordering)
+echo none | sudo tee /sys/block/nvme0n1/queue/scheduler
+# re-run fio (Part 3) and compare IOPS/latency before vs after</code></pre>
+
+        <h3>File-descriptor limit — the cryptic refusal</h3>
+        <pre><code class="language-bash">ulimit -n                            # -> 1024 (default, kills busy daemons)
+# per-shell test:
+ulimit -n 1048576
+# persist for a systemd service:
+sudo systemctl edit myapp            # add: [Service] LimitNOFILE=1048576</code></pre>
+        <p><strong>Read it:</strong> a connection-heavy service hitting 1024 fds starts refusing connections with confusing errors. <strong>Do this:</strong> raise it and persist via systemd, not just the shell.</p>
+
+        <h3>Make it stick — ship a tuned profile</h3>
+        <pre><code class="language-bash"># persist sysctls
+printf 'vm.swappiness=1\nnet.core.somaxconn=65535\n' | sudo tee /etc/sysctl.d/99-tuning.conf
+sudo sysctl --system
+# governor/THP/scheduler together, the clean way:
+sudo apt install -y tuned
+sudo tuned-adm profile throughput-performance
+tuned-adm active                     # confirm</code></pre>
+        <p><strong>Do this:</strong> once a set of knobs is proven, ship them as one <code>tuned</code> profile rather than a pile of boot scripts — reproducible across the fleet.</p>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>Tune the bottleneck you found, not a checklist.</strong> Tuning without a target is as likely to hurt as help.</li>

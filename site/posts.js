@@ -16,6 +16,66 @@
 
 const POSTS = [
   {
+    slug: "linux-perf-1-observability-tools",
+    title: "Linux Performance Observability Tools — every box on the map.",
+    date: "Jun 5, 2026",
+    cat: "devops",
+    tags: ["devops", "linux", "performance", "observability", "tracing"],
+    time: 38,
+    words: 7600,
+    excerpt: "Brendan Gregg's famous observability-tools diagram, walked layer by layer: applications & syscalls, the VFS/filesystem stack, the full network stack, CPU & scheduler, virtual memory, the block/disk path, and hardware counters — tied together with the USE method and a 60-second triage sweep. Part 1 of the Linux Performance series.",
+    series: "linuxperf",
+    seriesNum: "1"
+  },
+  {
+    slug: "linux-perf-2-static-tools",
+    title: "Linux Static Performance Tools — the config that bounds your ceiling.",
+    date: "Jun 5, 2026",
+    cat: "devops",
+    tags: ["devops", "linux", "performance", "hardware", "config"],
+    time: 30,
+    words: 5900,
+    excerpt: "Static tools inspect configuration at rest — no load needed. Wrong RAID mode, a NIC negotiated down, half-populated memory channels, a powersave governor: none show as 'busy' yet each caps performance before the first request. Every config inspector from ldd to dmidecode to lspci, by subsystem. Part 2.",
+    series: "linuxperf",
+    seriesNum: "2"
+  },
+  {
+    slug: "linux-perf-3-benchmark-tools",
+    title: "Linux Performance Benchmark Tools — measuring the ceiling on purpose.",
+    date: "Jun 5, 2026",
+    cat: "devops",
+    tags: ["devops", "linux", "performance", "benchmarks", "load-testing"],
+    time: 32,
+    words: 6300,
+    excerpt: "A load generator per layer — fio/dd for disks, iperf/hping3 for the network, sysbench/lmbench for CPU & memory, wrk/ab/jmeter for apps, MLPerf for accelerators. What each stresses, the right way to run it, the three traps that turn benchmarks into lies, and why you always pair a benchmark with an observability tool. Part 3.",
+    series: "linuxperf",
+    seriesNum: "3"
+  },
+  {
+    slug: "linux-perf-4-tuning-tools",
+    title: "Linux Performance Tuning Tools — the knobs and where they live.",
+    date: "Jun 5, 2026",
+    cat: "devops",
+    tags: ["devops", "linux", "performance", "tuning", "sysctl"],
+    time: 31,
+    words: 6100,
+    excerpt: "Now we change things. A knob per layer — nice/taskset/numactl for CPU placement, ionice/blockdev for disk, sysctl/tc/ethtool for network, tune2fs for filesystems, ulimit for limits, stap/kpatch for live kernel changes. What each changes, the safe way to apply it, and the iron rule: change one thing, measure, keep or revert. Part 4.",
+    series: "linuxperf",
+    seriesNum: "4"
+  },
+  {
+    slug: "linux-perf-5-sar",
+    title: "sar — the one tool that remembers what happened last night.",
+    date: "Jun 5, 2026",
+    cat: "devops",
+    tags: ["devops", "linux", "performance", "sar", "monitoring"],
+    time: 28,
+    words: 5500,
+    excerpt: "Most tools show you now; sar shows you then. It records system counters to disk so when you're paged at 9am about a 3am slowdown, the data already exists. One tool covers every subsystem by flag — CPU, memory, disk, network, run queue — live or replayed from history with -f. The whole flag map, plus collection and sadf export. Part 5.",
+    series: "linuxperf",
+    seriesNum: "5"
+  },
+  {
     slug: "ebpf-database-troubleshooting",
     title: "eBPF Observability for Real-Time, Kernel-Level Database Troubleshooting.",
     date: "Jun 4, 2026",

@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux Performance Observability: sar — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:12px 16px;margin:20px 0;background:rgba(201,100,66,.07);font-size:.9rem}
+  .gotcha{border:1.5px solid #c96442;border-radius:6px;padding:12px 16px;margin:20px 0;background:rgba(201,100,66,.08);font-size:.92rem}
+  .gotcha-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:#c96442;display:block;margin-bottom:4px}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.9rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  table{font-size:.88rem}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .sm{font-family:monospace;font-size:10px;fill:#2a2620}
+  svg .f{font-family:monospace;font-size:9px;fill:#948a78}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Linux Performance Series · Part 5</p>
+        <p class="series-banner-title">sar — the System Activity Reporter</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 5 of 9</p>
+        <div class="series-banner-nav">
+          <a href="linux-perf-1-observability-tools.html" class="done">1 Observability</a>
+          <a href="linux-perf-2-static-tools.html" class="done">2 Static</a>
+          <a href="linux-perf-3-benchmark-tools.html" class="done">3 Benchmark</a>
+          <a href="linux-perf-4-tuning-tools.html" class="done">4 Tuning</a>
+          <a href="linux-perf-5-sar.html" class="active">5 sar</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 5, 2026 · devops · 28 min read · 5500 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>sar — the one tool that remembers what happened last night.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">linux</span>
+          <span class="tag">performance</span>
+          <span class="tag">sar</span>
+          <span class="tag">monitoring</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>TL;DR —</strong> Most tools show you <em>now</em>. <code>sar</code> (System Activity Reporter) shows you <em>then</em> — it continuously records system counters to disk so when you're paged at 9am about a 3am slowdown, the data already exists. One tool covers every subsystem via flags: CPU (<code>-u</code>, <code>-P ALL</code>), memory (<code>-r</code>, <code>-B</code>, <code>-W</code>), disk (<code>-d</code>, <code>-b</code>), network (<code>-n DEV</code>, <code>-n TCP,ETCP</code>, and friends), run queue (<code>-q</code>), and more. This chapter walks the whole flag map from Gregg's sar diagram, how collection works, and how to replay history with <code>-f</code>.</p>
+
+        <h2 id="why">Why sar is special</h2>
+        <p>Every other tool in this series has the same blind spot: it shows the system at the moment you run it. But performance incidents are usually reported <em>after</em> the fact — "the site was slow around 3am," "checkout latency spiked during the batch job last night." By the time you log in, the event is gone and <code>top</code> shows a calm system. You can't troubleshoot what you can't see.</p>
+        <p><strong><code>sar</code> solves this by recording.</strong> A background collector samples kernel counters every few minutes (default 10) and writes them to daily binary files. <code>sar</code> then replays any time window from those files. It's the system's flight recorder — low-overhead, always-on, and built into the <code>sysstat</code> package that's been on Linux for decades. When the page comes in, you ask <code>sar</code> "what did CPU/disk/network look like at 3am?" and get the answer.</p>
+        <p>The second thing that makes <code>sar</code> special: one tool, every subsystem. Instead of remembering <code>iostat</code> for disk, <code>mpstat</code> for CPU, <code>vmstat</code> for memory, and a pile of network commands, <code>sar</code> covers them all through flags — and crucially in the <em>same</em> consistent, parseable format, live or historical.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <rect x="150" y="20" width="380" height="28" rx="4" class="box" style="fill:rgba(201,100,66,.12)"/>
+            <text x="340" y="39" text-anchor="middle" class="sm">Applications</text>
+            <rect x="150" y="54" width="380" height="22" rx="4" class="box" style="fill:rgba(240,192,64,.15)"/>
+            <text x="340" y="69" text-anchor="middle" class="sm">syscall</text>
+            <rect x="150" y="82" width="120" height="78" rx="4" class="box" style="fill:rgba(80,120,200,.10)"/>
+            <text x="210" y="106" text-anchor="middle" class="f">FS — -v</text>
+            <text x="210" y="124" text-anchor="middle" class="f">NFS — -n NFS</text>
+            <text x="210" y="142" text-anchor="middle" class="f">Block — -b</text>
+            <rect x="272" y="82" width="120" height="78" rx="4" class="box" style="fill:rgba(80,160,80,.10)"/>
+            <text x="332" y="106" text-anchor="middle" class="f">TCP — -n TCP</text>
+            <text x="332" y="124" text-anchor="middle" class="f">IP/UDP — -n IP</text>
+            <text x="332" y="142" text-anchor="middle" class="f">ICMP — -n ICMP</text>
+            <rect x="394" y="82" width="136" height="78" rx="4" class="box" style="fill:rgba(240,192,64,.12)"/>
+            <text x="462" y="106" text-anchor="middle" class="f">Sched — -q -u</text>
+            <text x="462" y="124" text-anchor="middle" class="f">VM — -r -R -B</text>
+            <text x="462" y="142" text-anchor="middle" class="f">-P ALL (per-CPU)</text>
+            <rect x="180" y="182" width="120" height="34" rx="4" class="box"/><text x="240" y="203" text-anchor="middle" class="f">Disks — -d</text>
+            <rect x="380" y="182" width="120" height="34" rx="4" class="box"/><text x="440" y="203" text-anchor="middle" class="f">NIC — -n DEV/EDEV</text>
+            <rect x="560" y="82" width="100" height="44" rx="4" class="box"/><text x="610" y="108" text-anchor="middle" class="f">CPU — -m CPU</text>
+            <rect x="560" y="140" width="100" height="40" rx="4" class="box"/><text x="610" y="164" text-anchor="middle" class="f">DRAM — -r</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — One tool, every layer, by flag. <code>sar</code>'s options map onto the same system stack as the rest of the series.</p>
+        </div>
+
+        <h2 id="collection">How collection works</h2>
+        <p><code>sar</code> has two halves: a <em>collector</em> that records, and the <code>sar</code> command that reads. The collector is <code>sadc</code> (system activity data collector), driven on a schedule by cron/systemd helpers:</p>
+        <ul>
+          <li><strong><code>sa1</code></strong> — a wrapper run frequently (e.g. every 10 min by cron/timer) that calls <code>sadc</code> to append a sample to today's data file.</li>
+          <li><strong><code>sa2</code></strong> — run once daily to produce a text summary report.</li>
+          <li><strong>Data files</strong> — live in <code>/var/log/sysstat/</code> (or <code>/var/log/sa/</code>), named <code>saDD</code> by day of month (e.g. <code>sa03</code> for the 3rd). They rotate monthly by default.</li>
+        </ul>
+        <pre><code class="language-bash"># install + enable collection
+sudo apt install sysstat        # or: dnf install sysstat
+sudo systemctl enable --now sysstat
+# confirm it's collecting (edit ENABLED="true" if needed):
+cat /etc/default/sysstat
+# tighten the sample interval (default 10 min) in the timer/cron:
+# /etc/cron.d/sysstat  ->  */2 for every 2 minutes</code></pre>
+        <div class="bm-note">Default 10-minute sampling is coarse for fast incidents. For servers where you want to catch short spikes, drop the <code>sa1</code> interval to 1–2 minutes. Trade-off: slightly bigger data files. Worth it on anything latency-sensitive.</div>
+
+        <h2 id="live">Live vs historical</h2>
+        <p>Two modes, same flags:</p>
+        <pre><code class="language-bash"># LIVE: sample every 1s, 5 times (like vmstat/iostat)
+sar -u 1 5
+# HISTORICAL: replay today's recorded data
+sar -u
+# replay a specific day's file:
+sar -u -f /var/log/sysstat/sa03
+# replay a time window from history:
+sar -u -f /var/log/sysstat/sa03 -s 02:55:00 -e 03:30:00</code></pre>
+        <p>That last command is the whole point: "show me per-CPU usage between 2:55 and 3:30 this morning." Swap <code>-u</code> for any subsystem flag to zoom that window across CPU, disk, network — all from data that was already on disk before you knew there was a problem.</p>
+
+        <h2 id="cpu">CPU &amp; scheduler flags</h2>
+        <table>
+          <thead><tr><th>Flag</th><th>Shows</th></tr></thead>
+          <tbody>
+            <tr><td><code>-u</code></td><td>overall CPU: <code>%user %system %iowait %steal %idle</code></td></tr>
+            <tr><td><code>-P ALL</code></td><td>per-CPU breakdown — spot a single hot core / imbalance</td></tr>
+            <tr><td><code>-q</code></td><td>run-queue length, load averages, blocked tasks — CPU saturation</td></tr>
+            <tr><td><code>-w</code></td><td>context-switch &amp; task-creation rate</td></tr>
+            <tr><td><code>-m CPU</code></td><td>CPU power management — frequency, where available</td></tr>
+          </tbody>
+        </table>
+        <pre><code class="language-bash">sar -u 1 5                     # overall CPU live
+sar -P ALL 1 5                 # per-CPU live
+sar -q 1 5                     # run-queue + load + blocked</code></pre>
+        <p>The columns to read like the live tools: high <code>%iowait</code> means blocked on disk, high <strong><code>%steal</code></strong> on a VM means the hypervisor took your cycles (noisy neighbour), and <code>-q</code>'s <code>runq-sz</code> + <code>blocked</code> reveal saturation that <code>%idle</code> alone hides. Recorded historically, these answer "was the 3am slowdown CPU-bound, I/O-bound, or steal?" — the first fork in any triage.</p>
+
+        <h2 id="memory">Memory &amp; paging flags</h2>
+        <table>
+          <thead><tr><th>Flag</th><th>Shows</th></tr></thead>
+          <tbody>
+            <tr><td><code>-r</code></td><td>memory utilization — free, used, cache, commit</td></tr>
+            <tr><td><code>-R</code></td><td>memory allocation rate (pages/s)</td></tr>
+            <tr><td><code>-B</code></td><td>paging stats — page-in/out, major faults, scan rate</td></tr>
+            <tr><td><code>-W</code></td><td>swapping — pages swapped in/out per second</td></tr>
+            <tr><td><code>-H</code></td><td>hugepage utilization</td></tr>
+            <tr><td><code>-S</code></td><td>swap space utilization</td></tr>
+          </tbody>
+        </table>
+        <pre><code class="language-bash">sar -r 1 5                     # memory used/free/cache/commit
+sar -B 1 5                     # paging: pgpgin/s, majflt/s
+sar -W 1 5                     # swap in/out — should be ~0</code></pre>
+        <p>The killer signal here is <code>-W</code> / <code>-B</code> showing swap or major faults during the incident window. A database that starts swapping hot memory at 3am — perhaps because a batch job grabbed RAM — will show clean CPU but climbing <code>pswpout/s</code>, and <code>sar -W -f ...</code> proves it after the fact. <code>-B</code>'s <code>majflt/s</code> (major faults = had to hit disk) is the page-cache-pressure tell.</p>
+
+        <h2 id="disk">Disk &amp; block flags</h2>
+        <table>
+          <thead><tr><th>Flag</th><th>Shows</th></tr></thead>
+          <tbody>
+            <tr><td><code>-d</code></td><td>per-device I/O: tps, throughput, await, %util, queue size</td></tr>
+            <tr><td><code>-b</code></td><td>overall block I/O rate — transfers and bytes/s, read vs write</td></tr>
+            <tr><td><code>-v</code></td><td>kernel FS tables — inode, file handle, dentry usage</td></tr>
+          </tbody>
+        </table>
+        <pre><code class="language-bash">sar -d -p 1 5                  # per-device (-p = pretty device names)
+sar -b 1 5                     # overall block I/O rate
+sar -v 1 5                     # inode/file-handle usage</code></pre>
+        <p><code>sar -d</code> is your historical <code>iostat -x</code>. The columns that matter: <code>%util</code> (device busy), <code>await</code> (I/O latency ms), and <code>aqu-sz</code>/<code>avgqu-sz</code> (queue depth = saturation). Replaying <code>sar -d -f ...</code> over the incident window tells you whether the disk was the bottleneck — high <code>await</code> + high <code>%util</code> at 3am = storage. <code>-v</code> catches the rarer "ran out of file handles/inodes" failure.</p>
+
+        <h2 id="net">Network flags</h2>
+        <p>Network is where <code>sar</code>'s flag richness shows — a sub-flag per protocol layer, matching the diagram's left-column labels.</p>
+        <table>
+          <thead><tr><th>Flag</th><th>Shows</th></tr></thead>
+          <tbody>
+            <tr><td><code>-n DEV</code></td><td>per-interface throughput — packets/s, bytes/s, the bandwidth view</td></tr>
+            <tr><td><code>-n EDEV</code></td><td>per-interface <em>errors</em> &amp; drops — the failure view</td></tr>
+            <tr><td><code>-n TCP</code></td><td>TCP connection rates — active/passive opens</td></tr>
+            <tr><td><code>-n ETCP</code></td><td>TCP <em>errors</em> — retransmits, resets, failed connections</td></tr>
+            <tr><td><code>-n UDP</code></td><td>UDP datagram rates + errors</td></tr>
+            <tr><td><code>-n IP</code> / <code>-n EIP</code></td><td>IP-layer datagram stats / errors</td></tr>
+            <tr><td><code>-n ICMP</code> / <code>-n EICMP</code></td><td>ICMP message rates / errors (also <code>[6]</code> for IPv6)</td></tr>
+            <tr><td><code>-n SOCK</code> / <code>-n SOCK6</code></td><td>socket counts in use (TCP/UDP/raw), v4 &amp; v6</td></tr>
+            <tr><td><code>-n NFS</code> / <code>-n NFSD</code></td><td>NFS client / server call rates</td></tr>
+          </tbody>
+        </table>
+        <pre><code class="language-bash">sar -n DEV 1 5                 # per-NIC throughput
+sar -n EDEV 1 5                # per-NIC errors/drops
+sar -n TCP,ETCP 1 5           # TCP opens + retransmits/resets
+sar -n SOCK 1 5               # sockets in use
+# replay last night's network errors:
+sar -n EDEV,ETCP -f /var/log/sysstat/sa03 -s 02:55:00 -e 03:30:00</code></pre>
+        <p>The pairing <strong><code>-n TCP,ETCP</code></strong> is the network triage staple: <code>TCP</code> shows connection rate (a spike = a connection storm), <code>ETCP</code>'s <code>retrans/s</code> shows packet loss on live traffic — the historical counterpart to Part 1's <code>tcpretrans</code>. And <code>-n EDEV</code>'s <code>rxdrop/s</code>/<code>txdrop/s</code> catch NIC-level drops (undersized ring buffers, Part 4) that explain mystery latency. Recorded, these answer "was the network dropping packets during the slowdown?"</p>
+
+        <h2 id="hardware">Hardware: power &amp; fans</h2>
+        <p>Top-right of the diagram: <code>-m</code> sub-flags read hardware sensors where the platform exposes them.</p>
+        <table>
+          <thead><tr><th>Flag</th><th>Shows</th></tr></thead>
+          <tbody>
+            <tr><td><code>-m CPU</code></td><td>per-CPU frequency (MHz) — is the chip throttling/not boosting?</td></tr>
+            <tr><td><code>-m FAN</code></td><td>fan speeds (RPM)</td></tr>
+            <tr><td><code>-m TEMP</code></td><td>temperatures — thermal context for throttling</td></tr>
+            <tr><td><code>-m IN</code> / <code>-m USB</code></td><td>voltage inputs / USB device power</td></tr>
+          </tbody>
+        </table>
+        <p><code>sar -m CPU</code> recorded over an incident can reveal thermal throttling — cores dropping frequency exactly when latency rose — which ties to Part 4's governor and the EPYC guide's power section. Sensor availability depends on the platform (often limited on cloud VMs).</p>
+
+        <h2 id="recipes">Practical recipes</h2>
+        <p>The everyday <code>sar</code> moves:</p>
+        <pre><code class="language-bash"># EVERYTHING for today (all subsystems), great first replay
+sar -A | less
+# the "what happened at 3am" sweep across subsystems:
+for f in -u "-P ALL" -r -B -W -d "-n DEV" "-n EDEV" "-n TCP,ETCP" -q; do
+  echo "===== sar $f ====="; sar $f -f /var/log/sysstat/sa03 -s 02:55:00 -e 03:30:00
+done
+# live multi-subsystem (CPU + disk + net) for 30s:
+sar -u -d -n DEV 1 30
+# machine-readable for graphing (JSON/CSV):
+sar -u -f /var/log/sysstat/sa03 -o --iface=eth0   # see sadf for export
+sadf -d /var/log/sysstat/sa03 -- -u | head        # CSV via sadf</code></pre>
+        <p><code>sadf</code> is the export companion — it turns <code>sar</code> data into CSV/JSON/XML for dashboards and graphing tools, so you can feed historical counters into Grafana or a one-off plot. That makes <code>sar</code> not just a CLI but a lightweight always-on metrics source with zero extra agents.</p>
+
+        <h2 id="vs">sar vs the live tools vs a TSDB</h2>
+        <p>Where <code>sar</code> sits:</p>
+        <ul>
+          <li><strong>vs live tools (<code>top</code>/<code>iostat</code>/<code>vmstat</code>):</strong> <code>sar</code> is the only one that remembers. Use live tools for <em>now</em>, <code>sar</code> for <em>then</em> and for the same data in one consistent format.</li>
+          <li><strong>vs a full TSDB (Prometheus/Grafana):</strong> a metrics stack is richer, queryable, and fleet-wide — but it's infrastructure you build and maintain. <code>sar</code> is one package, on every box, recording by default, with no server. It's the floor of historical observability; a TSDB is the ceiling. On any box, <code>sar</code> is already there when you need it.</li>
+        </ul>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>sar remembers.</strong> Its superpower is historical replay — troubleshoot last night's incident from data recorded before you knew it happened.</li>
+          <li><strong>One tool, every layer, by flag:</strong> CPU (<code>-u</code>/<code>-P ALL</code>/<code>-q</code>), memory (<code>-r</code>/<code>-B</code>/<code>-W</code>), disk (<code>-d</code>/<code>-b</code>), network (<code>-n DEV/EDEV/TCP/ETCP/...</code>), hardware (<code>-m</code>).</li>
+          <li><strong>Enable it everywhere.</strong> Install <code>sysstat</code>, enable collection, tighten the interval to 1–2 min on latency-sensitive hosts.</li>
+          <li><strong>Replay a window:</strong> <code>sar -&lt;flag&gt; -f /var/log/sysstat/saDD -s START -e END</code> is the incident-forensics command.</li>
+          <li><strong>Export with <code>sadf</code></strong> for graphing; <code>sar</code> is the zero-setup floor beneath a full metrics stack.</li>
+        </ul>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="https://www.brendangregg.com/linuxperf.html" target="_blank" rel="noopener">Brendan Gregg — Linux Performance</a> <span>— source of the sar diagram.</span></li>
+          <li><a href="https://github.com/sysstat/sysstat" target="_blank" rel="noopener">sysstat (sar, sadc, sadf)</a> <span>— the project + man pages.</span></li>
+          <li><a href="https://man7.org/linux/man-pages/man1/sar.1.html" target="_blank" rel="noopener">sar(1) man page</a> <span>— every flag in detail.</span></li>
+        </ul>
+
+        <h2 id="extra">Extra reads</h2>
+        <ul class="reflist">
+          <li><a href="linux-perf-1-observability-tools.html">Part 1 — Observability Tools</a> <span>— the live tools sar records historically.</span></li>
+          <li><a href="linux-perf-4-tuning-tools.html">Part 4 — Tuning Tools</a> <span>— act on what sar's history reveals.</span></li>
+          <li><a href="ebpf-database-troubleshooting.html">eBPF for Database Troubleshooting</a> <span>— per-event depth when sar's counters aren't enough.</span></li>
+        </ul>
+
+        <p style="margin-top:22px;color:var(--ink-faint);font-size:.88rem">Built from Brendan Gregg's "Linux Performance Observability: sar" diagram (linuxperf.html, 2016). Flag availability and column names vary slightly by sysstat version; sensor flags (<code>-m</code>) depend on hardware exposure and are often limited on cloud VMs. Confirm collection is enabled — many distros ship sysstat installed but not collecting.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="linux-perf-4-tuning-tools.html">← prev: Part 4 — Tuning Tools</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

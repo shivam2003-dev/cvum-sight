@@ -222,6 +222,47 @@ sudo ./tpoint block:block_rq_issue</code></pre>
         </table>
         <p>The takeaway isn't "ftrace vs eBPF" — it's <em>both, knowing which the box can run</em>. On anything modern, reach for bpftrace (Part 8). On a RHEL 6/7 relic or an appliance you can't touch, <code>perf-tools</code> gets you the same answers. And ftrace remains genuinely better at one thing: <code>funcgraph</code>'s call-graph-with-timings view is a uniquely clear way to see <em>inside</em> a single slow kernel path.</p>
 
+        <h2 id="lab">Hands-on: trace on a stock kernel</h2>
+        <p>The whole point of perf-tools is "no install needed." Clone the scripts, run as root — works on a RHEL 6/7 box where eBPF can't. Each example shows the command, real output, and the decision.</p>
+
+        <h3>Setup</h3>
+        <pre><code class="language-bash">git clone https://github.com/brendangregg/perf-tools &amp;&amp; cd perf-tools
+# debugfs is usually already mounted; if not:
+sudo mount -t debugfs none /sys/kernel/debug 2>/dev/null</code></pre>
+
+        <h3>Catch short-lived processes</h3>
+        <pre><code class="language-bash">sudo ./execsnoop</code></pre>
+        <pre><code class="language-text">COMM         PID    PPID ARGS
+sh         28341    9012 sh -c /opt/cron/cleanup.sh
+find       28342   28341 find /tmp -mtime +1 -delete</code></pre>
+        <p><strong>Read it:</strong> a cron job spawning <code>find</code> across <code>/tmp</code> every minute — invisible to <code>top</code>. <strong>Do this:</strong> if it correlates with your latency spikes, reschedule or scope it.</p>
+
+        <h3>Block I/O latency — without eBPF</h3>
+        <pre><code class="language-bash">sudo ./iolatency 1 5</code></pre>
+        <pre><code class="language-text">  &gt;=(ms) .. &lt;(ms)   : I/O   |Distribution           |
+     0   -&gt; 1        : 1240  |######################|
+     8   -&gt; 16       : 95    |##                     |
+    64   -&gt; 128      : 22    |#                      |   &lt;- 64-128 ms tail</code></pre>
+        <p><strong>Read it:</strong> same insight as <code>biolatency</code> but on a kernel too old for BCC — most I/O is fast, but a 64–128 ms tail exists. <strong>Do this:</strong> pair with <code>./iosnoop</code> to name the process behind the slow I/Os.</p>
+
+        <h3>TCP retransmits on an old box</h3>
+        <pre><code class="language-bash">sudo ./tcpretrans</code></pre>
+        <pre><code class="language-text">TIME     PID   LADDR:PORT       RADDR:PORT       STATE
+05:20:11 1102  10.0.0.5:5432    10.0.0.9:44102   ESTABLISHED</code></pre>
+        <p><strong>Do this:</strong> same diagnosis as the modern tool — packet loss on live DB traffic; check the NIC and link.</p>
+
+        <h3>The power move — funcgraph inside a slow kernel path</h3>
+        <pre><code class="language-bash"># a syscall is mysteriously slow — trace it + its whole child call tree
+sudo ./funcgraph -d 1 vfs_read 2&gt;/dev/null | head -25</code></pre>
+        <pre><code class="language-text"> DURATION   FUNCTION CALLS
+            vfs_read() {
+              ext4_file_read_iter() {
+   0.4 us      generic_file_read_iter() {
+ 12380 us        wait_on_page_bit();   &lt;- 12 ms blocked here
+              }
+            }</code></pre>
+        <p><strong>Read it:</strong> the read spent 12 ms in <code>wait_on_page_bit</code> — it blocked waiting for a page to come off disk (a cache miss hitting slow storage), not in CPU work. <strong>Do this:</strong> this is the unique perf-tools superpower — a call-tree-with-timings view that pinpoints <em>which</em> deeper kernel function ate the milliseconds. Scope it tight (<code>-d 1</code>, a PID) — it's high-overhead on hot paths.</p>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>Zero-dependency tracing.</strong> perf-tools runs on any kernel since 2008 using built-in ftrace/perf_events — no compiler, no packages, no module.</li>

@@ -342,6 +342,68 @@ sar -n TCP,ETCP 1      # TCP connection + retransmit rates
 top                    # the overview, last</code></pre>
         <p>Each command maps to a layer on the diagram. If one lights up — high <code>%steal</code>, climbing retransmits, a disk pegged at 100% util with high await — that's your lead, and you drop to the matching tracer (<code>runqlat</code>, <code>tcpretrans</code>, <code>biolatency</code>) to nail it. This sweep <em>is</em> the diagram, walked top to bottom.</p>
 
+        <h2 id="lab">Hands-on: try these now</h2>
+        <p>Tool names mean nothing until you run them. Here are worked examples for the headline tools — the exact command, what the output looks like, and the decision you make from it. Run them on a test box (most counters need no root; the tracers need root).</p>
+
+        <h3>CPU — is a core saturated?</h3>
+        <pre><code class="language-bash">mpstat -P ALL 1</code></pre>
+        <pre><code class="language-text">CPU    %usr   %sys %iowait  %steal  %idle
+all   42.1    8.3    1.0     0.0    48.6
+  0   98.0    2.0    0.0     0.0     0.0     &lt;- core 0 pegged
+  1    5.1    1.0    0.0     0.0    93.9
+  2    4.8    0.9    0.0     0.0    94.3
+  3    3.2    1.1    0.0     0.0    95.7</code></pre>
+        <p><strong>Read it:</strong> "all" looks fine at 48% idle, but core 0 is at 0% idle — a single-threaded hotspot. <strong>Do this:</strong> the workload isn't using your cores; find the busy thread and consider parallelising or pinning (Part 4). If instead <code>%steal</code> were high, the hypervisor is stealing cycles — noisy neighbour, move instances.</p>
+
+        <h3>CPU — where are the cycles going? (flame graph)</h3>
+        <pre><code class="language-bash"># find the busiest PID, then profile it for 30s at 99 Hz
+ps -eo pid,pcpu,comm --sort=-pcpu | head -3
+sudo profile-bpfcc -F 99 -p &lt;PID&gt; 30 -f > out.stacks
+# turn it into a flame graph
+git clone https://github.com/brendangregg/FlameGraph &amp;&amp; cd FlameGraph
+./flamegraph.pl ../out.stacks > cpu.svg   # open cpu.svg in a browser</code></pre>
+        <p><strong>Read it:</strong> the widest tower in the flame graph is where CPU time goes. <strong>Do this:</strong> if it's <code>ExecSort</code> in Postgres, add an index or raise <code>work_mem</code>; if it's JSON serialization, cache it. The flame graph turns "CPU is high" into "this function is the cost."</p>
+
+        <h3>Disk — is storage the bottleneck?</h3>
+        <pre><code class="language-bash">iostat -xz 1</code></pre>
+        <pre><code class="language-text">Device   r/s    w/s   rkB/s   wkB/s  await  aqu-sz  %util
+nvme0n1  12.0  840.0   192.0  53760    24.8   18.4   99.2</code></pre>
+        <p><strong>Read it:</strong> <code>%util</code> 99% + <code>await</code> 24.8 ms + queue depth 18 = the disk is saturated and every I/O waits ~25 ms. <strong>Do this:</strong> confirm the shape with <code>biolatency</code>, find the culprit with <code>biotop</code>:</p>
+        <pre><code class="language-bash">sudo biolatency-bpfcc 1 1     # is it a tail or uniformly slow?
+sudo biotop-bpfcc             # which process issues the I/O?</code></pre>
+        <pre><code class="language-text">     usecs        : count   distribution
+  1024 -> 2047     : 410    |********              |
+ 16384 -> 32767    : 980    |**********************|   &lt;- 16-32 ms hump</code></pre>
+        <p>A second hump at 16–32 ms = a real latency tail. If <code>biotop</code> names a backup job, throttle it with <code>ionice</code> (Part 4); if it's the database WAL, you've hit the volume's IOPS ceiling — bump the tier or move <code>pg_wal</code>.</p>
+
+        <h3>Scheduler — threads waiting for a CPU?</h3>
+        <pre><code class="language-bash">sudo runqlat-bpfcc 1 1</code></pre>
+        <pre><code class="language-text">     usecs        : count   distribution
+     0 -> 1        : 1200   |**********************|
+  2048 -> 4095     : 540    |*********             |   &lt;- 2-4 ms waits
+  4096 -> 8191     : 120    |**                    |</code></pre>
+        <p><strong>Read it:</strong> most wakeups schedule instantly (0–1 µs), but a real chunk waits 2–4 ms for a CPU — saturation that <code>top</code>'s averages hide. <strong>Do this:</strong> reduce concurrency, add cores, or pin the latency-sensitive process to dedicated cores so it never queues.</p>
+
+        <h3>Network — packet loss on a live connection?</h3>
+        <pre><code class="language-bash">sudo tcpretrans-bpfcc</code></pre>
+        <pre><code class="language-text">TIME     PID   LADDR:LPORT          RADDR:RPORT         STATE
+04:12:09 1843  10.0.0.5:5432        10.0.0.9:51120      ESTABLISHED
+04:12:11 1843  10.0.0.5:5432        10.0.0.9:51120      ESTABLISHED</code></pre>
+        <p><strong>Read it:</strong> retransmits on port 5432 (Postgres) to a replica = real packet loss on live DB traffic, each costing a ~200 ms timeout. <strong>Do this:</strong> check NIC errors with <code>ethtool -S eth0 | grep -i err</code> and the socket with <code>ss -ti</code> (look at the <code>retrans</code> and <code>rtt</code> fields); chase a flapping link or undersized ring buffers.</p>
+
+        <h3>Processes — catch what top can't see</h3>
+        <pre><code class="language-bash">sudo execsnoop-bpfcc</code></pre>
+        <pre><code class="language-text">PCOMM      PID    PPID   RET ARGS
+sh         28341  9012     0 /bin/sh -c /opt/healthcheck.sh
+curl       28342  28341    0 /usr/bin/curl -s localhost:9000/health</code></pre>
+        <p><strong>Read it:</strong> a healthcheck forking <code>sh</code>+<code>curl</code> every second — invisible to <code>top</code> because each process lives milliseconds, but it adds up as load. <strong>Do this:</strong> replace the fork-per-check with an in-process check, or lengthen the interval.</p>
+
+        <h3>Memory — is it swapping?</h3>
+        <pre><code class="language-bash">vmstat 1</code></pre>
+        <pre><code class="language-text"> r  b   swpd   free   buff  cache   si   so   bi   bo
+ 2  0  98304  20144   3120 891234    0  512    8  640    &lt;- so=512</code></pre>
+        <p><strong>Read it:</strong> nonzero <code>so</code> (swap-out) means the kernel is paging memory to disk — on a database this destroys latency. <strong>Do this:</strong> find the memory hog, lower <code>vm.swappiness</code> to 1 (Part 4), and check <code>free -m</code>'s <em>available</em> column (not "free").</p>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>The diagram is an index, not a poster.</strong> Its value is mapping a symptom to a layer to a tool — picture where the problem lives, and the tool names itself.</li>

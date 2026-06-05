@@ -226,6 +226,42 @@ bpftrace -l 'tracepoint:tcp:*'       # list available probes</code></pre>
         <h2 id="safety">Safety &amp; overhead</h2>
         <p>Same eBPF guarantees as the rest of the stack: the verifier rejects anything that could crash or hang the kernel, so a broken script errors out rather than panicking the box. Overhead is low when you aggregate in-kernel (<code>@ = hist(...)</code>, <code>count()</code>) and higher when you <code>printf</code> per event on a hot probe. Bound chatty scripts with a filter (<code>/comm=="postgres"/</code>), a duration, or a PID. Production-safe for the aggregating tools; targeted windows for the per-event ones.</p>
 
+        <h2 id="lab">Hands-on: write your own tracer in one line</h2>
+        <p>The fastest way to learn bpftrace is to run its one-liners and read the output. Each below answers a real question — command, output, decision. All need root.</p>
+
+        <h3>Which process makes the most syscalls?</h3>
+        <pre><code class="language-bash">sudo bpftrace -e 'tracepoint:raw_syscalls:sys_enter { @[comm] = count(); }'</code></pre>
+        <pre><code class="language-text">@[postgres]: 184203
+@[node]: 990210          &lt;- node dominates syscalls</code></pre>
+        <p><strong>Read it:</strong> <code>node</code> is making 5× the syscalls of the DB. <strong>Do this:</strong> drill into <em>which</em> syscall with the next one-liner; a flood usually means chatty I/O or polling.</p>
+
+        <h3>Histogram a function's latency (the timing idiom)</h3>
+        <pre><code class="language-bash"># vfs_read latency, in microseconds, as a histogram
+sudo bpftrace -e 'kprobe:vfs_read { @s[tid]=nsecs }
+  kretprobe:vfs_read /@s[tid]/ { @us=hist((nsecs-@s[tid])/1000); delete(@s[tid]); }'</code></pre>
+        <pre><code class="language-text">@us:
+[8, 16)    9203 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@|
+[16K, 32K)  140 |@                          |   &lt;- 16-32 ms tail</code></pre>
+        <p><strong>Read it:</strong> timestamp-on-entry → delta-on-return → <code>hist()</code> is 80% of custom tracing. Here reads are mostly fast with a small ms-scale tail. <strong>Do this:</strong> add a <code>/comm=="postgres"/</code> filter to scope it to the DB.</p>
+
+        <h3>What's behind the TCP retransmits?</h3>
+        <pre><code class="language-bash">sudo bpftrace -e 'kprobe:tcp_retransmit_skb { @[comm] = count(); }'</code></pre>
+        <pre><code class="language-text">@[postgres]: 47        &lt;- retransmits on DB traffic</code></pre>
+        <p><strong>Do this:</strong> non-zero and climbing on a DB process = packet loss on replication/query sockets; check the NIC and link (Part 2/4).</p>
+
+        <h3>Read sizes a process requests</h3>
+        <pre><code class="language-bash">sudo bpftrace -e 'kprobe:vfs_read /comm=="postgres"/ { @ = hist(arg2); }'</code></pre>
+        <pre><code class="language-text">@:
+[8K, 16K)   8200 |@@@@@@@@@@@@@@@@@@@@@@@@@@|   &lt;- mostly 8K page reads
+[256K, 512K)  12 |                          |</code></pre>
+        <p><strong>Read it:</strong> Postgres reading in 8K pages — expected. A surprise of tiny reads would hint at a bad access pattern or missing index.</p>
+
+        <h3>Run a shipped tool, then read it to learn</h3>
+        <pre><code class="language-bash">sudo bpftrace /usr/sbin/biolatency.bt     # run it
+cat /usr/share/bpftrace/tools/tcpdrop.bt  # learn how it works
+sudo bpftrace -l 'tracepoint:tcp:*'       # list probes you can hook</code></pre>
+        <p><strong>Do this:</strong> the shipped <code>.bt</code> tools are readable source — copy one, tweak the filter or the key, and you've written a custom tool in minutes. <code>tcpdrop</code> goes deeper than <code>tcpretrans</code>: it shows packets the kernel <em>drops</em> with the stack that dropped them.</p>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>bpftrace = write your own tool in one line.</strong> When no pre-made tool fits, the DSL answers the exact question in seconds.</li>

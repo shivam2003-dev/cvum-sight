@@ -267,6 +267,50 @@ sysctl vm.swappiness net.core.somaxconn
 sudo dmidecode -s bios-version</code></pre>
         <p>Each line answers a "is this even configured to be fast?" question. The findings — wrong governor, half-populated memory, a 1G-negotiated NIC, THP set to always — are exactly the inputs the tuning chapter acts on. Static analysis finds the ceiling; tuning raises it.</p>
 
+        <h2 id="lab">Hands-on: the static audit, run for real</h2>
+        <p>Static tools are the easiest to try — most need no root and run instantly. Here's each headline check with real output and the decision it drives.</p>
+
+        <h3>CPU topology — map it before you tune it</h3>
+        <pre><code class="language-bash">lscpu | grep -E 'Model name|Socket|NUMA|Thread|Flags' | head</code></pre>
+        <pre><code class="language-text">Model name:          AMD EPYC 9554 64-Core Processor
+Thread(s) per core:  2
+Socket(s):           2
+NUMA node(s):        2
+NUMA node0 CPU(s):   0-63,128-191
+NUMA node1 CPU(s):   64-127,192-255
+Flags:               ... avx512f avx512dq ...</code></pre>
+        <p><strong>Read it:</strong> 2 sockets, 2 NUMA nodes; node 0 owns CPUs 0–63 (+ their SMT siblings 128–191); AVX-512 present. <strong>Do this:</strong> when you pin a process (Part 4), keep it inside one node's CPU list — pinning to "0–7" is safe (all node 0), pinning to "60–70" straddles both nodes and adds slow cross-node memory access.</p>
+
+        <h3>Memory population — are all channels filled?</h3>
+        <pre><code class="language-bash">sudo dmidecode -t memory | grep -E 'Size|Locator:|Speed' | grep -v 'No Module'</code></pre>
+        <pre><code class="language-text">Size: 32 GB     Locator: DIMM_A1   Speed: 4800 MT/s
+Size: 32 GB     Locator: DIMM_C1   Speed: 4800 MT/s
+... (only 8 of 12 slots populated)</code></pre>
+        <p><strong>Read it:</strong> 8 DIMMs on a 12-channel EPYC = you've left a third of memory bandwidth unused, and no live graph will ever show it. <strong>Do this:</strong> populate all 12 channels with matched DIMMs. Confirm node layout with <code>numactl --hardware</code> (shows memory per node + inter-node distance).</p>
+
+        <h3>CPU governor — the powersave trap</h3>
+        <pre><code class="language-bash">cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor</code></pre>
+        <pre><code class="language-text">powersave</code></pre>
+        <p><strong>Read it:</strong> the cores are deliberately running slow to save watts. On a latency-sensitive server this silently caps performance. <strong>Do this:</strong> switch to <code>performance</code> (Part 4) — one of the highest-ROI single changes there is.</p>
+
+        <h3>Transparent Huge Pages — the database stall</h3>
+        <pre><code class="language-bash">cat /sys/kernel/mm/transparent_hugepage/enabled</code></pre>
+        <pre><code class="language-text">[always] madvise never</code></pre>
+        <p><strong>Read it:</strong> THP is set to <code>always</code> — Postgres, Redis, and Mongo all warn this causes latency stalls. <strong>Do this:</strong> set it to <code>madvise</code> or <code>never</code> for those workloads.</p>
+
+        <h3>NIC link speed — the #1 static network miss</h3>
+        <pre><code class="language-bash">ethtool eth0 | grep -E 'Speed|Duplex'</code></pre>
+        <pre><code class="language-text">Speed: 1000Mb/s
+Duplex: Full</code></pre>
+        <p><strong>Read it:</strong> on a card bought for 25 GbE, this negotiated down to 1 GbE — a 25× lower ceiling that looks "healthy" at 1 Gbit utilization. <strong>Do this:</strong> check the cable and switch-port config; a bad cable or forced-speed port is the usual cause.</p>
+
+        <h3>Storage health — the dying SSD</h3>
+        <pre><code class="language-bash">sudo smartctl -a /dev/nvme0 | grep -E 'Percentage Used|Media and Data|Critical'</code></pre>
+        <pre><code class="language-text">Percentage Used:           94%
+Media and Data Integrity Errors: 12
+Critical Warning:          0x00</code></pre>
+        <p><strong>Read it:</strong> 94% of rated write endurance used + integrity errors = this SSD is near end-of-life and its latency will climb before it fails. <strong>Do this:</strong> schedule replacement before it tanks your p99. Also check the RAID controller cache mode (<code>storcli /c0 show</code>) — a dead BBU silently drops write-back to write-through and kills fsync latency.</p>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>Idle ≠ correct.</strong> A misconfigured machine looks healthy in every live graph. Static tools catch the bottleneck that exists before load.</li>

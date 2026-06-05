@@ -272,6 +272,53 @@ tcptop                      # throughput by connection</code></pre>
         </table>
         <p>These convert "I wonder how often / how slow / from where X happens" into an answer without writing an eBPF program. <code>funclatency do_sys_open</code> gives an instant latency histogram of a kernel function; <code>stackcount</code> on an event shows which code paths trigger it most; <code>argdist</code> can, say, histogram the size argument to <code>tcp_sendmsg</code>. Master these five and you rarely need to drop to writing eBPF by hand — which is exactly where bpftrace (Part 8) takes over.</p>
 
+        <h2 id="lab">Hands-on: the eBPF toolbox in action</h2>
+        <p>One tool per question. Each example shows the command (add the <code>-bpfcc</code> suffix on Ubuntu/Debian), real output, and the decision. All need root.</p>
+
+        <h3>Is the working set in RAM?</h3>
+        <pre><code class="language-bash">sudo cachestat-bpfcc 1</code></pre>
+        <pre><code class="language-text">  HITS  MISSES  DIRTIES  HITRATIO
+ 48210     120      300    99.75%
+ 41003    8800      210    82.33%     &lt;- hit ratio fell</code></pre>
+        <p><strong>Read it:</strong> the page-cache hit ratio dropping from 99% to 82% means hot data no longer fits in RAM — the early warning before disk latency shows up. <strong>Do this:</strong> add RAM, shrink the working set, or raise the DB's cache config before users feel it.</p>
+
+        <h3>Which slow filesystem op blocked a commit?</h3>
+        <pre><code class="language-bash">sudo ext4slower-bpfcc 10        # ops slower than 10 ms</code></pre>
+        <pre><code class="language-text">TIME     COMM      PID   T BYTES  LAT(ms) FILENAME
+03:11:02 postgres  1843  S     0    72.4   wal/00000ated
+03:11:03 postgres  1850  S     0    88.1   wal/00000ated</code></pre>
+        <p><strong>Read it:</strong> slow WAL syncs (T=S) — commits are stalling on fsync. <strong>Do this:</strong> if <code>biolatency</code> is clean, the slowness is above the device (fsync storm, too-frequent commits); if <code>biolatency</code> has a tail too, it's the storage.</p>
+
+        <h3>Connection thrash — no pooling</h3>
+        <pre><code class="language-bash">sudo tcplife-bpfcc</code></pre>
+        <pre><code class="language-text">PID   COMM   LADDR      LPORT RADDR      RPORT  TX_KB RX_KB  MS
+9012  app    10.0.0.5   51122 10.0.0.9    5432    1     4    0.8
+9012  app    10.0.0.5   51123 10.0.0.9    5432    1     4    0.7</code></pre>
+        <p><strong>Read it:</strong> hundreds of sub-millisecond connections to Postgres (5432) — every request pays a full TCP+TLS setup. <strong>Do this:</strong> add a connection pool (PgBouncer / client pool); the MS column collapsing to ~0 confirms no reuse.</p>
+
+        <h3>The request is slow but CPU is idle — what's it waiting on?</h3>
+        <pre><code class="language-bash">sudo offcputime-bpfcc -p $(pgrep -n myapp) 5</code></pre>
+        <pre><code class="language-text">    finish_task_switch
+    ...
+    futex_wait_queue_me
+    do_futex
+    -                myapp (9012)
+        3400 ms      &lt;- 3.4s blocked on a futex (lock)</code></pre>
+        <p><strong>Read it:</strong> the thread spent 3.4s off-CPU blocked on a <code>futex</code> — lock contention, not CPU work. <code>profile</code> would show nothing because it's <em>waiting</em>. <strong>Do this:</strong> reduce lock scope / contention in that code path. On-CPU (profile) + off-CPU (offcputime) together explain all latency.</p>
+
+        <h3>A process keeps growing — leak?</h3>
+        <pre><code class="language-bash">sudo memleak-bpfcc -p $(pgrep -n myapp) 30</code></pre>
+        <pre><code class="language-text">[top allocations not freed, by stack]
+  4194304 bytes in 64 allocations from:
+    parse_request+0x1f
+    handle_conn+0xa2</code></pre>
+        <p><strong>Read it:</strong> 4 MB outstanding from <code>parse_request</code> that never gets freed — a real leak with the exact stack. <strong>Do this:</strong> fix the missing free on that path. No recompile needed to find it.</p>
+
+        <h3>Why did the database vanish at 3am?</h3>
+        <pre><code class="language-bash">sudo oomkill-bpfcc       # leave running; it prints when the OOM killer fires</code></pre>
+        <pre><code class="language-text">03:02:55 Triggered by PID 5521 ("batch"), OOM kill of PID 1843 ("postgres"), 8GB</code></pre>
+        <p><strong>Read it:</strong> a batch job drove the box out of memory and the kernel killed Postgres. <strong>Do this:</strong> cap the batch job's memory (cgroup limit), and set the DB's OOM score adjust so it's not the first victim.</p>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>One sharp tool per question.</strong> BCC's strength and its overwhelm — learn the map by subsystem and the wall of names becomes a toolbox.</li>

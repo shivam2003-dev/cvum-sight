@@ -245,6 +245,48 @@ fio --name=test ... # the benchmark
 kill %1 %2          # stop the observers
 # now correlate the fio result with the iostat/mpstat traces</code></pre>
 
+        <h2 id="lab">Hands-on: run a benchmark that doesn't lie</h2>
+        <p>Each example pairs the load generator with an observability tool (Part 1) so you capture both the number <em>and</em> the bottleneck. Run on a quiet test box.</p>
+
+        <h3>Disk — fio, the right way (bypass cache)</h3>
+        <pre><code class="language-bash"># database-like: 70/30 random read/write, 8K, queue depth 32, direct I/O
+fio --name=db --rw=randrw --rwmixread=70 --bs=8k --iodepth=32 \
+    --direct=1 --size=10G --runtime=60 --time_based --filename=/data/tf
+# in another terminal, watch the device:
+iostat -xz 1</code></pre>
+        <pre><code class="language-text">read: IOPS=48.2k  BW=377MiB/s   lat (usec): avg=410
+write: IOPS=20.6k BW=161MiB/s   lat (usec): avg=520
+# iostat at the same time:  %util=99.0  await=0.55  aqu-sz=31.8</code></pre>
+        <p><strong>Read it:</strong> 48k read IOPS, and <code>iostat</code> shows the device pegged at 99% util — so this <em>is</em> the real ceiling, not a cache artifact (the <code>--direct=1</code> guarantees it). <strong>Do this:</strong> compare runs across instance types; rank by IOPS-per-dollar. Drop <code>--direct=1</code> and the number triples — that's the cache lying.</p>
+
+        <h3>Network — iperf3 between two hosts</h3>
+        <pre><code class="language-bash"># on the server:
+iperf3 -s
+# on the client — 4 parallel streams, 30s:
+iperf3 -c 10.0.0.5 -P 4 -t 30</code></pre>
+        <pre><code class="language-text">[SUM]  0.00-30.00 sec  32.8 GBytes  9.39 Gbits/sec  receiver</code></pre>
+        <p><strong>Read it:</strong> 9.39 Gbit/s on a 10 GbE link = near line rate, healthy. <strong>Do this:</strong> if a single stream (<code>-P 1</code>) is much slower than 4, one CPU is the limit (NIC IRQ on one core) — spread it with RSS (Part 4). If <em>all</em> streams underperform, run <code>mtr</code> to find the bad hop.</p>
+
+        <h3>CPU & memory — sysbench, single vs all cores</h3>
+        <pre><code class="language-bash">sysbench cpu --cpu-max-prime=20000 --threads=1 run | grep 'events per second'
+sysbench cpu --cpu-max-prime=20000 --threads=$(nproc) run | grep 'events per second'
+# watch clocks while it runs:
+turbostat --interval 1 2>/dev/null | grep -E 'Busy|Bzy_MHz' | head</code></pre>
+        <pre><code class="language-text">1 thread:    events per second:  1184.5
+64 threads:  events per second: 71203.8     (~60x — good scaling)</code></pre>
+        <p><strong>Read it:</strong> ~60× from 64 threads = near-linear scaling, all cores usable. <strong>Do this:</strong> if scaling is poor, <code>turbostat</code> shows whether cores hit turbo — a powersave governor (Part 2/4) or thermal throttling caps the score, and the benchmark number alone wouldn't tell you which.</p>
+
+        <h3>HTTP — wrk2 for honest tail latency</h3>
+        <pre><code class="language-bash"># constant 10k req/s exposes the true tail (no coordinated omission)
+wrk2 -t4 -c100 -d30s -R10000 --latency https://app.local/api/health
+# watch the server side:
+pidstat -p $(pgrep -f myapp) 1</code></pre>
+        <pre><code class="language-text">Requests/sec:  9998.3
+Latency Distribution:
+  50%   2.10ms
+  99%  48.30ms      &lt;- the tail wrk (not wrk2) would hide</code></pre>
+        <p><strong>Read it:</strong> p50 is 2 ms but p99 is 48 ms — plain <code>wrk</code>/<code>ab</code> pause their clock when the server stalls and would report a far rosier p99. <strong>Do this:</strong> profile the server during the run (<code>profile-bpfcc</code>) to see what causes the tail — usually a lock or GC pause.</p>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>Benchmarking is active observability.</strong> Generate load to find a ceiling you can't otherwise see; compare configs and prove changes.</li>

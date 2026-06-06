@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "d4rt-paper-juice",
+    title: "D4RT — Reconstructing a Moving 3D World One Query at a Time.",
+    date: "Jun 6, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "computer-vision", "3d-reconstruction", "transformers"],
+    time: 22,
+    words: 4500,
+    excerpt: "From one ordinary video, D4RT rebuilds a dynamic scene in 3D and time — depth, motion, and camera, all at once. The trick isn't a bigger model: it's encode-once, query-anywhere. Encode the whole video into one Global Scene Representation, then ask cheap (pixel, source-time, target-time, camera) queries against it. One mechanism, every task. CVPR 2026 Best Paper."
+  },
+  {
     slug: "linux-perf-1-observability-tools",
     title: "Linux Performance Observability Tools — every box on the map.",
     date: "Jun 5, 2026",

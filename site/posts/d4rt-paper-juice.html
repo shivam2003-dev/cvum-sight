@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D4RT — Reconstructing a Moving 3D World One Query at a Time — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=34">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"matcha";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint);font-size:.95rem}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:12px 16px;margin:20px 0;background:rgba(201,100,66,.07);font-size:.9rem}
+  .gotcha{border:1.5px solid #c96442;border-radius:6px;padding:12px 16px;margin:20px 0;background:rgba(201,100,66,.08);font-size:.92rem}
+  .gotcha-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:#c96442;display:block;margin-bottom:4px}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:7px 0;border-bottom:1px dashed var(--ink-faint);font-size:.9rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  table{font-size:.9rem}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .yellow{fill:#f0c040}
+  svg .accent{fill:#c96442}
+  svg .lbl{font-family:monospace;font-size:12px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#948a78}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Jun 6, 2026 · paperjuice · 22 min read · 4500 words</p>
+        <h1>D4RT — Reconstructing a Moving 3D World One Query at a Time.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">computer-vision</span>
+          <span class="tag">3d-reconstruction</span>
+          <span class="tag">transformers</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>The juice —</strong> Point a camera at a dog running through a park. From that single ordinary video, <strong>D4RT</strong> rebuilds the whole scene in 3D <em>and</em> in time: how far every pixel is, how it moves, and where the camera was. The clever bit isn't a bigger model — it's a <strong>query mechanism</strong>. Instead of decoding dense depth + motion for every frame (slow, with a separate decoder bolted on per task), D4RT encodes the video <em>once</em> into a single scene representation, then answers tiny questions against it: "where is pixel (u,v) from frame 3, as seen from frame 10's camera?" One model, one representation, any task. It won <strong>CVPR 2026 Best Paper</strong>.</p>
+
+        <h2 id="why">Why this is hard (and why you should care)</h2>
+        <p>Humans do this without thinking. Watch a few seconds of a moving scene and your brain knows the layout — what's near, what's far, what moved where, and roughly how your own head turned. For a computer, recovering that from flat video pixels is one of the oldest open problems in computer vision. It's called <strong>4D reconstruction</strong>: three spatial dimensions plus time.</p>
+        <p>Why "4D" and not just 3D? Because the scene <em>changes</em>. Classic 3D reconstruction (think photogrammetry, or the SfM pipelines behind 3D maps) assumes the world stands still while a camera moves around it. The moment something in the scene moves — a person walking, a car driving, leaves blowing — those assumptions break. You can no longer tell "the camera moved left" apart from "the object moved right," because both produce the same pixel shift. Disentangling camera motion from object motion from depth, all at once, from a single video, is the knot D4RT is trying to untie.</p>
+        <p>Get it right and a lot unlocks: robotics (a robot that understands a moving room), AR/VR (placing virtual objects that respect real geometry and motion), autonomous driving, film and content tools, sports analytics. The "understand a dynamic scene from ordinary video" capability is foundational — it's the perception layer a hundred applications sit on top of.</p>
+
+        <h2 id="three-questions">The three questions you must answer at once</h2>
+        <p>To reconstruct a dynamic scene, a model has to produce three things simultaneously, and they're deeply tangled:</p>
+        <ul>
+          <li><strong>Depth</strong> — how far is each pixel from the camera? This turns a flat image into a 3D point cloud.</li>
+          <li><strong>Correspondence (tracking)</strong> — where did this physical point go in other frames? This is the <em>motion</em>, across both space and time.</li>
+          <li><strong>Camera parameters (pose)</strong> — where was the camera, and which way was it pointing, in each frame? Without this you can't place the points in a single shared world.</li>
+        </ul>
+        <p>The tangle: you can't cleanly solve any one without the others. Depth helps you reason about motion; knowing camera pose lets you separate camera-induced pixel shift from real object motion; tracking the same point across frames constrains both depth and pose. Older systems often attacked these with <strong>separate, task-specific decoders</strong> — one head for depth, one for tracking, one for pose — stitched together. That's heavy, and the heads don't naturally share a consistent picture of the scene.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <rect x="20" y="30" width="120" height="150" rx="5" class="box"/>
+            <text x="80" y="24" text-anchor="middle" class="sm">video frames</text>
+            <rect x="34" y="44" width="92" height="26" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
+            <rect x="34" y="76" width="92" height="26" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
+            <rect x="34" y="108" width="92" height="26" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
+            <rect x="34" y="140" width="92" height="26" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
+            <path d="M148 105 L196 105" stroke="#2a2620" stroke-width="1.5" marker-end="url(#a)"/>
+            <rect x="200" y="60" width="150" height="90" rx="6" class="box" style="fill:rgba(201,100,66,.10)"/>
+            <text x="275" y="100" text-anchor="middle" class="lbl">global</text>
+            <text x="275" y="118" text-anchor="middle" class="lbl">self-attention</text>
+            <text x="275" y="50" text-anchor="middle" class="sm">encoder (once)</text>
+            <path d="M358 105 L406 105" stroke="#2a2620" stroke-width="1.5" marker-end="url(#a)"/>
+            <rect x="410" y="70" width="130" height="70" rx="6" class="box" style="fill:rgba(240,192,64,.18)"/>
+            <text x="475" y="100" text-anchor="middle" class="lbl">Global Scene</text>
+            <text x="475" y="118" text-anchor="middle" class="lbl">Representation</text>
+            <path d="M548 105 L596 105" stroke="#2a2620" stroke-width="1.5" marker-end="url(#a)"/>
+            <rect x="600" y="74" width="62" height="62" rx="6" class="box"/>
+            <text x="631" y="100" text-anchor="middle" class="sm">light</text>
+            <text x="631" y="114" text-anchor="middle" class="sm">decoder</text>
+            <text x="631" y="60" text-anchor="middle" class="sm">queries →</text>
+            <text x="631" y="158" text-anchor="middle" class="sm">depth · track · pose</text>
+            <defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#2a2620"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 1 — Encode the whole video once into a Global Scene Representation; then a tiny decoder answers cheap queries against it for any task.</p>
+        </div>
+
+        <h2 id="big-idea">The big idea: stop decoding everything, start asking questions</h2>
+        <p>Here's the move that makes D4RT elegant. Most prior approaches <em>decode densely</em>: for every frame, run a heavy decoder to produce a full depth map and a full motion field, whether you need all of it or not. That's expensive, and it forces a separate decoder per task.</p>
+        <p>D4RT flips it. The expensive work — looking at the whole video and building an understanding of the scene — happens <strong>once</strong>, in a global self-attention encoder that produces a single <strong>Global Scene Representation</strong>. Think of it as the model's compressed mental model of the entire clip: everything it figured out about geometry and motion, baked into one representation.</p>
+        <p>Then, instead of dumping out dense maps, you <strong>query</strong> it. A query is a small specification of what you want to know:</p>
+        <ul>
+          <li>a 2D pixel coordinate <code>(u, v)</code> — which point you're asking about,</li>
+          <li>a <strong>source timestep</strong> — which frame that point lives in,</li>
+          <li>a <strong>target timestep</strong> — which moment in time you want it projected to,</li>
+          <li>a <strong>camera frame</strong> — whose viewpoint to express the answer in.</li>
+        </ul>
+        <p>A lightweight decoder takes that query plus the Global Scene Representation (and some local RGB patch context around the point) and returns the 3D position of that point. That's it. Want depth? Query a point at its own timestep. Want to track it forward? Query the same point with a later target timestep. Want it in world coordinates? Pick the camera frame accordingly. <strong>One mechanism, every task</strong> — no separate decoders, no dense per-frame decoding unless you actually want it.</p>
+
+        <div class="bm-note"><strong>Why "one D4RT at a time" is more than a pun.</strong> Each query is like throwing a single dart at a specific point in space-and-time and reading off where it lands in 3D. You throw as many darts as you need — a sparse handful for tracking a few points, or a dense volley to reconstruct everything. The cost scales with what you ask for, not with a fixed dense decode every frame.</p>
+
+        <h2 id="architecture">How it's built</h2>
+        <p>Three pieces, kept deliberately simple:</p>
+        <h3>1. The global encoder</h3>
+        <p>A transformer with <strong>global self-attention</strong> ingests the video frames and lets every part of the scene attend to every other part across space and time. This is where the model reconciles the tangle — depth, motion, and camera all inform each other through attention. The output is the Global Scene Representation, computed once.</p>
+        <h3>2. The query interface</h3>
+        <p>A query is just that little tuple — pixel, source time, target time, camera frame. It's the API to the scene. Because the heavy lifting is already done in the encoder, queries are cheap, and you can issue however many you want, wherever you want, in parallel.</p>
+        <h3>3. The lightweight decoder</h3>
+        <p>A small decoder maps (query + global representation + local RGB patch context) to a 3D position. The local RGB patch matters: it gives the decoder fine spatial detail around the queried point that a global summary alone would blur. The decoder is intentionally light because it runs once per query — keeping it small is what makes dense reconstruction affordable when you do want it.</p>
+        <p>The whole thing is <strong>feedforward</strong>: one forward pass, no test-time optimization loop, no per-scene fitting. You feed video in, you get answers out. That's a big practical deal — many strong reconstruction methods need slow per-scene optimization; a feedforward model just runs.</p>
+
+        <h2 id="capabilities">What you can do with it</h2>
+        <p>Because the query interface is general, the same model serves several tasks that used to need bespoke systems:</p>
+        <table>
+          <thead><tr><th>Task</th><th>What you query</th><th>What you get</th></tr></thead>
+          <tbody>
+            <tr><td><strong>3D tracking</strong></td><td>a few points, swept across target timesteps</td><td>sparse 3D tracks in the camera's local coordinates — how points move through space and time</td></tr>
+            <tr><td><strong>3D reconstruction</strong></td><td>points at their own timestep, with pose</td><td>depth projected into 3D; handles deduplicating dynamic objects so they don't ghost</td></tr>
+            <tr><td><strong>All-pixels tracking</strong></td><td>every pixel, projected to a shared frame</td><td>a holistic reconstruction of the whole scene in world coordinates</td></tr>
+          </tbody>
+        </table>
+        <p>That last one — reconstructing <em>all</em> pixels into a single consistent world — is the showcase. It's the difference between "I tracked a few feature points" and "I rebuilt the moving scene." And the dynamic-object deduplication detail is the kind of thing that separates a demo from a usable system: when an object moves, naive depth-projection can leave duplicate ghosts of it at different times; D4RT handles that so the reconstructed world stays clean.</p>
+
+        <h2 id="results">The results, and the honest caveats</h2>
+        <p>The headline: D4RT <strong>sets a new state of the art, outperforming previous methods across a wide spectrum of 4D reconstruction tasks</strong> — depth, correspondence, camera estimation, and full reconstruction — with a single model rather than a zoo of specialized ones. The community agreed it mattered: it took home <strong>CVPR 2026 Best Paper</strong>.</p>
+        <p>Now the honesty, because squeezing the juice means not overselling it. The abstract and project page frame the wins qualitatively ("state of the art," "outperforming previous methods") and lean on animated visual results rather than a single dramatic benchmark number. That's normal for a reconstruction paper — the proof is largely visual and spread across many task-specific metrics — but it means the right takeaway is "broad, consistent SOTA from one unified model," not "X% better on benchmark Y." For the exact numbers per benchmark, the paper's tables are where to look; treat any single figure quoted secondhand with care.</p>
+        <div class="gotcha"><span class="gotcha-label">read it yourself for numbers</span>This juice is a conceptual walkthrough. The paper reports per-task quantitative comparisons across multiple 4D benchmarks; the project page favours animated qualitative results. If you need a specific metric to cite, pull it from the paper's result tables directly rather than from any summary.</div>
+
+        <h2 id="why-elegant">Why the design is the real contribution</h2>
+        <p>It's tempting to file this under "another big transformer beats benchmarks." That misses the point. The contribution is <strong>architectural taste</strong>: recognizing that dense per-frame decoding with per-task heads is the wrong factorization, and replacing it with <em>encode-once, query-anywhere</em>. Several nice properties fall out of that single decision:</p>
+        <ul>
+          <li><strong>Unification.</strong> One model and one representation handle depth, tracking, pose, and reconstruction. No separate decoders to train and maintain.</li>
+          <li><strong>Scalable cost.</strong> You pay for what you ask. Sparse tracking is cheap; dense reconstruction is possible but optional. The encoder cost is amortized across all queries.</li>
+          <li><strong>Flexibility.</strong> The query tuple (pixel, source time, target time, camera frame) is expressive enough to phrase many tasks as the same operation — "probe a 3D point in space-time from a chosen viewpoint."</li>
+          <li><strong>Feedforward simplicity.</strong> No per-scene optimization. Run the model, get the answer.</li>
+        </ul>
+        <p>This is the same flavour of idea that shows up whenever a field matures: instead of bolting more specialized parts onto a pipeline, find the one general operation the whole problem reduces to, build a clean representation, and expose a simple interface to it. NeRF did it for static scenes with "query a 3D point for color+density." D4RT does it for <em>dynamic</em> scenes with "query a point in space-and-time for its 3D position." That lineage is part of why it resonated.</p>
+
+        <h2 id="who">Who did it</h2>
+        <p>The work comes out of a collaboration spanning <strong>Google DeepMind, University College London, and the University of Oxford</strong>, with a sizable author list led by Chuhan Zhang and others, and correspondence to Mehdi S. M. Sajjadi — a group with deep roots in scene representation and neural rendering. The mix of an industrial research lab and two strong vision groups shows in the result: an idea that's both conceptually clean and engineered to actually run at scale.</p>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>4D reconstruction = depth + motion + camera, from one video, all tangled.</strong> D4RT untangles all three jointly instead of with separate heads.</li>
+          <li><strong>Encode once, query anywhere.</strong> The whole video becomes a single Global Scene Representation; a tiny decoder answers cheap (pixel, source-time, target-time, camera) queries against it.</li>
+          <li><strong>One mechanism, every task.</strong> 3D tracking, 3D reconstruction, and all-pixels world reconstruction are all the same query operation.</li>
+          <li><strong>Feedforward, no per-scene optimization.</strong> Run the model, get the answer — practical, not just accurate.</li>
+          <li><strong>The architecture is the idea.</strong> Replacing dense per-task decoding with encode-once-query-anywhere is why it set broad SOTA and won CVPR 2026 Best Paper.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://arxiv.org/abs/2512.08924" target="_blank" rel="noopener">D4RT — Efficiently Reconstructing Dynamic Scenes One D4RT at a Time</a> <span>— the paper (arXiv 2512.08924).</span></li>
+          <li><a href="https://d4rt-paper.github.io/" target="_blank" rel="noopener">Project page</a> <span>— animated qualitative results worth watching.</span></li>
+          <li><a href="https://arxiv.org/abs/2003.08934" target="_blank" rel="noopener">NeRF</a> <span>— the "query a 3D point" lineage, for static scenes.</span></li>
+        </ul>
+
+        <h2 id="extra">Extra reads</h2>
+        <ul class="reflist">
+          <li><a href="ijepa-paper-juice.html">I-JEPA — Paper Juice</a> <span>— another representation-learning idea, squeezed.</span></li>
+          <li><a href="../paperjuice.html">All Paper Juice</a> <span>— the rest of the squeezed papers.</span></li>
+        </ul>
+
+        <p style="margin-top:22px;color:var(--ink-faint);font-size:.88rem">A conceptual walkthrough of D4RT (arXiv 2512.08924, CVPR 2026 Best Paper) in plain language — summarized, not reproduced. For exact benchmark numbers, architecture details, and ablations, read the paper and watch the animated results on the project page.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../paperjuice.html">← back to Paper Juice</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=9"></script>
+  <script defer src="../settings.js?v=4"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

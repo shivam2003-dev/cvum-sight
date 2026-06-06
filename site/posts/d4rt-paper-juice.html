@@ -30,6 +30,18 @@
   svg .accent{fill:#c96442}
   svg .lbl{font-family:monospace;font-size:12px;fill:#2a2620}
   svg .sm{font-family:monospace;font-size:10px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:10px;fill:#2a2620}
+  /* query tuple chips */
+  .qtuple{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}
+  .qtuple .chip{border:1.5px solid var(--ink);border-radius:20px;padding:6px 14px;font-family:var(--font-mono);font-size:.82rem;background:var(--paper)}
+  .qtuple .chip b{color:#c96442}
+  /* respect reduced motion */
+  @media (prefers-reduced-motion: reduce){
+    svg animate, svg animateMotion, svg animateTransform { animation:none !important; }
+  }
+  /* fade-up reveal for figures (pure CSS, plays on load) */
+  .reveal{animation:fadeUp .8s ease both}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 </style>
 </head>
 <body>
@@ -58,7 +70,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Jun 6, 2026 · paperjuice · 22 min read · 4500 words</p>
+        <p class="meta">Jun 6, 2026 · paperjuice · 30 min read · 6200 words</p>
         <h1>D4RT — Reconstructing a Moving 3D World One Query at a Time.</h1>
         <div class="tag-row">
           <span class="tag fill">paperjuice</span>
@@ -71,73 +83,155 @@
 
       <div class="post-body">
 
-        <p class="bm-tldr"><strong>The juice —</strong> Point a camera at a dog running through a park. From that single ordinary video, <strong>D4RT</strong> rebuilds the whole scene in 3D <em>and</em> in time: how far every pixel is, how it moves, and where the camera was. The clever bit isn't a bigger model — it's a <strong>query mechanism</strong>. Instead of decoding dense depth + motion for every frame (slow, with a separate decoder bolted on per task), D4RT encodes the video <em>once</em> into a single scene representation, then answers tiny questions against it: "where is pixel (u,v) from frame 3, as seen from frame 10's camera?" One model, one representation, any task. It won <strong>CVPR 2026 Best Paper</strong>.</p>
+        <p class="bm-tldr"><strong>The juice —</strong> Point a phone at a dog running through a park. From that single ordinary video, <strong>D4RT</strong> rebuilds the whole scene in 3D <em>and</em> in time: how far away every pixel is, how each point moves, and where the camera was in every frame. The clever bit isn't a bigger model — it's a <strong>query mechanism</strong>. Instead of decoding dense depth + motion for every frame (slow, with a separate decoder bolted on per task), D4RT encodes the video <em>once</em> into a single Global Scene Representation, then answers tiny questions against it: "where is pixel (u,v) from frame 3, as seen from frame 10's camera?" One model, one representation, any task. It won <strong>CVPR 2026 Best Paper</strong>.</p>
+
+        <!-- ===== ANIMATED HERO: the dart idea ===== -->
+        <div class="diagram-container reveal">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Animated diagram: a query dart flies into a space-time grid and lands on a 3D point">
+            <!-- space-time grid: frames as vertical slices -->
+            <text x="40" y="28" class="sm">video over time  →</text>
+            <g>
+              <rect x="40" y="40" width="70" height="150" rx="4" class="box" style="fill:rgba(240,192,64,.10)"/>
+              <rect x="120" y="40" width="70" height="150" rx="4" class="box" style="fill:rgba(240,192,64,.13)"/>
+              <rect x="200" y="40" width="70" height="150" rx="4" class="box" style="fill:rgba(240,192,64,.16)"/>
+              <rect x="280" y="40" width="70" height="150" rx="4" class="box" style="fill:rgba(240,192,64,.19)"/>
+              <text x="75"  y="205" text-anchor="middle" class="sm">t=0</text>
+              <text x="155" y="205" text-anchor="middle" class="sm">t=1</text>
+              <text x="235" y="205" text-anchor="middle" class="sm">t=2</text>
+              <text x="315" y="205" text-anchor="middle" class="sm">t=3</text>
+            </g>
+            <!-- target point on frame t=2 -->
+            <circle cx="235" cy="110" r="6" class="accent">
+              <animate attributeName="r" values="6;9;6" dur="2.2s" repeatCount="indefinite"/>
+            </circle>
+            <!-- the query label -->
+            <rect x="430" y="60" width="230" height="58" rx="6" class="box" style="fill:rgba(201,100,66,.08)"/>
+            <text x="445" y="82" class="smk">query: pixel (u,v)</text>
+            <text x="445" y="98" class="smk">from t=2, seen at t=2</text>
+            <text x="445" y="113" class="smk">→ 3D point (x,y,z)</text>
+            <!-- the flying dart -->
+            <g>
+              <polygon points="0,-4 14,0 0,4 4,0" class="accent" stroke="#2a2620" stroke-width="1">
+                <animateMotion dur="2.2s" repeatCount="indefinite" rotate="auto" keyPoints="0;1;1" keyTimes="0;0.45;1" calcMode="linear"
+                  path="M560,90 C430,90 360,110 241,110"/>
+                <animate attributeName="opacity" values="0;1;1;0;0" dur="2.2s" keyTimes="0;0.05;0.45;0.6;1" repeatCount="indefinite"/>
+              </polygon>
+            </g>
+            <!-- 3D coordinate pop on landing -->
+            <text x="235" y="142" text-anchor="middle" class="smk" opacity="0">
+              (x,y,z)
+              <animate attributeName="opacity" values="0;0;1;1;0" dur="2.2s" keyTimes="0;0.45;0.55;0.85;1" repeatCount="indefinite"/>
+            </text>
+            <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#2a2620"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 1 (animated) — One query = one dart. It specifies a pixel, a source time, a target time, and a viewpoint; it lands on a single 3D point in space-and-time. Throw as many darts as you need.</p>
+        </div>
 
         <h2 id="why">Why this is hard (and why you should care)</h2>
         <p>Humans do this without thinking. Watch a few seconds of a moving scene and your brain knows the layout — what's near, what's far, what moved where, and roughly how your own head turned. For a computer, recovering that from flat video pixels is one of the oldest open problems in computer vision. It's called <strong>4D reconstruction</strong>: three spatial dimensions plus time.</p>
-        <p>Why "4D" and not just 3D? Because the scene <em>changes</em>. Classic 3D reconstruction (think photogrammetry, or the SfM pipelines behind 3D maps) assumes the world stands still while a camera moves around it. The moment something in the scene moves — a person walking, a car driving, leaves blowing — those assumptions break. You can no longer tell "the camera moved left" apart from "the object moved right," because both produce the same pixel shift. Disentangling camera motion from object motion from depth, all at once, from a single video, is the knot D4RT is trying to untie.</p>
-        <p>Get it right and a lot unlocks: robotics (a robot that understands a moving room), AR/VR (placing virtual objects that respect real geometry and motion), autonomous driving, film and content tools, sports analytics. The "understand a dynamic scene from ordinary video" capability is foundational — it's the perception layer a hundred applications sit on top of.</p>
+        <p>Why "4D" and not just 3D? Because the scene <em>changes</em>. Classic 3D reconstruction — the photogrammetry and Structure-from-Motion (SfM) pipelines behind 3D maps and scanning apps — assumes the world stands still while a camera moves around it. The moment something in the scene moves — a person walking, a car driving, leaves blowing — those assumptions break. You can no longer tell "the camera moved left" apart from "the object moved right," because both produce the same shift in the pixels. Disentangling camera motion from object motion from depth, all at once, from a single ordinary video, is the knot D4RT is trying to untie.</p>
+        <p>Get it right and a lot unlocks: robotics (a robot that understands a moving room), AR/VR (placing virtual objects that respect real geometry and motion), autonomous driving, film and content tools, sports analytics. The "understand a dynamic scene from ordinary video" capability is foundational — it's the perception layer a hundred applications sit on top of. That's a big reason this paper landed with a Best Paper award rather than a polite nod: it pushes a foundational capability forward with an idea that's clean enough to build on.</p>
 
         <h2 id="three-questions">The three questions you must answer at once</h2>
         <p>To reconstruct a dynamic scene, a model has to produce three things simultaneously, and they're deeply tangled:</p>
         <ul>
           <li><strong>Depth</strong> — how far is each pixel from the camera? This turns a flat image into a 3D point cloud.</li>
-          <li><strong>Correspondence (tracking)</strong> — where did this physical point go in other frames? This is the <em>motion</em>, across both space and time.</li>
-          <li><strong>Camera parameters (pose)</strong> — where was the camera, and which way was it pointing, in each frame? Without this you can't place the points in a single shared world.</li>
+          <li><strong>Correspondence (tracking)</strong> — where did this physical point go in the other frames? This is the <em>motion</em>, across both space and time.</li>
+          <li><strong>Camera parameters (pose)</strong> — where was the camera, and which way was it pointing, in each frame? Without this you can't place the points into a single shared world.</li>
         </ul>
-        <p>The tangle: you can't cleanly solve any one without the others. Depth helps you reason about motion; knowing camera pose lets you separate camera-induced pixel shift from real object motion; tracking the same point across frames constrains both depth and pose. Older systems often attacked these with <strong>separate, task-specific decoders</strong> — one head for depth, one for tracking, one for pose — stitched together. That's heavy, and the heads don't naturally share a consistent picture of the scene.</p>
+        <p>The tangle is the whole difficulty. You can't cleanly solve any one without the others:</p>
+        <ul>
+          <li>Depth helps you reason about motion — a far point and a near point that shift by the same number of pixels moved very different real-world distances.</li>
+          <li>Knowing camera pose lets you subtract camera-induced pixel shift from real object motion.</li>
+          <li>Tracking the same physical point across frames constrains both its depth and the camera's pose.</li>
+        </ul>
+        <p>Older systems often attacked these with <strong>separate, task-specific decoders</strong> — one head for depth, one for tracking, one for pose — stitched together into a pipeline. That's heavy to build and train, and the heads don't naturally share a single consistent picture of the scene, so their answers can quietly disagree.</p>
 
-        <div class="diagram-container">
-          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
-            <rect x="20" y="30" width="120" height="150" rx="5" class="box"/>
+        <!-- ===== ANIMATED PIPELINE: encode once, query many ===== -->
+        <div class="diagram-container reveal">
+          <svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Animated pipeline: frames flow into an encoder, become a Global Scene Representation, and a light decoder fires many query darts">
+            <!-- frames -->
             <text x="80" y="24" text-anchor="middle" class="sm">video frames</text>
-            <rect x="34" y="44" width="92" height="26" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
-            <rect x="34" y="76" width="92" height="26" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
-            <rect x="34" y="108" width="92" height="26" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
-            <rect x="34" y="140" width="92" height="26" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
-            <path d="M148 105 L196 105" stroke="#2a2620" stroke-width="1.5" marker-end="url(#a)"/>
-            <rect x="200" y="60" width="150" height="90" rx="6" class="box" style="fill:rgba(201,100,66,.10)"/>
-            <text x="275" y="100" text-anchor="middle" class="lbl">global</text>
-            <text x="275" y="118" text-anchor="middle" class="lbl">self-attention</text>
-            <text x="275" y="50" text-anchor="middle" class="sm">encoder (once)</text>
-            <path d="M358 105 L406 105" stroke="#2a2620" stroke-width="1.5" marker-end="url(#a)"/>
-            <rect x="410" y="70" width="130" height="70" rx="6" class="box" style="fill:rgba(240,192,64,.18)"/>
-            <text x="475" y="100" text-anchor="middle" class="lbl">Global Scene</text>
-            <text x="475" y="118" text-anchor="middle" class="lbl">Representation</text>
-            <path d="M548 105 L596 105" stroke="#2a2620" stroke-width="1.5" marker-end="url(#a)"/>
-            <rect x="600" y="74" width="62" height="62" rx="6" class="box"/>
-            <text x="631" y="100" text-anchor="middle" class="sm">light</text>
-            <text x="631" y="114" text-anchor="middle" class="sm">decoder</text>
-            <text x="631" y="60" text-anchor="middle" class="sm">queries →</text>
-            <text x="631" y="158" text-anchor="middle" class="sm">depth · track · pose</text>
-            <defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#2a2620"/></marker></defs>
+            <rect x="34" y="44" width="92" height="22" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
+            <rect x="34" y="72" width="92" height="22" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
+            <rect x="34" y="100" width="92" height="22" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
+            <rect x="34" y="128" width="92" height="22" rx="3" class="box" style="fill:rgba(240,192,64,.15)"/>
+            <!-- encoder -->
+            <rect x="190" y="60" width="140" height="90" rx="6" class="box" style="fill:rgba(201,100,66,.10)"/>
+            <text x="260" y="100" text-anchor="middle" class="lbl">global</text>
+            <text x="260" y="118" text-anchor="middle" class="lbl">self-attention</text>
+            <text x="260" y="50" text-anchor="middle" class="sm">encoder · runs once</text>
+            <!-- GSR -->
+            <rect x="390" y="72" width="120" height="66" rx="6" class="box" style="fill:rgba(240,192,64,.20)"/>
+            <text x="450" y="100" text-anchor="middle" class="lbl">Global Scene</text>
+            <text x="450" y="118" text-anchor="middle" class="lbl">Representation</text>
+            <!-- decoder -->
+            <rect x="560" y="78" width="86" height="54" rx="6" class="box"/>
+            <text x="603" y="100" text-anchor="middle" class="sm">light</text>
+            <text x="603" y="114" text-anchor="middle" class="sm">decoder</text>
+            <!-- arrows -->
+            <path d="M128 105 L186 105" stroke="#2a2620" stroke-width="1.5" marker-end="url(#ah2)"/>
+            <path d="M332 105 L386 105" stroke="#2a2620" stroke-width="1.5" marker-end="url(#ah2)"/>
+            <path d="M512 105 L556 105" stroke="#2a2620" stroke-width="1.5" marker-end="url(#ah2)"/>
+            <!-- moving pulse: a frame token traveling through the pipeline (encode stage) -->
+            <circle r="5" class="accent">
+              <animateMotion dur="2.6s" repeatCount="indefinite" path="M80,128 C140,128 150,105 260,105 C360,105 360,105 450,105"/>
+              <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.7;1" dur="2.6s" repeatCount="indefinite"/>
+            </circle>
+            <!-- query darts firing from decoder to many targets (query stage) -->
+            <circle r="4" class="ink" fill="#2a2620">
+              <animateMotion dur="2.6s" begin="0.2s" repeatCount="indefinite" path="M603,132 C603,180 360,190 120,180"/>
+              <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.45;0.5;0.9;1" dur="2.6s" begin="0.2s" repeatCount="indefinite"/>
+            </circle>
+            <circle r="4" class="ink" fill="#2a2620">
+              <animateMotion dur="2.6s" begin="0.7s" repeatCount="indefinite" path="M603,132 C603,200 360,210 230,205"/>
+              <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.45;0.5;0.9;1" dur="2.6s" begin="0.7s" repeatCount="indefinite"/>
+            </circle>
+            <circle r="4" class="ink" fill="#2a2620">
+              <animateMotion dur="2.6s" begin="1.2s" repeatCount="indefinite" path="M603,132 C603,190 500,215 360,215"/>
+              <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.45;0.5;0.9;1" dur="2.6s" begin="1.2s" repeatCount="indefinite"/>
+            </circle>
+            <text x="340" y="232" text-anchor="middle" class="sm">…each dot = one cheap query answered against the same representation</text>
+            <defs><marker id="ah2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#2a2620"/></marker></defs>
           </svg>
-          <p class="diagram-label">Fig 1 — Encode the whole video once into a Global Scene Representation; then a tiny decoder answers cheap queries against it for any task.</p>
+          <p class="diagram-label">Fig 2 (animated) — Encode the whole video <em>once</em> into a Global Scene Representation (orange pulse). Then a tiny decoder fires as many cheap query darts as you want against it (dark dots). The expensive part is amortized; the per-answer part is light.</p>
         </div>
 
         <h2 id="big-idea">The big idea: stop decoding everything, start asking questions</h2>
         <p>Here's the move that makes D4RT elegant. Most prior approaches <em>decode densely</em>: for every frame, run a heavy decoder to produce a full depth map and a full motion field, whether you need all of it or not. That's expensive, and it forces a separate decoder per task.</p>
         <p>D4RT flips it. The expensive work — looking at the whole video and building an understanding of the scene — happens <strong>once</strong>, in a global self-attention encoder that produces a single <strong>Global Scene Representation</strong>. Think of it as the model's compressed mental model of the entire clip: everything it figured out about geometry and motion, baked into one representation.</p>
-        <p>Then, instead of dumping out dense maps, you <strong>query</strong> it. A query is a small specification of what you want to know:</p>
-        <ul>
-          <li>a 2D pixel coordinate <code>(u, v)</code> — which point you're asking about,</li>
-          <li>a <strong>source timestep</strong> — which frame that point lives in,</li>
-          <li>a <strong>target timestep</strong> — which moment in time you want it projected to,</li>
-          <li>a <strong>camera frame</strong> — whose viewpoint to express the answer in.</li>
-        </ul>
-        <p>A lightweight decoder takes that query plus the Global Scene Representation (and some local RGB patch context around the point) and returns the 3D position of that point. That's it. Want depth? Query a point at its own timestep. Want to track it forward? Query the same point with a later target timestep. Want it in world coordinates? Pick the camera frame accordingly. <strong>One mechanism, every task</strong> — no separate decoders, no dense per-frame decoding unless you actually want it.</p>
+        <p>Then, instead of dumping out dense maps, you <strong>query</strong> it. A query is a small specification of what you want to know — four parts:</p>
+
+        <div class="qtuple">
+          <span class="chip"><b>(u, v)</b> — which pixel</span>
+          <span class="chip"><b>source t</b> — which frame it lives in</span>
+          <span class="chip"><b>target t</b> — which moment to project it to</span>
+          <span class="chip"><b>camera frame</b> — whose viewpoint to answer in</span>
+        </div>
+
+        <p>A lightweight decoder takes that query, plus the Global Scene Representation (and some local RGB patch context around the point), and returns the 3D position of that point. That's it. The query interface is the whole API to the scene, and it's expressive enough to phrase many different tasks as the <em>same</em> operation:</p>
+        <table>
+          <thead><tr><th>You want…</th><th>So you query…</th></tr></thead>
+          <tbody>
+            <tr><td>depth of a point</td><td>that point, with <strong>source t = target t</strong> (its own moment)</td></tr>
+            <tr><td>to track it forward</td><td>the same point, sweep <strong>target t</strong> through later frames</td></tr>
+            <tr><td>it in world coordinates</td><td>set the <strong>camera frame</strong> to the shared world frame</td></tr>
+            <tr><td>a full scene rebuild</td><td>query <strong>every pixel</strong>, projected to one frame</td></tr>
+          </tbody>
+        </table>
+        <p><strong>One mechanism, every task</strong> — no separate decoders, no dense per-frame decoding unless you actually want it.</p>
 
         <div class="bm-note"><strong>Why "one D4RT at a time" is more than a pun.</strong> Each query is like throwing a single dart at a specific point in space-and-time and reading off where it lands in 3D. You throw as many darts as you need — a sparse handful for tracking a few points, or a dense volley to reconstruct everything. The cost scales with what you ask for, not with a fixed dense decode every frame.</p>
 
         <h2 id="architecture">How it's built</h2>
-        <p>Three pieces, kept deliberately simple:</p>
+        <p>Three pieces, kept deliberately simple. The simplicity is a feature — fewer moving parts means fewer things to train, tune, and break.</p>
         <h3>1. The global encoder</h3>
-        <p>A transformer with <strong>global self-attention</strong> ingests the video frames and lets every part of the scene attend to every other part across space and time. This is where the model reconciles the tangle — depth, motion, and camera all inform each other through attention. The output is the Global Scene Representation, computed once.</p>
+        <p>A transformer with <strong>global self-attention</strong> ingests the video frames and lets every part of the scene attend to every other part across space and time. This is where the model reconciles the tangle — depth, motion, and camera all inform each other through attention, instead of being computed by isolated heads that can't see each other's work. The output is the Global Scene Representation, computed once per video.</p>
         <h3>2. The query interface</h3>
-        <p>A query is just that little tuple — pixel, source time, target time, camera frame. It's the API to the scene. Because the heavy lifting is already done in the encoder, queries are cheap, and you can issue however many you want, wherever you want, in parallel.</p>
+        <p>A query is just that little four-part tuple — pixel, source time, target time, camera frame. It's the API to the scene. Because the heavy lifting already happened in the encoder, queries are cheap, and you can issue however many you want, wherever you want, in parallel. This is also what makes the model <em>flexible</em>: new tasks are new query patterns, not new network surgery.</p>
         <h3>3. The lightweight decoder</h3>
-        <p>A small decoder maps (query + global representation + local RGB patch context) to a 3D position. The local RGB patch matters: it gives the decoder fine spatial detail around the queried point that a global summary alone would blur. The decoder is intentionally light because it runs once per query — keeping it small is what makes dense reconstruction affordable when you do want it.</p>
-        <p>The whole thing is <strong>feedforward</strong>: one forward pass, no test-time optimization loop, no per-scene fitting. You feed video in, you get answers out. That's a big practical deal — many strong reconstruction methods need slow per-scene optimization; a feedforward model just runs.</p>
+        <p>A small decoder maps (query + global representation + local RGB patch context) to a 3D position. The local RGB patch matters: it gives the decoder fine spatial detail around the queried point that a global summary alone would blur. The decoder is intentionally light because it runs once per query — keeping it small is exactly what makes dense reconstruction affordable when you do want it.</p>
+        <p>The whole thing is <strong>feedforward</strong>: one forward pass, no test-time optimization loop, no per-scene fitting. You feed video in, you get answers out. That's a big practical deal — many strong reconstruction methods need slow per-scene optimization that can take minutes or hours per clip; a feedforward model just runs.</p>
 
         <h2 id="capabilities">What you can do with it</h2>
         <p>Because the query interface is general, the same model serves several tasks that used to need bespoke systems:</p>
@@ -151,10 +245,22 @@
         </table>
         <p>That last one — reconstructing <em>all</em> pixels into a single consistent world — is the showcase. It's the difference between "I tracked a few feature points" and "I rebuilt the moving scene." And the dynamic-object deduplication detail is the kind of thing that separates a demo from a usable system: when an object moves, naive depth-projection can leave duplicate ghosts of it at different times; D4RT handles that so the reconstructed world stays clean.</p>
 
+        <h2 id="vs-old">Old way vs D4RT, side by side</h2>
+        <table>
+          <thead><tr><th></th><th>Dense, per-task decoding (prior)</th><th>D4RT (encode-once, query-anywhere)</th></tr></thead>
+          <tbody>
+            <tr><td>Decoders</td><td>one per task (depth / track / pose)</td><td>one shared lightweight decoder</td></tr>
+            <tr><td>Per-frame work</td><td>full dense decode every frame, always</td><td>only the queries you ask for</td></tr>
+            <tr><td>Consistency</td><td>heads can disagree</td><td>one representation, one consistent answer</td></tr>
+            <tr><td>Cost scaling</td><td>fixed & heavy</td><td>scales with what you ask</td></tr>
+            <tr><td>Test-time</td><td>often per-scene optimization</td><td>feedforward, single pass</td></tr>
+          </tbody>
+        </table>
+
         <h2 id="results">The results, and the honest caveats</h2>
         <p>The headline: D4RT <strong>sets a new state of the art, outperforming previous methods across a wide spectrum of 4D reconstruction tasks</strong> — depth, correspondence, camera estimation, and full reconstruction — with a single model rather than a zoo of specialized ones. The community agreed it mattered: it took home <strong>CVPR 2026 Best Paper</strong>.</p>
-        <p>Now the honesty, because squeezing the juice means not overselling it. The abstract and project page frame the wins qualitatively ("state of the art," "outperforming previous methods") and lean on animated visual results rather than a single dramatic benchmark number. That's normal for a reconstruction paper — the proof is largely visual and spread across many task-specific metrics — but it means the right takeaway is "broad, consistent SOTA from one unified model," not "X% better on benchmark Y." For the exact numbers per benchmark, the paper's tables are where to look; treat any single figure quoted secondhand with care.</p>
-        <div class="gotcha"><span class="gotcha-label">read it yourself for numbers</span>This juice is a conceptual walkthrough. The paper reports per-task quantitative comparisons across multiple 4D benchmarks; the project page favours animated qualitative results. If you need a specific metric to cite, pull it from the paper's result tables directly rather than from any summary.</div>
+        <p>Now the honesty, because squeezing the juice means not overselling it. The abstract and project page frame the wins qualitatively ("state of the art," "outperforming previous methods") and lean on animated visual results rather than a single dramatic benchmark number. That's normal for a reconstruction paper — the proof is largely visual and spread across many task-specific metrics — but it means the right takeaway is "broad, consistent SOTA from one unified model," not "X% better on benchmark Y."</p>
+        <div class="gotcha"><span class="gotcha-label">read it yourself for numbers</span>This juice is a conceptual walkthrough. The paper reports per-task quantitative comparisons across multiple 4D benchmarks; the project page favours animated qualitative results. If you need a specific metric to cite, pull it from the paper's result tables directly rather than from any summary (including this one).</div>
 
         <h2 id="why-elegant">Why the design is the real contribution</h2>
         <p>It's tempting to file this under "another big transformer beats benchmarks." That misses the point. The contribution is <strong>architectural taste</strong>: recognizing that dense per-frame decoding with per-task heads is the wrong factorization, and replacing it with <em>encode-once, query-anywhere</em>. Several nice properties fall out of that single decision:</p>
@@ -164,10 +270,20 @@
           <li><strong>Flexibility.</strong> The query tuple (pixel, source time, target time, camera frame) is expressive enough to phrase many tasks as the same operation — "probe a 3D point in space-time from a chosen viewpoint."</li>
           <li><strong>Feedforward simplicity.</strong> No per-scene optimization. Run the model, get the answer.</li>
         </ul>
-        <p>This is the same flavour of idea that shows up whenever a field matures: instead of bolting more specialized parts onto a pipeline, find the one general operation the whole problem reduces to, build a clean representation, and expose a simple interface to it. NeRF did it for static scenes with "query a 3D point for color+density." D4RT does it for <em>dynamic</em> scenes with "query a point in space-and-time for its 3D position." That lineage is part of why it resonated.</p>
+        <p>This is the same flavour of idea that shows up whenever a field matures: instead of bolting more specialized parts onto a pipeline, find the one general operation the whole problem reduces to, build a clean representation, and expose a simple interface to it. NeRF did it for static scenes with "query a 3D point for colour + density." D4RT does it for <em>dynamic</em> scenes with "query a point in space-and-time for its 3D position." That lineage is part of why it resonated — it feels like the natural next step, done well.</p>
+
+        <h2 id="mental">A mental model you can keep</h2>
+        <p>If you remember one picture, make it this: <strong>the video becomes a searchable 3D-over-time database, and the query is your search</strong>. The encoder builds the database (once, expensive). Every question you have about the scene — how far, where did it go, where was the camera — becomes a lookup phrased as a dart: a pixel, a "from when," a "to when," and a viewpoint. The decoder is the lookup engine, and it's small because the hard thinking is already stored in the database.</p>
+        <p>That framing also explains the efficiency win in one line: <em>you don't recompute the world for every question; you build it once and ask.</em></p>
 
         <h2 id="who">Who did it</h2>
-        <p>The work comes out of a collaboration spanning <strong>Google DeepMind, University College London, and the University of Oxford</strong>, with a sizable author list led by Chuhan Zhang and others, and correspondence to Mehdi S. M. Sajjadi — a group with deep roots in scene representation and neural rendering. The mix of an industrial research lab and two strong vision groups shows in the result: an idea that's both conceptually clean and engineered to actually run at scale.</p>
+        <p>The work comes out of a collaboration spanning <strong>Google DeepMind, University College London, and the University of Oxford</strong>, with a sizable author list (Chuhan Zhang, Guillaume Le Moing, Skanda Koppula, Ignacio Rocco, and others, with correspondence to Mehdi S. M. Sajjadi) and senior names long associated with scene representation and neural rendering. The mix of an industrial research lab and two strong vision groups shows in the result: an idea that's both conceptually clean and engineered to actually run at scale.</p>
+
+        <h2 id="faq">Quick FAQ</h2>
+        <p><strong>Is this NeRF for video?</strong> Same spirit, different problem. NeRF queries a static 3D point for appearance; D4RT queries a point in space-<em>and-time</em> for its 3D position, and crucially infers camera pose and motion too, feedforward, from a single video.</p>
+        <p><strong>Does it need depth sensors or multiple cameras?</strong> No — the pitch is a single ordinary video as input; depth, motion, and camera all come out of the model.</p>
+        <p><strong>Why is it efficient?</strong> The costly global encoding runs once; answers are cheap per-query, and you only ask for what you need instead of densely decoding every frame.</p>
+        <p><strong>What's the catch?</strong> Reconstruction quality is best judged visually and per-metric; the splashy claims are "broad SOTA," so check the paper's tables for the task you care about, and the project page for failure-case feel.</p>
 
         <h2 id="takeaways">Takeaways</h2>
         <ul>
@@ -191,7 +307,7 @@
           <li><a href="../paperjuice.html">All Paper Juice</a> <span>— the rest of the squeezed papers.</span></li>
         </ul>
 
-        <p style="margin-top:22px;color:var(--ink-faint);font-size:.88rem">A conceptual walkthrough of D4RT (arXiv 2512.08924, CVPR 2026 Best Paper) in plain language — summarized, not reproduced. For exact benchmark numbers, architecture details, and ablations, read the paper and watch the animated results on the project page.</p>
+        <p style="margin-top:22px;color:var(--ink-faint);font-size:.88rem">A conceptual walkthrough of D4RT (arXiv 2512.08924, CVPR 2026 Best Paper) in plain language — summarized, not reproduced. Diagrams are original illustrations of the idea; animations are CSS/SVG and respect <code>prefers-reduced-motion</code>. For exact benchmark numbers, architecture details, and ablations, read the paper and watch the animated results on the project page.</p>
 
       </div>
 

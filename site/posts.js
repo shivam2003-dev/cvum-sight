@@ -21,9 +21,9 @@ const POSTS = [
     date: "Jun 6, 2026",
     cat: "paperjuice",
     tags: ["paperjuice", "ml", "computer-vision", "3d-reconstruction", "transformers"],
-    time: 22,
-    words: 4500,
-    excerpt: "From one ordinary video, D4RT rebuilds a dynamic scene in 3D and time — depth, motion, and camera, all at once. The trick isn't a bigger model: it's encode-once, query-anywhere. Encode the whole video into one Global Scene Representation, then ask cheap (pixel, source-time, target-time, camera) queries against it. One mechanism, every task. CVPR 2026 Best Paper."
+    time: 30,
+    words: 6200,
+    excerpt: "From one ordinary video, D4RT rebuilds a dynamic scene in 3D and time — depth, motion, and camera, all at once. The trick isn't a bigger model: it's encode-once, query-anywhere. Encode the whole video into one Global Scene Representation, then ask cheap (pixel, source-time, target-time, camera) queries against it. One mechanism, every task. Now with animated diagrams. CVPR 2026 Best Paper."
   },
   {
     slug: "linux-perf-1-observability-tools",

@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "ai-papers-2024-52-weeks",
+    title: "52 Weeks of AI Papers — The 2024 Reading List.",
+    date: "Jun 9, 2026",
+    cat: "resources",
+    tags: ["resources", "ml", "llm", "2024", "reading-list"],
+    time: 24,
+    words: 4800,
+    excerpt: "One landmark 2024 paper per week — 52 picks, curated down from the year's flood and ordered as a year-long reading plan. The papers the 2025 reasoning explosion was built on (GRPO, test-time scaling, MoE, latent reasoning, DeepSeek-V3) plus the architecture bets that paid off later (Mamba-2, BitNet, KAN, byte-level). Four quarters, a load-bearing dozen, and a straight line into the 2025–2026 list."
+  },
+  {
     slug: "ai-research-papers-2025-2026",
     title: "AI Research Papers to Read — The 2025-2026 Reading List.",
     date: "Jun 9, 2026",

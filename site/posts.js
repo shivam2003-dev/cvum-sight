@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "ai-research-papers-2025-2026",
+    title: "AI Research Papers to Read — The 2025-2026 Reading List.",
+    date: "Jun 9, 2026",
+    cat: "resources",
+    tags: ["resources", "ml", "llm", "reasoning", "reinforcement-learning", "reading-list"],
+    time: 41,
+    words: 8600,
+    excerpt: "~95 papers, Jan 2025 → May 2026, sorted into the story they actually tell instead of a flat date dump. 2025 was the reasoning year (RL teaches models to think — R1, GRPO, RLVR). 2026 so far is the architecture & efficiency year (linear attention, deltas, Mamba, lean model reports). Start-here eight, theme tables with a one-line 'why read' on every paper, reading roadmaps by goal, and how to actually read a paper."
+  },
+  {
     slug: "d4rt-paper-juice",
     title: "D4RT — Reconstructing a Moving 3D World One Query at a Time.",
     date: "Jun 6, 2026",

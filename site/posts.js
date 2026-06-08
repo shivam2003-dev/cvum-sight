@@ -21,9 +21,9 @@ const POSTS = [
     date: "Jun 9, 2026",
     cat: "resources",
     tags: ["resources", "ml", "llm", "reasoning", "reinforcement-learning", "reading-list"],
-    time: 44,
-    words: 9300,
-    excerpt: "~105 papers, Jan 2025 → May 2026, sorted into the story they actually tell instead of a flat date dump. 2025 was the reasoning year (RL teaches models to think — R1, GRPO, RLVR). 2026 so far is the architecture & efficiency year (linear attention, deltas, Mamba, lean model reports). Start-here eight, theme tables with a one-line 'why read' on every paper, reading roadmaps by goal, and how to actually read a paper."
+    time: 47,
+    words: 9900,
+    excerpt: "~115 papers, Jan 2025 → May 2026, sorted into the story they actually tell instead of a flat date dump. 2025 was the reasoning year (RL teaches models to think — R1, GRPO, RLVR). 2026 so far is the architecture & efficiency year (linear attention, deltas, Mamba, lean model reports). Start-here eight, theme tables with a one-line 'why read' on every paper, reading roadmaps by goal, and how to actually read a paper."
   },
   {
     slug: "d4rt-paper-juice",

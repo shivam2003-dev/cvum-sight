@@ -1,11 +1,11 @@
 /* settings.js — reader settings panel (theme, text size, font, line spacing, scroll style) */
 (function () {
   var THEMES = [
-    { id: "paper",    label: "Paper" },
+    { id: "paper",    label: "Paper (default)" },
     { id: "white",    label: "White (clean)" },
     { id: "dark",     label: "Dark" },
     { id: "midnight", label: "Midnight (deep blue)" },
-    { id: "matcha",   label: "Matcha (default)" }
+    { id: "matcha",   label: "Matcha" }
   ];
   var SIZES = [
     { id: "text-sm", label: "S" },
@@ -31,7 +31,7 @@
 
   var hasArticle = !!document.querySelector(".post-body");
 
-  var savedTheme = localStorage.getItem("cvam-theme") || "matcha";
+  var savedTheme = localStorage.getItem("cvam-theme") || "paper";
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
   var savedSpace = localStorage.getItem("cvam-ls")    || "ls-cozy";
   var savedScroll = localStorage.getItem("cvam-scroll") || "scroll-normal";

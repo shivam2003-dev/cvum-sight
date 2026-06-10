@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "terraform-1-15",
+    title: "Terraform 1.15, In Depth.",
+    date: "Jun 10, 2026",
+    cat: "devops",
+    tags: ["devops", "terraform", "iac", "hcl", "infrastructure"],
+    time: 34,
+    words: 8600,
+    excerpt: "The release that finally lets you put a variable in a module source (the new const attribute), gives variables and outputs a real deprecation path, ships convert() for the type-coercion edge cases, adds type constraints to outputs, and quietly refactors terraform init in a way that breaks log parsers. Every feature, exact syntax, the gotchas, and a clean upgrade path — plus the 1.14 features (list resources, query, actions) you inherit if you skip a version."
+  },
+  {
     slug: "ai-papers-2024-52-weeks",
     title: "52 Weeks of AI Papers — The 2024 Reading List.",
     date: "Jun 9, 2026",

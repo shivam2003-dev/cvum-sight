@@ -21,8 +21,8 @@ const POSTS = [
     date: "Jun 10, 2026",
     cat: "ml",
     tags: ["ml", "ai-safety", "anthropic", "claude", "llm"],
-    time: 30,
-    words: 6000,
+    time: 34,
+    words: 7000,
     excerpt: "Anthropic's 264-page system card, read end to end. One model shipped as two: Fable 5 (general access, safeguarded) and Mythos 5 (restricted, raw capability). The most capable model they've trained — SWE-bench Verified 95.5, SWE-bench Pro 80.3 — and the first whose chemical/biology verdict was a genuine close call (CB-1 yes, CB-2 'below threshold, but closest yet'). The capabilities, the risk findings, the safeguard architecture, the alignment audit (including unverbalized internal awareness), and the model-welfare work — in plain terms, with what it means if you build on these models."
   },
   {

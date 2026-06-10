@@ -16,6 +16,30 @@
 
 const POSTS = [
   {
+    slug: "design-cloud-1-architecture-styles",
+    title: "Cloud Architecture Styles — The Blueprints.",
+    date: "Jun 10, 2026",
+    cat: "devops",
+    tags: ["devops", "cloud", "architecture", "system-design", "microservices"],
+    time: 24,
+    words: 4800,
+    excerpt: "Part 1 of the Design for the Cloud series. The handful of architecture styles 95% of cloud systems are built from — N-tier, modular monolith, web-queue-worker, microservices, event-driven, big data, big compute — in plain language. When each shines, when it hurts, and how to choose. Grounded in real data: the CNCF finding that 42% of companies are pulling microservices back, and the strangler-fig migration path.",
+    series: "design-cloud",
+    seriesNum: "1"
+  },
+  {
+    slug: "design-cloud-2-best-practices",
+    title: "Cloud Best Practices — The Habits That Survive Load.",
+    date: "Jun 10, 2026",
+    cat: "devops",
+    tags: ["devops", "cloud", "reliability", "twelve-factor", "scaling"],
+    time: 26,
+    words: 5200,
+    excerpt: "Part 2 of the Design for the Cloud series. The cloud is hostile — machines vanish, networks blip, services throttle. The habits that let an app survive it: statelessness, transient-fault handling, retries done right (backoff, jitter, no nested layers), idempotency, liveness-vs-readiness health checks, graceful shutdown, autoscaling, partitioning, observability, and the twelve-factor mindset. With a pre-launch checklist.",
+    series: "design-cloud",
+    seriesNum: "2"
+  },
+  {
     slug: "cloud-performance-antipatterns",
     title: "Cloud Performance Antipatterns, Explained Simply.",
     date: "Jun 10, 2026",
@@ -23,7 +47,9 @@ const POSTS = [
     tags: ["devops", "cloud", "architecture", "performance", "antipatterns"],
     time: 32,
     words: 6200,
-    excerpt: "Part 1 of a Design for the Cloud series. The ten classic cloud performance antipatterns in plain language — Busy Database, Busy Front End, Chatty I/O, Extraneous Fetching, Improper Instantiation, Monolithic Persistence, No Caching, Noisy Neighbor, Retry Storm, Synchronous I/O — plus extras like Cache Stampede. For each: what it is, how to spot it, why it happens, and exactly how to fix it. With worked before/after code, a symptom→fix cheat sheet, and how antipatterns cascade into outages."
+    excerpt: "Part 3 of the Design for the Cloud series. The ten classic cloud performance antipatterns in plain language — Busy Database, Busy Front End, Chatty I/O, Extraneous Fetching, Improper Instantiation, Monolithic Persistence, No Caching, Noisy Neighbor, Retry Storm, Synchronous I/O — plus extras like Cache Stampede. For each: what it is, how to spot it, why it happens, and exactly how to fix it. With worked before/after code, a symptom→fix cheat sheet, and how antipatterns cascade into outages.",
+    series: "design-cloud",
+    seriesNum: "3"
   },
   {
     slug: "claude-fable-5-mythos-5-system-card",

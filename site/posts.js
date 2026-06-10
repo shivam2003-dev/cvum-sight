@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "cloud-performance-antipatterns",
+    title: "Cloud Performance Antipatterns, Explained Simply.",
+    date: "Jun 10, 2026",
+    cat: "devops",
+    tags: ["devops", "cloud", "architecture", "performance", "antipatterns"],
+    time: 32,
+    words: 6200,
+    excerpt: "Part 1 of a Design for the Cloud series. The ten classic cloud performance antipatterns in plain language — Busy Database, Busy Front End, Chatty I/O, Extraneous Fetching, Improper Instantiation, Monolithic Persistence, No Caching, Noisy Neighbor, Retry Storm, Synchronous I/O — plus extras like Cache Stampede. For each: what it is, how to spot it, why it happens, and exactly how to fix it. With worked before/after code, a symptom→fix cheat sheet, and how antipatterns cascade into outages."
+  },
+  {
     slug: "claude-fable-5-mythos-5-system-card",
     title: "Claude Fable 5 & Mythos 5 — Reading the System Card.",
     date: "Jun 10, 2026",

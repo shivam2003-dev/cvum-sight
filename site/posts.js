@@ -52,6 +52,18 @@ const POSTS = [
     seriesNum: "3"
   },
   {
+    slug: "design-cloud-4-responsible-engineering",
+    title: "Responsible Engineering — The Pillars.",
+    date: "Jun 10, 2026",
+    cat: "devops",
+    tags: ["devops", "cloud", "security", "reliability", "finops"],
+    time: 26,
+    words: 5000,
+    excerpt: "Part 4 of the Design for the Cloud series. Beyond 'it works': the Well-Architected pillars — reliability, security, cost, sustainability, operations — told through real failures. The shared-responsibility model and why ~99% of cloud security failures are customer error. Least privilege and blast radius, via the Capital One breach. FinOps and cost as a design metric. And the key idea: the pillars pull against each other, so responsible engineering is making the trade-offs explicit.",
+    series: "design-cloud",
+    seriesNum: "4"
+  },
+  {
     slug: "claude-fable-5-mythos-5-system-card",
     title: "Claude Fable 5 & Mythos 5 — Reading the System Card.",
     date: "Jun 10, 2026",

@@ -64,6 +64,18 @@ const POSTS = [
     seriesNum: "4"
   },
   {
+    slug: "design-cloud-5-design-patterns",
+    title: "Cloud Design Patterns — The Cures.",
+    date: "Jun 10, 2026",
+    cat: "devops",
+    tags: ["devops", "cloud", "design-patterns", "resilience", "architecture"],
+    time: 30,
+    words: 5600,
+    excerpt: "The finale of the Design for the Cloud series. The catalog of good patterns — Cache-Aside, Retry, Circuit Breaker, Bulkhead, Throttling, Queue-Based Load Leveling, Competing Consumers, Gateway Aggregation, CQRS, Materialized View, Sharding, Saga, Strangler Fig — each mapped to the exact Part 3 antipattern it cures. For every pattern: what it is in plain words, the disease it fixes, and when NOT to use it. The pharmacy for everything Part 3 diagnosed.",
+    series: "design-cloud",
+    seriesNum: "5"
+  },
+  {
     slug: "claude-fable-5-mythos-5-system-card",
     title: "Claude Fable 5 & Mythos 5 — Reading the System Card.",
     date: "Jun 10, 2026",

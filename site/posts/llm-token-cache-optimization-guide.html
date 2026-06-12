@@ -73,7 +73,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Jun 11, 2026 · devops · 24 min read · 4800 words</p>
+        <p class="meta">Jun 11, 2026 · devops · 27 min read · 5400 words</p>
         <h1>Save tokens &amp; cache on every LLM — the complete guide.</h1>
         <div class="tag-row">
           <span class="tag fill">devops</span>
@@ -86,7 +86,7 @@
 
       <div class="post-body">
 
-        <p class="bm-tldr">Every token you send and receive costs money and eats your context window. This is the complete, current guide to spending fewer of them across <strong>Claude (Claude Code), OpenAI Codex, and GitHub Copilot</strong> — and the one lever that beats all the others: <strong>prompt caching</strong>, which cuts repeated-context cost by 50–90% automatically on some providers and with one trick on others. You'll get the billing model that actually matters, a provider-by-provider cache cheat-sheet, cache-friendly prompting rules, per-tool token tactics, and copy-paste <strong>macOS install commands</strong> for all three CLIs. Real numbers throughout; people have cut bills from $720 to $72 a month with the cache alone.</p>
+        <p class="bm-tldr">Every token you send and receive costs money and eats your context window. This is the complete, current guide to spending fewer of them across <strong>Claude (Claude Code), OpenAI Codex, and GitHub Copilot</strong> — and the three levers that beat everything else: <strong>prompt caching</strong> (50–90% off repeated context), the <strong>Batch API</strong> (50% off non-urgent jobs), and a <strong>tool-output proxy like RTK</strong> (60–90% off the command-output firehose). You'll get the billing model that actually matters, a provider-by-provider cache cheat-sheet, cache-friendly prompting rules, per-tool token tactics, and copy-paste <strong>macOS install commands</strong> for every CLI — Claude Code, Codex, Copilot, and RTK. Real numbers throughout; people have cut bills from $720 to $72 a month with the cache alone.</p>
 
         <p>If you use AI coding tools seriously, two things creep up on you: the <strong>bill</strong> (or the rate-limit wall on a subscription) and the <strong>context window filling up</strong> until the model gets dumber and slower. Both have the same root cause — tokens. You pay per token in, per token out, and every token in the window is re-read on every turn. Most people just throw more money or bigger models at it. The people who actually run these tools cheaply do something smarter: they manage tokens deliberately and they exploit the cache.</p>
 
@@ -222,7 +222,52 @@
 
         <p>Use it for anything that doesn't need a real-time answer: bulk code review across a repo, generating test suites, large-scale data labeling, documentation generation, offline evals. If you'd be fine getting the results "sometime in the next few hours," batch it and halve the bill. It's the single biggest lever for non-interactive workloads, the way caching is for interactive ones.</p>
 
-        <div class="bm-note"><strong>Two levers, two situations.</strong> Interactive, repetitive context (a coding session, a chatbot over fixed docs) → <strong>caching</strong>. Non-urgent, high-volume jobs (batch generation, evals, bulk processing) → <strong>Batch API</strong>. Many real pipelines use both: cache the shared prompt prefix <em>and</em> submit the whole job as a batch for a combined discount.</div>
+        <div class="bm-note"><strong>Three levers, three situations.</strong> Interactive, repetitive context (a coding session, a chatbot over fixed docs) → <strong>caching</strong>. Non-urgent, high-volume jobs (batch generation, evals, bulk processing) → <strong>Batch API</strong>. Noisy command output flooding an agent's context → a <strong>tool-output proxy</strong> like RTK (next). Real pipelines use all three.</div>
+
+        <h2 id="rtk">The third lever: compress tool output with a proxy (RTK)</h2>
+
+        <p>Here's a cost most people never see. When a coding agent runs shell commands — <code>git status</code>, <code>cargo test</code>, <code>npm run build</code>, <code>cat bigfile</code>, <code>ls -R</code> — the <em>entire raw output</em> gets fed back into the model as input tokens so it can "read" the result. A single failing test run can be 25,000 tokens of stack traces and logs, 90% of which is noise. Across a session, this command-output firehose is frequently the <strong>largest single source of input tokens</strong> in agentic coding — and caching doesn't help it, because the output is different every time.</p>
+
+        <p>The fix is a different layer entirely: a proxy that <strong>compresses command output before it ever reaches the model</strong>. <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">RTK</a> ("Rust Token Killer") is the standout here — a single zero-dependency Rust binary that intercepts common dev commands and strips them down, cutting their token cost <strong>60–90%</strong> (and reportedly 90–95% of <em>input</em> tokens on command-heavy work). It does it four ways:</p>
+
+        <ul>
+          <li><strong>Smart filtering</strong> — drops noise: comments, whitespace, boilerplate banners.</li>
+          <li><strong>Grouping</strong> — aggregates similar items (files by directory, errors by type) instead of listing each.</li>
+          <li><strong>Truncation</strong> — keeps the relevant context, cuts the redundant tail.</li>
+          <li><strong>Deduplication</strong> — collapses repeated log lines into one line + a count.</li>
+        </ul>
+
+        <p>The measured savings on real commands are large:</p>
+        <table class="papers">
+          <thead><tr><th>Command</th><th>Raw tokens</th><th>With RTK</th><th>Cut</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><code>git status</code></td><td>~2,000</td><td>~600</td><td class="b">−80%</td></tr>
+            <tr><td class="p"><code>git diff</code></td><td>~10,000</td><td>~2,500</td><td class="b">−75%</td></tr>
+            <tr><td class="p"><code>cargo test</code></td><td>~25,000</td><td>~2,500</td><td class="b">−90%</td></tr>
+            <tr><td class="p"><code>pytest</code></td><td>~8,000</td><td>~800</td><td class="b">−90%</td></tr>
+            <tr><td class="p"><code>cat</code> / read</td><td>~40,000</td><td>~12,000</td><td class="b">−70%</td></tr>
+            <tr><td class="p"><strong>30-min session</strong></td><td><strong>~118,000</strong></td><td><strong>~23,900</strong></td><td class="b">−80%</td></tr>
+          </tbody>
+        </table>
+
+        <p>The clever part is delivery: RTK installs a <strong>shell hook</strong> that transparently rewrites commands before they run — you (or the agent) type <code>git status</code> and the hook silently executes <code>rtk git status</code>, so the model receives the compact output with <em>zero change to its behavior</em>. The hook only touches bash tool calls; an agent's built-in <code>Read</code>/<code>Grep</code> tools bypass it. It covers 100+ commands across git, build/lint (<code>cargo</code>, <code>pytest</code>, <code>eslint</code>, <code>tsc</code>, <code>go test</code>), package managers, Docker/Kubernetes, AWS, and file ops.</p>
+
+        <h3>Install on macOS</h3>
+        <pre><code class="language-bash"># Homebrew (recommended)
+brew install rtk
+
+# wire it into your agent's hooks (transparent command rewriting)
+rtk init -g                     # Claude Code / Copilot (default)
+rtk init -g --gemini            # Gemini CLI
+rtk init -g --agent cursor      # Cursor
+rtk init --agent cline          # Cline / Roo Code
+
+# check it's working — token savings analytics
+rtk gain                        # summary stats
+rtk gain --graph                # last-30-days ASCII graph
+rtk discover                    # find commands you're not yet optimizing</code></pre>
+
+        <div class="bm-fix"><strong>Why this stacks with everything else:</strong> caching discounts <em>repeated</em> input; RTK shrinks <em>fresh</em> input (command output) that caching can't touch; the Batch API halves non-urgent jobs. They operate on different parts of the bill, so you can run all three at once. For an agent that constantly shells out to build and test, a tool-output proxy is often the biggest win of the three — that noise is pure, uncacheable, full-price input.</div>
 
         <h2 id="claude-code">Tool 1 — Claude (Claude Code)</h2>
 
@@ -345,7 +390,8 @@ uv tool install aider-chat</code></pre>
         <table class="papers">
           <thead><tr><th>Tactic</th><th>Why it saves</th></tr></thead>
           <tbody>
-            <tr><td class="p"><strong>1. Exploit the cache</strong></td><td>Stable-first prompts + identical context = 50–90% off repeated input. The biggest single lever.</td></tr>
+            <tr><td class="p"><strong>1. Exploit the cache</strong></td><td>Stable-first prompts + identical context = 50–90% off repeated input. The biggest single lever for repeated context.</td></tr>
+            <tr><td class="p"><strong>1b. Proxy your tool output</strong></td><td>RTK-style command compression = 60–90% off the uncacheable command-output firehose. The biggest lever for shell-heavy agents.</td></tr>
             <tr><td class="p"><strong>2. Prune the window</strong></td><td><code>/compact</code> and <code>/clear</code>. Every token in the window is re-paid every turn; a bloated session multiplies cost on each message.</td></tr>
             <tr><td class="p"><strong>3. Right-size the model</strong></td><td>Cheap model for routine work, expensive model only for hard reasoning. Often a 5–10× per-token difference.</td></tr>
             <tr><td class="p"><strong>4. Cap the output</strong></td><td>Output is 3–5× input. Ask for diffs not whole files, summaries not transcripts, "just the function" not the explanation.</td></tr>
@@ -402,8 +448,12 @@ npm install -g @openai/codex                         # or npm (scoped name!)
 brew install copilot-cli                             # Homebrew
 npm install -g @github/copilot                       # or npm
 
+# ── RTK (tool-output proxy) ──
+brew install rtk                                     # Homebrew
+rtk init -g                                          # wire into Claude Code / Copilot
+
 # sanity check
-claude --version &amp;&amp; codex --version &amp;&amp; copilot --version</code></pre>
+claude --version &amp;&amp; codex --version &amp;&amp; copilot --version &amp;&amp; rtk --version</code></pre>
 
         <p>If a command isn't found after install, your shell PATH likely doesn't include the install location yet — restart the terminal, or add the tool's bin directory (often <code>~/.local/bin</code> or the npm global bin) to your <code>PATH</code> in <code>~/.zshrc</code>.</p>
 
@@ -438,7 +488,7 @@ claude --version &amp;&amp; codex --version &amp;&amp; copilot --version</code><
 
         <ul>
           <li><strong>Four prices, not one.</strong> Output is 3–5× input; cached input is 0.1–0.5× input. Steer work toward the cheap quadrants.</li>
-          <li><strong>Caching is the big lever.</strong> Stable-first prompts + identical context = 50–90% off repeated input, automatically on OpenAI and managed-for-you on Claude Code. Real teams cut bills 60–90% with it alone.</li>
+          <li><strong>Three levers do the heavy lifting.</strong> Caching (50–90% off repeated context), the Batch API (50% off non-urgent jobs), and a tool-output proxy like RTK (60–90% off command output). They hit different parts of the bill — run all three.</li>
           <li><strong>Never break the prefix.</strong> One changing token near the top busts the whole cache. Keep early content byte-stable; push volatile values to the end.</li>
           <li><strong>Prune relentlessly.</strong> <code>/compact</code> at breakpoints, <code>/clear</code> on task-switch. The window is re-paid every turn.</li>
           <li><strong>Right-size everything.</strong> Cheap model for routine work, tight output, specific asks, junk excluded from context, verbose work in subagents.</li>
@@ -455,6 +505,7 @@ claude --version &amp;&amp; codex --version &amp;&amp; copilot --version</code><
           <li><a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">Manage costs effectively</a> <span>· Claude Code docs</span></li>
           <li><a href="https://developers.openai.com/codex/cli" target="_blank" rel="noopener">Codex CLI</a> <span>· OpenAI — install &amp; usage</span></li>
           <li><a href="https://github.com/github/copilot-cli" target="_blank" rel="noopener">GitHub Copilot CLI</a> <span>· install &amp; usage</span></li>
+          <li><a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">RTK — Rust Token Killer</a> <span>· tool-output proxy, 60–90% off dev commands</span></li>
         </ul>
 
         <h2 id="extra">Extra reads</h2>

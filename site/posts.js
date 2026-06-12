@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "llm-token-cache-optimization-guide",
+    title: "Save Tokens & Cache on Every LLM — The Complete Guide.",
+    date: "Jun 11, 2026",
+    cat: "devops",
+    tags: ["devops", "llm", "tokens", "claude-code", "cost-optimization"],
+    time: 24,
+    words: 4800,
+    excerpt: "The complete, current guide to spending fewer tokens across Claude (Claude Code), OpenAI Codex, and GitHub Copilot — plus the one lever that beats them all: prompt caching, which cuts repeated-context cost 50–90%. The billing model that actually matters, a provider-by-provider cache cheat-sheet, cache-friendly prompting rules, the Batch API half-price lever, per-tool token tactics, cache-busting mistakes, and copy-paste macOS install commands for every CLI. Real numbers — teams have cut bills from $720 to $72 a month.",
+  },
+  {
     slug: "design-cloud-1-architecture-styles",
     title: "Cloud Architecture Styles — The Blueprints.",
     date: "Jun 10, 2026",

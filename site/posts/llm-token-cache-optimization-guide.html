@@ -73,7 +73,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Jun 11, 2026 · devops · 27 min read · 5400 words</p>
+        <p class="meta">Jun 11, 2026 · devops · 31 min read · 6200 words</p>
         <h1>Save tokens &amp; cache on every LLM — the complete guide.</h1>
         <div class="tag-row">
           <span class="tag fill">devops</span>
@@ -86,7 +86,7 @@
 
       <div class="post-body">
 
-        <p class="bm-tldr">Every token you send and receive costs money and eats your context window. This is the complete, current guide to spending fewer of them across <strong>Claude (Claude Code), OpenAI Codex, and GitHub Copilot</strong> — and the three levers that beat everything else: <strong>prompt caching</strong> (50–90% off repeated context), the <strong>Batch API</strong> (50% off non-urgent jobs), and a <strong>tool-output proxy like RTK</strong> (60–90% off the command-output firehose). You'll get the billing model that actually matters, a provider-by-provider cache cheat-sheet, cache-friendly prompting rules, per-tool token tactics, and copy-paste <strong>macOS install commands</strong> for every CLI — Claude Code, Codex, Copilot, and RTK. Real numbers throughout; people have cut bills from $720 to $72 a month with the cache alone.</p>
+        <p class="bm-tldr">Every token you send and receive costs money and eats your context window. This is the complete, current guide to spending fewer of them across <strong>Claude (Claude Code), OpenAI Codex, and GitHub Copilot</strong> — and the three levers that beat everything else: <strong>prompt caching</strong> (50–90% off repeated context), the <strong>Batch API</strong> (50% off non-urgent jobs), and a <strong>tool-output proxy like RTK</strong> (60–90% off the command-output firehose). Plus the trending 2026 toolbelt — <strong>Caveman</strong> (output), <strong>Graphify</strong> (code exploration), <strong>Headroom</strong> (logs/RAG), memory layers — each attacking a different token sink. You'll get the billing model that actually matters, a provider-by-provider cache cheat-sheet, cache-friendly prompting rules, per-tool token tactics, and copy-paste <strong>macOS install commands</strong> for every CLI. Real numbers throughout; people have cut bills from $720 to $72 a month with the cache alone.</p>
 
         <p>If you use AI coding tools seriously, two things creep up on you: the <strong>bill</strong> (or the rate-limit wall on a subscription) and the <strong>context window filling up</strong> until the model gets dumber and slower. Both have the same root cause — tokens. You pay per token in, per token out, and every token in the window is re-read on every turn. Most people just throw more money or bigger models at it. The people who actually run these tools cheaply do something smarter: they manage tokens deliberately and they exploit the cache.</p>
 
@@ -268,6 +268,49 @@ rtk gain --graph                # last-30-days ASCII graph
 rtk discover                    # find commands you're not yet optimizing</code></pre>
 
         <div class="bm-fix"><strong>Why this stacks with everything else:</strong> caching discounts <em>repeated</em> input; RTK shrinks <em>fresh</em> input (command output) that caching can't touch; the Batch API halves non-urgent jobs. They operate on different parts of the bill, so you can run all three at once. For an agent that constantly shells out to build and test, a tool-output proxy is often the biggest win of the three — that noise is pure, uncacheable, full-price input.</div>
+
+        <h2 id="toolbelt">The trending token-saving toolbelt (2026)</h2>
+
+        <p>RTK isn't alone. Through 2026 a whole wave of tools appeared, and the smart way to think about them is: <strong>each one attacks a different token sink.</strong> Your context bill is the sum of several streams — code exploration, command output, model output, conversation memory — and there's now a specialised tool for each. They <em>stack</em>, because they shrink different streams. Here's the map:</p>
+
+        <table class="papers">
+          <thead><tr><th>Tool</th><th>Attacks which token sink</th><th>Claimed savings</th><th>Form</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>RTK</strong></td><td>dev-command output (git, test, build)</td><td>60–90%</td><td>CLI proxy + shell hook</td></tr>
+            <tr><td class="p"><strong>Headroom</strong></td><td>tool output, logs, files, RAG chunks</td><td>60–95%</td><td>library / proxy / MCP server</td></tr>
+            <tr><td class="p"><strong>Caveman</strong></td><td>the model's <em>output</em> + memory files</td><td>~65% out, ~46% memory</td><td>agent skill / plugin</td></tr>
+            <tr><td class="p"><strong>Graphify</strong></td><td>code exploration (grepping/reading files)</td><td>up to ~71× per lookup</td><td>build-time graph + hook</td></tr>
+            <tr><td class="p"><strong>Mem0 / Zep</strong></td><td>conversation history / long-term memory</td><td>~40%</td><td>memory layer</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Caveman — compress the model's output</h3>
+        <p>Output is the priciest token type (3–5× input), and <a href="https://github.com/JuliusBrussee/caveman" target="_blank" rel="noopener">Caveman</a> goes straight at it: it makes the agent answer in a terse, telegraphic "caveman" style — full technical accuracy, far fewer words. Benchmarked across 10 dev tasks it cut <strong>~65% of output tokens</strong> (range 22–87%), and its <code>caveman-compress</code> rewrites your <code>CLAUDE.md</code> into the same compressed style for a persistent <strong>~46% input</strong> saving on the memory file. A documented bonus: forcing brevity actually <em>improved</em> accuracy by 26 points on some benchmarks — concise models wander less.</p>
+        <pre><code class="language-bash"># install (Node >= 18) — Claude Code / Codex / Gemini auto-activate
+curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/install.sh | bash
+
+# usage, inside your agent:
+#   /caveman full          → compress replies (levels: lite | full | ultra | wenyan)
+#   /caveman-compress CLAUDE.md   → shrink the memory file
+#   /caveman-stats         → measured tokens + USD saved this session
+#   "normal mode"          → turn it off</code></pre>
+        <p>It auto-activates on Claude Code, Codex, and Gemini; Cursor/Windsurf/Cline/Copilot get it via a <code>--with-init</code> rule file; 30+ other agents can trigger it manually. <em>(Full disclosure: this very guide was drafted with caveman mode running.)</em></p>
+
+        <h3>Graphify — explore code without grepping every file</h3>
+        <p>One of the biggest hidden input costs in agentic coding is <em>exploration</em>: to answer "where is X handled?", an agent greps and reads file after file, dumping each into context. <a href="https://github.com/safishamsi/graphify" target="_blank" rel="noopener">Graphify</a> attacks that by building a <strong>queryable knowledge graph</strong> of your codebase up front — app code, SQL schemas, infra, even docs — so the agent looks up the answer in a compact graph instead of reading the whole tree. The measured difference is dramatic: a lookup costs roughly <strong>1.7K tokens versus ~123K naively — about a 71× reduction</strong> on exploration.</p>
+        <pre><code class="language-bash"># install (PyPI package name is graphifyy — double y)
+uv tool install graphifyy
+graphify install        # wires the /graphify command + hook into your agent
+# then, inside the agent:  /graphify  "where is auth handled?"</code></pre>
+        <p>It's a build-time tool: it produces a <code>GRAPH_REPORT.md</code> and a hook injection that Claude reads (an MCP version is on the roadmap). Works across Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, and more.</p>
+
+        <h3>Headroom — a general compression layer (with MCP)</h3>
+        <p><strong>Headroom</strong> is the broader cousin of RTK: a compression layer that squeezes <strong>tool outputs, system logs, files, and RAG chunks</strong> before they reach the model, reporting <strong>60–95%</strong> reduction with the answers kept just as accurate. It blew up in June 2026 (10K+ GitHub stars) largely because it ships in three forms — a <strong>library</strong>, a <strong>proxy</strong>, and an <strong>MCP server</strong> — so you can wire it into any MCP-capable agent (Claude Code, Cursor, etc.) without changing your code. Use RTK for shell commands specifically; reach for Headroom when you also want to compress logs, large files, and RAG context through one layer.</p>
+
+        <h3>Memory layers — Mem0, Zep</h3>
+        <p>For long-running assistants (not one-off coding sessions), the conversation history itself becomes the cost — it's re-sent every turn and only grows. Memory platforms like <strong>Mem0</strong> and <strong>Zep</strong> replace raw history with <em>structured retrieval</em>: they extract discrete facts and serve back only what the current task needs, often using a knowledge graph of entities and relationships. Reported savings land around <strong>40%</strong> at equal quality. Overkill for a quick coding task; valuable for a persistent agent that accumulates context over days.</p>
+
+        <div class="bm-note"><strong>Stack them by sink.</strong> These aren't competitors — they compress different streams, so a maxed-out setup runs several at once: <strong>Graphify</strong> for exploration input, <strong>RTK</strong> or <strong>Headroom</strong> for command/tool/log output, <strong>Caveman</strong> for the model's output and memory file, a <strong>memory layer</strong> for long-term history, and <strong>prompt caching</strong> underneath it all for the repeated prefix. Each shaves a different slice; together they routinely get teams past 90% total reduction.</div>
 
         <h2 id="claude-code">Tool 1 — Claude (Claude Code)</h2>
 
@@ -506,6 +549,8 @@ claude --version &amp;&amp; codex --version &amp;&amp; copilot --version &amp;&a
           <li><a href="https://developers.openai.com/codex/cli" target="_blank" rel="noopener">Codex CLI</a> <span>· OpenAI — install &amp; usage</span></li>
           <li><a href="https://github.com/github/copilot-cli" target="_blank" rel="noopener">GitHub Copilot CLI</a> <span>· install &amp; usage</span></li>
           <li><a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">RTK — Rust Token Killer</a> <span>· tool-output proxy, 60–90% off dev commands</span></li>
+          <li><a href="https://github.com/JuliusBrussee/caveman" target="_blank" rel="noopener">Caveman</a> <span>· output + memory-file compression skill (~65% output)</span></li>
+          <li><a href="https://github.com/safishamsi/graphify" target="_blank" rel="noopener">Graphify</a> <span>· code-knowledge-graph exploration (~71× per lookup)</span></li>
         </ul>
 
         <h2 id="extra">Extra reads</h2>

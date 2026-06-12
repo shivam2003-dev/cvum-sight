@@ -21,9 +21,9 @@ const POSTS = [
     date: "Jun 11, 2026",
     cat: "devops",
     tags: ["devops", "llm", "tokens", "claude-code", "cost-optimization"],
-    time: 27,
-    words: 5400,
-    excerpt: "The complete, current guide to spending fewer tokens across Claude Code, OpenAI Codex, and GitHub Copilot — plus the three levers that beat everything else: prompt caching (50–90% off repeated context), the Batch API (50% off non-urgent jobs), and a tool-output proxy like RTK (60–90% off the command-output firehose). The billing model that matters, a provider cache cheat-sheet, cache-busting mistakes, per-tool tactics, and copy-paste macOS install commands for every CLI. Real numbers — teams have cut bills from $720 to $72 a month.",
+    time: 31,
+    words: 6200,
+    excerpt: "The complete, current guide to spending fewer tokens across Claude Code, OpenAI Codex, and GitHub Copilot — plus the three levers that beat everything else (prompt caching, the Batch API, and a tool-output proxy like RTK) and the trending 2026 toolbelt: Caveman for output, Graphify for code exploration (~71× per lookup), Headroom for logs/RAG, and memory layers — each attacking a different token sink. The billing model that matters, a provider cache cheat-sheet, cache-busting mistakes, per-tool tactics, and copy-paste macOS install commands for every tool. Real numbers — teams have cut bills from $720 to $72 a month.",
   },
   {
     slug: "design-cloud-1-architecture-styles",

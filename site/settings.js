@@ -28,6 +28,10 @@
     { id: "scroll-normal", label: "Scroll" },
     { id: "scroll-paged",  label: "Paged" }
   ];
+  var VIEWS = [
+    { id: "classic", label: "Classic" },
+    { id: "modern",  label: "Modern" }
+  ];
 
   var hasArticle = !!document.querySelector(".post-body");
 
@@ -35,6 +39,9 @@
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
   var savedSpace = localStorage.getItem("cvam-ls")    || "ls-cozy";
   var savedScroll = localStorage.getItem("cvam-scroll") || "scroll-normal";
+  var savedView = localStorage.getItem("cvam-view") || "classic";
+  // head bootstrap also applies this pre-paint; keep in sync here
+  document.documentElement.classList.toggle("view-modern", savedView === "modern");
   // line width now adaptive (CSS clamp) — clear any legacy override
   localStorage.removeItem("cvam-lw");
   document.documentElement.classList.remove("lw-narrow", "lw-wide");
@@ -74,6 +81,11 @@
 
   var html =
     '<p class="settings-panel-title">// reader settings</p>' +
+    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
+      '<label class="seg-label">Layout</label>' +
+      '<div class="seg-row view-row">' + seg("view-btn", "data-view", VIEWS, savedView) + '</div>' +
+    '</div>' +
+    '<div class="settings-divider"></div>' +
     '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">' +
       '<label>Theme</label>' +
       '<div class="theme-picker">' + themeSwatches + '</div>' +
@@ -116,6 +128,18 @@
   btn.addEventListener("click", function () { panel.classList.toggle("open"); });
   document.addEventListener("click", function (e) {
     if (!panel.contains(e.target) && e.target !== btn) { panel.classList.remove("open"); }
+  });
+
+  // ── layout view (classic / modern) ──
+  var viewBtns = panel.querySelectorAll(".view-btn");
+  viewBtns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      var view = this.getAttribute("data-view");
+      document.documentElement.classList.toggle("view-modern", view === "modern");
+      localStorage.setItem("cvam-view", view);
+      viewBtns.forEach(function (x) { x.classList.remove("active"); });
+      this.classList.add("active");
+    });
   });
 
   // ── font style ──

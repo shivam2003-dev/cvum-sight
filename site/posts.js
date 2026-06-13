@@ -16,6 +16,54 @@
 
 const POSTS = [
   {
+    slug: "ycpc-6-protein-world-model",
+    title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
+    date: "Jun 13, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "proteins", "world-models", "biology"],
+    time: 7,
+    words: 1400,
+    excerpt: "YC Paper Club Part 2 opens with ESM (Biohub/EvolutionaryScale): train a language model on 2.8B protein sequences and a world model of biology materializes — predicting structure and designing binders that work in the lab. The bitter lesson, arriving for proteins.",
+    series: "yc-paper-club",
+    seriesNum: "6"
+  },
+  {
+    slug: "ycpc-7-self-guided-self-play",
+    title: "Scaling Self-Play with Self-Guidance — Stopping the Curriculum From Cheating.",
+    date: "Jun 13, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "reinforcement-learning", "self-play", "reasoning"],
+    time: 6,
+    words: 1150,
+    excerpt: "LLM self-play plateaus because the problem-generator reward-hacks into hard-but-useless problems. SGS adds a third role — a Guide that scores problems for relevance and cleanliness — and a 7B model beats a 671B baseline. Quality gating, not size, was the bottleneck.",
+    series: "yc-paper-club",
+    seriesNum: "7"
+  },
+  {
+    slug: "ycpc-8-stream-rag",
+    title: "Stream RAG — Searching While You're Still Speaking.",
+    date: "Jun 13, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "speech", "rag", "agents"],
+    time: 6,
+    words: 1150,
+    excerpt: "Voice assistants are either fast-but-hallucinating or grounded-but-laggy. Stream RAG fires the tool call while you're still talking — hiding retrieval latency behind your own speech — for +200% relative QA accuracy and 20% less tool latency. Speculative decoding's instinct, applied to tool use.",
+    series: "yc-paper-club",
+    seriesNum: "8"
+  },
+  {
+    slug: "ycpc-9-lean-for-science",
+    title: "Lean for Science — Proofs a Machine Can Check, and Why AI Needs Them.",
+    date: "Jun 13, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "formal-methods", "lean", "theorem-proving"],
+    time: 7,
+    words: 1300,
+    excerpt: "Machine-checked formal proofs are about to reshape math, AI, and scientific computing. The key for AI: a proof checker is an incorruptible reward — you can't hallucinate a proof past it. The trust substrate under self-play and AlphaProof, closing Part 2.",
+    series: "yc-paper-club",
+    seriesNum: "9"
+  },
+  {
     slug: "llm-token-cache-optimization-guide",
     title: "Save Tokens & Cache on Every LLM — The Complete Guide.",
     date: "Jun 11, 2026",

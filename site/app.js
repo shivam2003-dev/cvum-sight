@@ -211,11 +211,17 @@
         const p = entry.first;
         const count = entry.count;
         const name = seriesNames[item.key] || (item.key.charAt(0).toUpperCase() + item.key.slice(1));
-        // link to the FIRST article of the series
+        // link to the series hub page when one exists, else the first article
+        const seriesHubs = {
+          deepseek: "series-deepseek.html",
+          "ai-tools": "series-ai-tools.html",
+          "yc-paper-club": "series-yc-paper-club.html"
+        };
+        const href = seriesHubs[item.key] || `posts/${escapeHtml(p.slug)}.html`;
         return `<li>
           <span class="meta">${escapeHtml(p.date)}</span>
           <span class="tag fill">series</span>
-          <a href="posts/${escapeHtml(p.slug)}.html">${escapeHtml(name)} Series</a>
+          <a href="${href}">${escapeHtml(name)} Series</a>
           <span class="meta">${count} article${count !== 1 ? "s" : ""}</span>
         </li>`;
       } else {

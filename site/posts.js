@@ -172,6 +172,18 @@ const POSTS = [
     seriesNum: "12"
   },
   {
+    slug: "kcm26-serving-and-scaling",
+    title: "Plug In and Scale — Serving LLM Models on Kubernetes, Made Simple.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "llm-serving", "vllm", "scaling"],
+    time: 22,
+    words: 5000,
+    excerpt: "KubeCon Mumbai 2026 deep dive 13. Shrinidhi Venkataraman & Nithin Rajan (AstraZeneca) on serving LLMs at scale: inference vs serving, the runtimes (vLLM/SGLang/Triton), aggregated vs disaggregated serving, deploying the vLLM Production Stack via Helm, GPU-saving sleep mode and KEDA scale-to-zero, NVIDIA Dynamo, benchmarking with AIPerf (70K tokens/sec, 0% errors), and full Prometheus/Grafana fleet observability.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "13"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

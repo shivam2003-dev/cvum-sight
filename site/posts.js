@@ -52,6 +52,18 @@ const POSTS = [
     seriesNum: "2"
   },
   {
+    slug: "kcm26-fidelity-platform",
+    title: "When Kafka Goes Cloud Native — Observability That Actually Works.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "kafka", "observability", "opentelemetry"],
+    time: 20,
+    words: 4500,
+    excerpt: "KubeCon Mumbai 2026 deep dive 03. Mary Vinothini S & Roopadharsini K (Fidelity Investments) on making Kafka-on-Kubernetes actually observable: monitoring vs observability, the three signals, a vendor-agnostic OpenTelemetry pipeline, reading ISR and the log patterns that predict incidents, the metric-cardinality trap (353 topics × per-partition labels), and a five-step SRE-and-compliance-first modernisation journey.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "3"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

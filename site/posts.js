@@ -64,6 +64,18 @@ const POSTS = [
     seriesNum: "3"
   },
   {
+    slug: "kcm26-kubevela",
+    title: "KubeVela — One Interface To Rule Them All.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "kubevela", "platform-engineering", "oam"],
+    time: 21,
+    words: 4800,
+    excerpt: "KubeCon Mumbai 2026 deep dive 04. Gowtham S & Jerrin Francis (Guidewire) on taming the Kubernetes complexity iceberg with the Open Application Model and KubeVela: the two-plane problem, OAM's developer/platform split, KubeVela's six-noun grammar (Application/Component/Trait/Workflow/Policy/Addon), killing the Terraform state file with Crossplane, and one manifest that deploys a web service — or an llm-d model with GPU traits.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "4"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

@@ -40,6 +40,18 @@ const POSTS = [
     seriesNum: "1"
   },
   {
+    slug: "kcm26-shared-first-platforms",
+    title: "Shared-First Kubernetes Platforms for Life-Critical Workloads.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "multi-tenancy", "platform-engineering", "isolation"],
+    time: 21,
+    words: 4800,
+    excerpt: "KubeCon Mumbai 2026 deep dive 02. Motorola Solutions' panel on running 911 dispatch and emergency systems on a shared-first Kubernetes platform: shared control plane + isolated data plane via taints and a toleration-injecting webhook, dedicated ingress per app, a DNS collision-prevention pipeline, hub-and-spoke cert automation, four-axis autoscaling — and a 50–70% fleet-wide cost saving over one-cluster-per-app silos.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "2"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

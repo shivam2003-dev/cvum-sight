@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "0"
   },
   {
+    slug: "kcm26-rearchitecting-monoliths",
+    title: "Re-Architecting Monoliths into Kubernetes Microservices, at Million-User Scale.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "microservices", "migration", "high-availability"],
+    time: 22,
+    words: 4900,
+    excerpt: "KubeCon Mumbai 2026 deep dive 01. Aditya Sharma's 10+ year war diary of evolving Lumenore from four bare-metal servers to a portable, multi-cloud, GitOps Kubernetes platform serving millions — containerization, the monolith decomposition, the single-master outage that forced HA, Cilium cluster mesh portability, four-layer security, and the Argo CD + Istio + OpenTelemetry dream stack. Distilled into a 7-stage migration playbook.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "1"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

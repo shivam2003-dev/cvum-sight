@@ -184,6 +184,18 @@ const POSTS = [
     seriesNum: "13"
   },
   {
+    slug: "kcm26-lean-observability",
+    title: "The Lean Observability Stack — Quick, Native Telemetry for a Service Mesh.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "istio", "observability", "service-mesh"],
+    time: 20,
+    words: 4600,
+    excerpt: "KubeCon Mumbai 2026 deep dive 14. Arpitha Malavalli (Google) on building a full observability stack from what Istio's sidecars already emit: the in-Envoy C++ stats filter, the aggregated metrics and their source/destination labels, golden signals and templateable SLOs with zero app changes, opting into granular Envoy stats, taming cardinality with metric_relabel_configs, and shipping Envoy access logs via OTLP to an OpenTelemetry Collector.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "14"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

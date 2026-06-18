@@ -136,6 +136,18 @@ const POSTS = [
     seriesNum: "9"
   },
   {
+    slug: "kcm26-agentic-ai-systems",
+    title: "Building & Orchestrating Production-Ready Agentic AI Systems.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "agentic-ai", "langchain4j", "orchestration"],
+    time: 25,
+    words: 5600,
+    excerpt: "KubeCon Mumbai 2026 deep dive 10. Kevin Dubois & Daniel Oh (IBM/Red Hat) map the path from one LLM call to a production agentic system with LangChain4j-agentic: an AI service is a model plus scaffolding, agents are services that collaborate, the four orchestration patterns (sequence/loop/parallel/routing), the shared AgenticScope, the autonomous supervisor pattern, pluggable planners, and why agentic apps are mostly just regular Kubernetes apps.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "10"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

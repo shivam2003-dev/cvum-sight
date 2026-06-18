@@ -148,6 +148,18 @@ const POSTS = [
     seriesNum: "10"
   },
   {
+    slug: "kcm26-what-did-my-agent-do",
+    title: "What Did My Agent Do? — Observability and Accountability for AI Agents.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "observability", "ai-agents", "opentelemetry"],
+    time: 21,
+    words: 4800,
+    excerpt: "KubeCon Mumbai 2026 deep dive 11. Ishan Jain (Grafana Labs) on seeing inside AI agents: why LLMs need observability (black-box, stochastic, costly), the trace as the hero, spans and token-usage attributes, single-turn vs multi-turn primitives, OpenTelemetry's GenAI semantic conventions, instrumenting from auto-flags to OpenLIT to zero-code eBPF (OBI), and evaluating reasoning rather than code paths.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "11"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

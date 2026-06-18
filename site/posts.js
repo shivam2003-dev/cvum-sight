@@ -76,6 +76,18 @@ const POSTS = [
     seriesNum: "4"
   },
   {
+    slug: "kcm26-beyond-primary-cr",
+    title: "Beyond the Primary CR — What and What Not to Watch in Kubernetes Operators.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "operators", "controller-runtime", "go"],
+    time: 22,
+    words: 5000,
+    excerpt: "KubeCon Mumbai 2026 deep dive 05. Guna K Kambalimath & Kishen V (IBM) go under the hood of Kubernetes operators: the controller-runtime cache, narrowing the watch with label/field selectors, namespace scoping, sync period and predicates, benchmarked heap savings, the goroutine bill of extra watches, the unclosed-client leak that scales with CRs, and shift-left security against over-privileged controllers with Validating Admission Policies.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "5"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

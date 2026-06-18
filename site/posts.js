@@ -112,6 +112,18 @@ const POSTS = [
     seriesNum: "7"
   },
   {
+    slug: "kcm26-commit-then-disclose",
+    title: "Commit-Then-Disclose — Proving an SBOM Is Honest Without Publishing It.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "sbom", "supply-chain", "cryptography"],
+    time: 24,
+    words: 5400,
+    excerpt: "KubeCon Mumbai 2026 deep dive 08. A cryptographic commitment scheme that resolves the SBOM transparency-vs-IP tension: a public Merkle root proving integrity, a commitment root enabling selective disclosure, per-component hash+nonce envelopes, 481-byte proofs for 10K components, re-randomization for unlinkable audits, and why plain SHA-256 beats zero-knowledge proofs in CI/CD — plugged into syft, grype, cosign, in-toto, TUF, and OPA.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "8"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

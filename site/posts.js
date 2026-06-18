@@ -160,6 +160,18 @@ const POSTS = [
     seriesNum: "11"
   },
   {
+    slug: "kcm26-zero-gpu",
+    title: "Zero-GPU Autopilot — An Autonomous SRE That Runs Entirely on CPU.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "ai-ops", "vllm", "gateway-api"],
+    time: 20,
+    words: 4600,
+    excerpt: "KubeCon Mumbai 2026 deep dive 12. Ashok M (DigitalOcean) & Dillibabu Sampath (Wells Fargo) build a self-healing cluster autopilot with zero dedicated GPUs and zero external AI APIs: a CPU-only vLLM (Intel backends + PagedAttention) powering Kagent (the reasoning brain, MCP + context compaction + bounded flow) and Kgateway (the Gateway API guardrail), in a closed loop that separates the agent's intention from deterministic enforcement — all inside the VPC.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "12"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

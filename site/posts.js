@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "kubecon-mumbai-2026-day-1",
+    title: "KubeCon India 2026, Mumbai — Day 1.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "cloud-native", "kubernetes", "mumbai-2026"],
+    time: 19,
+    words: 4200,
+    excerpt: "Field report and deep-dive index for Day 1 of KubeCon + CloudNativeCon India 2026 in Mumbai. What the keynotes signalled (sovereign AI, population-scale, GPUs), the four themes of the day, and a curated index of 17 afternoon talks — each getting its own talk-by-talk deep dive in the series.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "0"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",
@@ -1006,6 +1018,7 @@ const TOPICS = [
   { id: "security",   name: "Security",    desc: "Threat models, hardening, and the stuff that keeps things safe." },
   { id: "resources",  name: "Resources",   desc: "Books, papers, courses, and tools I actually use." },
   { id: "ai-native",  name: "AI Native",   desc: "The cloud-native AI stack, tool by tool — crash courses across agents, infra, data, and inference." },
+  { id: "conferences",name: "Conferences", desc: "Notes, deep dives, and field reports from cloud-native conferences — talk by talk." },
 ];
 
 /*

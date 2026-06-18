@@ -100,6 +100,18 @@ const POSTS = [
     seriesNum: "6"
   },
   {
+    slug: "kcm26-root-without-risk",
+    title: "Root Without Risk — How User Namespaces Finally Made Container Root Safe.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "security", "user-namespaces", "container-isolation"],
+    time: 23,
+    words: 5100,
+    excerpt: "KubeCon Mumbai 2026 deep dive 07. Sumir Broota on KEP-127 (Kubernetes user namespaces), GA in v1.36: why root in the container is root on the host by default, how hostUsers:false remaps UID 0 to an unprivileged host UID, the idmap-mount breakthrough that cut startup ~97%, the nine-year journey across 11 releases and 3 runtimes, and the full path from PodSpec to mount_setattr(MOUNT_ATTR_IDMAP).",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "7"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

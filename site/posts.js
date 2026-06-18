@@ -124,6 +124,18 @@ const POSTS = [
     seriesNum: "8"
   },
   {
+    slug: "kcm26-keycloak-federated-auth",
+    title: "Keycloak Federated Client Authentication — No More Secrets.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "keycloak", "identity", "spiffe"],
+    time: 20,
+    words: 4700,
+    excerpt: "KubeCon Mumbai 2026 deep dive 09. Rishabh Singh (Red Hat) on Keycloak 26.6's federated client authentication: replacing stored OAuth client secrets with ephemeral, platform-issued workload identity — a Kubernetes service-account token or SPIFFE JWT-SVID validated against the cluster JWKS. The shifting trust boundary, the 'Signed JWT — Federated' authenticator, projected-token audience binding, and a secretless before/after.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "9"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

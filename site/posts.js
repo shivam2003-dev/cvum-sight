@@ -88,6 +88,18 @@ const POSTS = [
     seriesNum: "5"
   },
   {
+    slug: "kcm26-kyverno-five",
+    title: "The Kyverno Five — Policy-as-Code from Check-in to Turnaround.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "kyverno", "policy-as-code", "security"],
+    time: 19,
+    words: 4400,
+    excerpt: "KubeCon Mumbai 2026 deep dive 06. Neha Jaju (Nirmata) maps the five Kyverno CEL policy types to an airport crew: MutatingPolicy (check-in, shape resources), ImageValidatingPolicy (security, verify signatures with keyless Cosign), ValidatingPolicy (boarding gate, allow/deny), GeneratingPolicy (ground crew, provision companions on new namespaces), and DeletingPolicy (turnaround, scheduled cleanup) — all in CEL, compiling to native admission control.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "6"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

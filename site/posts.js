@@ -196,6 +196,18 @@ const POSTS = [
     seriesNum: "14"
   },
   {
+    slug: "kcm26-kubeedge-deepdive",
+    title: "KubeEdge Deep Dive — Extending Kubernetes to the Edge.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "kubeedge", "edge-computing", "iot"],
+    time: 23,
+    words: 5200,
+    excerpt: "KubeCon Mumbai 2026 deep dive 15. Ronak Raj (CNCF KubeEdge) tours the CNCF-graduated edge platform through a dumb-camera-to-smart use case: CloudCore/EdgeCore architecture, offline autonomy via the local Meta Server cache + lite-kubelet, the Device Management Interface (DMI) turning IoT devices into Kubernetes CRDs, EdgeMesh connectivity, and edge AI with Sedna and Ianvs — down to orchestrating fleets of cloud-native robots.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "15"
+  },
+  {
     slug: "ycpc-6-protein-world-model",
     title: "A World Model of Protein Biology — When Language Modeling Learns Biology.",
     date: "Jun 13, 2026",

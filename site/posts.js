@@ -196,6 +196,18 @@ const POSTS = [
     seriesNum: "14"
   },
   {
+    slug: "kcm26-rook-maintainers",
+    title: "Rook: Storage for Kubernetes, from the Maintainers.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "rook", "ceph", "storage"],
+    time: 24,
+    words: 5200,
+    excerpt: "KubeCon Mumbai 2026 deep dive 16. The Rook maintainers (Deepika Upadhyay, Clyso; Madhu Rajanna, Rewant Soni, Malay Parida, Pratik Surve, IBM) walk the CNCF-graduated operator that runs Ceph inside Kubernetes: the three-layer architecture (Rook operator → Ceph-CSI → Ceph data plane), new features in v1.20 (NVMe-oF gateway, RGW accounts, the standalone Ceph-CSI operator, two-node clusters), erasure coding for ~50% storage savings with 'Fast EC' in Ceph v20 Tentacle, and end-to-end application disaster recovery via OCM, Ramen, and RBD mirroring.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "16"
+  },
+  {
     slug: "kcm26-kubeedge-deepdive",
     title: "KubeEdge Deep Dive — Extending Kubernetes to the Edge.",
     date: "Jun 18, 2026",

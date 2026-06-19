@@ -196,6 +196,18 @@ const POSTS = [
     seriesNum: "14"
   },
   {
+    slug: "kcm26-slides-export",
+    title: "The Invisible Tax — How Data Format Conversions Drive Up Telemetry Pipeline Costs.",
+    date: "Jun 18, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "opentelemetry", "observability", "apache-arrow"],
+    time: 22,
+    words: 4800,
+    excerpt: "KubeCon Mumbai 2026 deep dive 17 — the series finale. Cijo Thomas (Microsoft) names the CPU tax nobody budgets for: telemetry pipelines burn most of their cycles just converting data between formats at every boundary, because OTLP protobuf is a wire format that's nobody's in-memory home. A rename costs 30 ns; decode/walk/re-encode/GC is paid on every batch even in passthrough. The fix — a shared, columnar, language-neutral in-memory format via Apache Arrow (OTAP) and the new Dataflow Engine — delivers ~20× throughput on the same cores and near-free transforms.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "17"
+  },
+  {
     slug: "kcm26-rook-maintainers",
     title: "Rook: Storage for Kubernetes, from the Maintainers.",
     date: "Jun 18, 2026",

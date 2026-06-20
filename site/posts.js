@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-gpu-hunter",
+    title: "GPU Hunter — Architecting Global GPU Availability With MultiKueue.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "kueue", "gpu", "scheduling"],
+    time: 23,
+    words: 5100,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Kishore Jagannath & Ram J A (Google) treat a fleet of clusters as one global GPU pool using Kueue (ResourceFlavor/ClusterQueue/LocalQueue + quotas) and MultiKueue's manager-worker meta-scheduler. ProvisioningRequest bridges logical quota to physical nodes via the Cluster Autoscaler — and the talk's honest centerpiece is the SchedulingGated deadlock, where the manager pins a job to an exhausted region while idle GPUs sit unused next door.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.1"
+  },
+  {
     slug: "kubecon-mumbai-2026-day-1",
     title: "KubeCon India 2026, Mumbai — Day 1.",
     date: "Jun 18, 2026",

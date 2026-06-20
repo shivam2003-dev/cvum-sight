@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPU Hunter — Global GPU Availability with MultiKueue — KubeCon Mumbai 2026 Day 2 Deep Dive — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  pre.code{background:#10221f;color:#cfe;border-radius:8px;padding:14px 16px;overflow:auto;font-size:.82rem;line-height:1.5;margin:18px 0}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  table.papers td.p code{background:rgba(148,138,120,.16);padding:1px 5px;border-radius:3px;font-size:.85em}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">KubeCon India 2026 (Mumbai) — Day 2 Deep Dives</p>
+        <p class="series-banner-title">GPU Hunter — Architecting Global GPU Availability with MultiKueue</p>
+        <p class="series-banner-meta">Day 2 · AI serving, gateways &amp; agents · from the uploaded deck</p>
+        <div class="series-banner-nav">
+          <a href="kubecon-mumbai-2026-day-2.html">← Day 2 index</a>
+          <a href="kcm26-d2-grpc-mcp.html">next: gRPC for MCP →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 19, 2026 · conferences · 23 min read · 5100 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>GPU hunter — chasing global GPU capacity with Kueue and MultiKueue.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">kubecon</span>
+          <span class="tag">kueue</span>
+          <span class="tag">gpu</span>
+          <span class="tag">scheduling</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Day 2 opens with the GPU problem nobody can buy their way out of: scarcity is <em>regional</em>. <strong>Kishore Jagannath</strong> and <strong>Ram J A</strong> (Google) showed how to treat a fleet of Kubernetes clusters spread across regions as one global GPU pool using <strong>Kueue</strong> (job queueing + quotas in one cluster) and <strong>MultiKueue</strong> (a manager-worker meta-scheduler that dispatches jobs to whichever cluster actually has accelerators). The talk built up the Kueue object model (ResourceFlavor, ClusterQueue, LocalQueue, quotas), extended it across clusters with MultiKueue, wired it to physical capacity through <code>ProvisioningRequest</code> and the Cluster Autoscaler, and then — crucially — walked the real production failure: a <strong>SchedulingGated</strong> deadlock where the manager pins a job to an exhausted region while idle GPUs sit unused in another. The honest "here's the bug" moment is the most valuable part.</p>
+
+        <p>This is the first of the Day 2 deck-backed deep dives. It connects straight to Day 1's serving and GPU talks — <a href="kcm26-serving-and-scaling.html">DD13 (serving LLMs)</a> and <a href="kcm26-zero-gpu.html">DD12 (zero-GPU autopilot)</a> — but where those were about <em>using</em> accelerators efficiently, this is about <em>finding</em> them in the first place.</p>
+
+        <h2 id="problem">The problem — GPU scarcity is a regional silo</h2>
+
+        <p>The framing was vivid (the deck literally drew cavemen hunting GPUs through a jungle): everyone needs compute, and the good accelerators keep hiding. But the technical claim underneath is precise. <strong>GPU capacity is locked to local regional availability.</strong> A cluster or VM in <code>us-central1</code> cannot tap idle accelerators sitting one region over in <code>asia-southeast1</code>. When demand spikes locally, you hit the dreaded <em>"Insufficient Regional Capacity"</em> and your training or inference job fails or stalls — even though, globally, your organisation has plenty of idle GPUs.</p>
+
+        <p>The operational damage compounds:</p>
+        <ul>
+          <li><strong>Disrupted jobs</strong> — training and inference stall on regional capacity errors.</li>
+          <li><strong>Poor customer experience</strong> — high latency and service timeouts erode trust.</li>
+          <li><strong>Innovation block</strong> — teams wait weeks for hardware expansion instead of iterating.</li>
+        </ul>
+
+        <div class="bm-warn"><strong>Why the obvious fixes don't work.</strong> Two traditional provisioning models both fail GenAI's volatility. <strong>Upfront provisioning</strong> reserves capacity for peak demand — high OpEx, low utilisation, wasted spend in idle periods. <strong>Queued provisioning</strong> makes workloads wait for regional availability — time-to-market delays and stalled innovation. The core failure is the same: static models can't adapt to uneven, spiky traffic, so regional spikes cause local failures while global capacity sits idle.</p></div>
+
+        <h2 id="kueue">Foundation — what Kueue actually is</h2>
+
+        <p>Before you can chase GPUs across regions, you need a sane way to manage them in <em>one</em> cluster. That's Kueue: a Kubernetes-native job queueing system that manages quotas and fair access to high-demand hardware for batch and training workloads. Instead of every pod fighting the scheduler directly, jobs enter a queue and Kueue admits them only when quota and capacity allow. It's built for exactly the four jobs the deck listed — multi-team sharing, large-scale training, batch inference, and squeezing utilisation out of scarce datacenter GPUs.</p>
+
+        <h3>The object model</h3>
+        <p>Kueue's hierarchy is small but precise, and getting it straight is the whole game:</p>
+        <table class="papers">
+          <thead><tr><th>Object</th><th>Scope</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>ResourceFlavor</strong></td><td>cluster</td><td>Describes the physical characteristics of a resource — GPU model (H100, B200), spot vs on-demand, a node label selector.</td></tr>
+            <tr><td class="p"><strong>ClusterQueue</strong></td><td>cluster</td><td>A cluster-scoped pool of ResourceFlavors with quotas and fair-sharing rules. The global policy lives here.</td></tr>
+            <tr><td class="p"><strong>LocalQueue</strong></td><td>namespace</td><td>The user-facing entry point. A team submits jobs to a LocalQueue in their namespace; it maps to a ClusterQueue.</td></tr>
+            <tr><td class="p"><strong>Resource Quota</strong></td><td>cluster</td><td>Enforces consumption limits across teams and flavors so nobody hogs the pool.</td></tr>
+          </tbody>
+        </table>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+            <rect x="20" y="60" width="150" height="90" rx="6" class="box"/>
+            <text x="38" y="55" class="sm">LocalQueues (namespace)</text>
+            <rect x="38" y="74" width="114" height="26" rx="4" class="boxg"/>
+            <text x="52" y="91" class="sm">research-lq</text>
+            <rect x="38" y="110" width="114" height="26" rx="4" class="boxg"/>
+            <text x="52" y="127" class="sm">eng-lq</text>
+
+            <rect x="240" y="80" width="150" height="50" rx="6" class="boxy"/>
+            <text x="258" y="100" class="smk">ClusterQueue</text>
+            <text x="258" y="118" class="sm">global rules + quota</text>
+
+            <rect x="470" y="40" width="150" height="34" rx="5" class="box"/>
+            <text x="488" y="61" class="sm">Flavor: CPU</text>
+            <rect x="470" y="86" width="150" height="34" rx="5" class="box"/>
+            <text x="488" y="107" class="sm">Flavor: H100</text>
+            <rect x="470" y="132" width="150" height="34" rx="5" class="box"/>
+            <text x="488" y="153" class="sm">Flavor: B200</text>
+
+            <path d="M170 105 L240 105" class="arr"/>
+            <path d="M390 95 L470 60" class="arr"/>
+            <path d="M390 105 L470 103" class="arr"/>
+            <path d="M390 115 L470 146" class="arr"/>
+          </svg>
+          <p class="diagram-label">Fig 1 — Kueue flow: jobs enter via namespace-scoped LocalQueues, pass through a cluster-scoped ClusterQueue (global rules + quota), and consume specific ResourceFlavors (CPU / H100 / B200).</p>
+        </div>
+
+        <h3>Multi-team quota in practice</h3>
+        <p>The deck made it concrete with a dev/prod split:</p>
+        <ul>
+          <li><strong>ClusterQueue: Development</strong> — a shared resource pool on the <code>n1-standard-8</code> flavor (N1 GPU, optimised for cheap prototyping). Team Research (<code>research-lq</code>) and Team Engineering (<code>eng-lq</code>) both point at it and share a single cluster-level quota: <code>CPU 60, GPU 8, Mem 126Gi</code>. The shared cap stops anyone hogging dev resources.</li>
+          <li><strong>ClusterQueue: Production</strong> — dedicated quotas on the <code>a4-highgpu-8g</code> flavor (A4-series GPU for high-throughput inference). Strictly enforced limits for live traffic, priority-based preemption disabled, guaranteed GPU availability: <code>CPU 64, GPU 8, Mem 256Gi</code>, single entry via <code>prod-lq</code>.</li>
+        </ul>
+
+        <h2 id="multikueue">MultiKueue — beyond local limits</h2>
+
+        <p>Kueue is single-cluster. The leap is <strong>MultiKueue</strong>: a meta-orchestrator that dispatches jobs from a central manager cluster to one or more worker clusters based on where capacity actually exists. The deck's four headline capabilities:</p>
+        <table class="papers">
+          <thead><tr><th>Capability</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>Global accelerator chasing</strong></td><td>Dynamically dispatches batch AI/ML jobs to worker clusters across regions the moment GPU/TPU capacity frees up anywhere.</td></tr>
+            <tr><td class="p"><strong>Unified global quotas</strong></td><td>Enforces hierarchical org quotas across the whole fleet, so no single team monopolises a multi-region environment.</td></tr>
+            <tr><td class="p"><strong>Topology abstraction</strong></td><td>Researchers submit to one centralised manager cluster; MultiKueue hides the cluster topology and manual targeting.</td></tr>
+            <tr><td class="p"><strong>Global spot harvesting</strong></td><td>Opportunistically routes flexible batch workloads to whichever worker currently has the cheapest preemptible capacity.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>The manager-worker topology</h3>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <rect x="260" y="20" width="160" height="50" rx="6" class="boxy"/>
+            <text x="280" y="42" class="smk" font-weight="bold">Manager cluster</text>
+            <text x="280" y="60" class="sm">MultiKueue controller</text>
+
+            <rect x="40" y="140" width="170" height="56" rx="6" class="box"/>
+            <text x="58" y="163" class="smk">Worker A · us-central1</text>
+            <text x="58" y="181" class="sm">local ClusterQueue</text>
+            <rect x="255" y="140" width="170" height="56" rx="6" class="box"/>
+            <text x="273" y="163" class="smk">Worker B · asia-se1</text>
+            <text x="273" y="181" class="sm">local ClusterQueue</text>
+            <rect x="470" y="140" width="170" height="56" rx="6" class="box"/>
+            <text x="488" y="163" class="smk">Worker C · europe</text>
+            <text x="488" y="181" class="sm">local ClusterQueue</text>
+
+            <path d="M320 70 L130 140" class="arr"/>
+            <path d="M340 70 L340 140" class="arr"/>
+            <path d="M360 70 L550 140" class="arr"/>
+            <text x="150" y="110" class="sm">creates 'remote' jobs · workers execute &amp; report back</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — Manager-worker topology: the manager hosts the MultiKueue controller, watches LocalQueues and creates remote jobs; workers are standard Kueue clusters that execute and report status back.</p>
+        </div>
+
+        <p>The split of responsibilities:</p>
+        <ul>
+          <li><strong>Manager</strong> — hosts the MultiKueue controller. Manages global limits, watches LocalQueues, and creates "remote" jobs on workers. Users submit to <em>one</em> LocalQueue and the job runs wherever capacity is.</li>
+          <li><strong>Worker</strong> — a standard Kueue cluster. It receives the dispatched job, admits it within its own local ClusterQueues, executes it, and reports status back to the manager.</li>
+        </ul>
+
+        <div class="bm-note"><strong>The mental model.</strong> MultiKueue is to Kueue what a load balancer is to a single server: the manager doesn't run your GPU job, it <em>places</em> it. Centralised quota lives on the manager; execution lives on the workers; the user sees one queue. That transparency — "submit to one LocalQueue, run anywhere" — is the entire value proposition.</p></div>
+
+        <h2 id="provisioning">Bridging logical to physical — ProvisioningRequest</h2>
+
+        <p>Quotas are logical. GPUs are physical. The piece that connects them is the <code>ProvisioningRequest</code> API, which coordinates the Cluster Autoscaler to guarantee node provisioning before a job is admitted. Kueue picks the provisioning <em>class</em> per worker, and the choice matters enormously:</p>
+        <table class="papers">
+          <thead><tr><th>Provisioning class</th><th>Behaviour</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>best-effort-atomic-scaleup</strong></td><td>Fulfils batch demand by scaling a hardware group <em>atomically</em> — all nodes or none. Good for gang-scheduled training that needs every node at once.</td></tr>
+            <tr><td class="p"><strong>check-capacity-autoscaling</strong></td><td>Checks real-time physical resource and cloud capacity quotas before committing.</td></tr>
+            <tr><td class="p"><strong>queue-dws-provisioning</strong></td><td>Coordinates pipelines natively with GKE's Dynamic Workload Scheduling (DWS) API.</td></tr>
+          </tbody>
+        </table>
+        <p>The deck's architecture used GKE worker clusters with GPU nodepools, scale-from-zero enabled, the Cluster Autoscaler for dynamic provisioning, and <code>best-effort-atomic-scaleup</code> as the admission controller for workers. That last choice is exactly what triggers the failure mode below — atomicity is a double-edged sword.</p>
+
+        <h2 id="bug">The real bug — the SchedulingGated deadlock</h2>
+
+        <p>This is the part worth the price of admission. In a clean global federation you'd expect the manager to route around an exhausted region. In practice, the team hit a <strong>regional dispatch failure</strong>: the manager commits a job to a region that has <em>no</em> capacity, while valid capacity sits idle in a secondary worker — and nothing fails over.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <rect x="20" y="80" width="160" height="80" rx="6" class="boxy"/>
+            <text x="38" y="103" class="smk" font-weight="bold">Manager</text>
+            <text x="38" y="121" class="sm">1. sees global work</text>
+            <text x="38" y="137" class="sm">2. picks us-central1</text>
+            <text x="38" y="153" class="sm" fill="#c96442">3. pins job to A</text>
+
+            <rect x="250" y="20" width="410" height="80" rx="6" class="box" stroke="#c96442"/>
+            <text x="270" y="42" class="smk" font-weight="bold">Worker A · us-central1</text>
+            <text x="270" y="62" class="sm" fill="#c96442">best-effort-atomic-scaleup → NO CAPACITY</text>
+            <text x="270" y="80" class="sm">provisioning ACCEPTED · pod → SchedulingGated · STUCK</text>
+
+            <rect x="250" y="130" width="410" height="80" rx="6" class="box" stroke="#6a8f5f"/>
+            <text x="270" y="152" class="smk" font-weight="bold">Worker B · asia-southeast1</text>
+            <text x="270" y="172" class="sm" fill="#6a8f5f">IDLE CAPACITY · available for execution</text>
+            <text x="270" y="190" class="sm">bypassed — manager pinned to region A</text>
+
+            <path d="M180 110 L250 70" class="arr"/>
+            <path d="M180 130 L250 170" class="arr" stroke-dasharray="5 4"/>
+          </svg>
+          <p class="diagram-label">Fig 3 — The SchedulingGated issue: the manager commits to an exhausted region on a stale view; the pod enters SchedulingGated and stalls with no automated failover, while idle capacity in Worker B is bypassed.</p>
+        </div>
+
+        <p>Walking the failure step by step:</p>
+        <ol>
+          <li>The manager observes the global workload and, on a <strong>stale view</strong> of capacity, selects <code>us-central1</code>.</li>
+          <li>The job is <strong>pinned</strong> to Worker A.</li>
+          <li>Worker A's <code>best-effort-atomic-scaleup</code> controller accepts the provisioning request — status <em>ACCEPTED</em> — but there's <strong>no capacity</strong>.</li>
+          <li>The pod enters <strong>SchedulingGated</strong> and stays there. Because the provisioning request was accepted, nothing triggers a re-dispatch.</li>
+          <li>Meanwhile Worker B in <code>asia-southeast1</code> has <strong>idle capacity</strong> — but it's bypassed, because the manager already pinned the job to region A.</li>
+        </ol>
+
+        <div class="bm-warn"><strong>The trap, named.</strong> <code>SchedulingGated</code> is a pod state that means "admission webhook/gate hasn't cleared this pod for scheduling yet." Combined with an <em>atomic</em> provisioning class that reports ACCEPTED before nodes actually exist, you get a silent deadlock: the manager believes the job is placed and making progress, so it never reconsiders — and the job waits forever on hardware that will never arrive in that region, while the right hardware idles next door.</p></div>
+
+        <h2 id="lessons">What to take away</h2>
+        <p>The fix space the talk pointed at — and the practical lessons for anyone building global GPU federation on Kueue:</p>
+        <ul>
+          <li><strong>Stale capacity views are the enemy.</strong> A global scheduler is only as good as its freshness. If the manager pins on a stale snapshot, it will pin wrong.</li>
+          <li><strong>Atomic provisioning needs a timeout / fallback.</strong> "ACCEPTED but no capacity" must be a re-dispatch trigger, not a terminal state. Without that, SchedulingGated becomes a black hole.</li>
+          <li><strong>Pinning is the anti-pattern.</strong> The whole point of MultiKueue is "run anywhere"; hard-pinning to a region on first decision defeats it. You want the job to remain eligible for other workers until it's genuinely admitted.</li>
+          <li><strong>Scale-from-zero amplifies the gap</strong> between "logical quota says yes" and "a node physically exists." The <code>ProvisioningRequest</code> class is where that gap is either handled or hidden.</li>
+        </ul>
+
+        <p>The demo wired it all together on GKE: a manager cluster (<code>mkueue-manager-us-central1</code>) and two worker clusters (<code>mkueue-worker-us-central1</code>, <code>mkueue-worker-asia-southeast1</code>) in one fleet, with the GKE console showing scaling issues, unschedulable pods, and webhook-verification warnings — i.e. exactly the SchedulingGated symptoms in the wild before the dispatch logic is hardened.</p>
+
+        <h2 id="faq">FAQ</h2>
+
+        <details class="faq">
+          <summary>What's the difference between Kueue and MultiKueue?</summary>
+          <p>Kueue manages job queueing and resource quotas within a single Kubernetes cluster (ResourceFlavor / ClusterQueue / LocalQueue). MultiKueue sits above it as a meta-orchestrator: a manager cluster dispatches jobs to one or more worker clusters (each a standard Kueue cluster) based on where capacity is available. Users submit to one LocalQueue; the job runs wherever there's room.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why not just over-provision GPUs in every region?</summary>
+          <p>Because that's the "upfront provisioning" anti-pattern: high OpEx and low utilisation, with capacity idle most of the time. GenAI traffic is spiky and uneven across regions, so static per-region reservation either wastes money or still fails on local spikes. Federation lets one global pool absorb the spikes.</p>
+        </details>
+
+        <details class="faq">
+          <summary>What is the SchedulingGated deadlock, in one line?</summary>
+          <p>The manager pins a job to a region whose atomic provisioning request returns ACCEPTED despite having no capacity, so the pod sits in <code>SchedulingGated</code> forever with no automated failover — while idle GPUs in another worker cluster go unused.</p>
+        </details>
+
+        <details class="faq">
+          <summary>What is a ProvisioningRequest class and why does it matter here?</summary>
+          <p>It's how Kueue asks the Cluster Autoscaler to guarantee nodes before admitting a job. <code>best-effort-atomic-scaleup</code> scales a node group all-or-nothing; <code>check-capacity-autoscaling</code> verifies real capacity first; <code>queue-dws-provisioning</code> uses GKE Dynamic Workload Scheduling. The atomic class is what produced the ACCEPTED-but-empty state behind the deadlock.</p>
+        </details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>GPU scarcity is regional, not absolute.</strong> The win is treating many clusters as one global pool, not buying more cards.</li>
+          <li><strong>Kueue gives you the object model</strong> — ResourceFlavor, ClusterQueue, LocalQueue, quotas — for fair, queued GPU access in one cluster.</li>
+          <li><strong>MultiKueue federates it</strong> — manager-worker topology, global accelerator chasing, unified quotas, spot harvesting, submit-to-one-run-anywhere.</li>
+          <li><strong>ProvisioningRequest is the logical-to-physical bridge</strong>, and the provisioning class you pick decides your failure modes.</li>
+          <li><strong>The SchedulingGated deadlock is the cautionary tale</strong>: stale views + atomic provisioning + region pinning = a job stuck on capacity that will never arrive while idle GPUs sit next door.</li>
+        </ul>
+
+        <p>Next in Day 2 — <strong>A gRPC Transport for the Model Context Protocol</strong>, giving MCP a production-grade transport.</p>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="kubecon-mumbai-2026-day-2.html">KubeCon Mumbai 2026 — Day 2 index</a> <span>· the rest of Day 2</span></li>
+          <li><a href="https://kueue.sigs.k8s.io/docs/concepts/" target="_blank" rel="noopener">Kueue — concepts</a> <span>· ResourceFlavor, ClusterQueue, LocalQueue</span></li>
+          <li><a href="https://kueue.sigs.k8s.io/docs/concepts/multikueue/" target="_blank" rel="noopener">Kueue — MultiKueue</a> <span>· manager-worker dispatch</span></li>
+          <li><a href="https://kueue.sigs.k8s.io/docs/admission-check-controllers/provisioning/" target="_blank" rel="noopener">Kueue — ProvisioningRequest</a> <span>· provisioning classes &amp; the autoscaler bridge</span></li>
+          <li><a href="kcm26-serving-and-scaling.html">Day 1 DD13 — Serving LLMs on Kubernetes</a> <span>· the consuming side of GPUs</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="kubecon-mumbai-2026-day-2.html">← day 2 index</a>
+        <a href="kcm26-d2-grpc-mcp.html">next: grpc for mcp →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

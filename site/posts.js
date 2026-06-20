@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-inference-observability",
+    title: "Inference in Progress… Please Monitor Responsibly.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "observability", "inference", "gpu"],
+    time: 22,
+    words: 4800,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Gaurav Sharma (NVIDIA) shares observability learnings from inference at population scale (NVCF: 15M+ inferences/day). Inference observability is platform observability — a three-plane platform (control/invocation/compute), one SLO at the top fanning into SPOG drill-downs, and two critical journeys: worker readiness (healthy GPU node via DCGM, XID/ECC) and the inference request (success-rate + TTFT SLOs), glued together with burn-rate alerting.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.3"
+  },
+  {
     slug: "kcm26-d2-grpc-mcp",
     title: "A gRPC Transport for the Model Context Protocol.",
     date: "Jun 19, 2026",

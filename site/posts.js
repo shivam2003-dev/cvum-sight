@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-airgapped-networking",
+    title: "Service Networking Within Air-Gapped Environments.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "istio", "service-mesh", "air-gapped"],
+    time: 23,
+    words: 5000,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Anirban Nandi (Google) on service networking inside Google Distributed Cloud Air-Gapped — observability, security, and traffic management for ~450 microservices with no public-cloud link. Istio is the substrate: primary Istiod plus remote clusters over east-west gateways, the full API surface (Gateway/VirtualService/DestinationRule/PeerAuthentication/AuthorizationPolicy/Telemetry), EnvoyFilter as the escape hatch, a self-hosted OSS stack (Cilium, MetalLB, CoreDNS, Prometheus/Cortex, Cert Manager) — and the operational scars of config scoping, delta xDS, and multi-cluster upgrades.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.5"
+  },
+  {
     slug: "kcm26-d2-zerotrust-agents",
     title: "Zero Trust for Autonomous Agents — Isolating AI Workloads on Kubernetes.",
     date: "Jun 19, 2026",

@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-two-node-edge",
+    title: "When the Edge Can't Afford a Third Node — Two-Node Kubernetes Storage.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "rook", "ceph", "edge"],
+    time: 24,
+    words: 5200,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive — the dedicated follow-up to Day 1's Rook talk. Parth Arora (IBM Storage) fits Ceph's three-mon quorum onto a two-node edge cluster with a floating monitor: mon 'c' whose on-disk state is DRBD-replicated across both nodes so it relocates to the survivor. Two-Node Fencing (TNF) uses Pacemaker STONITH to power-fence the dead node via BMC/RedFish, preventing split-brain — and the HA is bolted on at the pod boundary (init promotes DRBD primary, preStop demotes) leaving Ceph untouched.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.6"
+  },
+  {
     slug: "kcm26-d2-airgapped-networking",
     title: "Service Networking Within Air-Gapped Environments.",
     date: "Jun 19, 2026",

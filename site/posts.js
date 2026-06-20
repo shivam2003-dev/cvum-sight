@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-zerotrust-agents",
+    title: "Zero Trust for Autonomous Agents — Isolating AI Workloads on Kubernetes.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "security", "zero-trust", "agents"],
+    time: 25,
+    words: 5400,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Senthalan Kanagalingam (WSO2) treats an autonomous agent as a permanent assume-breach: wrap each one in a cell (hard boundary + single gateway PEP), mapped to a Kubernetes namespace with default-deny NetworkPolicy and mesh mTLS. Then gate every edge — reference tokens to the agent, model allow-lists, token exchange + intersection authorization (the user is the ceiling) to kill the confused deputy, CIBA for offline human approval, act-chaining that only narrows — with one trace ID joining app and network layers, even denials.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.4"
+  },
+  {
     slug: "kcm26-d2-inference-observability",
     title: "Inference in Progress… Please Monitor Responsibly.",
     date: "Jun 19, 2026",

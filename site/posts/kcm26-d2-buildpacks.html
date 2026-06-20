@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buildpacks &amp; the Patching Waterfall — KubeCon Mumbai 2026 Day 2 Deep Dive — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  pre.code{background:#10221f;color:#cfe;border-radius:8px;padding:14px 16px;overflow:auto;font-size:.82rem;line-height:1.5;margin:18px 0}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  table.papers td.p code{background:rgba(148,138,120,.16);padding:1px 5px;border-radius:3px;font-size:.85em}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">KubeCon India 2026 (Mumbai) — Day 2 Deep Dives</p>
+        <p class="series-banner-title">Using Buildpacks To Reduce Container Bloat and Attack Surface</p>
+        <p class="series-banner-meta">Day 2 · platform, DevEx &amp; supply chain · from the uploaded deck</p>
+        <div class="series-banner-nav">
+          <a href="kcm26-d2-ditched-kubeproxy.html">← prev: Ditching Kube-proxy</a>
+          <a href="kcm26-d2-rk3588-kubeedge.html">next: RK3588 for KubeEdge →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 19, 2026 · conferences · 22 min read · 4800 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>The patching waterfall — eradicating container bloat with buildpacks.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">kubecon</span>
+          <span class="tag">buildpacks</span>
+          <span class="tag">supply-chain</span>
+          <span class="tag">security</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Sai Bharadwaj Avvari</strong> (Salesforce) made the security case for Cloud Native Buildpacks. The problem: <strong>87% of container vulnerabilities hide in packages never loaded at runtime</strong>, so platform teams drown in CVE noise triaging dormant utilities — which are also a real attack surface (Living off the Land). The two usual "fixes" both fail: <strong>hyper-bloat</strong> (one >10GB global base image with every agent baked in) or <strong>fragmentation</strong> (hundreds of unverified per-team Dockerfiles). Cloud Native Buildpacks (CNB) cut a third path: turn source into OCI images <em>without Dockerfiles</em>, in clean layers, and then <strong>rebase</strong> — swap the OS layer by SHA without rebuilding the app. At fleet scale that turns one CVE from <strong>O(N) rebuilds (hours-to-days)</strong> into an <strong>O(1) stack update (minutes)</strong> — "the patching waterfall."</p>
+
+        <p>This is the supply-chain anchor of Day 2's platform thread. It's the build-time counterpart to Day 1's <a href="kcm26-commit-then-disclose.html">verifiable SBOMs (DD08)</a> and dovetails with the <a href="kcm26-d2-devex-roadmap.html">TAG DevEx</a> push toward signed, OCI-packaged artifacts.</p>
+
+        <h2 id="crisis">The vulnerability crisis</h2>
+        <p>The headline stat reframes the whole CVE-triage problem:</p>
+        <div class="bm-note"><strong>87% of vulnerabilities hide in packages never loaded at runtime.</strong> Modern container images are heavily bloated. Platform teams waste thousands of engineering hours triaging vulnerabilities that sit in dormant utilities the app never even calls. And it's not just wasted focus — those unused components are real risk: attackers exploit pre-installed binaries (curl, bash, openssl, compilers) via <em>Living off the Land (LotL)</em> patterns, using tools that were never needed in the first place.</p></div>
+
+        <h2 id="trap">The middle-tier trap</h2>
+        <p>Most enterprises pick one of two losing strategies for their base images:</p>
+        <table class="papers">
+          <thead><tr><th>Option A — Hyper-Bloat</th><th>Option B — Fragmentation</th></tr></thead>
+          <tbody>
+            <tr><td>Bake every shared agent, dependency, and certificate into <em>one global enterprise base image</em>. Result: massive container size (&gt;10GB), huge security noise, a severe attack footprint.</td><td>Give developers custom base images, but they add their own libraries inside <em>raw, unverified Dockerfiles</em>. Result: hundreds of unique, unpatched configurations in active production — unauditable, each its own attack surface.</td></tr>
+          </tbody>
+        </table>
+        <p>Both are dead ends: one image too fat to secure, or too many images to track. Buildpacks are the escape from this dichotomy.</p>
+
+        <h2 id="cnb">What Cloud Native Buildpacks are</h2>
+        <p>A <strong>buildpack</strong> is a standard for <strong>converting source code into OCI images without Dockerfiles</strong>. You point it at your source; it detects the language, pulls the right runtime, and produces a layered application image — no hand-written Dockerfile, no per-team drift.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 90" xmlns="http://www.w3.org/2000/svg">
+            <rect x="40" y="30" width="120" height="40" rx="5" class="box"/><text x="70" y="55" class="smk">&lt;/&gt; source</text>
+            <rect x="280" y="30" width="120" height="40" rx="5" class="boxy"/><text x="300" y="55" class="smk">buildpacks</text>
+            <rect x="520" y="22" width="120" height="56" rx="5" class="boxg"/><text x="535" y="46" class="sm">application</text><text x="535" y="62" class="sm">image (layers)</text>
+            <path d="M160 50 L280 50" class="arr"/><path d="M400 50 L520 50" class="arr"/>
+          </svg>
+          <p class="diagram-label">Fig 1 — buildpacks turn source into a layered OCI image with no Dockerfile. CNCF-graduated, supported by Heroku, Google Cloud, Paketo, Tanzu, GitLab, DigitalOcean, Azure, Spring Boot, Tekton, and more.</p>
+        </div>
+
+        <h3>Reduce, Reuse, Rebase</h3>
+        <p>The buildpack mantra. The image is cleanly layered — <code>OS</code> → runtime (e.g. <code>jdk</code>) → <code>app</code> — and each layer has its own content hash. The magic verb is <strong>rebase</strong>: swap the bottom OS layer for a patched one while keeping the app and runtime layers <em>byte-for-byte identical</em>.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 150" xmlns="http://www.w3.org/2000/svg">
+            <rect x="60" y="20" width="180" height="24" rx="3" class="boxg"/><text x="120" y="37" class="sm">app (4a090ac)</text>
+            <rect x="60" y="48" width="180" height="24" rx="3" class="boxg"/><text x="120" y="65" class="sm">jdk (738fafa)</text>
+            <rect x="60" y="76" width="180" height="24" rx="3" class="box"/><text x="135" y="93" class="sm">…</text>
+            <rect x="60" y="104" width="180" height="24" rx="3" class="box" stroke="#c96442"/><text x="95" y="121" class="sm" fill="#c96442">OS (8e3e01b2) — CVE</text>
+
+            <rect x="440" y="20" width="180" height="24" rx="3" class="boxg"/><text x="500" y="37" class="sm">app (4a090ac)</text>
+            <rect x="440" y="48" width="180" height="24" rx="3" class="boxg"/><text x="500" y="65" class="sm">jdk (738fafa)</text>
+            <rect x="440" y="76" width="180" height="24" rx="3" class="box"/><text x="515" y="93" class="sm">…</text>
+            <rect x="440" y="104" width="180" height="24" rx="3" class="boxg"/><text x="470" y="121" class="sm">OS (679b84b) — patched</text>
+            <path d="M250 70 L440 70" class="arr"/><text x="300" y="62" class="sm">rebase: swap OS only</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — rebase is a SHA swap: the OS layer changes from a vulnerable hash to a patched one; the app (4a090ac) and jdk (738fafa) layers are untouched. No recompile.</p>
+        </div>
+
+        <h2 id="waterfall">The patching waterfall</h2>
+        <p>The architecture splits responsibilities into tiers, and patches "waterfall" down without rebuilds:</p>
+        <table class="papers">
+          <thead><tr><th>Tier</th><th>Owner / role</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>Base OS tier</strong></td><td>Platform SecOps manages minimal run stacks.</td></tr>
+            <tr><td class="p"><strong>Middleware builder</strong></td><td>Language runtimes &amp; certificates cached once.</td></tr>
+            <tr><td class="p"><strong>App compilation</strong></td><td>Business logic compiled independently of the OS.</td></tr>
+            <tr><td class="p"><strong>Waterfall flow</strong></td><td>Security patches flow down to every image <em>without rebuilds</em>.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>The two tiers in config</h3>
+        <p>CNB decouples the environment where you <em>compile</em> from the environment where you <em>run</em> — that separation is the whole point.</p>
+        <pre class="code"># Tier 1 — the base stack (stack.toml)
+[stack]
+id = "io.buildpacks.stacks.jammy"
+build-image = "corp/build-jammy"        # fat: compilers, tools
+run-image   = "corp/run-jammy-tiny"     # tiny: only runtime needs
+
+# Tier 2 — custom builder (builder.toml)
+# platform teams compile &amp; cache domain-specific deps once
+[[buildpacks]]
+uri = "docker://gcr.io/paketo-buildpacks/java"
+[[order]]
+group = [{ id = "corp/ca-certs" }, { id = "corp/java-runtime" }]</pre>
+        <div class="bm-fix"><strong>Why build-image ≠ run-image matters.</strong> Compilers, package managers, and build tools are needed to <em>build</em> an app but are pure attack surface at <em>runtime</em>. CNB builds in a fat <code>build-image</code> and ships only the slim <code>run-image</code> (just the runtime). That alone eliminates most of the "Living off the Land" binaries — the app runs without curl, gcc, or bash in the image at all.</p></div>
+
+        <h3>Rebase: the SHA256 swap, at scale</h3>
+        <pre class="code"># single image
+pack rebase my-app:latest
+
+# the entire fleet (the Waterfall)
+kpack-controller --monitor corp/run-base:latest</pre>
+        <p>For one image you run <code>pack rebase</code>; for the whole fleet, a controller (kpack) <em>monitors</em> the base run-image and rebases every dependent image automatically when it changes. What used to take days now takes minutes.</p>
+
+        <h2 id="advantages">Why it wins — four advantages</h2>
+
+        <h3>1 · O(1) patch propagation vs O(N) rebuilds</h3>
+        <p>The central economic argument. Traditionally, one CVE means <em>N</em> rebuilds — every service runs its CI pipeline (build, test, push image), taking hours to days. With the waterfall, one stack update triggers a <em>rebase</em> per service that takes minutes.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 170" xmlns="http://www.w3.org/2000/svg">
+            <text x="20" y="24" class="smk" font-weight="bold" fill="#c96442">Traditional: O(N) rebuilds</text>
+            <text x="20" y="44" class="sm">1 CVE → service 1..N each: CI → build &amp; test → push</text>
+            <rect x="20" y="56" width="90" height="40" rx="4" class="box" stroke="#c96442"/><text x="34" y="80" class="sm">svc 1 CI</text>
+            <rect x="120" y="56" width="90" height="40" rx="4" class="box" stroke="#c96442"/><text x="134" y="80" class="sm">svc 2 CI</text>
+            <rect x="230" y="56" width="90" height="40" rx="4" class="box" stroke="#c96442"/><text x="250" y="80" class="sm">svc N CI</text>
+            <text x="20" y="118" class="sm" fill="#c96442">N rebuilds · hours to days</text>
+
+            <text x="380" y="24" class="smk" font-weight="bold" fill="#6a8f5f">Waterfall: O(1) rebase</text>
+            <text x="380" y="44" class="sm">1 stack update → rebase each (SHA swap)</text>
+            <rect x="380" y="56" width="80" height="40" rx="4" class="boxg"/><text x="396" y="80" class="sm">rebase</text>
+            <rect x="470" y="56" width="80" height="40" rx="4" class="boxg"/><text x="486" y="80" class="sm">rebase</text>
+            <rect x="560" y="56" width="80" height="40" rx="4" class="boxg"/><text x="576" y="80" class="sm">rebase</text>
+            <text x="380" y="118" class="sm" fill="#6a8f5f">1 stack update · minutes</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — "fix once, protect the fleet": an O(1) stack update replaces O(N) build queues. Same CVE, minutes instead of days.</p>
+        </div>
+
+        <h3>2 · True separation of ownership</h3>
+        <p>Developers own application code and user features; security/platform engineers own the base OS and compliance (glibc, certs). Updates flow automatically <em>without developer intervention</em>. Contrast with fragmented Dockerfiles where "everyone owns everything, so nothing is secured."</p>
+
+        <h3>3 · Elimination of bloat / attack surface</h3>
+        <p>A hyper-bloated corporate image carries Java, Python, Node, Ruby, GCC/build tools, curl, bash, git, vim, openssl, monitoring and logging agents — <em>more packages = more CVEs = more risk</em>. A purpose-built runtime image carries only the app, the JRE/runtime, and required libraries: <em>only what you need = minimal attack surface</em>.</p>
+
+        <h3>4 · Fleet-wide consistency &amp; auditability</h3>
+        <p>Traditional chaos: service A on Ubuntu 22.04, B on Debian 11, C on Alpine 3.18, D on Ubuntu 20.04, N on "unknown" — different base OSes, hard to audit, easy to miss vulnerabilities. The waterfall: every service on one standardized buildpack stack, yielding consistent SBOMs, provenance, and compliance visibility across the fleet.</p>
+
+        <div class="bm-warn"><strong>The honest caveat (read between the lines).</strong> Rebase only works when the new OS layer is <em>ABI-compatible</em> with the layers above it — swap glibc for an incompatible version and the app on top breaks. That's why the platform team owns a curated, minimal run-stack rather than letting anything become the base. The discipline that makes O(1) rebasing safe is the same discipline that makes the standardized stack valuable: one well-governed foundation, not a free-for-all.</p></div>
+
+        <h2 id="faq">FAQ</h2>
+
+        <details class="faq">
+          <summary>What's the difference between a buildpack rebuild and a rebase?</summary>
+          <p>A rebuild reruns the whole build (compile app, assemble all layers) — slow, and N of them for N services. A rebase swaps only the OS (base) layer by SHA while keeping the app and runtime layers byte-identical — fast, and it can be applied fleet-wide from one stack update. Rebase is what turns O(N) patching into O(1).</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why is 87% of vulnerabilities "never loaded" such a big deal?</summary>
+          <p>Because it means most CVE triage is wasted effort on code the app never executes — and those dormant binaries are also the attack surface for Living-off-the-Land techniques. Removing them (slim run-image, no build tools at runtime) cuts both the noise and the real risk at once.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Do I have to give up Dockerfiles entirely?</summary>
+          <p>Buildpacks replace hand-written Dockerfiles for application images — you point them at source and get a layered OCI image. The point is to remove the per-team, unverified Dockerfile sprawl (Option B) and the one giant base image (Option A) in favour of a governed buildpack stack.</p>
+        </details>
+
+        <details class="faq">
+          <summary>What is kpack's role?</summary>
+          <p>kpack is the Kubernetes controller that operationalises the waterfall: it monitors the base run-image and automatically rebases every dependent image when the base changes. That's how "fix once" propagates to the whole fleet in minutes without per-service CI runs.</p>
+        </details>
+
+        <details class="faq">
+          <summary>How do I try it?</summary>
+          <p>The Pack CLI: <code>brew tap buildpack/tap</code>, <code>brew install pack</code>, then <code>pack build myimage</code>. Community at buildpacks.io and #buildpacks on CNCF Slack.</p>
+        </details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Most container CVEs are noise</strong> — 87% sit in packages never loaded — but they're still attack surface (LotL).</li>
+          <li><strong>Hyper-bloat and Dockerfile fragmentation both lose.</strong> CNB is the third path: source → layered OCI image, no Dockerfiles.</li>
+          <li><strong>Rebase is the superpower</strong> — swap the OS layer by SHA, app/runtime untouched; build-image ≠ run-image strips build tools from runtime.</li>
+          <li><strong>O(1) beats O(N)</strong> — one stack update rebases the whole fleet in minutes (kpack), vs N rebuilds over hours-to-days.</li>
+          <li><strong>Clean ownership + auditability</strong> — security owns the base, devs own the app, and one standardized stack gives fleet-wide SBOMs and provenance.</li>
+        </ul>
+
+        <p>Next in Day 2 — <strong>Validating RK3588 for KubeEdge</strong>, simulating ARM64 edge fleets without the hardware.</p>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="kubecon-mumbai-2026-day-2.html">KubeCon Mumbai 2026 — Day 2 index</a> <span>· the rest of Day 2</span></li>
+          <li><a href="https://buildpacks.io" target="_blank" rel="noopener">Cloud Native Buildpacks</a> <span>· the spec, Pack CLI, builders</span></li>
+          <li><a href="https://github.com/buildpacks-community/kpack" target="_blank" rel="noopener">kpack</a> <span>· fleet rebase controller</span></li>
+          <li><a href="https://paketo.io" target="_blank" rel="noopener">Paketo Buildpacks</a> <span>· language-family buildpacks</span></li>
+          <li><a href="kcm26-commit-then-disclose.html">Day 1 DD08 — Verifiable, private SBOMs</a> <span>· the supply-chain sibling</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="kcm26-d2-ditched-kubeproxy.html">← prev: ditching kube-proxy</a>
+        <a href="kcm26-d2-rk3588-kubeedge.html">next: rk3588 for kubeedge →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

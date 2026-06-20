@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-buildpacks",
+    title: "Using Buildpacks To Reduce Container Bloat and Attack Surface.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "buildpacks", "supply-chain", "security"],
+    time: 22,
+    words: 4800,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Sai Bharadwaj Avvari (Salesforce) on the patching waterfall: 87% of container CVEs hide in packages never loaded, yet platform teams drown triaging them. Hyper-bloat and Dockerfile fragmentation both lose; Cloud Native Buildpacks cut a third path — source to layered OCI images with no Dockerfiles, then rebase (swap the OS layer by SHA without recompiling the app). At fleet scale that turns one CVE from O(N) rebuilds into an O(1) stack update via kpack — days to minutes.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.9"
+  },
+  {
     slug: "kcm26-d2-ditched-kubeproxy",
     title: "Why We Ditched Kube-proxy — Scaling 10M Daily Browser Sessions.",
     date: "Jun 19, 2026",

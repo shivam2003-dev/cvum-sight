@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "kubecon-mumbai-2026-day-2",
+    title: "KubeCon India 2026, Mumbai — Day 2.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "cloud-native", "kubernetes", "mumbai-2026"],
+    time: 21,
+    words: 4600,
+    excerpt: "Field report and session index for Day 2 (the closing day) of KubeCon + CloudNativeCon India 2026 in Mumbai. A banking- and sovereignty-heavy keynote relay (RBI compliance-as-code, SBI's sovereign cloud, 911 on shared Kubernetes), the four afternoon threads, and a full session index — 12 sessions with public decks get deck-by-deck deep dives; the rest are honest pointers.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2"
+  },
+  {
     slug: "kubecon-mumbai-2026-day-1",
     title: "KubeCon India 2026, Mumbai — Day 1.",
     date: "Jun 18, 2026",

@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-rk3588-kubeedge",
+    title: "Validating RK3588 for KubeEdge — Simulating Edge with QEMU.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "kubeedge", "edge-computing", "qemu"],
+    time: 23,
+    words: 5000,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Sachin Jha (CNCF KubeEdge) validates edge software before the hardware exists by running QEMU emulating ARM64 inside a cheap x86 EC2 — booting real Ubuntu 22.04 aarch64 with KubeEdge EdgeCore as a genuine arm64 binary connected to CloudCore on port 10000. Because KubeEdge only sees four things (aarch64, Linux+systemd, containerd, the CloudCore link), QEMU is a valid validation environment. The integrity is in the honest scope: it validates everything KubeEdge owns; NPU, Mali GPU, GPIO, thermal, and big.LITTLE still need silicon.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.10"
+  },
+  {
     slug: "kcm26-d2-buildpacks",
     title: "Using Buildpacks To Reduce Container Bloat and Attack Surface.",
     date: "Jun 19, 2026",

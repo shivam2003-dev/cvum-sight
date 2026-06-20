@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Why We Ditched Kube-proxy — KubeCon Mumbai 2026 Day 2 Deep Dive — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  pre.code{background:#10221f;color:#cfe;border-radius:8px;padding:14px 16px;overflow:auto;font-size:.82rem;line-height:1.5;margin:18px 0}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  table.papers td.p code{background:rgba(148,138,120,.16);padding:1px 5px;border-radius:3px;font-size:.85em}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">KubeCon India 2026 (Mumbai) — Day 2 Deep Dives</p>
+        <p class="series-banner-title">Why We Ditched Kube-proxy — Scaling 10M Daily Browser Sessions</p>
+        <p class="series-banner-meta">Day 2 · networking &amp; the kernel · from the uploaded deck</p>
+        <div class="series-banner-nav">
+          <a href="kcm26-d2-devex-roadmap.html">← prev: TAG DevEx Roadmap</a>
+          <a href="kcm26-d2-buildpacks.html">next: Buildpacks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 19, 2026 · conferences · 23 min read · 5000 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Why we ditched kube-proxy — leasing one browser per request.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">kubecon</span>
+          <span class="tag">kubernetes</span>
+          <span class="tag">networking</span>
+          <span class="tag">endpointslice</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Rajat Khanna</strong> (Senior Tech Lead, CommerceIQ) told one of the sharpest "we left the paved road on purpose" stories of the day. CommerceIQ runs a browser farm — ~8K concurrent browser pods, 10M+ pages scraped daily, 100% of workers on spot — where <strong>each request needs one specific, free browser, held until the job is done</strong>. That's a routing requirement a Kubernetes <code>Service</code> simply cannot express: a Service load-balances across interchangeable ready pods, but a browser mid-job is exclusive and a caller may need to <em>wait</em> for a free one. The fix isn't a mesh or an eBPF rewrite — it's a small custom proxy that reads the <strong>same EndpointSlice API kube-proxy reads</strong> and adds two verbs the Service lacks: <strong>hold</strong> and <strong>lease</strong>. The talk is a masterclass in "bypass surgically" — one hot path goes custom; everything else stays stock.</p>
+
+        <p>This is the second networking deep dive on Day 2, alongside <a href="kcm26-d2-airgapped-networking.html">air-gapped Istio</a> and the fintech Cilium talk. Where those add a mesh, this one shows the opposite move: drop <em>below</em> Services to raw Kubernetes primitives.</p>
+
+        <h2 id="what">What CommerceIQ runs</h2>
+        <p>The scale sets up the problem:</p>
+        <table class="papers">
+          <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td class="p">Pages scraped / day</td><td>8–16M (10M typical)</td></tr>
+            <tr><td class="p">Retailers, daily</td><td>1,000+</td></tr>
+            <tr><td class="p">Concurrent browser pods</td><td>~8K (varies with queue)</td></tr>
+            <tr><td class="p">Workers on spot/preemptible</td><td>100% (proxy + control plane on a stable pool)</td></tr>
+          </tbody>
+        </table>
+        <p>The defining fact: <strong>a pod serves one session at a time</strong>. It's reused across many jobs, but recycled only when the HPA scales down or spot reclaims its node. One browser, one job, right now.</p>
+
+        <h2 id="why">Why the platform exists</h2>
+        <p>Platform v1 coupled browsers to business logic: workers pulled jobs off pub/sub queues, with no service routing anywhere near the hot path. Platform v2 isolated browser automation <em>as a service</em>: request in → rendered page out, clean API, business logic kept out of the browser fleet.</p>
+        <div class="bm-note"><strong>The trade that created the problem.</strong> Moving from v1 to v2 turned <em>queue-pull</em> into <em>request-dispatch</em>. And dispatching to browsers isn't load-balancing — each request needs a <strong>specific free pod, held until one exists</strong>. That's the routing requirement v2 created on day one, and it's exactly the one a Service can't express. Everything else in the talk follows from this single mismatch.</p></div>
+
+        <h2 id="requirement">The requirement a Service can't express</h2>
+        <p>Stated plainly: <em>a request doesn't want a load-balancer; it wants one specific, free browser.</em> Two properties:</p>
+        <table class="papers">
+          <thead><tr><th>Property</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>Exclusive</strong></td><td>One job per browser at a time. A browser mid-job is not a shared backend — no second caller, ever.</td></tr>
+            <tr><td class="p"><strong>Held</strong></td><td>The incoming connection waits until a browser is free. None free? Start one and keep holding.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="kubeproxy">How kube-proxy + Services actually work</h2>
+        <p>To see the mismatch, recall the normal model: <strong>kube-proxy load-balances each connection across all ready pods — any ready replica will do</strong>, because the pods are stateless and interchangeable.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 90" xmlns="http://www.w3.org/2000/svg">
+            <rect x="20" y="30" width="120" height="40" rx="5" class="boxg"/><text x="42" y="55" class="sm">your app</text>
+            <rect x="170" y="30" width="120" height="40" rx="5" class="boxy"/><text x="188" y="50" class="sm">ClusterIP</text><text x="188" y="64" class="sm">Service</text>
+            <rect x="320" y="30" width="120" height="40" rx="5" class="box"/><text x="338" y="55" class="sm">kube-proxy</text>
+            <rect x="470" y="30" width="140" height="40" rx="5" class="box"/><text x="488" y="50" class="sm">any ready pod</text><text x="488" y="64" class="sm">(interchangeable)</text>
+            <path d="M140 50 L170 50" class="arr"/><path d="M290 50 L320 50" class="arr"/><path d="M440 50 L470 50" class="arr"/>
+          </svg>
+          <p class="diagram-label">Fig 1 — the normal Service model: kube-proxy spreads connections across any ready, interchangeable pod. Perfect for stateless backends — wrong for an exclusive lease.</p>
+        </div>
+        <p>Two things a Service fundamentally <em>cannot</em> do here:</p>
+        <ul>
+          <li><strong>It can't hold.</strong> A Service answers now or never — there is no "wait until a browser is free." CommerceIQ's caller often <em>must</em> wait, sometimes for one that doesn't exist yet.</li>
+          <li><strong>It can't lease.</strong> It spreads connections across <em>every</em> ready browser. They need one free browser, given to one request, untouchable until the job is done.</li>
+        </ul>
+
+        <div class="bm-fix"><strong>The key realization.</strong> kube-proxy isn't broken — a Service is just the wrong <em>shape</em> for this one hop. And critically: the data they need is the <em>same EndpointSlice data kube-proxy already reads</em>. "Free" flips on every job, so availability has to live in a proxy's memory, not in the data plane. So they didn't replace networking — they read the same API and added hold + lease on top.</p></div>
+
+        <h2 id="endpointslice">EndpointSlice — the public primitive</h2>
+        <p>The <strong>EndpointSlice API</strong> is how Kubernetes tracks which pods back a Service and whether each is ready — it's what kube-proxy watches to build its routing tables. The insight: that API is <em>public</em>. Anything can watch it. CommerceIQ's proxy watches EndpointSlices to maintain an in-memory <strong>free-pool</strong> of browsers, then leases from it.</p>
+
+        <h2 id="machine">The browser-farm machine</h2>
+        <p>The full system, with the proxy as the only long-lived component near the hot path:</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <rect x="20" y="60" width="90" height="44" rx="5" class="box"/><text x="34" y="78" class="sm">Caller /</text><text x="34" y="92" class="sm">Ingress</text>
+            <rect x="150" y="50" width="150" height="64" rx="6" class="boxy"/><text x="166" y="72" class="smk" font-weight="bold">Proxy pods</text><text x="166" y="90" class="sm">in-memory free-pool</text><text x="166" y="105" class="sm">(only long-lived)</text>
+            <rect x="170" y="130" width="120" height="30" rx="4" class="box"/><text x="184" y="150" class="sm">hold-queue (park)</text>
+            <rect x="400" y="40" width="260" height="120" rx="6" class="boxg"/><text x="416" y="60" class="smk" font-weight="bold">Worker fleet — browser pods (spot)</text>
+            <text x="430" y="90" class="sm">w  w  w  w  w  w</text><text x="430" y="112" class="sm">w  w  w  w  w  w</text><text x="430" y="134" class="sm">w  w  w  w  w  w</text>
+            <rect x="40" y="200" width="120" height="34" rx="5" class="box"/><text x="56" y="221" class="sm">metric server</text>
+            <rect x="200" y="200" width="100" height="34" rx="5" class="boxy"/><text x="222" y="221" class="sm">HPA</text>
+            <path d="M110 82 L150 82" class="arr"/>
+            <path d="M300 82 L400 82" class="arr"/><text x="305" y="74" class="sm">lease + dial</text>
+            <path d="M210 114 L210 130" class="arr"/><text x="215" y="126" class="sm">none free → park</text>
+            <path d="M160 114 L100 200" class="arr"/><text x="60" y="180" class="sm">publish depth</text>
+            <path d="M160 217 L200 217" class="arr"/>
+            <path d="M250 200 L420 165" class="arr"/><text x="300" y="190" class="sm">scale up → new pod</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — the browser-farm: a caller hits the proxy (in-memory free-pool); free → lease + dial the pod IP directly; none free → park in the hold-queue; the proxy publishes queue depth to a metric server → HPA → scale the spot fleet.</p>
+        </div>
+
+        <p>Following one request through it (the deck's numbered flow):</p>
+        <ol>
+          <li>A request arrives needing its own browser → hits the proxy.</li>
+          <li><strong>Free → lease + dial the pod IP directly.</strong> None free → the caller <strong>parks</strong> in the hold-queue.</li>
+          <li>The proxy publishes queue depth; the metric server scrapes it.</li>
+          <li>Metrics flow out via the <strong>External Metrics API</strong> to the HPA.</li>
+          <li>The HPA scales the fleet → a new browser pod starts.</li>
+          <li>The pod passes readiness → its EndpointSlice flips → it joins the free-pool (via the EndpointSlice watch).</li>
+          <li>A parked request wakes, leases it, and dials it directly.</li>
+        </ol>
+
+        <div class="bm-note"><strong>Why scale on the queue, not CPU.</strong> A browser pod pegged at low CPU might still be busy mid-job; an idle one might be free. CPU tells you nothing about <em>availability</em>. So they scale on <strong>hold-queue depth</strong> — the count of parked callers waiting for a browser — surfaced through the External Metrics API to the HPA. The signal that drives scaling is the same signal the proxy uses to route: who's waiting, and how many browsers are free.</p></div>
+
+        <h2 id="sharpedge">The sharp edge — "ready" is not "free"</h2>
+        <p>They got to redefine readiness: a browser is "ready" when it's <strong>free for a job</strong>, so readiness flips on every job and the proxy only ever targets a genuinely free browser. That's clean. The one rough edge comes from the <em>watch</em>, not from readiness.</p>
+
+        <div class="bm-warn"><strong>Browsers that vanish.</strong> The free-pool is built from an EndpointSlice <em>watch</em>, which is always a half-step behind reality. A browser that just went busy — or got reclaimed by spot — can still sit in the cached list, so a dial can land on the wrong pod. The fix: a shutting-down pod drops from the pool; a <em>failed dial</em> → set that pod aside a couple of seconds → re-queue to the next free browser. It's invisible, because it all happens <em>before</em> the session starts, so the caller never sees it.</p></div>
+
+        <p>And mid-session death is handled honestly: if a pod dies mid-job, <strong>that one job is lost and retried fresh upstream — blast radius of one</strong>. They explicitly <em>don't</em> fake a resume. Knowing what not to recover is as important as the recovery.</p>
+
+        <h2 id="minio">A bonus: MinIO twice — cache + profiles</h2>
+        <p>A neat aside with real economics. 10M pages/day re-fetch the same JS bundles, fonts, and images from the same retail sites, over and over, across the <em>priced</em> public internet. So an S3-compatible <strong>MinIO cache</strong> sits in-cluster next to the workers:</p>
+        <ul>
+          <li>Repeat asset → served on the cluster network, never crossing the internet again.</li>
+          <li>First/uncached fetch → priced egress to the retailer.</li>
+          <li><strong>Locality is the whole point</strong> — a managed bucket would re-introduce the egress you're trying to kill.</li>
+          <li><strong>The bigger the fleet, the higher the repeat rate</strong> — the cache earns more at scale, not less.</li>
+          <li>A second MinIO stores Chrome profiles — warm cookies + fingerprints that outlive ephemeral pods, so recycled pods don't look ephemeral to the sites they visit.</li>
+        </ul>
+
+        <h2 id="lessons">What they'd tell you</h2>
+        <p>The closing five points are the transferable lesson, and they're good enough to quote whole:</p>
+        <ol>
+          <li><strong>Match the primitive to the problem.</strong> A Service load-balances; they needed an exclusive, availability-aware lease.</li>
+          <li><strong>The primitives are public.</strong> EndpointSlice is the same API kube-proxy reads — you can read it too.</li>
+          <li><strong>Bypass surgically.</strong> One hot path on the EndpointSlice API; everything else stays on stock kube-proxy.</li>
+          <li><strong>"Ready" is not ready.</strong> Design for stale endpoints and cold starts from day one.</li>
+          <li><strong>No fancy tooling</strong> — just deep Kubernetes. No mesh, no eBPF rewrite, no new CRDs.</li>
+        </ol>
+
+        <h2 id="faq">FAQ</h2>
+
+        <details class="faq">
+          <summary>Did they actually remove kube-proxy from the cluster?</summary>
+          <p>No — the title is provocative. They bypassed it for <em>one hot path</em> (browser dispatch), where a Service is the wrong shape. Everything else in the cluster still uses stock kube-proxy and Services. "Bypass surgically" is the precise claim.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why can't a Kubernetes Service do this?</summary>
+          <p>A Service load-balances connections across interchangeable ready pods. It can't <em>hold</em> a request until a specific resource is free, and it can't <em>lease</em> one pod exclusively to one caller until a job finishes. Browser dispatch needs both — exclusive and held — so the Service abstraction doesn't fit.</p>
+        </details>
+
+        <details class="faq">
+          <summary>What is the EndpointSlice API and why use it directly?</summary>
+          <p>EndpointSlice is the Kubernetes API that tracks which pods back a Service and their readiness — it's what kube-proxy watches. Because it's a public API, the custom proxy watches it too, building an in-memory free-pool of browsers, then adds hold + lease semantics on top. Same data, different routing logic.</p>
+        </details>
+
+        <details class="faq">
+          <summary>How do they scale, if not on CPU?</summary>
+          <p>On hold-queue depth — the number of parked callers waiting for a free browser. The proxy publishes that, a metric server scrapes it, and it flows via the External Metrics API to the HPA, which scales the (spot) browser fleet. CPU can't tell you whether a browser is available; the queue can.</p>
+        </details>
+
+        <details class="faq">
+          <summary>What happens when a dial lands on a busy or dead pod?</summary>
+          <p>Because the EndpointSlice watch lags reality, a stale pod can be in the pool. A failed dial sets that pod aside for a couple of seconds and re-queues the caller to the next free browser — invisibly, before the session starts. If a pod dies <em>mid-session</em>, that single job is lost and retried fresh upstream (blast radius of one); they don't fake a resume.</p>
+        </details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Some routing needs are exclusive + held</strong> — one specific free resource, leased until done — which a Service can't express.</li>
+          <li><strong>EndpointSlice is a public API.</strong> Watch the same data kube-proxy reads and add the semantics you need (hold, lease) in a small proxy.</li>
+          <li><strong>Bypass surgically</strong> — one hot path goes custom; everything else stays stock. No mesh, no eBPF, no CRDs.</li>
+          <li><strong>Scale on the real signal</strong> — hold-queue depth via External Metrics → HPA, not CPU.</li>
+          <li><strong>"Ready" is your definition</strong>, and the watch lags reality — design for stale endpoints; accept a blast radius of one for mid-job death instead of faking resumes.</li>
+        </ul>
+
+        <p>Next in Day 2 — <strong>Using Buildpacks To Reduce Container Bloat and Attack Surface</strong>.</p>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="kubecon-mumbai-2026-day-2.html">KubeCon Mumbai 2026 — Day 2 index</a> <span>· the rest of Day 2</span></li>
+          <li><a href="https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/" target="_blank" rel="noopener">Kubernetes EndpointSlices</a> <span>· the API kube-proxy reads</span></li>
+          <li><a href="https://github.com/legalimpurity/kubecon-endpointslice-demo" target="_blank" rel="noopener">Demo — kubecon-endpointslice-demo</a> <span>· watch → free-pool → lease → dial</span></li>
+          <li><a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/" target="_blank" rel="noopener">HPA &amp; External Metrics</a> <span>· scale on queue depth</span></li>
+          <li><a href="kcm26-serving-and-scaling.html">Day 1 DD13 — Serving LLMs on Kubernetes</a> <span>· another custom-scaling story</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="kcm26-d2-devex-roadmap.html">← prev: tag devex roadmap</a>
+        <a href="kcm26-d2-buildpacks.html">next: buildpacks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

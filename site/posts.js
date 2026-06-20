@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-ditched-kubeproxy",
+    title: "Why We Ditched Kube-proxy — Scaling 10M Daily Browser Sessions.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "kubernetes", "networking", "endpointslice"],
+    time: 23,
+    words: 5000,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Rajat Khanna (CommerceIQ) runs a browser farm (~8K pods, 10M+ pages/day, 100% spot) where each request needs one specific free browser, held until done — a routing need a Kubernetes Service can't express. The fix isn't a mesh or eBPF: a small proxy watches the same EndpointSlice API kube-proxy reads and adds two verbs — hold and lease — scaling on hold-queue depth via the External Metrics API. A masterclass in bypassing surgically: one hot path goes custom, everything else stays stock.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.8"
+  },
+  {
     slug: "kcm26-d2-devex-roadmap",
     title: "Scaling the Developer Frontier — The TAG DevEx Roadmap for 2026.",
     date: "Jun 19, 2026",

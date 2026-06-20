@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-devex-roadmap",
+    title: "Scaling the Developer Frontier — The TAG DevEx Roadmap for 2026.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "devex", "cncf", "community"],
+    time: 20,
+    words: 4500,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Daniel Oh & Kevin Dubois (IBM) present CNCF TAG Developer Experience — its charter, three focus areas (inner/outer-loop tooling, application runtime, platform enablement), and the 2026 initiatives. The headline is the State of AI in CNCF Projects survey: most projects have no AI policy, code review is the top integration point, and maintainers' biggest fear is a flood of low-effort AI PRs overwhelming reviewers. The roadmap answers with a vendor-neutral coding harness, OCI inner-loop packaging for AI engineers, and maintainer-onboarding work.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.7"
+  },
+  {
     slug: "kcm26-d2-two-node-edge",
     title: "When the Edge Can't Afford a Third Node — Two-Node Kubernetes Storage.",
     date: "Jun 19, 2026",

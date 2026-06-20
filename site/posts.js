@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-grpc-mcp",
+    title: "A gRPC Transport for the Model Context Protocol.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "mcp", "grpc", "agents"],
+    time: 21,
+    words: 4700,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Pawan Bhardwaj (gRPC maintainer, Google) gives MCP a native gRPC transport — typed protobuf with first-class RPCs (ListResources/CallTool/GetPrompt) instead of JSON-RPC wrappers — without forking the protocol. The dispatcher pattern separates MCP semantics (19 methods, unchanged) from a 5-method wire dispatcher, so swapping JSONRPCDispatcher for GrpcDispatcher makes every MCP method work over gRPC for free. Early (Python first, SEP-2598), but the architecture is settled.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.2"
+  },
+  {
     slug: "kcm26-d2-gpu-hunter",
     title: "GPU Hunter — Architecting Global GPU Availability With MultiKueue.",
     date: "Jun 19, 2026",

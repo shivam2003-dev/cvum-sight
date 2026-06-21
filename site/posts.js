@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-llms-behind-bars",
+    title: "LLMs Behind Bars — Sandboxes at Scale.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "security", "sandbox", "llm"],
+    time: 23,
+    words: 5000,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Prashanth Pai (CodeRabbit) on running untrusted LLM-generated code at scale. Threat model: exfiltration, network abuse, host poisoning, resource exhaustion. CodeRabbit runs ~500k sandboxes/day as nsjail inside Firecracker microVMs (~700ms cold start, 3-10 min lifetime) — defense in depth where the microVM is the trust boundary and nsjail cuts blast radius inside it. Covers gVisor vs Kata vs Firecracker tradeoffs, egress proxy brokering secrets so the model never sees them, and why a tool/MCP boundary beats raw code execution when you can afford it.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.11"
+  },
+  {
     slug: "kcm26-d2-rk3588-kubeedge",
     title: "Validating RK3588 for KubeEdge — Simulating Edge with QEMU.",
     date: "Jun 19, 2026",

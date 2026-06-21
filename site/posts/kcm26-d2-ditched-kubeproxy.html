@@ -149,6 +149,10 @@
         <h2 id="endpointslice">EndpointSlice — the public primitive</h2>
         <p>The <strong>EndpointSlice API</strong> is how Kubernetes tracks which pods back a Service and whether each is ready — it's what kube-proxy watches to build its routing tables. The insight: that API is <em>public</em>. Anything can watch it. CommerceIQ's proxy watches EndpointSlices to maintain an in-memory <strong>free-pool</strong> of browsers, then leases from it.</p>
 
+        <div class="bm-note"><strong>How kube-proxy works under the hood — and why it can't help here.</strong> kube-proxy watches the EndpointSlice API and programs the node's kernel to forward Service traffic — historically via <code>iptables</code> rules, increasingly via <code>IPVS</code> or eBPF in modern CNIs. When a packet hits a ClusterIP, the kernel picks a backend pod, classically with random/round-robin selection per <em>connection</em>. That's the crux: the choice is made in the kernel datapath with no application state, no notion of "this backend is mid-job," and no ability to block. It's a stateless connection spreader by design — which is exactly right for stateless replicas and exactly wrong for an exclusive lease. You can't teach iptables "wait until a browser frees up"; that's an application concern, so it has to live in an application-level proxy.</div>
+
+        <p>It's worth being precise about <strong>EndpointSlice</strong> itself, because it's the load-bearing primitive. It replaced the older <code>Endpoints</code> object (which crammed every backend of a Service into one resource that didn't scale past a few thousand endpoints) with <em>sliced</em>, paginated sets of ~100 endpoints each — far kinder to the API server and to watchers at 8K pods. Each endpoint carries <strong>conditions</strong>: <code>ready</code>, <code>serving</code>, and <code>terminating</code>. CommerceIQ's trick hinges on redefining what <code>ready</code> means for their pods (via the readiness probe): a browser reports ready only when it's <em>free for a job</em>, so the EndpointSlice <code>ready</code> condition becomes a live "free/busy" flag the proxy can watch. They're not adding a new API — they're overloading a condition that already exists and is already maintained by the kubelet.</p>
+
         <h2 id="machine">The browser-farm machine</h2>
         <p>The full system, with the proxy as the only long-lived component near the hot path:</p>
         <div class="diagram-container">
@@ -200,6 +204,20 @@
           <li>A second MinIO stores Chrome profiles — warm cookies + fingerprints that outlive ephemeral pods, so recycled pods don't look ephemeral to the sites they visit.</li>
         </ul>
 
+        <h2 id="alternatives">Why not the obvious alternatives?</h2>
+        <p>The natural question — "couldn't you do this with something off the shelf?" — is worth walking, because the answer is what justifies the custom proxy.</p>
+        <table class="papers">
+          <thead><tr><th>Alternative</th><th>Why it doesn't fit</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>Headless Service + client-side LB</strong></td><td>Gives you the pod IPs (good!) but still no exclusive lease or hold — every client would independently pick, and two could pick the same free browser. You'd end up building the lease layer anyway.</td></tr>
+            <tr><td class="p"><strong>Session affinity (<code>sessionAffinity: ClientIP</code>)</strong></td><td>Pins a client to a pod by source IP — but that's stickiness, not exclusivity. It doesn't reserve a pod, doesn't wait for a free one, and breaks under NAT/shared egress.</td></tr>
+            <tr><td class="p"><strong>A job queue (back to v1)</strong></td><td>Workers pulling jobs is exactly what v2 moved away from — it re-couples business logic into the browser fleet and loses the clean request-in/page-out API. The queue still exists here, but as a <em>hold</em> queue inside the proxy, not a coupling.</td></tr>
+            <tr><td class="p"><strong>Service mesh (Istio/Linkerd)</strong></td><td>Meshes add L7 routing, retries, mTLS — none of which express "lease one exclusive backend and block until free." You'd pay the sidecar tax and still write the lease logic.</td></tr>
+            <tr><td class="p"><strong>A scheduler/CRD + operator</strong></td><td>Modeling each lease as a custom resource works but adds API-server write load per job (millions/day), reconcile latency on the hot path, and a lot of machinery. In-memory lease in the proxy is faster and simpler for a per-request decision.</td></tr>
+          </tbody>
+        </table>
+        <div class="bm-fix"><strong>The meta-lesson: read the source, don't fight the abstraction.</strong> The reason this works is that Kubernetes' routing data isn't hidden behind kube-proxy — EndpointSlice is a public, watchable API, and kube-proxy is just <em>one consumer</em> of it. CommerceIQ became a second consumer for one hop. That's a fundamentally different move from "replace the CNI" or "install a mesh": it's surgical, it keeps every other Service on stock kube-proxy, and it adds zero new cluster-wide moving parts. The discipline is recognizing that a <code>Service</code> is a <em>convenience</em> over EndpointSlice, and when the convenience is the wrong shape, you can drop one level without rebuilding the floor.</div>
+
         <h2 id="lessons">What they'd tell you</h2>
         <p>The closing five points are the transferable lesson, and they're good enough to quote whole:</p>
         <ol>
@@ -235,6 +253,26 @@
         <details class="faq">
           <summary>What happens when a dial lands on a busy or dead pod?</summary>
           <p>Because the EndpointSlice watch lags reality, a stale pod can be in the pool. A failed dial sets that pod aside for a couple of seconds and re-queues the caller to the next free browser — invisibly, before the session starts. If a pod dies <em>mid-session</em>, that single job is lost and retried fresh upstream (blast radius of one); they don't fake a resume.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why not just use a headless Service and let clients pick?</summary>
+          <p>A headless Service gives you the pod IPs, which is half the answer — but with no coordination, two clients can pick the same "free" browser, and there's still no waiting for a free one. You'd have to build the exclusive-lease and hold-queue logic on top anyway, so they built exactly that as a small central proxy rather than scattering it across every client.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why is the EndpointSlice watch "always a half-step behind"?</summary>
+          <p>Kubernetes is eventually consistent: when a pod goes busy or is reclaimed, the kubelet updates its readiness, the control plane updates the EndpointSlice, and only then does the watcher receive the event — milliseconds-to-seconds later. So any cached free-pool is a slightly stale snapshot. That's not a bug to fix but a property to design around: assume a dial can hit a stale pod, and recover by re-queuing on a failed dial.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Does redefining readiness as "free for a job" have side effects?</summary>
+          <p>It means the EndpointSlice <code>ready</code> condition flips on <em>every</em> job, which is high-churn but exactly the live free/busy signal they want. The trade-off is that anything else relying on a normal Service in front of these pods would see them constantly leaving and rejoining — which is why they bypass the Service for this hop entirely and consume EndpointSlice directly. Overloading readiness only works because they control both the probe and the consumer.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Is this a pattern other teams should copy?</summary>
+          <p>Only when the requirement genuinely doesn't fit a Service — an exclusive, availability-aware, hold-until-free lease. For ordinary stateless backends, a Service is correct and you should not touch EndpointSlice. The transferable lesson isn't "write a custom proxy," it's "know that Kubernetes' routing primitives are public and you can drop one level surgically when, and only when, the abstraction is the wrong shape."</p>
         </details>
 
         <h2 id="takeaways">Takeaways</h2>

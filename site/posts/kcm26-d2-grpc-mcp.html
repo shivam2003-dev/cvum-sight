@@ -110,6 +110,10 @@
 
         <div class="bm-note"><strong>The gap, stated plainly.</strong> If your company already standardised on gRPC — typed contracts, mTLS, xDS service mesh, OpenTelemetry — then bolting MCP on with JSON-RPC means running a translation layer for every tool call. You inherit the worst of both: JSON-RPC's loose typing on one side, a gateway to maintain in the middle, and your gRPC stack's guarantees stopping at the door. A native gRPC transport closes that gap.</p></div>
 
+        <h3>A quick MCP primer</h3>
+        <p>For readers who haven't built against it: the <strong>Model Context Protocol</strong> is a standard way for an AI application (the "host," e.g. an IDE or agent) to connect to "servers" that expose <strong>tools</strong> (functions the model can call), <strong>resources</strong> (data the model can read), and <strong>prompts</strong> (reusable templates). It's the "USB-C for AI tools" — write a tool server once and any MCP-speaking host can use it. Under the hood MCP messages are <strong>JSON-RPC 2.0</strong> (a request/response/notification envelope), and the spec defines a handful of transports to carry that JSON-RPC: <strong>stdio</strong> (the host launches the server as a subprocess and pipes JSON over stdin/stdout — great for local tools), and <strong>Streamable HTTP/SSE</strong> (for remote servers). gRPC is not one of the blessed transports today, which is precisely the gap this talk fills.</p>
+        <p>The important architectural point: JSON-RPC and stdio were chosen for <em>ease of getting started</em> — a developer can stand up an MCP server in minutes with no infrastructure. That's the right call for adoption and demos. But those same defaults are exactly what an enterprise that already runs a typed, mTLS-secured, service-meshed gRPC backend does <em>not</em> want, because they sit outside all of that existing machinery.</p>
+
         <h2 id="backbone">gRPC as the transport backbone</h2>
 
         <p>The performance and platform case for gRPC isn't new, but it's worth restating in the MCP context:</p>
@@ -132,6 +136,11 @@
 
         <h3>Operational maturity</h3>
         <p>Six properties that make gRPC "production-grade" rather than "works in a demo": unified observability (OpenTelemetry for full-stack insight); robust resiliency (deadlines, timeouts, flow control); schema validation (protobuf strict typing rejects malformed input at the boundary); polyglot development (C++, Go, Python, Java, Node, PHP, Rust); metadata support (extensible per-request context); and xDS support (proxyless service-mesh integration). Each is something MCP-over-JSON-RPC would have to reinvent.</p>
+
+        <div class="bm-warn"><strong>What the transcoding gateway actually costs.</strong> Today, to put an MCP tool in front of a gRPC backend you run a translation layer (e.g. an Envoy/grpc-gateway transcoder) that parses JSON-RPC, validates it loosely, re-encodes it as protobuf, calls the gRPC service, then reverses the whole thing on the way back. Every tool call pays for: a JSON parse + serialize on each hop, a second network hop and an extra process to deploy/scale/patch/monitor, a place where your mTLS/SPIFFE identity terminates and is re-originated (a trust seam), and a schema that's enforced in <em>two</em> places that can drift. None of that adds capability — it's pure overhead to bridge a format impedance mismatch. A native gRPC transport deletes the gateway entirely: the agent's tool call <em>is</em> a gRPC call, end to end.</div>
+
+        <h3>How gRPC's streaming maps onto MCP</h3>
+        <p>One reason gRPC fits MCP better than it first appears is its four call types, which line up with MCP's interaction shapes. <strong>Unary</strong> (one request, one response) covers the common case — <code>CallTool</code>, <code>GetPrompt</code>, <code>ListResources</code>. <strong>Server-streaming</strong> (one request, a stream of responses) is the natural home for progress notifications and incremental/streamed tool output — exactly the things JSON-RPC-over-stdio handles awkwardly with correlated notification messages. <strong>Client-streaming</strong> and <strong>bidirectional streaming</strong> open the door to long-lived, two-way agent↔tool sessions where both sides push messages. Critically, gRPC's <strong>built-in flow control</strong> (from HTTP/2) gives backpressure on these streams natively, so a fast-producing tool can't overwhelm a slow consumer — something MCP otherwise has to manage by hand. The dispatcher pattern is what lets MCP's semantics ride on top of whichever of these shapes a given method needs.</p>
 
         <h2 id="mapping">Mapping the spec — mcp-grpc-transport-proto</h2>
 
@@ -224,6 +233,19 @@ session = ClientSession(dispatcher=GrpcDispatcher(...))</pre>
 
         <p>That one-line swap is the whole point: the tool author writes MCP, the platform team picks the transport.</p>
 
+        <h2 id="adopt">Who this is for — and who it isn't</h2>
+        <p>It's worth being clear that native gRPC is <em>not</em> meant to replace JSON-RPC/stdio for everyone — it's a second option for a specific audience. The dispatcher pattern exists precisely so both can coexist without forking the protocol.</p>
+        <table class="papers">
+          <thead><tr><th>gRPC transport fits when…</th><th>Stick with JSON-RPC/stdio when…</th></tr></thead>
+          <tbody>
+            <tr><td>Your backend already speaks gRPC (typed contracts, mTLS, xDS mesh, OTel).</td><td>You're building a local tool launched as a subprocess — stdio is simpler and has zero infra.</td></tr>
+            <tr><td>You need method-level authz, native backpressure, and end-to-end identity.</td><td>You want the fastest path from idea to a working MCP server.</td></tr>
+            <tr><td>Tool calls are high-volume or latency-sensitive and JSON overhead matters.</td><td>Your consumers are browsers or simple HTTP clients without gRPC tooling.</td></tr>
+            <tr><td>You operate at enterprise scale where one transcoding gateway per tool is real cost.</td><td>Interop breadth matters more than per-call efficiency.</td></tr>
+          </tbody>
+        </table>
+        <div class="bm-note"><strong>The strategic point.</strong> Because the protocol stays single (one MCP, pluggable transports), a tool author never has to choose "the gRPC ecosystem" vs "the JSON-RPC ecosystem." They write MCP once; the deploying org picks the wire. That avoids the worst outcome — a community fork where some tools only work over one transport — which is exactly the failure the dispatcher design is engineered to prevent. It mirrors how gRPC itself stayed one framework across many languages by keeping the contract (the proto) canonical and the bindings pluggable.</div>
+
         <h2 id="roadmap">What's next — the roadmap</h2>
 
         <p>The proposal is formalised as <strong>SEP-2598: Pluggable Transports</strong> (under review, <code>modelcontextprotocol</code> PR #2598). The near-term plan:</p>
@@ -256,6 +278,21 @@ session = ClientSession(dispatcher=GrpcDispatcher(...))</pre>
         <details class="faq">
           <summary>Can I use this in production today?</summary>
           <p>Not yet as a stable release. The Python transport is in active development, SEP-2598 is under review, and conformance tests are being built. But you can follow the canonical proto and the Python repo, and the migration is designed to be a one-line dispatcher swap when it lands.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Does adopting gRPC mean abandoning stdio/JSON-RPC tools?</summary>
+          <p>No. The whole design keeps MCP a single protocol with pluggable transports, so JSON-RPC/stdio remains the default and best choice for local subprocess tools and quick starts. gRPC is an additional transport for enterprises whose backends already run on it. A tool author writes MCP once; the deploying org picks the wire — both coexist without forking.</p>
+        </details>
+
+        <details class="faq">
+          <summary>How does MCP's progress/streaming work over gRPC?</summary>
+          <p>It maps onto gRPC's streaming call types: unary for plain request/response (most tool calls), and server-streaming for progress notifications and incremental output. gRPC's HTTP/2 flow control provides native backpressure on those streams, so a fast tool can't overwhelm a slow client — which MCP otherwise has to coordinate manually with correlated notification messages.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why is keeping the proto canonical so important?</summary>
+          <p>Because it's what keeps every language implementation in agreement and prevents drift. One <code>mcp-grpc-transport-proto</code> is the single source of truth; the per-language libraries (Python first) are generated/built against it and evolve in lockstep with the MCP spec via the transport workgroup. It's the same discipline that let gRPC stay one coherent framework across C++, Go, Python, Java, Node, and Rust.</p>
         </details>
 
         <h2 id="takeaways">Takeaways</h2>

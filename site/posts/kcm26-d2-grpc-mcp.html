@@ -154,6 +154,26 @@
 
         <div class="bm-fix"><strong>Why "direct mapping" is the crux.</strong> The naive way to add gRPC would be to wrap a JSON-RPC payload inside a protobuf string field. That's the trap — you'd be smuggling JSON-RPC through gRPC and throwing away protobuf's entire value (typing, validation, small messages). Direct mapping means an MCP <code>Tool</code> <em>is</em> a protobuf <code>Tool</code> message, validated by the schema. No double-encoding, no stringly-typed payloads.</p></div>
 
+        <p>Concretely, the direct mapping turns MCP's JSON-RPC method names into real gRPC RPCs on a first-class service, roughly:</p>
+        <pre class="code">// mcp-grpc-transport-proto (illustrative shape)
+service Mcp {
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  rpc CallTool(CallToolRequest)           returns (CallToolResponse);
+  rpc GetPrompt(GetPromptRequest)         returns (GetPromptResponse);
+  // streaming variants carry progress / incremental output
+  rpc CallToolStream(CallToolRequest)     returns (stream CallToolEvent);
+}
+
+message Tool {
+  string name = 1;
+  string description = 2;
+  // typed input schema — validated by the wire, not hand-checked
+  ToolInputSchema input_schema = 3;
+}</pre>
+        <p>Compare that to the JSON-RPC reality, where every call is <code>{"jsonrpc":"2.0","method":"tools/call","params":{…},"id":7}</code> — a stringly-typed envelope whose <code>params</code> shape is validated (if at all) by application code after parsing. With the proto, the <em>contract</em> is the <code>.proto</code> file: malformed input is rejected at the transport boundary before your handler ever runs, the message is a compact binary blob instead of verbose JSON, and the generated client/server stubs give you typed objects in every language. This is the difference between "the schema is documentation" and "the schema is enforced by the wire."</p>
+
+        <div class="bm-note"><strong>The protobuf vs JSON trade, honestly.</strong> Protobuf's wins are real — ~10× smaller messages, strict typing, generated stubs, fast parse. But it isn't free: messages aren't human-readable on the wire (you need the schema to decode), debugging needs tooling (no <code>curl | jq</code>), and you take a build-step dependency on codegen. For a quick local tool those costs outweigh the benefits, which is why stdio/JSON-RPC stays the default. For a high-volume enterprise mesh the costs are already paid (you have the gRPC toolchain) and the benefits compound across millions of tool calls. The point of pluggable transports is you don't have to pick globally — you pick per deployment.</div>
+
         <h2 id="pluggable">The real design problem — pluggable transports</h2>
 
         <p>The most interesting section drew on Anthropic's "Path to V2 for MCP SDKs" (Max Isbey). MCP has three layers, and "pluggable transports" usually means swapping the bottom two together:</p>

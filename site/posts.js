@@ -28,6 +28,18 @@ const POSTS = [
     seriesNum: "D2"
   },
   {
+    slug: "kcm26-d2-zerotrust-fintech",
+    title: "Zero Trust for Fintech — Secure Banking Infrastructure With Cilium.",
+    date: "Jun 19, 2026",
+    cat: "conferences",
+    tags: ["conferences", "kubecon", "cilium", "zero-trust", "ebpf"],
+    time: 24,
+    words: 5200,
+    excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Prasta Maha &amp; Herbert Sianturi (Krom Bank Indonesia) build zero trust on Kubernetes with Cilium — where policy follows the workload's identity, not its IP. Five pillars: identity (labels become a numeric security identity that survives reschedules), network policy (one CiliumNetworkPolicy CRD spanning L3/L4/L7, default-deny, with a worked payment-service example covering identity/FQDN/CIDR/ClusterMesh egress), encryption (WireGuard/IPsec for the wire plus identity-based mTLS for the workload), observability (Hubble flow logs that serve SRE and auditor from one pipeline), and runtime security (Tetragon killing bad behaviour inside the pod). Plus the policy-pruning loop that keeps default-deny honest over time.",
+    series: "kubecon-mumbai-2026",
+    seriesNum: "D2.12"
+  },
+  {
     slug: "kcm26-d2-llms-behind-bars",
     title: "LLMs Behind Bars — Sandboxes at Scale.",
     date: "Jun 19, 2026",

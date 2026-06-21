@@ -102,6 +102,10 @@
         <h2 id="airgapped">What "air-gapped" actually means here</h2>
         <p>An air-gapped environment — sometimes called a "private cloud" — has <strong>no connectivity to the public cloud</strong>, by design. GDC Air-Gapped is a HW+SW solution that delivers modern cloud capabilities into exactly that setting: Virtual Machines, IAM, Key Management, Database, Storage, and Networking, all Kubernetes-orchestrated with OSS for the infrastructure services, and an Organization/Project tenancy model with distinct personas for infrastructure, platform, and application operators.</p>
 
+        <p>It's worth being precise about <em>why</em> anyone signs up for this pain, because the constraints below only make sense against the motivation. Air-gapped deployments exist where connectivity is a liability, not a convenience: defence and intelligence systems handling classified data, central banks and payment switches under sovereignty rules, critical infrastructure (power grids, telco cores) that must keep running even if the internet is cut, and regulated industries in jurisdictions that legally forbid data leaving the country or the building. The "gap" is a deliberate security control — if there's no path to the public internet, an entire class of remote attacks, data-exfiltration channels, and supply-chain phone-homes simply cannot happen. The trade is that <em>everything</em> the platform needs must already be inside the gap.</p>
+
+        <div class="bm-warn"><strong>The first thing the air gap breaks is the thing nobody thinks about: pulling stuff.</strong> Every habit of cloud-native operations quietly assumes internet access — <code>docker pull</code> from Docker Hub, <code>helm repo add</code>, <code>apt-get update</code>, fetching a Let's Encrypt cert, an operator calling a vendor SaaS, even a sidecar checking for updates. In an air gap, <em>all</em> of that fails. Container images must be mirrored into an internal registry; Helm charts and OS packages mirrored into internal repos; certificates issued by an internal CA (there is no public ACME); time synced from an internal NTP source. Bootstrapping the environment is a deliberate "carry it across the gap" exercise — physical media or a tightly controlled one-way sync. This is the hidden tax behind every architecture decision in this talk: there is no fallback to "just download it."</div>
+
         <div class="diagram-container">
           <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
             <rect x="20" y="20" width="200" height="60" rx="6" class="boxg"/>
@@ -127,6 +131,10 @@
           <p class="diagram-label">Fig 1 — GDC Air-Gapped: a primary Organizational Infra Cluster (Istiod, management API) plus remote user and service clusters, all on bare metal, no public-cloud link.</p>
         </div>
 
+        <p>The cluster split is itself a security and tenancy decision, not just an org chart. The <strong>Organizational Infra Cluster</strong> (primary) holds the management API server and Istiod — the brains — and is operated by infrastructure personas. <strong>Service Clusters</strong> run shared infra services (the platform's own building blocks). <strong>User Clusters</strong> run customer/tenant workloads alongside the infra services they need. Each lives on its own network, and the separation means a compromise or a noisy tenant in a user cluster is contained — it can't reach the management plane or another tenant's cluster except through the mesh's authorized, mTLS-protected paths. The "Organization and Project" tenancy with distinct infra/platform/application personas mirrors the public cloud's IAM model, rebuilt inside the gap so the same least-privilege boundaries apply.</p>
+
+        <div class="bm-note"><strong>North-south vs east-west — the two traffic axes.</strong> Everything in this talk splits along two directions. <strong>North-south (N-S)</strong> is traffic crossing the platform boundary: a request from the Customer or Operator network coming <em>in</em> to an infra service, handled by <strong>ingress gateways</strong>. <strong>East-west (E-W)</strong> is service-to-service traffic <em>inside</em> the platform — often across cluster and network boundaries — handled by <strong>east-west gateways</strong>. The reason this distinction is load-bearing: N-S is where you enforce the perimeter (TLS termination, authN, rate limiting, DoS protection) and E-W is where you enforce zero-trust between services (mТLS, authorization, identity). Mixing them up is how you accidentally trust internal traffic just because it's internal — exactly the implicit-trust failure the <a href="kcm26-d2-zerotrust-fintech.html">zero-trust talk</a> warns against.</div>
+
         <h2 id="requirements">The requirement — at painful scale</h2>
         <p>Every service in the platform needs the same three things, and there's no managed service to outsource them to:</p>
         <table class="papers">
@@ -146,8 +154,15 @@
           <li>Offers traffic shifting, mirroring, circuit-breaking, automatic mTLS, and telemetry out of the box.</li>
         </ul>
 
+        <div class="bm-note"><strong>What xDS actually is.</strong> xDS is the family of discovery APIs Envoy speaks to its control plane — LDS (listeners), RDS (routes), CDS (clusters), EDS (endpoints), SDS (secrets/certs). Istiod watches the Kubernetes API and your Istio CRDs, compiles them into Envoy's native config, and streams it to every proxy over a gRPC connection. The power is that you write intent (<code>VirtualService</code>: "send 10% to v2") and Istiod translates it into the low-level Envoy config on hundreds of proxies. The cost — which becomes the central scaling problem in an air gap — is that every config change can fan out to every proxy, and that fan-out is bounded by control-plane CPU and network, both finite on bare metal.</div>
+
+        <h3>Sidecar vs ambient — and why it matters more here</h3>
+        <p>Istio's two data-plane modes are a real architectural fork. <strong>Sidecar</strong> mode injects an Envoy proxy container into every pod — maximum per-workload control, but it doubles pod count and adds a proxy's memory/CPU to every workload. At ~450 microservices on fixed bare-metal compute, that overhead is not academic; it's a meaningful slice of a cluster you can't elastically grow. <strong>Ambient</strong> mode moves L4 handling to a per-node component (ztunnel) and makes L7 proxying an opt-in per-namespace waypoint, cutting the per-pod tax. The deck notes both modes exist; the picture shown is sidecar. The honest read: in a resource-constrained air gap, the sidecar tax is exactly the kind of thing that pushes teams toward ambient over time — fewer proxies to schedule, patch, and feed.</p>
+
         <h3>Istio in GDC Air-Gapped</h3>
         <p>The topology: <strong>Istiod runs in the primary</strong> (Organizational Infra Cluster, Network 1). User Cluster (Network 2) and Service Cluster (Network 3) are <strong>remote</strong> clusters joined to it. Three kinds of gateway carry traffic: <strong>Ingress Gateways</strong> (north-south, from the Customer/Operator networks in), <strong>East-West Gateways</strong> (cross-cluster, cross-network service-to-service), and an <strong>Egress Gateway</strong> (controlled exit). Infra service pods carry Envoy sidecars; Istiod pushes config to all of them over xDS across the network boundaries.</p>
+
+        <p>The <strong>east-west gateway</strong> deserves a closer look because it's the piece that makes multi-network mesh work, and it's specific to this kind of topology. In a single flat network, sidecars reach each other directly by pod IP. But here the clusters sit on <em>different networks</em> (1, 2, 3) that can't route to each other's pod IPs. The east-west gateway solves this: a sidecar in Network 2 that wants to reach a service in Network 1 sends the traffic to that network's east-west gateway, which terminates the mesh mТLS, looks at the SNI, and forwards to the right backend — all while preserving the workload identity so authorization still works end-to-end. It's effectively a mesh-aware bridge between network islands, and it's why "multi-network, multi-primary" is more than a bullet point: the gateways are load-bearing infrastructure, which is why they get HPA and auto-scaling attention in the lifecycle section.</p>
 
         <h2 id="gateways">Gateways — the workhorses</h2>
         <p>Gateways do most of the heavy lifting, and each capability maps to a specific Istio API:</p>
@@ -222,6 +237,26 @@
 
         <div class="bm-fix"><strong>The two scaling levers worth stealing.</strong> When Istiod has to push config to ~450 sidecars across networks, naive full-state pushes melt the control plane. The fixes named here are the standard-but-essential ones: <strong>config scoping</strong> (use <code>Sidecar</code> resources / namespace isolation so each proxy only learns about the services it actually talks to) and <strong>delta xDS</strong> (push only what changed, not the whole config snapshot). On bare metal with no elastic compute, these aren't optimisations — they're what keeps the mesh from falling over.</p></div>
 
+        <h3 id="upgrades">Why upgrades are the hardest part</h3>
+        <p>The lifecycle row on the scars slide is easy to skim, but it hides the genuinely hard operational problem. Upgrading a mesh that spans a primary plus multiple remote clusters, on bare metal, with no maintenance window where you can "just take it down," is a choreography problem:</p>
+        <ul>
+          <li><strong>Order matters.</strong> The control plane (Istiod) generally upgrades before the data plane (proxies), and the primary before the remotes — but a remote cluster pinned to an old proxy version must still talk to a newer control plane, so version-skew compatibility windows have to be respected, not assumed.</li>
+          <li><strong>Data-plane downtime must be near zero.</strong> Restarting every sidecar to pick up a new Envoy means rolling them carefully; do it too fast and you drop in-flight requests across 450 services. Gateways (the east-west/ingress paths) are especially sensitive because they're shared chokepoints.</li>
+          <li><strong>Unhealthy clusters can't block the fleet.</strong> If one user cluster is wedged, the upgrade of everything else can't stall waiting for it — hence "special handling for unhealthy user clusters." You need an upgrade controller that can proceed around a sick member and reconcile it later.</li>
+          <li><strong>No internet means no canary against prod-like SaaS.</strong> You validate the new version entirely inside the gap, against mirrored artifacts, which makes pre-flight testing and rollback plans more important, not less.</li>
+        </ul>
+
+        <h3 id="oss-why">Why this specific OSS stack</h3>
+        <p>The tool list isn't arbitrary — each piece replaces a managed cloud service that simply doesn't exist behind the gap. It's a useful template for anyone assembling a self-hosted platform:</p>
+        <ul>
+          <li><strong>Cilium</strong> handles L4 networking and network policy in the kernel via eBPF — the same dataplane the <a href="kcm26-d2-zerotrust-fintech.html">fintech zero-trust talk</a> builds on. It's the L4 floor under the L7 mesh.</li>
+          <li><strong>MetalLB</strong> gives you <code>type: LoadBalancer</code> services with no cloud load balancer — it allocates and advertises external IPs (via ARP or BGP) on bare metal, so the ingress gateways are reachable.</li>
+          <li><strong>CoreDNS</strong> does cross-cluster DNS forwarding so a name in one cluster resolves in another — essential when there's no cloud DNS to lean on.</li>
+          <li><strong>Loki + Fluent Bit + OTel Collector</strong> capture mesh audit and operational logs locally; <strong>Prometheus + Cortex</strong> store Istio/Envoy metrics at scale (Cortex for long-term, horizontally-scalable storage); <strong>Grafana</strong> visualises; <strong>AlertManager</strong> pages.</li>
+          <li><strong>Cert Manager</strong> drives the plug-in CA — the in-gap replacement for public certificate authorities, issuing and rotating the certs that back mesh mTLS.</li>
+        </ul>
+        <div class="bm-note"><strong>The pattern: the mesh is the integration point.</strong> Notice how every concern — networking, IP allocation, DNS, logs, metrics, certs — plugs into the service mesh rather than into a cloud. In a connected environment you'd wire half of these to managed services; in an air gap the mesh becomes the universal seam that ties self-hosted OSS together. That's the deeper lesson of the talk: a service mesh isn't just traffic management, it's the substrate that lets a pile of OSS behave like a coherent cloud.</div>
+
         <h2 id="faq">FAQ</h2>
 
         <details class="faq">
@@ -247,6 +282,21 @@
         <details class="faq">
           <summary>What keeps the control plane from melting at ~450 services?</summary>
           <p>Config scoping (Sidecar resources so each proxy only learns relevant services) and delta xDS (push only changes, not full snapshots). On bare metal these are necessities, not tuning — the platform is ultimately constrained by the physical compute available.</p>
+        </details>
+
+        <details class="faq">
+          <summary>How do certificates work with no public CA?</summary>
+          <p>You run your own. Istio's plug-in CA lets you feed it a root/intermediate CA you control (managed via Cert Manager), and Istiod issues short-lived workload certs from it via SDS. There's no Let's Encrypt or public ACME inside the gap, so the entire trust chain — root, intermediates, workload identities — is generated and rotated internally. This is actually cleaner for a high-security environment: you own the whole PKI rather than trusting an external root.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why not just use plain Kubernetes NetworkPolicy and skip the mesh?</summary>
+          <p>NetworkPolicy gives you L3/L4 allow/deny, which Cilium provides here as the floor. But the requirements list is mostly L7 and cross-cutting: attribute-based routing, mTLS with workload identity, rate limiting, retries, gRPC/HTTP transcoding, per-request telemetry, traffic shifting. None of that is expressible in NetworkPolicy. Doing it per-service across ~450 microservices by hand is the impossibility the mesh exists to remove — the behaviour lives in the data plane, configured declaratively, instead of in 450 codebases.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Is ambient mode better than sidecars for an air gap?</summary>
+          <p>It's a strong fit for the resource constraint. Sidecars add a proxy (and its memory/CPU) to every pod, which on fixed bare-metal compute is a real cost at scale. Ambient moves L4 to a per-node ztunnel and makes L7 opt-in per namespace, cutting the per-pod overhead and the number of proxies to patch. The trade-off is a newer, somewhat less battle-tested model and a different mental model for L7 (waypoints). The deck shows sidecars, but the resource math is exactly what nudges air-gapped operators to evaluate ambient.</p>
         </details>
 
         <h2 id="takeaways">Takeaways</h2>

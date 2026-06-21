@@ -16,16 +16,16 @@
 
 const POSTS = [
   {
-    slug: "kubecon-mumbai-2026-day-2",
-    title: "KubeCon India 2026, Mumbai — Day 2.",
+    slug: "kubecon-mumbai-2026-field-report",
+    title: "KubeCon India 2026, Mumbai — the field report.",
     date: "Jun 19, 2026",
     cat: "conferences",
     tags: ["conferences", "kubecon", "cloud-native", "kubernetes", "mumbai-2026"],
-    time: 21,
-    words: 4600,
-    excerpt: "Field report and session index for Day 2 (the closing day) of KubeCon + CloudNativeCon India 2026 in Mumbai. A banking- and sovereignty-heavy keynote relay (RBI compliance-as-code, SBI's sovereign cloud, 911 on shared Kubernetes), the four afternoon threads, and a full session index — 12 sessions with public decks get deck-by-deck deep dives; the rest are honest pointers.",
+    time: 22,
+    words: 5000,
+    excerpt: "One field report for both days of KubeCon + CloudNativeCon India 2026 in Mumbai (June 18–19). How each day felt, what the keynotes signalled (Day 1: sovereign AI, population-scale, GPUs; Day 2: RBI compliance-as-code, SBI's sovereign cloud, 911 on shared Kubernetes), and the themes that tied the sessions together. The full deck-by-deck index of all 29 deep dives lives on the series page.",
     series: "kubecon-mumbai-2026",
-    seriesNum: "D2"
+    seriesNum: "FR"
   },
   {
     slug: "kcm26-d2-zerotrust-fintech",
@@ -170,18 +170,6 @@ const POSTS = [
     excerpt: "KubeCon Mumbai 2026 Day 2 deep dive. Kishore Jagannath & Ram J A (Google) treat a fleet of clusters as one global GPU pool using Kueue (ResourceFlavor/ClusterQueue/LocalQueue + quotas) and MultiKueue's manager-worker meta-scheduler. ProvisioningRequest bridges logical quota to physical nodes via the Cluster Autoscaler — and the talk's honest centerpiece is the SchedulingGated deadlock, where the manager pins a job to an exhausted region while idle GPUs sit unused next door.",
     series: "kubecon-mumbai-2026",
     seriesNum: "D2.1"
-  },
-  {
-    slug: "kubecon-mumbai-2026-day-1",
-    title: "KubeCon India 2026, Mumbai — Day 1.",
-    date: "Jun 18, 2026",
-    cat: "conferences",
-    tags: ["conferences", "kubecon", "cloud-native", "kubernetes", "mumbai-2026"],
-    time: 19,
-    words: 4200,
-    excerpt: "Field report and deep-dive index for Day 1 of KubeCon + CloudNativeCon India 2026 in Mumbai. What the keynotes signalled (sovereign AI, population-scale, GPUs), the four themes of the day, and a curated index of 17 afternoon talks — each getting its own talk-by-talk deep dive in the series.",
-    series: "kubecon-mumbai-2026",
-    seriesNum: "0"
   },
   {
     slug: "kcm26-rearchitecting-monoliths",

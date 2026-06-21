@@ -99,6 +99,8 @@
 
         <p>This is the third Day 2 deep dive, and it sits right next to <a href="kcm26-d2-gpu-hunter.html">GPU Hunter</a> (finding GPUs) and Day 1's <a href="kcm26-serving-and-scaling.html">serving LLMs (DD13)</a> (running them). This one answers: once they're serving, how do you <em>see</em> whether they're healthy?</p>
 
+        <p>The scale framing matters because it changes what "monitoring" even means. 15M+ inferences a day is roughly 170 per second sustained, with peaks far higher, spread across many models, GPU types, and regions — and "sub-second response" is a published promise to the public, not an internal nicety. At that volume you cannot watch individual requests, and you cannot afford a human to ask "which layer broke?" on every blip. The monitoring has to be <em>self-routing</em>: an alert must encode where to look, and the dashboards must let you descend from "the whole platform is unhealthy" to "this one node's GPU is throwing ECC errors" in a few clicks. Everything below — the three planes, the SLO-on-top hierarchy, the two journeys — is in service of that property. It's also, notably, all assembled from open-source CNCF-adjacent pieces, which is why the talk doubles as a parts list anyone can copy.</p>
+
         <h2 id="lifecycle">The inference request lifecycle</h2>
 
         <p>Start with the path a single prompt travels — because every monitoring decision hangs off it:</p>
@@ -115,6 +117,12 @@
           <p class="diagram-label">Fig 1 — the inference request lifecycle: prompt → control plane → model endpoint (data plane) → model inference → response stream → user.</p>
         </div>
 
+        <p>Walk that path slowly, because each hop is a different kind of thing and fails for a different reason. The <strong>user prompt</strong> arrives at a global endpoint — possibly from a government portal, a chatbot, or a batch job. The <strong>inference platform (control plane)</strong> authenticates it, decides <em>which</em> model and <em>which</em> region/cluster should serve it, and applies rate limits and quotas. The <strong>model endpoint (data plane)</strong> is the addressable front door of a specific deployed model. <strong>Model inference</strong> is the actual GPU work — the forward pass that turns tokens into tokens. The <strong>response stream</strong> is where it gets interesting: an LLM doesn't return one blob, it emits tokens incrementally over a held-open connection (SSE or gRPC streaming), and the <strong>user</strong> watches text appear word by word.</p>
+
+        <p>That streaming shape is the single fact that breaks classic web monitoring. In a normal HTTP service, a request has one duration: start to response. You measure p50/p95/p99 of that number and you're mostly done. An LLM request has at least three distinct durations that matter: how long until the <em>first</em> token (the user sees "thinking" until then), how fast tokens stream <em>after</em> that, and how long the <em>whole</em> completion takes. A request can have a great total time but a terrible first-token time and the user will still feel it as slow. A monitoring stack that only records "request took 4.2s" has thrown away the number the user actually cares about.</p>
+
+        <div class="bm-note"><strong>The vocabulary you need.</strong> <strong>TTFT</strong> (time-to-first-token) — latency from request to the first streamed token; this is "responsiveness." <strong>TPOT</strong> (time-per-output-token) — average gap between subsequent tokens; this is "streaming speed," sometimes reported as its inverse, tokens/sec. <strong>E2E latency</strong> — total wall-clock for the full completion, which depends on output length and so is partly the model's choice, not the platform's. <strong>Throughput</strong> — tokens/sec and concurrent requests a deployment sustains, the capacity-planning number. TTFT and success rate are the two the deck made load-bearing because they map most directly to "is the user happy <em>right now</em>."</div>
+
         <h2 id="challenges">Why inference orchestration is hard</h2>
 
         <p>The deck laid the challenges next to the requirements they impose — a clean way to see why a plain web stack doesn't cut it:</p>
@@ -129,6 +137,10 @@
           </tbody>
         </table>
 
+        <p>Each row hides a real operational problem. <strong>Multiple consumers</strong> means you can't trust a single client's behaviour — one team's batch job can starve another team's interactive traffic unless quotas and a global auth/endpoint layer sit in front. <strong>Multiple models</strong> means consumers shouldn't hard-code which GPU or which container serves "the summarizer" — they ask for a logical model name and the platform maps it, so you can swap a model version without breaking callers. <strong>Multiple GPU types</strong> is the brutal one: an A100, an H100, an L40S, and a GH200 have wildly different memory, throughput, and cost, and a 70B model simply won't fit on the small ones — placement has to be GPU-aware or pods will fail to schedule or OOM at load. <strong>Multiple clusters</strong> (often across regions, for sovereignty or latency) means a request from one geography should land near it, and a cluster outage should fail over rather than black-hole. <strong>Multiple traffic patterns</strong> — bursty interactive vs steady batch vs spiky launch-day — means one static replica count is always wrong; you need routing plus autoscaling that understands GPU warm-up time.</p>
+
+        <div class="bm-warn"><strong>GPU autoscaling is not web autoscaling.</strong> Scaling a stateless web pod takes seconds. Scaling a GPU inference worker can take <em>minutes</em>: the pod has to be scheduled onto a node with a free GPU, the model weights (tens of GB) have to be pulled and loaded into VRAM, and the server has to warm up CUDA graphs/KV-cache. If your autoscaler reacts to load the way it would for a web app — wait for CPU to climb, then add a replica — the new replica arrives long after the spike has already burned your latency SLO. This is exactly why "worker readiness" is a first-class monitored journey below: you must know a worker is <em>truly</em> ready before routing to it, and you often pre-warm capacity ahead of predicted demand.</div>
+
         <h2 id="planes">The three-plane platform</h2>
 
         <p>NVCF is structured as three planes, and this structure is the key to monitoring it — because each plane fails differently:</p>
@@ -142,6 +154,20 @@
         </table>
 
         <div class="bm-note"><strong>Why split the planes for monitoring?</strong> A 99.9% inference SLO breach could come from <em>any</em> of three very different places: the control plane mis-routed, the invocation plane timed out, or a GPU threw an XID error in the compute plane. If your dashboard mixes them, every incident starts with "which layer?" Separating the planes means the alert already tells you where to look.</p></div>
+
+        <h2 id="slo-theory">A quick grounding — SLI, SLO, error budget</h2>
+        <p>The whole monitoring design rests on three SRE terms, so it's worth pinning them precisely before the dashboards. An <strong>SLI</strong> (service level indicator) is a <em>measurement</em> — a ratio of good events to valid events, e.g. "fraction of inference requests that returned a first token under 2 seconds." An <strong>SLO</strong> (service level objective) is a <em>target</em> on that SLI — "99.9% of requests over 30 days." The <strong>error budget</strong> is the inverse — the 0.1% you're allowed to fail. The budget is the budget for change: spend it on risky deploys when it's healthy, freeze and stabilise when it's nearly gone.</p>
+        <p>Translated to metrics, the success-rate SLI is a pair of counters and the TTFT SLI is a histogram. In PromQL the shapes look like this:</p>
+        <pre class="code"># Success-rate SLI over 5m (invocation plane)
+sum(rate(invocation_requests_counter{result="success"}[5m]))
+  /
+sum(rate(invocation_requests_counter[5m]))
+
+# TTFT SLI: fraction of requests with first token under 2s
+sum(rate(ttft_latency_histogram_bucket{le="2.0"}[5m]))
+  /
+sum(rate(ttft_latency_histogram_count[5m]))</pre>
+        <p>Note the TTFT query keys off a histogram <em>bucket</em>, not an average. Averaging latency is a trap — a bimodal distribution (most fast, a few catastrophic) has a fine average and a terrible p99, and it's the p99 user who complains. Histograms let you ask "what fraction beat the target" directly, which is exactly the shape an SLO wants.</p>
 
         <h2 id="monitoring">Monitoring structure — SLO at the top, drill-downs below</h2>
 
@@ -197,6 +223,20 @@
 
         <div class="bm-warn"><strong>Know your error codes.</strong> <strong>XID errors</strong> are NVIDIA driver/GPU error codes (reported via the kernel and DCGM) that flag hardware or driver faults — some benign, some fatal. <strong>ECC errors</strong> are memory error-correction events; uncorrectable ones mean bad GPU memory. Watching these is what separates "the pod is up" from "the silicon is healthy." DCGM (Data Center GPU Manager) is the exporter that surfaces them as metrics.</p></div>
 
+        <p>It's worth being concrete about what DCGM actually gives you, because "watch the GPU" is too vague to act on. The <code>dcgm-exporter</code> publishes a field for nearly every health and utilisation signal, scraped by Prometheus like any other exporter. The ones that earn a place on a readiness dashboard:</p>
+        <table class="papers">
+          <thead><tr><th>DCGM field</th><th>What it tells you</th><th>Why you alert on it</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><code>DCGM_FI_DEV_XID_ERRORS</code></td><td>Last XID error code on the GPU</td><td>Non-zero fatal XIDs (e.g. 79 "GPU fell off the bus", 48 "double-bit ECC") mean evict the node now</td></tr>
+            <tr><td class="p"><code>DCGM_FI_DEV_ECC_DBE_VOL_TOTAL</code></td><td>Uncorrectable (double-bit) ECC errors</td><td>Memory is corrupting silently — inferences may be wrong, not just failed</td></tr>
+            <tr><td class="p"><code>DCGM_FI_DEV_GPU_TEMP</code></td><td>Core temperature</td><td>Sustained thermal throttling tanks throughput before anything "fails"</td></tr>
+            <tr><td class="p"><code>DCGM_FI_DEV_GPU_UTIL</code> / <code>DCGM_FI_DEV_FB_USED</code></td><td>Compute utilisation / VRAM in use</td><td>Capacity planning + spotting a wedged worker holding VRAM but doing no work</td></tr>
+            <tr><td class="p"><code>DCGM_FI_DEV_NVLINK_*</code></td><td>NVLink bandwidth/errors</td><td>Multi-GPU models (tensor-parallel) degrade hard if NVLink flaps</td></tr>
+          </tbody>
+        </table>
+
+        <div class="bm-warn"><strong>The "silent bad GPU" is the dangerous failure.</strong> A node that crashes is easy — Kubernetes reschedules around it. The nightmare is a GPU that stays <em>Ready</em> but is quietly producing garbage: uncorrectable ECC errors corrupt the weights in VRAM, or a thermal-throttled card returns correct answers far too slowly. Both pass a naive liveness probe. This is the entire reason hardware signals (XID/ECC/thermal) sit in the readiness gate next to pod health — without them, you happily route traffic to a worker that's poisoning your output. A robust setup pairs DCGM alerts with NVSentinel-style automated cordoning so a bad GPU is drained, not debugged at 3am.</div>
+
         <h3>Journey 2 — inference request health</h3>
         <p>For the request itself, the deck pinned two SLOs to two points in the path:</p>
         <ul>
@@ -219,6 +259,38 @@
 
         <h2 id="burnrate">Burn-rate alerting — the SRE glue</h2>
         <p>The loop ends on <strong>alert on burn rate</strong>, and this is the discipline that keeps a 99.9% SLO from being either useless or noisy. Rather than paging on every error, you alert when the error budget is being <em>consumed too fast</em>. A fast burn (budget gone in an hour) is an immediate page; a slow burn (budget gone over days) is a ticket. This is standard Google-SRE-workbook practice, applied to inference SLIs — and it's what makes the top-level SLO actionable instead of decorative.</p>
+        <p>The mechanics: "burn rate" is how fast you're spending budget relative to "even" consumption. Burn rate 1 means you'll exactly exhaust the 30-day budget in 30 days. Burn rate 14.4 means you'd exhaust it in ~2 days — clearly an incident. The workbook's standard trick is <strong>multi-window, multi-burn-rate</strong> alerts: page on a fast burn confirmed over a short <em>and</em> a slightly longer window (e.g. 14.4× over 1h AND 5m) to catch acute outages, and open a ticket on a slow burn (e.g. 3× over 6h) to catch the quiet degradation that would otherwise eat the month. The two-window requirement is what kills false pages from a 90-second blip.</p>
+        <pre class="code"># Fast-burn page: 14.4x over 1h confirmed by 5m window
+(
+  slo:error_rate:ratio_1h &gt; (14.4 * 0.001)
+  and
+  slo:error_rate:ratio_5m &gt; (14.4 * 0.001)
+)</pre>
+        <div class="bm-note"><strong>Tie the alert back to the planes.</strong> A single burn-rate page fires on the top-level inference SLO — but the <em>first click</em> from that page should land on the SPOG that splits by plane. The whole point of the three-plane structure is that the on-call doesn't ask "is it control, invocation, or compute?"; the drill-down answers it. Burn-rate alerting (when) and plane separation (where) are the two halves of a fast MTTR.</div>
+
+        <h2 id="playbook">A worked troubleshooting playbook</h2>
+        <p>Tie it together with the path an on-call actually walks when the inference SLO burns. This is the value of the structure — it turns a vague "AI is slow" into a decision tree:</p>
+        <table class="papers">
+          <thead><tr><th>Symptom on the SPOG</th><th>Likely plane</th><th>First checks</th></tr></thead>
+          <tbody>
+            <tr><td class="p">Success rate drops, TTFT normal</td><td>Invocation / control</td><td>Routing errors, auth/rate-limit rejections, a region with no healthy workers to route to</td></tr>
+            <tr><td class="p">TTFT spikes, success rate normal</td><td>Compute</td><td>GPU saturation, queue depth at the server, a model cold-start storm, thermal throttling on a cluster</td></tr>
+            <tr><td class="p">Both degrade in one region only</td><td>Compute (regional)</td><td>Per-GPU-cluster drill: XID/ECC spikes, node NotReady, NVLink errors, a bad driver rollout</td></tr>
+            <tr><td class="p">Slow steady decline over days</td><td>Compute (creeping)</td><td>Memory fragmentation, a leaking worker holding VRAM, gradual thermal drift, a noisy-neighbour model</td></tr>
+            <tr><td class="p">Errors right after a deploy</td><td>Control</td><td>Bad function definition, wrong GPU placement constraint, image/weights pull failing on new workers</td></tr>
+          </tbody>
+        </table>
+        <div class="bm-fix"><strong>The readiness gate is your cheapest insurance.</strong> Most of the "TTFT spikes in one region" incidents trace back to traffic being routed to a worker that reported Ready to Kubernetes but wasn't truly serving — weights still loading, or a GPU mid-fault. Investing in a strict readiness journey (test workload must succeed, DCGM signals clean, inference-server logs healthy) before a worker joins the routable pool prevents the majority of in-flight latency incidents. It's far cheaper to never route to a sick worker than to detect and drain it after users feel it.</div>
+
+        <h2 id="instrumentation">Where the metrics actually come from</h2>
+        <p>The first step of every critical journey is "metrics instrumentation," and it's worth saying where those numbers originate, because you rarely write them by hand. Three layers each emit their own telemetry:</p>
+        <ul>
+          <li><strong>The inference server</strong> emits the token-level metrics natively. Modern serving stacks — Triton, vLLM, TGI, and NVIDIA Dynamo — expose Prometheus endpoints with TTFT, TPOT, queue depth, batch size, KV-cache utilisation, and per-request token counts out of the box. You scrape them; you don't compute them. This is why the TTFT histogram lives "at the inference server / worker pod" in Fig 3 — that's the only place that actually knows when the first token left.</li>
+          <li><strong>The invocation/control plane</strong> emits the request-level counters (<code>invocation_requests_counter</code>, <code>invocation_errors_counter</code>) because it's the layer that sees every request and its final verdict, including ones that never reached a worker (auth rejected, rate-limited, no capacity).</li>
+          <li><strong>The node/GPU layer</strong> emits hardware health via <code>dcgm-exporter</code> and standard node/kubelet metrics — the readiness signals.</li>
+        </ul>
+        <div class="bm-warn"><strong>Watch label cardinality.</strong> The tempting move is to label every metric with <code>model</code>, <code>region</code>, <code>cluster</code>, <code>gpu_type</code>, <em>and</em> <code>user_id</code> or <code>request_id</code>. The first four are bounded and fine. Per-user or per-request labels are an explosion — millions of unique series — that will melt your Prometheus and make queries crawl. Keep high-cardinality identifiers in traces/logs (where you look them up one at a time), and keep metrics to bounded, aggregatable dimensions. This is the single most common way an inference observability stack becomes more expensive than the inference.</div>
+        <p>The other half of instrumentation is <strong>traces</strong>. Metrics tell you the success-rate dropped; a distributed trace (OpenTelemetry spanning control → invocation → worker → model) tells you <em>which hop</em> ate the time for a specific slow request. Metrics are for alerting and SLOs; traces are for the post-page investigation when the drill-down narrows you to a plane but not a root cause. The two are complementary, not competing.</p>
 
         <h2 id="oss">The NVIDIA OSS toolbox</h2>
         <p>The deck closed by naming the open-source pieces this is built on — useful as a shopping list if you're assembling your own inference observability:</p>
@@ -251,6 +323,21 @@
         <details class="faq">
           <summary>Why alert on burn rate instead of raw error count?</summary>
           <p>Because a 99.9% SLO allows some errors. Burn-rate alerting pages you when the error budget is being spent too fast (fast burn = urgent page, slow burn = ticket), which keeps alerts meaningful and avoids both noise and missed slow degradations.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why measure TTFT with a histogram instead of an average latency?</summary>
+          <p>Averages hide bimodal pain. If 95% of requests get a first token in 300ms and 5% take 8 seconds, the average looks acceptable while one in twenty users has a terrible experience. A histogram lets you write the SLI as "fraction of requests under the target," which is what an SLO needs, and lets you watch p95/p99 directly — the tail is where users churn.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Can't I just reuse my existing RED/USE dashboards?</summary>
+          <p>Partly. RED (rate, errors, duration) maps reasonably to the invocation plane, and USE (utilisation, saturation, errors) maps to compute. But neither captures GPU-specific health (XID/ECC/NVLink/thermal via DCGM) or the streaming latency split (TTFT vs TPOT vs E2E). You keep the RED/USE habits but extend them with a GPU health layer and token-level latency, or you'll be blind to the failures that are unique to inference.</p>
+        </details>
+
+        <details class="faq">
+          <summary>What's the role of NVSentinel vs DCGM-Exporter?</summary>
+          <p>DCGM-Exporter <em>exposes</em> GPU metrics for Prometheus to scrape — it's the sensor. NVSentinel is about <em>acting</em> on GPU health/faults — detecting a bad GPU and driving remediation (cordon/drain) rather than just graphing it. One observes, the other closes the loop. Together with the GPU Operator (which installs driver/toolkit/device-plugin/DCGM) they form the health spine under the readiness journey.</p>
         </details>
 
         <h2 id="takeaways">Takeaways</h2>

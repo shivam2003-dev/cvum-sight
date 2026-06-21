@@ -103,6 +103,10 @@
         <p>The headline stat reframes the whole CVE-triage problem:</p>
         <div class="bm-note"><strong>87% of vulnerabilities hide in packages never loaded at runtime.</strong> Modern container images are heavily bloated. Platform teams waste thousands of engineering hours triaging vulnerabilities that sit in dormant utilities the app never even calls. And it's not just wasted focus — those unused components are real risk: attackers exploit pre-installed binaries (curl, bash, openssl, compilers) via <em>Living off the Land (LotL)</em> patterns, using tools that were never needed in the first place.</p></div>
 
+        <p>It helps to understand <em>why</em> images bloat in the first place, because the bloat isn't laziness — it's the path of least resistance the tooling pushes you onto. A typical <code>Dockerfile</code> starts <code>FROM ubuntu</code> or <code>FROM node</code>, and those base images ship a full distro: a package manager, a shell, coreutils, networking tools, often a compiler toolchain. Then every <code>apt-get install</code> pulls a transitive dependency tree — install one library and you get its ten dependencies, each with their own. The app might call exactly none of those at runtime, but they're all in the image, all scanned, all counted against you. A scanner like Trivy or Grype walks the package database and reports every CVE in every installed package, with no knowledge of whether the code is ever executed. That's the 87%: real CVEs, in real packages, in code paths the app never touches.</p>
+
+        <div class="bm-warn"><strong>Living off the Land is the part security teams underrate.</strong> The dormant binaries aren't just scanner noise — they're a toolkit waiting for an attacker. Once someone has code execution in a container (via an app RCE, a poisoned dependency, whatever), the first thing they reach for is what's already installed: <code>curl</code> or <code>wget</code> to pull a payload, <code>bash</code> to run it, <code>openssl</code> to exfiltrate over TLS, a compiler to build a rootkit, <code>kubectl</code> if it leaked in. An image with none of those is dramatically harder to operate inside — the attacker has to bring their own tools, which is noisier and often blocked by a read-only filesystem. "Minimal image" isn't a tidiness preference; it's defense in depth. The Day-1 <a href="kcm26-root-without-risk.html">user-namespaces talk</a> and this one are two angles on the same goal: shrink what an intruder can do.</div>
+
         <h2 id="trap">The middle-tier trap</h2>
         <p>Most enterprises pick one of two losing strategies for their base images:</p>
         <table class="papers">
@@ -124,6 +128,21 @@
           </svg>
           <p class="diagram-label">Fig 1 — buildpacks turn source into a layered OCI image with no Dockerfile. CNCF-graduated, supported by Heroku, Google Cloud, Paketo, Tanzu, GitLab, DigitalOcean, Azure, Spring Boot, Tekton, and more.</p>
         </div>
+
+        <p>The idea isn't new — buildpacks were born at Heroku (Joe Kutner, who opened this talk, is a long-time Heroku/buildpacks figure) and were the engine behind <code>git push heroku main</code> "just working." <strong>Cloud Native Buildpacks</strong> is the CNCF standardisation of that idea on top of OCI, so the same model works on any registry and any Kubernetes. What makes it more than "magic Dockerfile generator" is the precise vocabulary, which is worth learning because the rebasing trick depends on it:</p>
+        <table class="papers">
+          <thead><tr><th>Term</th><th>What it is</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>Buildpack</strong></td><td>A unit that <em>detects</em> whether it applies (is there a <code>pom.xml</code>? a <code>package.json</code>?) and <em>contributes</em> layers (a JDK, node_modules, the compiled app).</td></tr>
+            <tr><td class="p"><strong>Stack</strong> (now "run/build images")</td><td>The pair of base images: a fat <strong>build-image</strong> (compilers, tools) and a slim <strong>run-image</strong> (only what runtime needs). Rebase swaps the run-image.</td></tr>
+            <tr><td class="p"><strong>Builder</strong></td><td>A packaged, versioned bundle of buildpacks + a lifecycle + a stack — the thing a platform team curates and hands to developers.</td></tr>
+            <tr><td class="p"><strong>Lifecycle</strong></td><td>The orchestrator that runs the phases in order and produces the final OCI image with reproducible layers.</td></tr>
+            <tr><td class="p"><strong>Platform</strong></td><td>What invokes the lifecycle: the <code>pack</code> CLI locally, or kpack/Tekton/Spinnaker in CI.</td></tr>
+          </tbody>
+        </table>
+        <p>Under the hood the lifecycle runs distinct phases — roughly <em>detect</em> (which buildpacks apply), <em>analyze</em> (read metadata from any previous build), <em>restore</em> (pull cached layers), <em>build</em> (each buildpack contributes its layers), and <em>export</em> (assemble the OCI image, reusing unchanged layers by digest). The export phase is the quiet hero: because each layer is content-addressed and the lifecycle knows exactly which buildpack produced which layer, it can reuse layers across builds and — crucially — swap one layer out later without disturbing the others. That property is what makes rebase possible at all.</p>
+
+        <div class="bm-fix"><strong>Reproducibility is a side benefit that matters for supply chain.</strong> Because buildpacks set deterministic timestamps and ordering, the same source + same builder produces a byte-identical image — so two independent builds yield the same digest. That's the foundation for the verifiable-provenance story: you can prove an image came from a specific commit through a specific builder, which connects directly to Day 1's <a href="kcm26-commit-then-disclose.html">SBOM</a> work and the SLSA provenance the <a href="kcm26-d2-devex-roadmap.html">TAG DevEx roadmap</a> is pushing.</div>
 
         <h3>Reduce, Reuse, Rebase</h3>
         <p>The buildpack mantra. The image is cleanly layered — <code>OS</code> → runtime (e.g. <code>jdk</code>) → <code>app</code> — and each layer has its own content hash. The magic verb is <strong>rebase</strong>: swap the bottom OS layer for a patched one while keeping the app and runtime layers <em>byte-for-byte identical</em>.</p>
@@ -179,6 +198,33 @@ pack rebase my-app:latest
 kpack-controller --monitor corp/run-base:latest</pre>
         <p>For one image you run <code>pack rebase</code>; for the whole fleet, a controller (kpack) <em>monitors</em> the base run-image and rebases every dependent image automatically when it changes. What used to take days now takes minutes.</p>
 
+        <h3 id="worked">A worked example — from source to rebased fleet</h3>
+        <p>Concretely, here's the loop a platform team lives in. A developer never writes a Dockerfile; they just build:</p>
+        <pre class="code"># Developer: source -&gt; image, no Dockerfile
+pack build payments-api \
+  --builder corp/builder:jammy \
+  --publish registry.corp/payments-api:1.4.2
+
+# The lifecycle ran: detect -&gt; analyze -&gt; restore -&gt; build -&gt; export
+# Result image layers (bottom to top):
+#   run-image (OS)        sha256:8e3e...   <- owned by SecOps
+#   ca-certs              sha256:11aa...   <- owned by platform
+#   jre                   sha256:738f...   <- owned by platform
+#   application           sha256:4a09...   <- owned by the dev</pre>
+        <p>Weeks later, a critical glibc CVE lands in the OS layer. Nobody touches application code. SecOps publishes a patched run-image, and the controller fans it out:</p>
+        <pre class="code"># SecOps: patch the base once
+docker push corp/run-jammy-tiny:2026-06-19  # glibc fixed
+
+# kpack notices the base digest changed and rebases every
+# dependent image automatically — app/jre/ca-certs layers
+# are reused by digest; only the bottom OS layer is swapped.
+#   payments-api:1.4.2  -> new digest, same app layer 4a09...
+#   orders-api:3.1.0    -> new digest, same app layer ...
+#   ...   (N services, each a metadata-only SHA swap)</pre>
+        <p>The key thing to notice: the application layer digest <code>4a09…</code> is <em>identical</em> before and after. The running app is bit-for-bit the same code; only the foundation moved. That's why you don't re-run the app's test suite for an OS patch — nothing about the app changed. Contrast the Dockerfile world, where bumping the base means a full rebuild that <em>could</em> change anything, so you're obligated to re-test everything.</p>
+
+        <div class="bm-note"><strong>The economics, with rough numbers.</strong> Say a fleet has 300 services and the average CI rebuild (build + test + scan + push) is 12 minutes of pipeline plus queue time, often stretching to an hour wall-clock under contention. One CVE in the base = 300 rebuilds = a build-farm storm that ties up CI for hours-to-days, plus 300 teams asked to verify their service still works. The rebase path: one base push, then ~300 metadata-only layer swaps the controller does in parallel in minutes, with no app re-test because no app layer changed. That gap — O(N) full rebuilds vs O(1) base patch + cheap fan-out — is the entire reason this is a security talk and not just a tidiness talk: faster patching means a smaller exposure window for every CVE.</div>
+
         <h2 id="advantages">Why it wins — four advantages</h2>
 
         <h3>1 · O(1) patch propagation vs O(N) rebuilds</h3>
@@ -213,6 +259,42 @@ kpack-controller --monitor corp/run-base:latest</pre>
 
         <div class="bm-warn"><strong>The honest caveat (read between the lines).</strong> Rebase only works when the new OS layer is <em>ABI-compatible</em> with the layers above it — swap glibc for an incompatible version and the app on top breaks. That's why the platform team owns a curated, minimal run-stack rather than letting anything become the base. The discipline that makes O(1) rebasing safe is the same discipline that makes the standardized stack valuable: one well-governed foundation, not a free-for-all.</p></div>
 
+        <h2 id="adopt">An adoption playbook</h2>
+        <p>The talk's architecture is the destination; getting there is a migration. A sane order of operations for a platform team that wants the waterfall without a big-bang rewrite:</p>
+        <ol>
+          <li><strong>Pick or build a builder.</strong> Start with an off-the-shelf builder (Paketo, Google Cloud, Heroku) for your dominant language. Don't build a custom builder on day one — prove the model first.</li>
+          <li><strong>Define the run-image as a security artifact.</strong> Have SecOps own a minimal run-image with a patch cadence. This is the layer the whole waterfall pivots on, so it gets the governance a base image deserves.</li>
+          <li><strong>Onboard one noisy service.</strong> Convert a single high-CVE-churn service from Dockerfile to <code>pack build</code>. Compare the scan results — the drop in CVE count from removing build tools and dormant packages is usually the moment leadership buys in.</li>
+          <li><strong>Wire kpack into CI.</strong> Replace the per-service "docker build" step with a buildpack build, and stand up the controller that watches the run-image. Now you have the fan-out machinery.</li>
+          <li><strong>Flip the patch process.</strong> The next time a base CVE lands, patch the run-image and let the controller rebase, instead of opening N rebuild tickets. Measure the exposure-window reduction — that's the number that justifies the program.</li>
+          <li><strong>Expand the ownership split.</strong> Once the mechanics work, formalise it: devs own app layers, platform owns runtime/certs, security owns the OS. The org change is what turns a tool into a durable practice.</li>
+        </ol>
+        <div class="bm-fix"><strong>Start with the patch-window metric, not the image-size metric.</strong> It's tempting to sell buildpacks on "smaller images," but that's the weakest argument (distroless does it too). The argument that survives scrutiny is mean-time-to-patch across the fleet: how many hours from "CVE disclosed in base" to "every running service is patched." Rebase collapses that from days to minutes, and a shorter exposure window is a direct, measurable security win that a CISO understands.</div>
+
+        <h2 id="alternatives">Where buildpacks sit vs the alternatives</h2>
+        <p>Buildpacks aren't the only way to escape the bloat trap, and being honest about the landscape makes the choice defensible. The main contenders for "build a container image without a hand-rolled Dockerfile" or "build a minimal image":</p>
+        <table class="papers">
+          <thead><tr><th>Approach</th><th>How it works</th><th>Trade-off vs CNB</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>Cloud Native Buildpacks</strong></td><td>Detect language, contribute layers, export reproducible OCI image; rebase to patch.</td><td>The only one with first-class fleet rebasing; polyglot; needs a curated builder.</td></tr>
+            <tr><td class="p"><strong>Distroless</strong> (base image)</td><td>A hand-written Dockerfile <code>FROM</code> a minimal Google distroless base (no shell/pkg-mgr).</td><td>Tiny &amp; LotL-resistant, but you still write/maintain the Dockerfile and rebuild per CVE — no O(1) rebase.</td></tr>
+            <tr><td class="p"><strong>ko</strong> (Go)</td><td>Builds Go apps straight to a minimal image, no Dockerfile.</td><td>Excellent but Go-only; CNB is polyglot.</td></tr>
+            <tr><td class="p"><strong>Jib</strong> (Java)</td><td>Maven/Gradle plugin builds layered Java images, no Docker daemon.</td><td>Great for JVM; CNB covers many languages with one model.</td></tr>
+            <tr><td class="p"><strong>Hand-written Dockerfile</strong></td><td>Full control, multi-stage builds for slimness.</td><td>Maximum flexibility, maximum drift — the fragmentation problem this talk is about.</td></tr>
+          </tbody>
+        </table>
+        <p>The honest framing: a disciplined multi-stage Dockerfile <code>FROM</code> distroless gets you a small, LotL-resistant image too. What it does <em>not</em> get you is the O(1) patching waterfall — when the base has a CVE, you still rebuild and re-test every service. CNB's distinctive value is less "smaller images" (others do that) and more "patch the base once and propagate by digest swap to the whole fleet, without re-running anyone's build." If your fleet is small, distroless may be simpler; if you operate hundreds of services and patch constantly, the rebase economics are the whole argument.</p>
+
+        <h2 id="limits">Limitations &amp; when to think twice</h2>
+        <p>No tool is free. The realistic caveats a platform team hits:</p>
+        <ul>
+          <li><strong>Builder governance is now your job.</strong> The flip side of "one standardized stack" is that someone must own, version, test, and patch the builder and run-image. You've traded N Dockerfiles for one critical shared artifact — better, but not zero.</li>
+          <li><strong>Less escape-hatch control.</strong> Highly custom native dependencies, exotic system libraries, or unusual build steps can fight the buildpack model. Most stacks support custom buildpacks, but it's more work than a one-line <code>RUN apt-get install</code>.</li>
+          <li><strong>Image size isn't automatically tiny.</strong> A Paketo full builder run-image is small but not distroless-tiny; if you need the absolute minimum, you tune the run-image or combine approaches.</li>
+          <li><strong>ABI discipline on rebase.</strong> As the caveat above notes, the run-image must stay ABI-compatible. A major glibc bump may require a real rebuild, not a rebase — rebase is for the steady stream of patch-level CVEs, which is most of them.</li>
+          <li><strong>Org change, not just tooling.</strong> The ownership split (security owns base, devs own app) only pays off if the org actually adopts it. Drop buildpacks into a team that still wants per-service base-image control and you get the costs without the benefits.</li>
+        </ul>
+
         <h2 id="faq">FAQ</h2>
 
         <details class="faq">
@@ -238,6 +320,21 @@ kpack-controller --monitor corp/run-base:latest</pre>
         <details class="faq">
           <summary>How do I try it?</summary>
           <p>The Pack CLI: <code>brew tap buildpack/tap</code>, <code>brew install pack</code>, then <code>pack build myimage</code>. Community at buildpacks.io and #buildpacks on CNCF Slack.</p>
+        </details>
+
+        <details class="faq">
+          <summary>If I rebase the OS, don't I still need to re-test the whole app?</summary>
+          <p>For a patch-level, ABI-compatible OS change, no — the application and runtime layers are byte-identical (same digests), so the app you tested is literally the app that ships. You test the run-image once (the platform team does this), not once per dependent service. A major, ABI-breaking base change is the exception: that's a real rebuild with real re-testing, but those are rare compared to the constant stream of patch CVEs that rebase handles.</p>
+        </details>
+
+        <details class="faq">
+          <summary>How does this compare to just using distroless base images?</summary>
+          <p>Distroless gets you a small, shell-less, LotL-resistant image — but you still hand-write the Dockerfile and rebuild every service when the base has a CVE. Buildpacks add the O(1) patching waterfall (patch base once, rebase the fleet by digest swap) and remove the per-team Dockerfile entirely. For a handful of services distroless may be simpler; for a large, constantly-patched fleet the rebase economics win. They're not mutually exclusive — a buildpack run-image can itself be very minimal.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Does the buildpack image include an SBOM?</summary>
+          <p>Yes — CNB attaches build metadata including an SBOM describing exactly which buildpacks and dependencies produced each layer. Combined with reproducible builds, that gives you provenance you can verify, which ties directly into the supply-chain story (signed artifacts, SLSA provenance) the rest of the platform thread is about.</p>
         </details>
 
         <h2 id="takeaways">Takeaways</h2>

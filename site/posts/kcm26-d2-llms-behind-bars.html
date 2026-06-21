@@ -144,6 +144,20 @@
           </tbody>
         </table>
 
+        <p>Knowing what each primitive actually does is what lets you reason about a sandbox's strength, because "it's in a container" tells you almost nothing on its own — a container is just a curated bundle of these:</p>
+        <table class="papers">
+          <thead><tr><th>Primitive</th><th>What it isolates / limits</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>namespaces</strong></td><td>What the process can <em>see</em>: <code>pid</code> (other processes), <code>net</code> (interfaces/routes), <code>mnt</code> (filesystems), <code>ipc</code>, <code>uts</code> (hostname), and <code>user</code> (UID mapping — the one that lets "root in the sandbox" be an unprivileged UID on the host).</td></tr>
+            <tr><td class="p"><strong>cgroups</strong> (v2)</td><td>What it can <em>consume</em>: CPU, memory, PIDs, I/O. This is the defence against the DoS/cost threat — a fork bomb or crypto-miner hits a hard ceiling instead of taking the node down.</td></tr>
+            <tr><td class="p"><strong>seccomp-bpf</strong></td><td>Which <em>syscalls</em> it may make. Blocking the long tail of rarely-needed syscalls shrinks the kernel attack surface — fewer entry points to exploit a kernel bug.</td></tr>
+            <tr><td class="p"><strong>capabilities</strong></td><td>Which slices of root power are granted (drop <code>CAP_NET_RAW</code>, <code>CAP_SYS_ADMIN</code>, etc.) — so "root" inside isn't full root.</td></tr>
+            <tr><td class="p"><strong>LSMs</strong> (AppArmor / SELinux / Landlock)</td><td>Mandatory access control — fine-grained allow/deny on files, paths, and operations, enforced by the kernel regardless of UID.</td></tr>
+            <tr><td class="p"><strong>chroot/pivot_root + overlayfs</strong></td><td>The filesystem view: a disposable, often read-only rootfs the sandbox can't escape or persist beyond.</td></tr>
+          </tbody>
+        </table>
+        <div class="bm-warn"><strong>The catch with primitives alone: it's still one kernel.</strong> namespaces + seccomp + cgroups + LSMs are a strong, cheap sandbox — but every one of them is enforced by the <em>same host kernel</em> the untrusted code runs against. A single kernel vulnerability (a bad syscall path, a namespace escape) defeats all of them at once, because they're all features of the thing being attacked. That shared-kernel single-point-of-failure is the entire reason the strong tier (gVisor, microVMs) exists: it puts a <em>second</em> kernel boundary between the workload and the host, so one kernel bug is no longer game over.</div>
+
         <h3>MicroVMs — the strong tier</h3>
         <p>For real isolation you move to microVMs, which add a guest kernel and hardware virtualization under the workload. The defense-in-depth stack:</p>
         <ul>
@@ -155,6 +169,22 @@
         </ul>
 
         <div class="bm-note"><strong>gVisor and Kata — two ways to get a kernel boundary.</strong> <strong>gVisor</strong> puts a <em>distinct</em> user-space kernel (the Go-based "Sentry," plus a "Gofer" for filesystem) between the app and the host kernel — to escape you'd have to break <em>both</em> kernels, and it needs no hardware virtualization. <strong>Kata Containers</strong> gives each pod its own lightweight VM with an individual Linux kernel and hardware virtualization, versus traditional containers that share the host kernel via namespaces/cgroups. Both turn "one kernel bug = game over" into "you must defeat two layers."</p></div>
+
+        <h3>The isolation spectrum — pick your point</h3>
+        <p>There's no single "secure" answer; there's a spectrum trading isolation strength against speed, compatibility, and overhead. The whole talk is really about choosing a point on it per workload:</p>
+        <table class="papers">
+          <thead><tr><th>Approach</th><th>Boundary</th><th>Isolation</th><th>Start / overhead</th><th>Compatibility</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>Plain container</strong></td><td>Shared host kernel (namespaces)</td><td>Weakest — one kernel bug escapes</td><td>Fastest, near-zero</td><td>Full</td></tr>
+            <tr><td class="p"><strong>Hardened container</strong></td><td>+ seccomp, dropped caps, LSM, rootless</td><td>Better, still shared kernel</td><td>Fast</td><td>Full</td></tr>
+            <tr><td class="p"><strong>gVisor</strong></td><td>User-space kernel (Sentry) + host</td><td>Strong — two kernels to break</td><td>Fast start, some syscall overhead</td><td>Most apps; some syscalls unsupported</td></tr>
+            <tr><td class="p"><strong>Kata / microVM</strong></td><td>Own guest kernel + hardware virt</td><td>Strong — VM boundary</td><td>Heavier, ~100s ms+</td><td>Near-full (real kernel)</td></tr>
+            <tr><td class="p"><strong>Firecracker microVM</strong></td><td>Minimal-device VM + small TCB</td><td>Strongest practical, tiny attack surface</td><td>~100–700ms, low memory</td><td>Near-full</td></tr>
+          </tbody>
+        </table>
+        <p>CodeRabbit's two postures are just two points on this table: <strong>nsjail-inside-a-microVM</strong> for fast multi-tenant command runs (hardened-container speed <em>plus</em> a VM boundary), and <strong>Firecracker single-tenant</strong> for autonomous agents (max isolation, accept the cost). The art is matching the point to the trust and latency budget — you don't put a 700ms microVM in front of a call that must return in 50ms, and you don't run truly untrusted autonomous code in a plain shared-kernel container.</p>
+
+        <div class="bm-warn"><strong>The threat model, made concrete.</strong> The four categories aren't abstract — each maps to a real, common attack. <strong>Exfil:</strong> generated code reads <code>~/.aws/credentials</code> or <code>~/.ssh/id_rsa</code> and POSTs it out. <strong>Internal network:</strong> the classic is an SSRF to the cloud metadata endpoint (<code>169.254.169.254</code>) to steal the node's IAM role — which is why egress network policy and blocking link-local addresses is non-negotiable. <strong>Poison:</strong> a dependency post-install hook (<code>npm</code>/<code>pip</code>) runs arbitrary code at install time and backdoors the build or cache. <strong>DoS/cost:</strong> a fork bomb or crypto-miner pegs CPU and runs up the bill. Note how each maps to a specific defence: exfil → no secrets in the sandbox + egress proxy; internal network → network policy; poison → ephemeral, read-only, no persistence; DoS → cgroup limits + short lifecycle. The defences aren't generic "isolation" — they're targeted at named attacks.</div>
 
         <h3>The Kubernetes-native path: Agent Sandbox</h3>
         <p>On Kubernetes specifically, the emerging pattern is an <strong>Agent Sandbox</strong> for executing isolated, low-latency tasks: an Agent Orchestrator pod calls an Executor (API/SDK) with <code>init()</code>/<code>run()</code>/<code>read()</code>; the Executor hits the K8s API and an Agent Sandbox Controller that <em>allocates from a warm pool</em> (and replenishes it); the task runs in a sandbox with a gVisor execution process, ephemeral storage, and a network policy. The warm pool is what gets you low latency despite the strong isolation.</p>
@@ -223,6 +253,21 @@
         <details class="faq">
           <summary>Is gVisor or a microVM "better"?</summary>
           <p>Different trade-offs. gVisor needs no hardware virtualization and has fewer kernel-invasive parts, intercepting syscalls in a user-space kernel. MicroVMs (Firecracker/Kata) give a full guest kernel with hardware virtualization and a small TCB. Many designs combine them — e.g. gVisor execution inside a Kubernetes Agent Sandbox, or nsjail inside a microVM as CodeRabbit does.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Broker or tokenize — which egress-secret pattern should I use?</summary>
+          <p>Broker is simpler to start with but the proxy is <em>stateful</em> (it holds and looks up real credentials, so it's a high-value target and a scaling bottleneck). Tokenize makes the proxy <em>stateless</em> — the secret travels as an opaque token encrypted to the proxy's public key, so the proxy just decrypts and injects, and it scales horizontally with nothing to store. The cost is more moving parts (a credential issuer, key management) and that malformed/expired tokens fail at request time. For high scale, tokenize (the <code>superfly/tokenizer</code> model) is the cleaner fit; for a handful of sandboxes, broker is less to build.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why is "no secrets in the sandbox" the load-bearing rule?</summary>
+          <p>Because you should assume the sandbox <em>will</em> be compromised — that's the whole premise of running untrusted code. If the sandbox never holds a usable credential, then even a full compromise can't exfiltrate one; the worst case is bounded to whatever calls the egress proxy's per-sandbox rules already permit. Isolation (gVisor/microVM) reduces the chance of escape; keeping secrets out reduces the <em>blast radius if it happens anyway</em>. You want both — defence in depth assumes each layer can fail.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why does CodeRabbit run nsjail <em>inside</em> a microVM rather than just one or the other?</summary>
+          <p>Defence in depth with a speed budget. The microVM gives a hardware-virtualization boundary (escape the nsjail and you're still in a VM, not on the host). nsjail <em>inside</em> the VM cheaply isolates the many short-lived per-command sandboxes from each other within that VM, without paying a full VM boot per command. So the VM is the trust boundary against the host; nsjail is the cheap multi-tenant divider inside it — together they hit ~700ms starts at 500k/day while still having a real VM between untrusted code and the node.</p>
         </details>
 
         <h2 id="takeaways">Takeaways</h2>

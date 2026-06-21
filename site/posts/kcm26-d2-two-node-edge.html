@@ -102,6 +102,20 @@
         <h2 id="edge">The edge constraint</h2>
         <p>Edge clusters on bare metal live under hard physical limits: space and power constraints, limited hardware availability, <strong>often only two servers</strong> — and yet the storage still needs to be highly available. A typical edge site is just Node-A and Node-B, side by side. You don't get to add a third rack unit because Ceph would like one.</p>
 
+        <h2 id="rook">Background — Rook and Ceph in one minute</h2>
+        <p>To follow the fix you need the cast. <strong>Ceph</strong> is an open-source distributed storage platform that serves all three storage types from one cluster: <strong>block</strong> (RBD, ReadWriteOnce — like a virtual disk), <strong>file</strong> (CephFS, ReadWriteMany — a shared filesystem), and <strong>object</strong> (RGW, S3-compatible). <strong>Rook</strong> is the CNCF-graduated operator (created 2016, graduated 2020) that runs Ceph <em>inside</em> Kubernetes: it deploys, configures, and upgrades Ceph via an operator and CRDs, so apps consume storage through ordinary StorageClasses and PVCs and never touch Ceph directly.</p>
+        <p>Ceph itself is several daemons with distinct jobs, and knowing them makes the quorum problem concrete:</p>
+        <table class="papers">
+          <thead><tr><th>Daemon</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>MON</strong> (monitor)</td><td>Holds the cluster map and consensus — the "brain." Needs quorum. This is the one the whole talk is about.</td></tr>
+            <tr><td class="p"><strong>OSD</strong> (object storage daemon)</td><td>One per disk; stores the actual data and handles replication/recovery.</td></tr>
+            <tr><td class="p"><strong>MGR</strong> (manager)</td><td>Metrics, dashboard, and orchestration helpers alongside the mons.</td></tr>
+            <tr><td class="p"><strong>MDS</strong> / <strong>RGW</strong></td><td>Metadata server for CephFS / the S3 object gateway — only if you use file/object.</td></tr>
+          </tbody>
+        </table>
+        <p>Rook's architecture is three layers: the <strong>Rook operator</strong> deploys and manages Ceph; the <strong>Ceph-CSI driver</strong> dynamically provisions and mounts volumes into application pods; and <strong>Ceph</strong> itself is the data layer. The data path is notable — an app's RBD/CephFS mount talks to <em>multiple</em> OSDs directly via the kernel driver, so data throughput scales with disks. But every client first consults the MONs for the cluster map, which is why mon availability is the linchpin: lose mon quorum and even healthy OSDs become unreachable.</p>
+
         <h2 id="quorum">Why Ceph wants three nodes — the mon quorum</h2>
         <p>Ceph's monitors (MONs) are the brain of the cluster. Four properties matter:</p>
         <ul>
@@ -122,6 +136,8 @@
         </table>
 
         <div class="bm-warn"><strong>The trap with naive two-node Ceph.</strong> With two MONs, quorum is "both must be up." Lose one node and you lose quorum — the cluster goes read-only or down entirely. That's worse than useless for HA: you've doubled your hardware and still can't survive a single failure. The whole talk is about escaping this 0-failure box without a third physical node.</p></div>
+
+        <div class="bm-note"><strong>Why majority, and why odd numbers.</strong> The "majority" rule isn't arbitrary — it's the only way to guarantee that two halves of a network partition can't <em>both</em> think they're in charge. If you require strictly more than half, then at most one side can ever have it, so at most one side accepts writes. That's the entire defence against split-brain. It also explains the odd-number convention: 3 mons tolerate 1 loss (2 is a majority of 3), 5 tolerate 2, but 4 still only tolerate 1 (you need 3 of 4) — so the even count buys hardware without buying resilience. Two mons is the degenerate case: a "majority of 2" is 2, so any loss is fatal. The floating mon exists to turn a 2-node site into a genuine 3-mon majority system.</div>
 
         <h2 id="floating">The idea — a floating monitor</h2>
         <p>The concept: run a <strong>third monitor that "floats" between the two nodes</strong> to provide a dynamic quorum. With mons a, b, and a floating c, you have three monitors and a real majority — but only two physical nodes. When a node dies, the floating mon relocates to the survivor, keeping quorum alive.</p>
@@ -191,6 +207,10 @@
 
         <p>In the full Rook/Ceph (ODF) 3-monitor "abc" configuration: <strong>mon a</strong> lives on Node 1 (its own LV_a), <strong>mon b</strong> on Node 2 (LV_b), and <strong>mon c</strong> is the highly-available floating mon whose <code>/var/lib/ceph/mon/c</code> sits on a DRBD device replicated between the nodes. Only mon c's state needs DRBD; a and b are ordinary node-local mons.</p>
 
+        <div class="bm-warn"><strong>DRBD has its own split-brain — and that's why fencing comes first.</strong> DRBD allows exactly one node to be <em>primary</em> (writable) at a time; the other is <em>secondary</em>. If both nodes ever go primary on the same resource (each thinking the other is dead), they accept divergent writes and you get a DRBD split-brain that requires manual, lossy reconciliation. This is the deeper reason STONITH fencing is not optional and must complete <em>before</em> the floating mon relocates: the survivor can only safely promote DRBD to primary once it's certain the other node is powered off and cannot also be primary. Fencing isn't just protecting Ceph's quorum — it's protecting the block-replication layer underneath it. Two split-brain risks, one fence.</div>
+
+        <p>A subtlety worth calling out: the fence uses the node's <strong>BMC over RedFish</strong> specifically because in-band methods can't be trusted on a node that may be wedged. A crashed or partitioned node might not respond to SSH, an API call, or a graceful shutdown — but its baseboard management controller is a separate, always-on micro-controller with its own power and network, so Pacemaker can command a hard power-off out-of-band even when the host OS is unresponsive. That independence is exactly what makes the fence <em>reliable</em>: you're not asking the sick node to cooperate, you're cutting its power from outside. RedFish is just the standardized REST API for talking to that BMC.</p>
+
         <h2 id="workflow">The clever part — the container workflow</h2>
         <p>The elegance is that this is achieved with container lifecycle hooks, leaving Ceph itself untouched. The floating mon pod has a three-part workflow:</p>
         <table class="papers">
@@ -206,6 +226,17 @@
 
         <h2 id="together">Putting it together — TNF + Rook</h2>
         <p>The full picture: Rook runs a normal-looking 3-mon Ceph cluster on two nodes. Mons a and b are node-local; mon c floats, backed by DRBD-replicated storage. Pacemaker/TNF stands guard, ready to STONITH-fence a dead node via BMC/RedFish so the floating mon can relocate without split-brain. Applications see an ordinary, highly-available Ceph cluster — block, file, and object — on hardware that "should" only support a zero-failure-tolerant setup.</p>
+
+        <h2 id="limits">Limitations &amp; honest trade-offs</h2>
+        <p>This is a genuinely clever fit, but it's solving a constraint, not beating physics. What you're really buying is <strong>tolerance of one node failure on two nodes</strong> — and the caveats matter:</p>
+        <ul>
+          <li><strong>You still can't survive both nodes.</strong> Two nodes is two nodes; if the site loses power entirely, the cluster is down. This raises single-failure tolerance from zero to one — that's the win, no more.</li>
+          <li><strong>Fencing must actually work.</strong> The whole safety model rests on STONITH succeeding. If the BMC is misconfigured, on the same power feed as the host, or unreachable, the fence fails and you're back to split-brain risk. The BMC/RedFish path is a hard dependency, not a nice-to-have.</li>
+          <li><strong>DRBD is synchronous.</strong> Mirroring the mon's writes to the peer in real time adds latency to those writes and assumes a fast, reliable link between the two nodes. Across a flaky or high-latency interconnect, DRBD itself becomes the bottleneck (or risks its own split-brain).</li>
+          <li><strong>Operational complexity goes up.</strong> You've added DRBD, Pacemaker, BMC fencing, and a lifecycle-hooked pod to what was "just Ceph." It ships in Rook, but there's more to understand and monitor when it misbehaves.</li>
+          <li><strong>OSD data replication is separate.</strong> The floating mon solves <em>quorum</em>; your actual data still needs Ceph replication (size=2 across the two nodes) to survive a node loss. The mon trick keeps the cluster <em>reachable</em>; replication keeps the data <em>present</em>.</li>
+        </ul>
+        <div class="bm-fix"><strong>When this is the right tool.</strong> Reach for it when you genuinely cannot place a third node or even a lightweight third <em>arbiter</em> (a tie-breaker mon on a tiny box or a cloud VM is simpler if you can have one), and you need real HA at a two-server edge site — retail back-office, a cell site, a factory floor, a remote clinic. If you <em>can</em> add any third voting member, even a Raspberry-Pi-class arbiter, that's usually the lower-complexity answer. The floating-mon + TNF design is for the case where two boxes is a hard ceiling.</div>
 
         <h2 id="faq">FAQ</h2>
 
@@ -232,6 +263,21 @@
         <details class="faq">
           <summary>How much of Ceph had to change?</summary>
           <p>Almost none. The HA behaviour lives in the floating mon pod's lifecycle: an init container promotes DRBD to primary and mounts the device; a preStop hook demotes and unmounts. All other Ceph containers run unmodified — which is why it fits inside Rook.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Isn't a lightweight third "arbiter" mon simpler than all this?</summary>
+          <p>Yes — if you can have one. A tie-breaker mon on a small third box or a cloud VM gives you an odd quorum with far less machinery. The floating-mon + DRBD + TNF design exists for the case where a third voting member genuinely isn't possible: no third device, no connectivity to a cloud arbiter, a hard two-server ceiling. Given that constraint, this is how you still get one-failure tolerance.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Does the floating mon protect my data, or just keep the cluster up?</summary>
+          <p>Just the quorum — it keeps the cluster <em>reachable</em> through a node failure. Your actual data durability still comes from Ceph replicating objects across the two nodes' OSDs (replica size 2). The floating mon ensures clients can still reach a quorum and the surviving OSDs; replication ensures the data is physically present on the survivor.</p>
+        </details>
+
+        <details class="faq">
+          <summary>What happens if fencing fails?</summary>
+          <p>Then the survivor must <em>not</em> promote the floating mon, because it can't prove the other node is down — promoting anyway risks both nodes going DRBD-primary and Ceph-quorum-authoritative (split-brain). A correct setup treats a failed fence as a hard stop: stay degraded rather than risk divergence. That's why the BMC/RedFish path needs its own power and network and must be tested — the safety of the whole design depends on the fence being reliable.</p>
         </details>
 
         <h2 id="takeaways">Takeaways</h2>

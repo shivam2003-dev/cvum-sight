@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "build-your-own-ai-lab",
+    title: "Build your own AI lab — the complete 2026 guide to self-hosting GLM-5.2, DeepSeek V4 &amp; friends.",
+    date: "Jun 22, 2026",
+    cat: "ml",
+    tags: ["ml", "llm", "self-hosting", "hardware", "gpu", "dgx-spark"],
+    time: 39,
+    words: 7800,
+    excerpt: "Read one thing, understand the whole problem. An end-to-end plan to build a real AI lab in 2026: the one law that governs everything (VRAM capacity + memory bandwidth), the full hardware ladder (single RTX 4090 → Mac Studio → NVIDIA DGX Spark → multi-GPU workstation → 8× H200 node), a parts list per tier, the install + vLLM/Ollama commands, how to actually run GLM-5.2 (744B) and DeepSeek V4 (V4-Flash 284B is the realistic self-host), quantization and fine-tuning (LoRA/QLoRA), the honest self-host-vs-API cost math, security/sovereignty, a 7-day getting-started plan, and a long troubleshooting section built from what builders really hit (OOM, the CPU-offload cliff, the DGX Spark bandwidth trap, KV-cache blow-ups)."
+  },
+  {
     slug: "glm-5-2",
     title: "GLM-5.2 — built for long-horizon tasks, the whole architecture in plain words.",
     date: "Jun 22, 2026",

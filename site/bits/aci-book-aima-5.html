@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIMA Ch5 — Adversarial Search and Games — ACI Book Notes — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<script>
+MathJax = {
+  tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} },
+  options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] }
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../tags.html">Tags</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html" class="active">Discover</a><a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="/bits/aci-book-explained.html" style="color:var(--ink-faint);text-decoration:none">&larr; ACI Book Explained</a></p>
+      <div class="post-header">
+        <p class="meta">BOOK NOTES · AIMA 4TH ED. · CHAPTER 5</p>
+        <h1>AIMA Chapter 5 — Adversarial Search and Games.</h1>
+        <div class="tag-row">
+          <span class="tag fill">aci</span>
+          <span class="tag">aima</span>
+          <span class="tag">chapter-5</span>
+          <span class="tag">AIMLCZG557</span>
+        </div>
+      </div>
+      <div class="post-body osc-body">
+        <div class="osc-tldr">
+          <p class="osc-tldr-label">// the one-minute version</p>
+          <p>Chapter 5 changes the search problem from “find a path” to “choose a move while someone intelligent is trying to ruin your plan.” That one change creates minimax, alpha-beta pruning, depth-limited search, evaluation functions, transposition tables, and eventually Monte Carlo Tree Search. In deterministic perfect-information zero-sum games, the central idea is simple: MAX wants the highest utility, MIN wants the lowest, and each assumes the other is rational. Minimax gives the exact answer when the game tree is searched to terminal states. Alpha-beta gets the same answer faster by pruning useless branches. When trees are too big, we cut off, estimate, cache, and order moves. For huge games like Go, MCTS replaces hand-written evaluation with guided simulation.</p>
+        </div>
+
+        <p class="osc-lead">Games are one of AI’s favorite laboratories because they are clean. There are rules. There are turns. There is winning and losing. There are strong human benchmarks. And yet games are brutally hard because intelligence is now adversarial: every move you make changes what the other player can do, and every move they make is chosen specifically to hurt you. Chapter 5 is about that transition from search in a passive world to search against an opponent.</p>
+
+        <div class="osc-quickrow">
+          <div class="q"><b>Minimax</b><span>worst-case rational play</span></div>
+          <div class="q"><b>Alpha-beta</b><span>same answer, fewer nodes</span></div>
+          <div class="q"><b>EVAL</b><span>utility estimate at cutoff</span></div>
+          <div class="q"><b>MCTS</b><span>search by rollouts</span></div>
+          <div class="q"><b>UCB1</b><span>explore + exploit</span></div>
+        </div>
+
+        <h2 id="s1"><span class="n">01</span> Why games are such a classic AI playground</h2>
+        <p>Game playing was attractive to AI researchers from the beginning because games are structured battles of decision making. They are rich enough to be nontrivial but clean enough to formalise. A move is legal or illegal. A state is winning, losing, drawn, or uncertain. The environment is often discrete and symbolic, which makes it easier to model than the messy physical world.</p>
+        <p>That makes games excellent for testing ideas about reasoning. If you build an algorithm that can search ahead, evaluate alternatives, and choose rationally under opposition, you have captured something central about intelligent decision making. This is why chess, checkers, Go, tic-tac-toe, and later real-time games became recurring milestones in AI history.</p>
+        <p>Games also give a clear scoreboard. In many real-world tasks, “better” is fuzzy. In games, better is usually not fuzzy at all. You win, lose, or draw. That crisp feedback makes algorithms easier to compare and improve.</p>
+        <div class="osc-key"><span class="lab">key idea</span>Games are mathematically neat but computationally vicious. That is exactly why they are useful: they reveal whether your decision-making method is merely elegant on paper or genuinely strong under pressure.</div>
+        <p>But the chapter is not about all games equally. Before minimax makes sense, we have to narrow the class of games we are talking about.</p>
+
+        <h2 id="s2"><span class="n">02</span> What makes game search different from ordinary search</h2>
+        <p>In regular path-finding search, the world does not fight back. When you choose an action, the successor state depends on the rules of the environment, not on an enemy actively choosing the worst possible reply. The search problem is, in a sense, one-sided.</p>
+        <p>In adversarial games, the world includes another intelligent agent. If you examine a move and think, “Great, after this I can win,” you are missing half the picture. The opponent also gets a move, and they are not required to cooperate with your plan. So you cannot evaluate a move by its best possible continuation for you. You must evaluate it by the continuation that a hostile rational opponent would force.</p>
+        <div class="osc-analogy"><span class="lab">think of it like</span>Normal search is like navigating a maze. Adversarial search is like navigating a maze where another player rearranges doors on every alternate turn and always chooses the arrangement that hurts you most.</div>
+        <p>This is why a simple fixed plan is insufficient. In path search you can say, “Take left, then right, then go straight.” In a game you need a <strong>strategy</strong>: a rule for what to do in every possible situation that might arise after the opponent responds. The future is branching not just because of your options but because of theirs.</p>
+        <p>That is the conceptual jump from Chapter 3 and 4 into Chapter 5. Search is still present, but the tree now alternates between choices you control and choices you do not.</p>
+
+        <h2 id="s3"><span class="n">03</span> Game categories and what this chapter actually covers</h2>
+        <p>Not all games are alike. A good first classification uses several axes.</p>
+        <div class="osc-cards">
+          <div class="osc-card"><h4>Perfect vs imperfect information</h4><p>In chess you see the whole board. In poker you do not see the opponent’s cards.</p></div>
+          <div class="osc-card"><h4>Deterministic vs stochastic</h4><p>Chess has no dice. Backgammon includes random rolls.</p></div>
+          <div class="osc-card"><h4>Two-player vs multi-player</h4><p>Tic-tac-toe has two players. Many card and board games do not.</p></div>
+          <div class="osc-card"><h4>Zero-sum vs general-sum</h4><p>In zero-sum, one player’s gain is the other’s loss. In general-sum, both can sometimes benefit.</p></div>
+        </div>
+        <p>This chapter focuses on the cleanest subclass: <strong>deterministic, perfect-information, zero-sum, two-player games</strong>. That includes classics like chess, Go, and tic-tac-toe. “Perfect information” means both players fully observe the current state. “Deterministic” means the next state is determined by the current state and chosen action, not by dice or hidden randomness. “Zero-sum” means what MAX gains, MIN loses.</p>
+        <p>Why this restriction? Because minimax logic is cleanest there. Once you add chance, hidden information, or more than two agents, the reasoning changes. Those extensions are important, but Chapter 5 starts with the pure version so that the core ideas are crystal clear.</p>
+
+        <h2 id="s4"><span class="n">04</span> Formal game definition: the six parts you should know cold</h2>
+        <p>AIMA gives a formal game definition using six components. This is the game analogue of a search problem definition.</p>
+        <ol>
+          <li><strong>S0</strong> — the initial state.</li>
+          <li><strong>PLAYER(s)</strong> — whose turn it is in state <span class="fml">s</span>.</li>
+          <li><strong>ACTIONS(s)</strong> — the legal moves available in state <span class="fml">s</span>.</li>
+          <li><strong>RESULT(s,a)</strong> — the successor state that results from applying action <span class="fml">a</span> in state <span class="fml">s</span>.</li>
+          <li><strong>TERMINAL-TEST(s)</strong> — whether the game is over in state <span class="fml">s</span>.</li>
+          <li><strong>UTILITY(s,p)</strong> — the final payoff for player <span class="fml">p</span> when the game ends in state <span class="fml">s</span>.</li>
+        </ol>
+        <p>That last component is especially important. Utility converts a terminal position into a number. In a simple zero-sum game we may use +1 for a win, 0 for a draw, and -1 for a loss from MAX’s perspective. In richer games we can use larger scales if needed, but the key is that utility defines what “good” means.</p>
+        <div class="osc-key"><span class="lab">key idea</span>A game tree is just a search tree generated from this six-part model, except the tree alternates between players rather than belonging to a single decision maker.</div>
+        <p>Once you have these six parts, every deterministic perfect-information game fits the same formal template. That is why one algorithmic family can apply to tic-tac-toe and chess even though the games feel utterly different in complexity.</p>
+
+        <h2 id="s5"><span class="n">05</span> Game trees, MAX and MIN levels, and why strategy beats a fixed plan</h2>
+        <p>The <strong>game tree</strong> starts at the initial state and alternates between players. Levels where MAX moves are called MAX nodes. Levels where MIN moves are called MIN nodes. Leaves are terminal positions labeled with utilities.</p>
+        <p>If the tree were tiny, the problem would be easy: just look all the way to the leaves, compute the best outcome assuming both players are rational, and choose the corresponding action at the root. That is exactly the minimax idea. The difficulty is that real game trees are enormous.</p>
+        <p>Chess is often estimated to have around <span class="fml">10^40</span> reachable states and an astronomically large game tree. Go is even wilder, often quoted around <span class="fml">10^170</span> states or game histories depending on the counting convention. The exact number matters less than the moral: you cannot enumerate the whole game tree except for trivial games.</p>
+        <p>Still, strategy matters more than plan. If you say, “I will play move A, then B, then C,” you have ignored the possibility that the opponent blocks your idea after move A. A true strategy is a complete mapping from every possible reachable state to the move you would play there. In other words, a strategy tells you what to do <em>no matter how the opponent responds</em>.</p>
+        <div class="osc-catch"><span class="lab">the catch</span>The tree branches because both players are choosing. So your decision quality depends not on your favorite continuation, but on the continuation your opponent can force.</div>
+
+        <h2 id="s6"><span class="n">06</span> Minimax: maximise the minimum you can guarantee</h2>
+        <p>Now the heart of the chapter. MAX wants high utility. MIN wants low utility. If both are perfectly rational and know the game, how should MAX move?</p>
+        <p>The answer is <strong>minimax</strong>. MAX chooses the action whose worst-case outcome is best. That sounds abstract until you hear it in plain English: “Assume the opponent will reply in the most painful possible way. Which move still leaves me in the best guaranteed position?”</p>
+        <p>This is why the name minimax makes sense. MIN tries to minimise utility for MAX. Knowing that, MAX chooses the action that maximises the value after MIN has minimised it.</p>
+        <div class="osc-analogy"><span class="lab">think of it like</span>Imagine choosing an umbrella route home while a prankster opponent gets to pick the weather after seeing your path. You do not choose the route that is amazing in sunshine. You choose the route that is least bad under the worst weather the prankster can force.</div>
+        <p>The minimax value of a state is defined recursively. For terminal states, it is just the utility. For MAX states, it is the maximum minimax value among successors. For MIN states, it is the minimum minimax value among successors.</p>
+        <div class="fbox">
+          \[
+          \text{MINIMAX}(s)=
+          \begin{cases}
+          \text{UTILITY}(s) & \text{if } \text{TERMINAL-TEST}(s) \\
+          \max\limits_{a\in ACTIONS(s)} \text{MINIMAX}(RESULT(s,a)) & \text{if } PLAYER(s)=MAX \\
+          \min\limits_{a\in ACTIONS(s)} \text{MINIMAX}(RESULT(s,a)) & \text{if } PLAYER(s)=MIN
+          \end{cases}
+          \]
+        </div>
+        <p>This recursive definition is so important that it is worth reading slowly. At a MAX node, you ask “what is the best future value I can secure?” At a MIN node, you ask “what is the smallest value the opponent can force on me?” That alternation backs values up from leaves to root.</p>
+
+        <h2 id="s7"><span class="n">07</span> A full worked minimax example</h2>
+        <p>Let us build a small four-ply example. Suppose the root is a MAX node with three actions leading to MIN nodes A, B, and C.</p>
+        <ul>
+          <li>A has terminal children with utilities 3, 12, and 8.</li>
+          <li>B has terminal children with utilities 2, 4, and 6.</li>
+          <li>C has terminal children with utilities 14, 5, and 2.</li>
+        </ul>
+        <p>Because A, B, and C are MIN nodes, each one chooses the smallest utility among its children:</p>
+        <ul>
+          <li>Value(A) = min(3, 12, 8) = 3</li>
+          <li>Value(B) = min(2, 4, 6) = 2</li>
+          <li>Value(C) = min(14, 5, 2) = 2</li>
+        </ul>
+        <p>Now the root is a MAX node, so it chooses the largest among these backed-up values:</p>
+        <div class="fbox">
+          \[
+          \text{Value(root)} = \max(3,2,2)=3
+          \]
+        </div>
+        <p>So MAX chooses action A. Why not the branch containing the leaf 14? Because MIN would never allow MAX to receive 14 there. At node C, MIN would steer the game to the child with utility 2. Minimax is about what the opponent can force, not what you hope they will accidentally permit.</p>
+        <div class="osc-key"><span class="lab">key idea</span>Minimax does not optimise for the best leaf under a move. It optimises for the worst leaf the opponent can force under that move.</div>
+        <p>The algorithm itself is just a depth-first search over the game tree that backs up values on the way up. If the branching factor is <span class="fml">b</span> and the search depth is <span class="fml">m</span>, the time complexity is <span class="fml">O(b^m)</span> because in the worst case the whole tree is explored. Space with depth-first traversal is about <span class="fml">O(bm)</span>.</p>
+        <p>Minimax is optimal under the assumption that the opponent also plays optimally. If the opponent makes mistakes, that only helps MAX. The algorithm is conservative in exactly the right sense.</p>
+
+        <h2 id="s8"><span class="n">08</span> Why full minimax is impossible in real games</h2>
+        <p>For tiny games like tic-tac-toe, full minimax is feasible. You can search the whole tree to terminal positions and play perfectly. That is why tic-tac-toe is solved and always ends in a draw with optimal play.</p>
+        <p>But in chess or Go, terminal search is hopeless except in tiny endgames. The depth is too large, and the branching factor is too large. Even if you could search millions of nodes per second, the combinatorial explosion destroys you.</p>
+        <p>So practical game-playing systems almost never run pure terminal-state minimax except in small subtrees. They run <strong>depth-limited minimax</strong>: search only down to depth <span class="fml">d</span>, then estimate the value of the frontier positions instead of reaching true game outcomes.</p>
+        <p>This is the same philosophical move we saw in heuristic path search. When exact future knowledge is impossible, we substitute a cheap estimate and hope it is informative enough.</p>
+
+        <h2 id="s9"><span class="n">09</span> Depth-limited minimax, cutoff tests, and evaluation functions</h2>
+        <p>Depth-limited minimax adds two new ingredients:</p>
+        <ul>
+          <li><strong>CUTOFF-TEST(s, depth)</strong>: should we stop expanding here?</li>
+          <li><strong>EVAL(s)</strong>: if we stop here and the state is non-terminal, what utility estimate should we use?</li>
+        </ul>
+        <p>The cutoff test is usually true when we reach a depth limit <span class="fml">d</span> or encounter a terminal state earlier. The evaluation function is then used to assign a numerical value to that non-terminal frontier node.</p>
+        <p>This is an extremely important practical idea. Because real game trees are too deep, the quality of the evaluation function often matters as much as, or more than, small improvements in raw search depth.</p>
+        <h3>Simple evaluation</h3>
+        <p>In chess, a primitive evaluation might be material difference:</p>
+        <div class="fbox">
+          \[
+          EVAL(s)=\text{MAX material} - \text{MIN material}
+          \]
+        </div>
+        <p>If MAX is up a rook and a pawn, the score should be positive. If MAX is down a queen, the score should be strongly negative.</p>
+        <h3>Weighted feature evaluation</h3>
+        <p>A more realistic evaluation is a weighted sum of features: material, king safety, mobility, center control, pawn structure, piece activity, and so on. For example, rooks may be worth 5, bishops 3, knights 3, pawns 1, queens 9, with extra feature bonuses and penalties layered on top.</p>
+        <p>The point is not that any one feature is perfect. The point is that the evaluation function compresses long-term strategic knowledge into a number the search can use quickly.</p>
+        <div class="osc-warn"><span class="lab">watch out</span>The horizon effect happens when a danger or tactical swing lies just beyond the search cutoff. The evaluation function may think the position is safe simply because the bad event is one move deeper than the current horizon.</div>
+        <p>For example, a chess engine may delay losing a queen by one move so that the actual capture lies beyond depth <span class="fml">d</span>. The evaluation at the cutoff looks acceptable, but only because the disaster is just offstage. This is why stronger engines often combine depth limits with selective extensions such as quiescence search.</p>
+        <p>There is a classic practical trade-off here: a mediocre evaluation with deeper search versus a brilliant evaluation with shallow search. In many real systems, a stronger evaluation wins at moderate search depths because it makes every backed-up leaf value more meaningful.</p>
+
+        <h2 id="s10"><span class="n">10</span> Alpha-beta pruning: same minimax answer, less pointless work</h2>
+        <p>Minimax wastes effort because it evaluates many branches that cannot possibly affect the final decision. Alpha-beta pruning fixes that without changing the answer.</p>
+        <p>The idea introduces two bounds:</p>
+        <ul>
+          <li><strong>alpha</strong>: the best value MAX has found so far along the current path. Start with negative infinity.</li>
+          <li><strong>beta</strong>: the best value MIN has found so far along the current path. Start with positive infinity.</li>
+        </ul>
+        <p>At a MAX node, values can only go up as MAX considers children. At a MIN node, values can only go down as MIN considers children. If you ever discover that a node cannot improve the decision already guaranteed elsewhere, you stop exploring its remaining children.</p>
+        <div class="osc-key"><span class="lab">key idea</span>Alpha-beta does not guess less carefully. It proves that some subtrees are irrelevant because an earlier choice already dominates them.</div>
+        <p>The standard pruning rules are:</p>
+        <ul>
+          <li>At a <strong>MIN</strong> node, if the current value becomes less than or equal to alpha, prune the rest. MAX would never allow the game to enter a branch that bad when it already has a better option elsewhere.</li>
+          <li>At a <strong>MAX</strong> node, if the current value becomes greater than or equal to beta, prune the rest. MIN would never choose a path that generous to MAX when MIN already has a better defense elsewhere.</li>
+        </ul>
+        <p>The compact cutoff condition is <span class="fml">beta \le alpha</span>. Once that inequality holds, the remaining children of the node cannot matter.</p>
+
+        <h2 id="s11"><span class="n">11</span> A worked alpha-beta trace, step by step</h2>
+        <p>Consider a root MAX node with three MIN children: A, B, C. Each MIN node has three MAX children, and each of those eventually leads to terminal utilities. We traverse left to right. The exact numbers are chosen to show pruning.</p>
+        <p><strong>Branch A:</strong> Suppose MIN node A has children whose backed-up MAX values turn out to be 3, 5, and 6. Since A is a MIN node, its final value is 3. At the root, MAX now has alpha = 3.</p>
+        <p><strong>Branch B:</strong> At MIN node B, we explore the first child and discover its MAX value is 2. Since B is MIN, its current best is now 2, so beta = 2 at node B. But the root already has alpha = 3 from branch A. Because beta = 2 is less than or equal to alpha = 3, the rest of B can be pruned. MAX would never choose B anyway, because MIN can force B down to at most 2, which is already worse than the guaranteed 3 from A.</p>
+        <p><strong>Branch C:</strong> Suppose the first explored child gives 14, so at C the current MIN bound is 14 and no pruning happens yet. The second child gives 5, lowering C’s current value to 5. Still no cutoff because 5 is greater than root alpha 3. The third child gives 2, so C’s value becomes 2. At that moment, if more children remained, they would be pruned because 2 is less than or equal to 3.</p>
+        <p>So the root still chooses A with value 3, exactly as plain minimax would. The difference is that large portions of B and maybe C were skipped because they could not change the answer.</p>
+        <div class="osc-diagram">
+          <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+            <style>.box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}.boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}.boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}.boxr{fill:#f3d9cf;stroke:#2a2620;stroke-width:1.5}.lbl{font-family:monospace;font-size:11px;fill:#2a2620}.lblf{font-family:monospace;font-size:9px;fill:#948a78}.ttl{font-family:monospace;font-size:12px;font-weight:700;fill:#2a2620}.arr{stroke:#c96442;stroke-width:1.5;fill:none}</style>
+            <text x="250" y="22" class="ttl">minimax tree with alpha-beta pruning</text>
+            <circle cx="320" cy="48" r="18" class="boxy"/><text x="307" y="52" class="lbl">MAX</text>
+            <circle cx="150" cy="118" r="18" class="boxg"/><text x="140" y="122" class="lbl">A</text>
+            <circle cx="320" cy="118" r="18" class="boxg"/><text x="310" y="122" class="lbl">B</text>
+            <circle cx="490" cy="118" r="18" class="boxg"/><text x="480" y="122" class="lbl">C</text>
+            <line x1="320" y1="66" x2="150" y2="100" stroke="#2a2620"/>
+            <line x1="320" y1="66" x2="320" y2="100" stroke="#2a2620"/>
+            <line x1="320" y1="66" x2="490" y2="100" stroke="#2a2620"/>
+            <circle cx="95" cy="196" r="16" class="box"/><text x="90" y="200" class="lbl">3</text>
+            <circle cx="150" cy="196" r="16" class="box"/><text x="145" y="200" class="lbl">5</text>
+            <circle cx="205" cy="196" r="16" class="box"/><text x="200" y="200" class="lbl">6</text>
+            <line x1="150" y1="136" x2="95" y2="180" stroke="#2a2620"/>
+            <line x1="150" y1="136" x2="150" y2="180" stroke="#2a2620"/>
+            <line x1="150" y1="136" x2="205" y2="180" stroke="#2a2620"/>
+            <circle cx="290" cy="196" r="16" class="box"/><text x="285" y="200" class="lbl">2</text>
+            <circle cx="350" cy="196" r="16" class="boxr"/><text x="339" y="200" class="lbl">X</text>
+            <circle cx="410" cy="196" r="16" class="boxr"/><text x="399" y="200" class="lbl">X</text>
+            <line x1="320" y1="136" x2="290" y2="180" stroke="#2a2620"/>
+            <line x1="320" y1="136" x2="350" y2="180" stroke="#c96442" stroke-dasharray="5 4"/>
+            <line x1="320" y1="136" x2="410" y2="180" stroke="#c96442" stroke-dasharray="5 4"/>
+            <circle cx="435" cy="196" r="16" class="box"/><text x="427" y="200" class="lbl">14</text>
+            <circle cx="490" cy="196" r="16" class="box"/><text x="485" y="200" class="lbl">5</text>
+            <circle cx="545" cy="196" r="16" class="box"/><text x="540" y="200" class="lbl">2</text>
+            <line x1="490" y1="136" x2="435" y2="180" stroke="#2a2620"/>
+            <line x1="490" y1="136" x2="490" y2="180" stroke="#2a2620"/>
+            <line x1="490" y1="136" x2="545" y2="180" stroke="#2a2620"/>
+            <text x="114" y="242" class="lblf">A backs up 3</text>
+            <text x="275" y="242" class="lblf">B prunes after seeing 2 ≤ alpha</text>
+            <text x="454" y="242" class="lblf">C eventually backs up 2</text>
+            <text x="278" y="284" class="lbl">root chooses A with value 3</text>
+          </svg>
+          <p class="cap">Fig 1 — Alpha-beta prunes branches that cannot possibly change the root decision. The backed-up answer stays identical to minimax.</p>
+        </div>
+        <p>You can now see why alpha-beta feels like “thinking smartly” rather than “thinking less.” It uses partial knowledge of what is already achievable to stop analyzing branches whose final verdict is predetermined.</p>
+
+        <h2 id="s12"><span class="n">12</span> Complexity of alpha-beta and why move ordering is everything</h2>
+        <p>In the worst ordering, alpha-beta prunes almost nothing, so the time is still about <span class="fml">O(b^d)</span>. But in the best case, with perfect move ordering, the effective complexity becomes roughly <span class="fml">O(b^{d/2})</span>. That is an enormous win: it is like doubling the search depth for the same amount of work.</p>
+        <p>With random ordering, a common rough rule of thumb is around <span class="fml">O(b^{3d/4})</span>. The exact constants depend on the tree, but the message is clear: ordering the promising moves first is not a small optimisation. It is the optimization.</p>
+        <div class="osc-key"><span class="lab">key idea</span>Alpha-beta’s strength is proportional to how quickly it sees good bounds. Good move ordering means early bounds, early bounds mean more pruning.</div>
+        <p>That is why engines use move-ordering heuristics such as <strong>killer moves</strong>—moves that caused cutoffs in similar positions before. Another common trick is <strong>iterative deepening</strong>: search to depth 1, then 2, then 3, and so on. This sounds wasteful, but the shallower searches identify promising moves that can be tried first at deeper levels, dramatically improving alpha-beta pruning.</p>
+        <p>Transposition tables also help move ordering. If a state has been seen before, the previously good move can be tried first. In game search, such implementation details are often the difference between a toy engine and a dangerous one.</p>
+
+        <h2 id="s13"><span class="n">13</span> Transposition tables, quiescence search, opening books, endgame tables</h2>
+        <p>Once you accept that full-tree search is impossible, you start collecting every trick that avoids wasting search effort.</p>
+        <h3>Transposition tables</h3>
+        <p>A transposition happens when the same board position is reached through different move orders. Chess is full of them. A transposition table caches a mapping from state to evaluated value and often also stores depth, bound type, and best move. If the same position appears again, the engine reuses work instead of recomputing it.</p>
+        <h3>Quiescence search</h3>
+        <p>To fight the horizon effect, engines often extend search in tactically unstable positions. If captures, checks, or other forcing moves are available, the engine keeps searching until the position becomes quieter. That is quiescence search: do not trust an evaluation on a noisy tactical frontier.</p>
+        <h3>Opening books and endgame tables</h3>
+        <p>Opening books store strong moves for the early phase, often learned from expert play or computed analysis. Endgame tablebases store exact outcomes for small numbers of pieces, turning late-game positions into solved lookup problems. Together, they let engines avoid spending search time on regions that are already well understood.</p>
+        <div class="osc-catch"><span class="lab">the catch</span>These tools do not replace minimax logic; they wrap around it. Search is still the core, but caching, selective extension, and precomputed knowledge make the core actually usable.</div>
+        <p>This engineering stack is the background for famous systems like Deep Blue. Its 1997 victory over Kasparov was not “just brute force” in the dismissive sense. It was heuristic minimax, alpha-beta pruning, strong evaluation, heavy move ordering, and hardware acceleration working together at scale.</p>
+
+        <h2 id="s14"><span class="n">14</span> Heuristic minimax in the real world</h2>
+        <p>When people say a classical game engine uses minimax, what they usually mean is a package of techniques: depth-limited search, evaluation functions, alpha-beta pruning, iterative deepening, transposition tables, quiescence search, and lots of move-ordering tricks.</p>
+        <p>That is why the phrase <strong>heuristic minimax</strong> is useful. The engine is still solving a minimax problem, but only approximately because it cannot see the full game to the end. The intelligence lies in how it estimates and prioritizes.</p>
+        <p>A mediocre evaluation and sloppy move ordering can make deep search feel blind. A strong evaluation and sharp ordering can make a moderate depth terrifying. In practice, the strongest engines marry both: search power and positional understanding.</p>
+        <p>One memorable line from this chapter is that alpha-beta makes the best use of a minimax tree. That is the right summary. Minimax defines the ideal decision criterion. Alpha-beta makes that criterion computationally survivable.</p>
+
+        <h2 id="s15"><span class="n">15</span> Why Monte Carlo Tree Search became such a big deal</h2>
+        <p>For chess, strong hand-crafted evaluation functions were possible because the game has crisp local features: piece values, king safety, pawn structure, mobility, and so on. Go is much harder. The board is huge, the branching factor is massive, and local tactical value is difficult to reduce to a simple weighted feature list.</p>
+        <p>This is where <strong>Monte Carlo Tree Search</strong>, or MCTS, changed the story. Instead of relying entirely on a carefully designed static evaluation function, MCTS asks a different question: “From this position, if I keep playing games out, how often do I win?”</p>
+        <p>In its simplest form, MCTS evaluates a position by repeated simulated games, called rollouts or playouts. If a move leads to many wins across simulations, that move looks promising. The method is statistical rather than purely deductive.</p>
+        <div class="osc-key"><span class="lab">key idea</span>MCTS replaces “estimate this position using hand-written chess-like features” with “sample futures from this position and learn which moves actually tend to win.”</div>
+        <p>This was especially attractive for Go because writing a strong handcrafted evaluation was notoriously difficult. MCTS let engines get surprisingly strong by using search plus sampling rather than search plus rigid evaluation formulas alone.</p>
+
+        <h2 id="s16"><span class="n">16</span> The four phases of MCTS</h2>
+        <p>MCTS repeats four phases over and over.</p>
+        <ol>
+          <li><strong>Selection:</strong> starting at the root, repeatedly choose a child according to a tree policy until you reach a node with unexplored children or a terminal state.</li>
+          <li><strong>Expansion:</strong> if the node is non-terminal and has unexplored legal moves, add one new child for one such move.</li>
+          <li><strong>Simulation (rollout):</strong> from the new child, play a simulated game to the end, often using random or lightly biased moves.</li>
+          <li><strong>Backpropagation:</strong> propagate the simulation result back up the path, updating visit counts and win statistics.</li>
+        </ol>
+        <div class="osc-diagram">
+          <svg viewBox="0 0 640 240" xmlns="http://www.w3.org/2000/svg">
+            <style>.box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}.boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}.boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}.boxr{fill:#f3d9cf;stroke:#2a2620;stroke-width:1.5}.lbl{font-family:monospace;font-size:11px;fill:#2a2620}.lblf{font-family:monospace;font-size:9px;fill:#948a78}.ttl{font-family:monospace;font-size:12px;font-weight:700;fill:#2a2620}.arr{stroke:#c96442;stroke-width:1.5;fill:none}</style>
+            <text x="247" y="24" class="ttl">monte carlo tree search cycle</text>
+            <rect x="40" y="82" width="110" height="44" rx="10" class="boxy"/>
+            <rect x="184" y="82" width="110" height="44" rx="10" class="boxg"/>
+            <rect x="328" y="82" width="110" height="44" rx="10" class="boxr"/>
+            <rect x="472" y="82" width="110" height="44" rx="10" class="box"/>
+            <text x="70" y="108" class="lbl">1. selection</text>
+            <text x="212" y="108" class="lbl">2. expansion</text>
+            <text x="349" y="108" class="lbl">3. rollout</text>
+            <text x="491" y="108" class="lbl">4. backup</text>
+            <path d="M150 104 L184 104" class="arr"/>
+            <path d="M294 104 L328 104" class="arr"/>
+            <path d="M438 104 L472 104" class="arr"/>
+            <path d="M528 128 C528 188, 112 188, 112 126" class="arr" stroke-dasharray="6 4"/>
+            <text x="46" y="56" class="lblf">follow UCB1-best children</text>
+            <text x="190" y="56" class="lblf">add one unexplored move</text>
+            <text x="339" y="56" class="lblf">play to terminal outcome</text>
+            <text x="470" y="56" class="lblf">update wins and visits</text>
+            <text x="248" y="212" class="lblf">repeat thousands to millions of times</text>
+          </svg>
+          <p class="cap">Fig 2 — MCTS is a loop, not a one-shot search. Every iteration refines the tree’s statistics and shifts future selection decisions.</p>
+        </div>
+        <p>Notice what is elegant here: the tree grows asymmetrically. It does not expand all branches to equal depth. It spends most effort on branches that statistical evidence suggests are promising, while still occasionally exploring uncertain ones.</p>
+
+        <h2 id="s17"><span class="n">17</span> UCB1: the exploration-exploitation balancing act</h2>
+        <p>The core selection rule in standard MCTS is often UCB1, which scores child <span class="fml">i</span> by</p>
+        <div class="fbox">
+          \[
+          UCB1_i = \frac{w_i}{n_i} + c\sqrt{\frac{\ln N}{n_i}}
+          \]
+        </div>
+        <p>Here:</p>
+        <ul>
+          <li><span class="fml">w_i</span> = number of wins or total reward observed through child <span class="fml">i</span></li>
+          <li><span class="fml">n_i</span> = number of visits to child <span class="fml">i</span></li>
+          <li><span class="fml">N</span> = total visits to the parent</li>
+          <li><span class="fml">c</span> = exploration constant, often around <span class="fml">\sqrt{2}</span></li>
+        </ul>
+        <p>The first term, <span class="fml">w_i/n_i</span>, is <strong>exploitation</strong>. It prefers moves that have done well before. The second term, <span class="fml">c\sqrt{\ln N / n_i}</span>, is <strong>exploration</strong>. It boosts under-visited children so they are not ignored forever.</p>
+        <p>This formula is a compact expression of a deep dilemma in AI. If you only exploit, you may lock onto a move that looks good from limited evidence while missing an even better option. If you only explore, you waste time rechecking everything instead of cashing in on what you already know. UCB1 balances both.</p>
+        <div class="osc-analogy"><span class="lab">think of it like</span>Suppose you are trying restaurants in a new city. Exploitation says “go back to the place that has been best so far.” Exploration says “try the new place because you do not have enough evidence yet.” UCB1 literally adds both motivations into one score.</div>
+        <p>As visits grow, the exploration bonus for heavily visited nodes shrinks. So the algorithm naturally shifts from broad curiosity early on to sharper preference later on.</p>
+
+        <h2 id="s18"><span class="n">18</span> Does MCTS actually converge to the right answer?</h2>
+        <p>In theory, yes. Given enough rollouts and a suitable selection policy, MCTS converges to the minimax-optimal decision. The issue is not correctness in the limit; the issue is what happens with finite compute. In practice we care about the quality of the move after thousands or millions of simulations, not after infinite time.</p>
+        <p>That is why rollout policy quality matters, selection balance matters, and domain knowledge matters. Crude random rollouts can still work surprisingly well, but stronger systems bias the simulations or replace them with learned value estimates. Every improvement tries to make finite-time behavior better.</p>
+        <p>MCTS is therefore not “anti-minimax.” It is another route toward good game decisions, especially useful where branch factors are huge and evaluation is difficult. In the infinite-data limit it approaches rational choice; in the finite-data regime it is an engineering art.</p>
+
+        <h2 id="s19"><span class="n">19</span> AlphaGo and AlphaZero: when deep learning meets search</h2>
+        <p>AlphaGo’s 2016 win over Lee Sedol was historically important because it showed that Go, long considered resistant to classical evaluation-function methods, could be conquered by combining MCTS with deep neural networks.</p>
+        <p>Two neural ideas were central:</p>
+        <ul>
+          <li><strong>Policy network:</strong> suggest promising moves, guiding selection and expansion so the search does not waste effort uniformly.</li>
+          <li><strong>Value network:</strong> estimate the probability of winning from a position, reducing the need for long random rollouts.</li>
+        </ul>
+        <p>MCTS remained the search backbone, but the networks made that backbone far more informed. Instead of exploring blindly or relying on random playouts alone, AlphaGo used learned intuition plus search.</p>
+        <p>AlphaZero pushed the idea further. No human opening books, no handcrafted domain strategy tables in the old sense—just self-play, neural networks, and search. It learned superhuman play in chess, Go, and shogi by repeatedly playing against itself and refining policy and value estimates.</p>
+        <div class="osc-key"><span class="lab">key idea</span>Modern game AI did not discard search. It upgraded search with learned guidance. Search gives lookahead; learning gives intuition; the strongest systems combine both.</div>
+
+        <h2 id="s20"><span class="n">20</span> A quick comparison table you can revise from</h2>
+        <p>Students often remember isolated formulas but forget when each idea is the natural choice. This table is meant to fix that by lining up the chapter’s tools in one glance.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>What it assumes</th>
+              <th>What it uses</th>
+              <th>Why it is good</th>
+              <th>What can go wrong</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Full minimax</td>
+              <td>Terminal search is feasible</td>
+              <td>Exact utilities</td>
+              <td>Provably optimal against perfect play</td>
+              <td>Explodes in large games</td>
+            </tr>
+            <tr>
+              <td>Depth-limited minimax</td>
+              <td>Cutoff is necessary</td>
+              <td>Evaluation function</td>
+              <td>Works in big trees</td>
+              <td>Depends heavily on eval quality</td>
+            </tr>
+            <tr>
+              <td>Alpha-beta</td>
+              <td>Same as minimax</td>
+              <td>Bounds alpha and beta</td>
+              <td>Same answer with fewer nodes</td>
+              <td>Poor ordering kills pruning</td>
+            </tr>
+            <tr>
+              <td>Heuristic minimax engine</td>
+              <td>Real-time practical play</td>
+              <td>Eval + ordering + cache</td>
+              <td>Very strong in structured games</td>
+              <td>Horizon effect and engineering complexity</td>
+            </tr>
+            <tr>
+              <td>MCTS</td>
+              <td>Sampling is informative</td>
+              <td>Rollouts + visit stats</td>
+              <td>Great when evaluation is hard</td>
+              <td>Noisy if simulations are weak</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2 id="s21"><span class="n">21</span> Minimax vs alpha-beta vs MCTS: when each mental model wins</h2>
+        <p>It helps to compare the methods instead of treating them as unrelated historical chapters.</p>
+        <div class="osc-cards">
+          <div class="osc-card"><h4>Minimax</h4><p>Exact worst-case rational reasoning on a full game tree. Great conceptually, rarely feasible in large games without cutoff.</p></div>
+          <div class="osc-card"><h4>Alpha-beta</h4><p>Same decision criterion as minimax, but with pruning. The practical engine core for deterministic perfect-information games.</p></div>
+          <div class="osc-card"><h4>Heuristic minimax</h4><p>Depth limit + evaluation + alpha-beta + ordering + caching. This is what most classical engines really are.</p></div>
+          <div class="osc-card"><h4>MCTS</h4><p>Statistical search using rollouts and UCB1. Especially useful when evaluation is hard and branching is huge.</p></div>
+        </div>
+        <p>Alpha-beta is strongest when you can order moves well and write a meaningful evaluation function. MCTS shines when handcrafted evaluation is weak but simulation is informative. Modern deep systems blur the line by letting learned models serve as evaluation and move-ordering tools inside search.</p>
+        <p>So the real lesson is not “alpha-beta good, MCTS new.” The real lesson is that adversarial search is a toolkit, and the best tool depends on what kind of structure the game gives you.</p>
+
+        <h2 id="s22"><span class="n">22</span> Common mistakes students make in this chapter</h2>
+        <div class="osc-gotchas">
+          <p class="gh">common catches &amp; gotchas</p>
+          <ul>
+            <li><b>Confusing best-case with minimax value</b> — you do not pick the move with the highest leaf somewhere under it; you pick the move whose worst reply is best for you.</li>
+            <li><b>Stopping alpha-beta too early conceptually</b> — pruning happens only when bounds prove the rest is irrelevant, not just because one child looks bad.</li>
+            <li><b>Thinking depth-limited minimax is exact</b> — once you cut off early and use <span class="fml">EVAL</span>, you are approximating the real minimax value.</li>
+            <li><b>Ignoring move ordering</b> — alpha-beta’s practical strength depends massively on seeing good moves early.</li>
+            <li><b>Treating MCTS as random chaos</b> — it is stochastic, but highly structured by UCB1, visit counts, and backpropagated results.</li>
+          </ul>
+        </div>
+        <p>If you keep those mistakes in mind, the chapter becomes much easier to reason about in exams and implementations alike.</p>
+
+        <h2 id="s23"><span class="n">23</span> What Chapter 5 is really teaching</h2>
+        <p>At the surface level, Chapter 5 teaches minimax, alpha-beta, and MCTS. At the deeper level, it teaches something broader: rational decision making under opposition requires thinking in contingencies, not just direct actions.</p>
+        <p>You are no longer searching for a route in a passive world. You are searching for a move under the assumption that someone else is searching too. That symmetry is what makes game AI conceptually beautiful. Every node in the tree is a prediction about another intelligence responding to yours.</p>
+        <p>And once the trees become too large, the chapter teaches a second lesson: exact rationality is often computationally impossible, so intelligence becomes a matter of smart approximation. Cutoffs, evaluation functions, pruning, caching, rollouts, and learned priors are all ways of keeping the spirit of rational play while surviving the size of real search spaces.</p>
+        <ul class="osc-takeaways">
+          <li>Games differ from ordinary search because an opponent acts between your moves and actively tries to lower your outcome.</li>
+          <li>The core setting in this chapter is deterministic, perfect-information, zero-sum, two-player games.</li>
+          <li>A full strategy maps every reachable state to an action; it is not just one fixed line of play.</li>
+          <li>Minimax backs up utilities assuming MAX maximises and MIN minimises.</li>
+          <li>Depth-limited minimax needs a cutoff test and an evaluation function because real game trees are too large.</li>
+          <li>Alpha-beta returns the same answer as minimax while pruning branches that cannot affect the decision.</li>
+          <li>Move ordering is the lifeblood of alpha-beta efficiency.</li>
+          <li>Transposition tables, quiescence search, opening books, and endgame tables are practical power-ups around heuristic minimax.</li>
+          <li>MCTS uses repeated simulation plus UCB1 to balance exploration and exploitation.</li>
+          <li>AlphaGo and AlphaZero showed that the strongest game AI often comes from combining search with learned guidance.</li>
+        </ul>
+
+        <h2 id="s24"><span class="n">24</span> References and extra reads</h2>
+        <p>If you want to go beyond exam prep, this chapter has a beautiful reading path. Start with the textbook, then jump to classic engine ideas, then to the modern neural era.</p>
+        <ul>
+          <li><strong>Russell, Norvig.</strong> <em>Artificial Intelligence: A Modern Approach</em>, 4th ed. Chapter 5 for the formal minimax and alpha-beta foundation.</li>
+          <li><strong>Knuth and Moore.</strong> Classic analysis of alpha-beta pruning, especially useful for understanding why move ordering changes everything.</li>
+          <li><strong>Game-engine programming notes.</strong> Read practical writeups on transposition tables, iterative deepening, and quiescence search to see how real engines package the theory.</li>
+          <li><strong>Browne et al.</strong> Survey paper on Monte Carlo Tree Search, a strong bridge from textbook understanding to research-level depth.</li>
+          <li><strong>Silver et al.</strong> AlphaGo and AlphaZero papers for the modern story of neural guidance plus search.</li>
+        </ul>
+
+        <h2 id="s25"><span class="n">25</span> Chapter 5 cheatsheet</h2>
+        <div class="osc-cheat">
+          <div class="ch-bar"><span>// chapter cheatsheet</span><span class="ch-tag">concept quick-ref</span></div>
+          <div class="ch-body">
+            <p class="ch-sec">formal game model</p>
+            <div class="ch-row"><span class="ch-cmd"><b>S0</b></span><span class="ch-desc">Initial state of the game.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>PLAYER(s)</b></span><span class="ch-desc">Which player moves in state <span class="fml">s</span>.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>ACTIONS(s)</b></span><span class="ch-desc">Legal moves from state <span class="fml">s</span>.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>RESULT(s,a)</b></span><span class="ch-desc">Successor state after action <span class="fml">a</span>.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>TERMINAL-TEST(s)</b></span><span class="ch-desc">Whether the game is over.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>UTILITY(s,p)</b></span><span class="ch-desc">Payoff for player <span class="fml">p</span> in a terminal state.</span></div>
+            <p class="ch-sec">minimax</p>
+            <div class="ch-row"><span class="ch-cmd"><b>Terminal</b></span><span class="ch-desc"><span class="fml">MINIMAX(s)=UTILITY(s)</span>.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>MAX node</b></span><span class="ch-desc">Choose successor with maximum minimax value.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>MIN node</b></span><span class="ch-desc">Choose successor with minimum minimax value.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Complexity</b></span><span class="ch-desc">Time <span class="fml">O(b^m)</span>, space roughly <span class="fml">O(bm)</span> with DFS.</span></div>
+            <p class="ch-sec">alpha-beta</p>
+            <div class="ch-row"><span class="ch-cmd"><b>alpha</b></span><span class="ch-desc">Best value MAX can guarantee so far on the current path.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>beta</b></span><span class="ch-desc">Best value MIN can guarantee so far on the current path.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Cutoff rule</b></span><span class="ch-desc">Prune when <span class="fml">beta \le alpha</span>.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Best case</b></span><span class="ch-desc">About <span class="fml">O(b^{d/2})</span> with perfect move ordering.</span></div>
+            <p class="ch-sec">evaluation + practical search</p>
+            <div class="ch-row"><span class="ch-cmd"><b>Depth-limited minimax</b></span><span class="ch-desc">Use <span class="fml">CUTOFF-TEST</span> and <span class="fml">EVAL(s)</span> instead of reaching terminal states everywhere.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Horizon effect</b></span><span class="ch-desc">Important tactical event lies just beyond the cutoff depth.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Transposition table</b></span><span class="ch-desc">Cache state → value, bounds, or best move to reuse previous work.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Quiescence search</b></span><span class="ch-desc">Extend unstable tactical positions past the normal cutoff.</span></div>
+            <p class="ch-sec">mcts</p>
+            <div class="ch-row"><span class="ch-cmd"><b>Four phases</b></span><span class="ch-desc">Selection → Expansion → Simulation → Backpropagation.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>UCB1</b></span><span class="ch-desc"><span class="fml">\frac{w_i}{n_i}+c\sqrt{\frac{\ln N}{n_i}}</span> balances exploitation and exploration.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>AlphaGo and AlphaZero</b></span><span class="ch-desc">MCTS combined with neural policy and value guidance plus self-play.</span></div>
+          </div>
+        </div>
+
+        <h2 id="s26"><span class="n">26</span> Quick FAQ before you move on</h2>
+        <details class="osc-faq"><summary>Why is minimax called “maximise the minimum”?</summary><p>Because MAX assumes MIN will choose the reply that minimises MAX’s utility. So MAX selects the move whose resulting minimum outcome is as large as possible.</p></details>
+        <details class="osc-faq"><summary>Does alpha-beta ever change the move minimax would choose?</summary><p>No. When implemented correctly, alpha-beta returns exactly the same decision and value as minimax. It only skips branches proven irrelevant.</p></details>
+        <details class="osc-faq"><summary>Why not always use MCTS instead of alpha-beta?</summary><p>Because alpha-beta is incredibly strong when evaluation functions are meaningful and move ordering is good. MCTS shines in different regimes, especially where handcrafted evaluation is hard and simulation is informative.</p></details>
+        <details class="osc-faq"><summary>What is the practical meaning of the exploration constant c in UCB1?</summary><p>It controls how adventurous the search is. Larger c means more curiosity about under-visited moves; smaller c means more trust in moves that already have high win rates.</p></details>
+      </div>
+      <div class="post-nav"><a href="/bits/aci-book-aima-4.html">&larr; Chapter 4</a><a href="/bits/aci-book-explained.html">ACI vault &rarr;</a></div>
+    </article>
+    <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer>
+    </div>
+    <aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside>
+  </div>
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

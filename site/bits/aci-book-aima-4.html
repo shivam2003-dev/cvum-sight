@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIMA Ch4 — Beyond Classical Search (Heuristics, Local Search, GA) — ACI Book Notes — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<script>
+MathJax = {
+  tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} },
+  options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] }
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../tags.html">Tags</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html" class="active">Discover</a><a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="/bits/aci-book-explained.html" style="color:var(--ink-faint);text-decoration:none">&larr; ACI Book Explained</a></p>
+      <div class="post-header">
+        <p class="meta">BOOK NOTES · AIMA 4TH ED. · CHAPTER 4</p>
+        <h1>AIMA Chapter 4 — Beyond Classical Search (Heuristics, Local Search, GA).</h1>
+        <div class="tag-row">
+          <span class="tag fill">aci</span>
+          <span class="tag">aima</span>
+          <span class="tag">chapter-4</span>
+          <span class="tag">AIMLCZG557</span>
+        </div>
+      </div>
+      <div class="post-body osc-body">
+        <div class="osc-tldr">
+          <p class="osc-tldr-label">// the one-minute version</p>
+          <p>Chapter 4 is where search stops being blind. Instead of expanding nodes in a dumb mechanical order, we start using domain knowledge. A heuristic function <span class="fml">h(n)</span> guesses how far a state is from the goal. Greedy best-first search uses only that guess, so it is often fast but can be fooled. A* uses both the cost paid so far <span class="fml">g(n)</span> and the estimated cost remaining <span class="fml">h(n)</span>, which is why it can be both practical and optimal when the heuristic is well behaved. The chapter then changes mood completely: sometimes we do not care about the path at all, only the final answer. That leads to local search, hill climbing, simulated annealing, beam search, genetic algorithms, and online search.</p>
+        </div>
+
+        <p class="osc-lead">If Chapter 3 taught you how to search, Chapter 4 teaches you how to search like you actually know something. That is the whole pivot. Blind search methods such as BFS, DFS, uniform-cost search, and iterative deepening are beautifully general, but they waste enormous effort because they refuse to use clues from the problem domain. This chapter is the cure: we add informed guidance when we can, and when path details do not matter, we throw away the path entirely and focus on optimisation.</p>
+
+        <div class="osc-quickrow">
+          <div class="q"><b>Greedy</b><span>fast guesser</span></div>
+          <div class="q"><b>A*</b><span>cost so far + guess left</span></div>
+          <div class="q"><b>Hill climb</b><span>move uphill locally</span></div>
+          <div class="q"><b>SA</b><span>occasionally accept worse</span></div>
+          <div class="q"><b>GA</b><span>evolve a population</span></div>
+        </div>
+
+        <h2 id="s1"><span class="n">01</span> Why uninformed search eventually feels blind</h2>
+        <p>Uninformed search algorithms are honest workers. They do exactly what the search discipline says, but they do not ask whether one node looks more promising than another. Breadth-first search says, “expand by depth.” Uniform-cost search says, “expand by cheapest path cost so far.” Depth-first search says, “follow one branch deeply.” None of them say, “this state seems closer to the goal, so maybe look here first.”</p>
+        <p>That is why the word <em>blind</em> is so useful. The algorithm is not stupid in a human sense. It is blind because it cannot see the shape of the remaining journey. It knows where it is. It may know how much it has already spent. But it does not know which frontier node is promising. So it often expands a mountain of irrelevant states before reaching the goal.</p>
+        <p>Imagine you are driving in a new city and you must reach a railway station. An uninformed method is like exploring roads without using a map, compass, distance sign, or landmark. You may still reach the station. In fact, with the right completeness guarantees, you eventually will. But you will likely waste time exploring side streets that obviously point away from the station.</p>
+        <p>The pain gets worse as state spaces grow. If the branching factor is <span class="fml">b</span> and the shallowest solution depth is <span class="fml">d</span>, then many blind searches have node counts growing like <span class="fml">O(b^d)</span>. Exponential growth is the villain of half of AI. Even a modest branching factor becomes brutal when depth rises.</p>
+        <div class="osc-key"><span class="lab">key idea</span>The problem is not that blind search is wrong. The problem is that it treats all frontier states as equally ignorant. Real problems usually give us hints, and Chapter 4 is about using those hints without breaking correctness.</div>
+        <div class="osc-analogy"><span class="lab">think of it like</span>Blind search is like looking for a friend in a city by checking every street in a fixed order. Informed search is like asking, “Which direction is the station? Which neighborhood are they probably in? Which roads head toward the landmark I care about?”</div>
+        <p>There is also a practical engineering reason why heuristics matter. In real systems, memory and time are limited. A theoretically complete algorithm that takes ten hours or ten gigabytes is not actually helpful if the application needs an answer in two seconds. Heuristics are what make search feel intelligent instead of merely exhaustive.</p>
+
+        <h2 id="s2"><span class="n">02</span> Heuristics: what <span class="fml">h(n)</span> really means</h2>
+        <p>A heuristic function <span class="fml">h(n)</span> is an estimate of the remaining cost from node <span class="fml">n</span> to a goal. It is not the exact answer in general. If it were exact, search would be almost trivial. The whole point is that a cheap estimate can still be very useful.</p>
+        <p>In route finding, a classic heuristic is straight-line distance to the destination. In a sliding-tile puzzle, a classic heuristic is how far the tiles appear to be from where they belong. In scheduling, a heuristic may estimate how badly constraints are currently violated. The details change with the problem, but the philosophical role stays the same: <strong>give me a rough idea of how much work is still left</strong>.</p>
+        <p>The course note says the heuristic must be non-negative. That matters because costs in these textbook search formulations are assumed to be non-negative. A negative heuristic would mean, in effect, “I think you are less than zero cost away from the goal,” which is nonsense in ordinary shortest-path problems and would distort ranking badly.</p>
+        <div class="fbox">
+          \[
+          h(n) \approx h^*(n)
+          \]
+          where \(h^*(n)\) is the true optimal remaining cost from \(n\) to the nearest goal.
+        </div>
+        <p>The dream heuristic would satisfy <span class="fml">h(n)=h^*(n)</span> for every node. Then A* would go straight to the optimal solution with minimal wasted work. But exact future cost is usually as hard to compute as solving the original problem. So in practice heuristics are approximations that trade accuracy for speed.</p>
+        <div class="osc-catch"><span class="lab">the catch</span>A heuristic is useful only if it is cheap enough to compute and informative enough to guide search. An expensive but perfect heuristic defeats the point. A cheap but useless heuristic is just decoration.</div>
+        <p>Notice the asymmetry: <span class="fml">g(n)</span> is known, because it is the cost already paid to reach <span class="fml">n</span>. <span class="fml">h(n)</span> is guessed, because the future has not been explored yet. Informed search is really about deciding how much trust to place in a known past versus an estimated future.</p>
+
+        <h2 id="s3"><span class="n">03</span> Greedy best-first search: use only the guess</h2>
+        <p>Greedy best-first search ranks nodes only by the heuristic:</p>
+        <div class="fbox">
+          \[
+          f(n)=h(n)
+          \]
+        </div>
+        <p>This is why it feels so tempting. It always asks, “Which frontier node looks closest to the goal right now?” That often gets you somewhere very quickly. If the heuristic is decent, the search seems laser-focused.</p>
+        <p>But the greediness is also the weakness. Greedy best-first does not care how expensive the path so far has already been. If a node looks close to the goal, greedy search loves it even if reaching that node required a very silly detour. This is the textbook warning: using only <span class="fml">h(n)</span> can make the algorithm fast, but it can also make it myopic.</p>
+        <p>In the Romania map example, the goal is Bucharest. Suppose we start at Arad and use straight-line distance to Bucharest as the heuristic. The values commonly used in AIMA are: Arad 366, Sibiu 253, Timisoara 329, Zerind 374, Fagaras 176, Rimnicu Vilcea 193, Pitesti 100, Bucharest 0, and so on.</p>
+        <p>From Arad, greedy best-first sees these immediate options: Sibiu with <span class="fml">h=253</span>, Timisoara with <span class="fml">h=329</span>, Zerind with <span class="fml">h=374</span>. Since 253 is smallest, it expands Sibiu. From Sibiu it sees Fagaras with <span class="fml">h=176</span> and Rimnicu Vilcea with <span class="fml">h=193</span>, so it prefers Fagaras because 176 looks closer. From Fagaras it can reach Bucharest directly, so it happily goes there.</p>
+        <p>The route found is Arad → Sibiu → Fagaras → Bucharest, with total path cost <span class="fml">140+99+211=450</span>. The problem is that this is not optimal. A cheaper route exists: Arad → Sibiu → Rimnicu Vilcea → Pitesti → Bucharest, with cost <span class="fml">140+80+97+101=418</span>.</p>
+        <div class="osc-warn"><span class="lab">watch out</span>Greedy best-first search is not optimal because “looks closest now” is not the same as “is cheapest overall.” A shortcut-looking state can sit at the end of an expensive road.</div>
+        <p>Textbooks sometimes say greedy best-first is “not complete or optimal.” The spirit of that sentence is important. In large or infinite spaces, greedy can chase deceptive hints forever or cycle unless repeated-state handling is used. On a finite graph with a proper closed list it may terminate, but the algorithm still lacks the robust guarantees that make A* famous.</p>
+        <p>So why study greedy best-first at all? Because it captures a useful extreme. It shows the power of heuristic guidance in its purest form. It is also a strong baseline: when a rough answer fast is more valuable than a guaranteed optimal answer, greedy-style methods are often attractive.</p>
+
+        <h2 id="s4"><span class="n">04</span> A*: the sweet spot between past cost and future estimate</h2>
+        <p>A* search fixes the biggest flaw in greedy search by combining two quantities:</p>
+        <div class="fbox">
+          \[
+          f(n)=g(n)+h(n)
+          \]
+        </div>
+        <p>Here <span class="fml">g(n)</span> is the exact cost from the start state to <span class="fml">n</span>, and <span class="fml">h(n)</span> is the estimated cost from <span class="fml">n</span> to a goal. So <span class="fml">f(n)</span> estimates the total cost of a full solution path going through <span class="fml">n</span>.</p>
+        <p>This is the brilliance of A*. It does not ignore the past like greedy search, and it does not ignore the future like uniform-cost search. It balances both. A frontier node with a very cheap past but terrible future may lose. A frontier node with a great-looking future but wildly expensive past may also lose. The winner is the node with the most promising total story.</p>
+        <div class="osc-key"><span class="lab">key idea</span>You can read A* as “best estimated complete solution first.” It is not choosing the cheapest prefix or the most attractive-looking node. It is choosing the node whose entire route, if the heuristic is roughly right, seems cheapest.</div>
+        <p>The moment students really get A* is usually the moment they stop treating <span class="fml">g</span> and <span class="fml">h</span> as symbols and start hearing their voices. <span class="fml">g</span> says, “How much have you already spent?” <span class="fml">h</span> says, “How much do you still expect to spend?” A* asks both before making a move.</p>
+        <p>Why does this help? Because shortest-path problems are about total cost, not closeness in some vague sense. Greedy search over-trusts the estimate. Uniform-cost search distrusts all estimates and pays for that with extra expansion. A* is the compromise that often gives the best of both worlds.</p>
+
+        <h2 id="s5"><span class="n">05</span> The full Romania A* trace, carefully</h2>
+        <p>Let us do the standard Arad-to-Bucharest example properly because this one example explains half the chapter. We use straight-line distance to Bucharest as the heuristic. The relevant road distances are:</p>
+        <ul>
+          <li>Arad → Sibiu = 140, Arad → Timisoara = 118, Arad → Zerind = 75</li>
+          <li>Sibiu → Fagaras = 99, Sibiu → Rimnicu Vilcea = 80, Sibiu → Oradea = 151</li>
+          <li>Rimnicu Vilcea → Pitesti = 97, Rimnicu Vilcea → Craiova = 146</li>
+          <li>Fagaras → Bucharest = 211</li>
+          <li>Pitesti → Bucharest = 101</li>
+        </ul>
+        <p>The heuristic values are: Arad 366, Sibiu 253, Timisoara 329, Zerind 374, Fagaras 176, Rimnicu Vilcea 193, Oradea 380, Pitesti 100, Craiova 160, Bucharest 0.</p>
+        <div class="osc-cards">
+          <div class="osc-card"><h4>Start</h4><p>Arad has \(g=0\), \(h=366\), so \(f=366\).</p></div>
+          <div class="osc-card"><h4>Rule</h4><p>Always expand the frontier node with the smallest \(f=g+h\).</p></div>
+          <div class="osc-card"><h4>Goal test</h4><p>When Bucharest is selected for expansion or removed from the frontier with the lowest \(f\), we have the optimal solution under the right heuristic conditions.</p></div>
+        </div>
+        <p><strong>Step 1: expand Arad.</strong> Its successors are:</p>
+        <ul>
+          <li>Sibiu: \(g=140\), \(h=253\), \(f=393\)</li>
+          <li>Timisoara: \(g=118\), \(h=329\), \(f=447\)</li>
+          <li>Zerind: \(g=75\), \(h=374\), \(f=449\)</li>
+        </ul>
+        <p>The smallest <span class="fml">f</span> is Sibiu with 393. So A* expands Sibiu next.</p>
+        <p><strong>Step 2: expand Sibiu.</strong> Relevant new successors:</p>
+        <ul>
+          <li>Fagaras: \(g=140+99=239\), \(h=176\), \(f=415\)</li>
+          <li>Rimnicu Vilcea: \(g=140+80=220\), \(h=193\), \(f=413\)</li>
+          <li>Oradea: \(g=291\), \(h=380\), \(f=671\)</li>
+        </ul>
+        <p>The frontier now contains Rimnicu Vilcea 413, Fagaras 415, Timisoara 447, Zerind 449, Oradea 671. So A* expands Rimnicu Vilcea next.</p>
+        <p><strong>Step 3: expand Rimnicu Vilcea.</strong> New useful successors:</p>
+        <ul>
+          <li>Pitesti: \(g=220+97=317\), \(h=100\), \(f=417\)</li>
+          <li>Craiova: \(g=220+146=366\), \(h=160\), \(f=526\)</li>
+        </ul>
+        <p>The frontier is now Fagaras 415, Pitesti 417, Timisoara 447, Zerind 449, Craiova 526, Oradea 671. So the next node is Fagaras.</p>
+        <p><strong>Step 4: expand Fagaras.</strong> This generates Bucharest with</p>
+        <div class="fbox">
+          \[
+          g=239+211=450, \qquad h=0, \qquad f=450
+          \]
+        </div>
+        <p>Now the frontier is Pitesti 417, Timisoara 447, Zerind 449, Bucharest 450, Craiova 526, Oradea 671. Even though Bucharest has been found, A* does <em>not</em> stop yet because a cheaper route to Bucharest may still exist via a lower-<span class="fml">f</span> frontier node. That is the subtle but crucial detail students often miss.</p>
+        <p><strong>Step 5: expand Pitesti.</strong> This generates another route to Bucharest:</p>
+        <div class="fbox">
+          \[
+          g=317+101=418, \qquad h=0, \qquad f=418
+          \]
+        </div>
+        <p>Now the frontier contains Bucharest 418, Timisoara 447, Zerind 449, the older Bucharest 450, Craiova 526, Oradea 671. The lowest node is Bucharest 418, so A* selects it next and stops. The returned path cost is 418, which is optimal.</p>
+        <div class="osc-key"><span class="lab">key idea</span>The first goal <em>generated</em> by A* is not always the answer. The first goal <em>chosen for expansion as the lowest-f frontier node</em> is the answer under the admissibility or consistency conditions.</div>
+        <p>The expansion order in this trace is Arad, Sibiu, Rimnicu Vilcea, Fagaras, Pitesti, Bucharest. That order is memorable because it shows the exact point where A* diverges from greedy best-first. Greedy liked Fagaras and then jumped straight to Bucharest with total cost 450. A* let Fagaras be explored, but because it still tracked the total story using <span class="fml">g+h</span>, it kept the Pitesti route alive and eventually preferred the 418 path.</p>
+
+        <h2 id="s6"><span class="n">06</span> Admissibility: a heuristic that never lies upward</h2>
+        <p>A heuristic is <strong>admissible</strong> if it never overestimates the true remaining cost:</p>
+        <div class="fbox">
+          \[
+          h(n) \le h^*(n) \quad \text{for every node } n
+          \]
+        </div>
+        <p>So an admissible heuristic is optimistic. It may be exact. It may be too low. But it may not be too high. The estimate can under-promise, never over-promise.</p>
+        <p>Why is that the right condition for A* tree search? Because A* uses <span class="fml">g+h</span> as an estimate of solution cost through a node. If <span class="fml">h</span> never overshoots, then <span class="fml">f(n)</span> never overshoots the true best solution cost through <span class="fml">n</span>. That means an optimal path cannot be unfairly hidden behind an inflated estimate.</p>
+        <p>In the Romania example, straight-line distance to Bucharest is admissible because a road route cannot be shorter than the physical straight-line route between two cities. Roads bend and detour; they do not magically tunnel through space to beat Euclidean geometry. So straight-line distance is a lower bound on actual travel cost.</p>
+        <div class="osc-analogy"><span class="lab">think of it like</span>If you ask, “How many steps to the exit?” and I answer using a straight-line ruler through walls, my answer may be too small, but it cannot be too large. That is exactly what an admissible heuristic does.</div>
+        <p>There is a famous proof idea behind A* tree-search optimality. Let the optimal goal cost be <span class="fml">C^*</span>. For any node <span class="fml">n</span> on an optimal path, admissibility implies <span class="fml">f(n)=g(n)+h(n) \le g(n)+h^*(n)=C^*</span>. So A* will keep seeing at least one frontier node on the optimal path with <span class="fml">f \le C^*</span>. Any suboptimal goal has path cost greater than <span class="fml">C^*</span>, hence larger <span class="fml">f</span>. Therefore A* cannot choose a suboptimal goal before the optimal one.</p>
+        <p>The punchline is simple: admissibility protects optimality in tree search because the heuristic does not exaggerate what remains.</p>
+
+        <h2 id="s7"><span class="n">07</span> Consistency: the triangle inequality version of trust</h2>
+        <p>For graph search, admissibility alone is not the whole story. The stronger property is <strong>consistency</strong>, also called <strong>monotonicity</strong>. A heuristic is consistent if for every node <span class="fml">n</span> and every successor <span class="fml">n'</span>,</p>
+        <div class="fbox">
+          \[
+          h(n) \le c(n,n') + h(n')
+          \]
+        </div>
+        <p>This is a triangle inequality for heuristics. It says: your estimate from <span class="fml">n</span> to the goal cannot be more than the cost of stepping to a neighbor plus the estimate from that neighbor to the goal.</p>
+        <p>Why does that matter? Because it makes the A* evaluation value nondecreasing along a path. If <span class="fml">n'</span> is a successor of <span class="fml">n</span>, then</p>
+        <div class="fbox">
+          \[
+          f(n') = g(n') + h(n') = g(n) + c(n,n') + h(n') \ge g(n) + h(n) = f(n)
+          \]
+        </div>
+        <p>So once you move forward, <span class="fml">f</span> never drops. This is extremely convenient. It means that when A* graph search removes a node from the frontier for expansion, the path cost to that node is already the best possible one. No future route can sneak in later with a cheaper <span class="fml">g</span>.</p>
+        <div class="osc-key"><span class="lab">key idea</span>Consistent heuristic means nondecreasing <span class="fml">f</span>-values along paths. Once a node is expanded, it already has its optimal path cost, so using a closed list is safe.</div>
+        <p>Every consistent heuristic is admissible. You can show this by repeatedly applying the consistency inequality along an optimal path from <span class="fml">n</span> to a goal. Since the heuristic at the goal is zero, the chain collapses to <span class="fml">h(n)\le h^*(n)</span>. But the reverse is not always true: an admissible heuristic may still be inconsistent.</p>
+        <p>That “not vice versa” line matters. A heuristic may never overestimate the full remaining cost, yet still violate local triangle inequalities between neighbors. When that happens, A* graph search can run into the re-expansion problem.</p>
+
+        <h2 id="s8"><span class="n">08</span> Why consistency matters in graph search: the re-expansion problem</h2>
+        <p>Graph search is different from tree search because the same state can be reached through multiple paths. If you close a node too early, assuming its best path cost is already known, you might accidentally block a later, better route to that same state.</p>
+        <p>With a consistent heuristic, this problem goes away because the first time a node is expanded, it already has the cheapest possible <span class="fml">g</span>. So a closed list is safe. But with an admissible yet inconsistent heuristic, a later path might reach a previously expanded node more cheaply, forcing the algorithm to reopen or re-expand it.</p>
+        <p>That is the re-expansion problem in one sentence: <strong>inconsistency can make A* discover a better route to an old node after the node was already processed</strong>.</p>
+        <div class="osc-warn"><span class="lab">watch out</span>If you implement graph-search A* with a closed list as if every admissible heuristic were consistent, you can silently lose optimality. The algorithm may look fine on easy examples and still be wrong in edge cases.</div>
+        <p>Conceptually, inconsistency means the heuristic landscape contains “downward surprises.” You move to a child and suddenly the estimated total future becomes much smaller than before, more than the edge cost should allow. That breaks the neat monotone structure A* relies on.</p>
+        <p>In practice, many standard heuristics used in textbooks and classical planners are designed to be consistent, precisely because consistent heuristics make implementation cleaner. But knowing <em>why</em> consistency is valuable is more important than memorising that it is valuable.</p>
+
+        <h2 id="s9"><span class="n">09</span> Measuring heuristic quality: effective branching factor</h2>
+        <p>Saying “heuristic A is better than heuristic B” sounds intuitive, but we need a way to compare them. One useful measure is the <strong>effective branching factor</strong>, written <span class="fml">b^*</span>. It is defined indirectly by the equation</p>
+        <div class="fbox">
+          \[
+          N+1 = 1 + b^* + (b^*)^2 + \cdots + (b^*)^d
+          \]
+        </div>
+        <p>Here <span class="fml">N</span> is the number of nodes generated by the search to find a solution at depth <span class="fml">d</span>. The idea is: if the search had behaved like a uniform tree with branching factor <span class="fml">b^*</span>, it would have generated the same number of nodes.</p>
+        <p>Why is this useful? Because it compresses the practical impact of the heuristic into one number. Lower is better. If <span class="fml">b^*</span> is close to 1, the heuristic is nearly perfect: the algorithm is essentially following one narrow path instead of exploding into many branches. If <span class="fml">b^*</span> is close to the real branching factor, the heuristic is not buying you much.</p>
+        <div class="osc-analogy"><span class="lab">think of it like</span>Suppose a city really has 20 roads leaving each major junction, but your map is so good that you only seriously consider 2 of them each time. The effective branching factor is closer to 2 than 20. That is the reduction the heuristic earns for you.</div>
+        <p>Effective branching factor is especially handy when comparing heuristics for the same problem family, such as different heuristics for the 8-puzzle. If one heuristic consistently reduces <span class="fml">b^*</span>, it means the search is doing less wasted exploration.</p>
+
+        <h2 id="s10"><span class="n">10</span> Where good heuristics come from, part 1: relaxed problems</h2>
+        <p>The most elegant source of heuristics in AIMA is the idea of a <strong>relaxed problem</strong>. You take the original problem and remove constraints, making it easier. Because the relaxed problem is easier, its optimal solution cost is less than or equal to the real one. That immediately gives you an admissible heuristic.</p>
+        <p>The logic is lovely. If I loosen the rules, the problem cannot become harder. So the cost under relaxed rules is a lower bound on the real cost. Lower bounds are exactly what admissible heuristics need.</p>
+        <p>The 8-puzzle is the classic teaching example. In the real puzzle, a tile can move only into the adjacent blank square. Now relax that in two different ways.</p>
+        <h3>Misplaced tiles: <span class="fml">h_1</span></h3>
+        <p>Suppose we relax the rules so that a tile may move directly to its goal square in one move, regardless of where the blank is. Then the number of misplaced tiles becomes an estimate of how many moves remain. This is the heuristic <span class="fml">h_1</span>.</p>
+        <p>If three tiles are out of place, then at least three tile-fixing actions are needed in the relaxed world, and certainly no fewer than that in the real world. So <span class="fml">h_1</span> is admissible.</p>
+        <h3>Manhattan distance: <span class="fml">h_2</span></h3>
+        <p>Now use a less relaxed version: allow a tile to move to any adjacent square, even if the blank is not correctly positioned for that exact move. Then the cost for one tile to reach its goal is simply the Manhattan distance between current and goal coordinates: horizontal distance plus vertical distance. Summing this over all tiles gives the heuristic <span class="fml">h_2</span>.</p>
+        <p>This heuristic is also admissible, because in the real puzzle each tile must at least travel that many grid steps. The blank constraints and tile interactions can only make the real problem harder, not easier.</p>
+        <div class="osc-key"><span class="lab">key idea</span>Relaxed problem costs are admissible by construction. You do not have to hope they are safe. Their safety falls out of the fact that relaxed problems remove obstacles rather than add them.</div>
+        <p>The beautiful comparison is that <span class="fml">h_2</span> dominates <span class="fml">h_1</span>. For every state, <span class="fml">h_2(n) \ge h_1(n)</span>. Why? Because every misplaced tile contributes at least 1 to Manhattan distance, and tiles already in place contribute 0 to both. So Manhattan distance is never smaller and is often larger. That means it is more informative while remaining admissible.</p>
+        <p>There is a standard theorem attached to this: if heuristic <span class="fml">h_a</span> dominates heuristic <span class="fml">h_b</span> and both are admissible, then A* using <span class="fml">h_a</span> expands no more nodes than A* using <span class="fml">h_b</span> apart from tie-breaking details. That is why everybody prefers Manhattan distance over misplaced tiles for the 8-puzzle.</p>
+        <p>We can go one step further. If <span class="fml">h_1</span> and <span class="fml">h_2</span> are both admissible, then <span class="fml">h(n)=\max(h_1(n),h_2(n))</span> is also admissible. It dominates both. This “take the max of admissible heuristics” trick is one of those small textbook ideas that is incredibly reusable. If you have several safe lower bounds, use the strongest one at each state.</p>
+
+        <h2 id="s11"><span class="n">11</span> Where good heuristics come from, part 2: pattern databases, landmarks, learning</h2>
+        <p>Relaxed problems are the cleanest story, but not the only story. Modern heuristic design uses several powerful ideas.</p>
+        <h3>Pattern databases</h3>
+        <p>A pattern database precomputes exact costs for a subproblem and stores them in a lookup table. For example, in the 15-puzzle you may focus only on a subset of tiles, ignoring the rest. Solve all possible configurations of that subset offline, store their exact move counts, and then use the table during search.</p>
+        <p>This is so effective because it turns expensive reasoning into cheap memory lookup. During the actual A* run, the heuristic value is almost instant. For large puzzles and Rubik’s cube solvers, pattern databases were a huge breakthrough because they provided very strong admissible heuristics.</p>
+        <h3>Landmarks</h3>
+        <p>Another idea is to choose fixed anchor states, sometimes called landmarks, and precompute distances to or from them. Then triangle-inequality style reasoning gives lower bounds between arbitrary states and goals. If a state is far from a landmark that the goal is near, that fact can certify that the state is not as close to the goal as it first looks.</p>
+        <h3>Learned heuristics</h3>
+        <p>In modern AI, we often learn heuristics from data. You solve many training instances, then train a model such as a neural network <span class="fml">h(s,\theta)</span> to predict remaining cost or distance-to-go. That predicted value can guide A* or greedy search.</p>
+        <p>The benefit is flexibility. Hand-designed heuristics are hard for messy domains. A learned model can capture patterns that are awkward to code manually. The cost is that learned heuristics do not automatically satisfy admissibility or consistency. If you need guarantees, you must either constrain the learner or accept that you are trading some theory for practical power.</p>
+        <div class="osc-gotchas">
+          <p class="gh">common catches &amp; gotchas</p>
+          <ul>
+            <li><b>Strong but unsafe</b> — a heuristic that overestimates may make A* faster, but you have lost the optimality guarantee.</li>
+            <li><b>Precomputation cost</b> — pattern databases are great only if memory and offline compute are affordable.</li>
+            <li><b>Distribution shift</b> — learned heuristics can work beautifully on familiar states and fail awkwardly on unfamiliar ones.</li>
+          </ul>
+        </div>
+        <p>There is a deeper lesson here: heuristics are knowledge representation. Whether you derive them from geometry, relaxed rules, precomputed tables, or data, you are encoding insight about the structure of the problem.</p>
+
+        <h2 id="s12"><span class="n">12</span> IDA*: when you want A* guidance without A* memory</h2>
+        <p>One of A*’s big weaknesses is memory use. It stores a frontier and often a closed set, which can explode in large problems. Iterative Deepening A*, or <strong>IDA*</strong>, addresses this by borrowing the memory discipline of depth-first search.</p>
+        <p>Instead of limiting search by depth, IDA* limits search by <span class="fml">f=g+h</span>. It performs a depth-first traversal but refuses to go beyond a current <span class="fml">f</span>-cutoff. If no solution is found, it increases the cutoff and repeats.</p>
+        <p>So the control structure looks like iterative deepening, but the threshold is heuristic cost rather than depth. The first cutoff is usually the <span class="fml">f</span> value of the start node. On each pass, the next threshold is typically the smallest <span class="fml">f</span> value that exceeded the previous threshold.</p>
+        <div class="osc-key"><span class="lab">key idea</span>IDA* keeps the low memory of DFS and IDS while still listening to a heuristic. You pay with repeated work across iterations, but sometimes that is a much better deal than storing everything.</div>
+        <p>That is why IDA* appears in domains like sliding-tile puzzles. A* may run out of memory long before it runs out of ideas. IDA* revisits nodes across iterations, but its memory profile is dramatically smaller.</p>
+
+        <h2 id="s13"><span class="n">13</span> When the path does not matter: why local search exists</h2>
+        <p>Until now, search has mostly meant finding a path from start to goal. But many important problems do not care about the path at all. If I am arranging eight queens on a chessboard so none attack each other, I do not care about the sequence of intermediate boards. I care only about the final legal arrangement. If I am tuning hyperparameters, designing a circuit, or assigning exam schedules, the journey is disposable; the final configuration is the product.</p>
+        <p>That shift changes everything. When only the final state matters, you do not need to maintain a full search tree of partial paths. You can treat the problem as a landscape of candidate states, each with an objective value, and simply try to move toward better states.</p>
+        <p>Sometimes the objective is framed as maximisation: higher is better, like a score or utility. Sometimes it is framed as minimisation: lower is better, like error, cost, or number of conflicts. These are equivalent after a sign change, so textbooks freely switch between “climb the hill” and “descend into the valley.”</p>
+        <div class="osc-analogy"><span class="lab">think of it like</span>Path search is like planning a road trip where every turn matters. Local search is like solving a jigsaw or tuning a recipe: nobody cares which wrong arrangements you tried, only the final arrangement you keep.</div>
+        <p>This is why local search often uses very little memory. You keep one state, or a small set of states, and repeatedly improve them. That makes local search appealing in enormous spaces where explicit tree search would be ridiculous.</p>
+
+        <h2 id="s14"><span class="n">14</span> Landscape thinking: local maxima, plateaus, ridges</h2>
+        <p>The most useful mental model for local search is the <strong>state-space landscape</strong>. Imagine every possible state as a point on a surface, and the objective value as altitude. Good states are high if we are maximising, or low if we are minimising. The search process is a walk on this terrain.</p>
+        <p>This picture immediately explains why local methods can struggle. The landscape may have multiple hills. Some are global maxima, the truly best solutions. Others are local maxima, which look perfect if you only inspect immediate neighbors.</p>
+        <p>A <strong>plateau</strong> is a flat region where many neighboring states have the same value. The algorithm has no gradient telling it which way is better. A <strong>ridge</strong> is a narrow ascending structure where the best path requires coordinated sideways and upward movement; single-step local moves may fail to follow it.</p>
+        <div class="osc-diagram">
+          <svg viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg">
+            <style>.box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}.boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}.boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}.boxr{fill:#f3d9cf;stroke:#2a2620;stroke-width:1.5}.lbl{font-family:monospace;font-size:11px;fill:#2a2620}.lblf{font-family:monospace;font-size:9px;fill:#948a78}.ttl{font-family:monospace;font-size:12px;font-weight:700;fill:#2a2620}.arr{stroke:#c96442;stroke-width:1.5;fill:none}</style>
+            <path d="M20 170 C70 130, 100 130, 140 170 S220 210, 260 155 S330 70, 370 120 S450 180, 500 120 S580 70, 620 120" fill="none" stroke="#2a2620" stroke-width="2"/>
+            <path d="M70 160 L115 138 L145 170" fill="none" stroke="#c96442" stroke-width="3"/>
+            <path d="M315 152 L350 105 L398 135 L470 150 L540 102" fill="none" stroke="#6a8f5f" stroke-width="3" stroke-dasharray="6 4"/>
+            <rect x="78" y="111" width="84" height="24" rx="6" class="boxr"/>
+            <text x="91" y="126" class="lbl">local maximum</text>
+            <rect x="205" y="182" width="88" height="24" rx="6" class="boxy"/>
+            <text x="232" y="197" class="lbl">plateau</text>
+            <rect x="500" y="72" width="64" height="24" rx="6" class="boxg"/>
+            <text x="520" y="87" class="lbl">ridge</text>
+            <text x="48" y="188" class="lblf">hill-climbing path gets stuck</text>
+            <text x="330" y="88" class="lblf">simulated annealing can cross worse regions</text>
+            <text x="18" y="24" class="ttl">local-search landscape</text>
+          </svg>
+          <p class="cap">Fig 1 — Hill climbing walks uphill greedily and can get trapped on local features; simulated annealing survives by sometimes accepting worse moves.</p>
+        </div>
+        <p>Once you start seeing optimisation as geography, most local-search behavior becomes intuitive instead of magical. Algorithms differ mainly in how stubbornly they follow the local gradient and whether they allow escapes.</p>
+
+        <h2 id="s15"><span class="n">15</span> Hill climbing: beautifully simple, frequently trapped</h2>
+        <p>Hill climbing is probably the simplest local-search algorithm. From the current state, look at the neighbors. Move to the best one. Repeat until no neighbor is better.</p>
+        <p>The steepest-ascent version checks all successors and chooses the highest-valued one. There are lighter variants too, but the idea is always the same: take a local improving step.</p>
+        <p>This makes hill climbing fast and memory-light. It often produces decent solutions quickly. In huge optimisation spaces, that alone can be valuable. But its failure modes are famous.</p>
+        <ul>
+          <li><strong>Local maxima:</strong> every neighbor is worse, but a much better region exists elsewhere.</li>
+          <li><strong>Plateaus:</strong> all neighbors are equal, so progress stalls.</li>
+          <li><strong>Ridges:</strong> progress requires a sequence of coordinated moves, but single greedy steps cannot line up correctly.</li>
+        </ul>
+        <p>The 8-queens problem makes this very concrete. If we represent a board by placing one queen in each column and define the objective as the negative number of attacking pairs, hill climbing often improves quickly but then freezes at a board that is close to a solution yet not actually valid.</p>
+        <div class="osc-catch"><span class="lab">the catch</span>Hill climbing does not remember where it came from, does not reason globally, and does not tolerate temporary pain. That is exactly why it is both fast and fragile.</div>
+        <p>Several fixes are standard. <strong>Random-restart hill climbing</strong> simply runs hill climbing many times from different random initial states. This sounds crude, but it is surprisingly powerful because if each run has some nonzero chance of success, repeated restarts amplify that chance. <strong>Stochastic hill climbing</strong> chooses randomly among uphill moves instead of always taking the steepest one, which can reduce over-commitment to one immediate gradient. <strong>Random-walk variants</strong> occasionally accept sideways or even worse moves, which helps cross plateaus and avoid getting stuck.</p>
+        <p>The bigger lesson is that local search usually wins not through one perfect run, but through a good balance between improvement and escape.</p>
+
+        <h2 id="s16"><span class="n">16</span> Simulated annealing: let the search get worse on purpose</h2>
+        <p>Simulated annealing is the chapter’s answer to hill climbing’s stubbornness. It is inspired by metallurgy: if you heat a metal and cool it slowly, atoms can settle into lower-energy, less defective structures. If you cool too quickly, the structure freezes with defects.</p>
+        <p>Translate that to search. The current state has some objective value. Normally we love better moves. But simulated annealing sometimes accepts worse moves too, with a probability that depends on how much worse they are and on a temperature parameter <span class="fml">T</span>.</p>
+        <p>A common expression is</p>
+        <div class="fbox">
+          \[
+          P(\text{accept worse move}) = e^{\Delta E/T}
+          \]
+          where \(\Delta E = \text{new\_value} - \text{current\_value}\). For a worse move, \(\Delta E &lt; 0\), so the probability is between 0 and 1.
+        </div>
+        <p>If the new state is better, accept it. If it is worse, maybe still accept it. When the temperature is high, the algorithm is adventurous and forgiving. When the temperature is low, it becomes picky and conservative. As <span class="fml">T \to 0</span>, the method approaches pure hill climbing because worse moves almost never survive.</p>
+        <div class="osc-key"><span class="lab">key idea</span>Simulated annealing escapes local optima by allowing temporary damage. It treats short-term pain as an investment in long-term opportunity.</div>
+        <p>The cooling schedule is everything. If you lower the temperature too fast, the method becomes greedy too early and gets trapped just like hill climbing. If you lower it too slowly, the search may wander forever or simply take impractical time. The theorem that simulated annealing can reach the global optimum with probability 1 requires a slow enough schedule, but “slow enough” in theory can be painfully slow in practice.</p>
+        <p>This gap between theorem and engineering is important. Simulated annealing is not magic. It is a controlled compromise between exploration and exploitation. Good performance depends on careful temperature initialization, decay rate, stopping conditions, and neighborhood design.</p>
+        <p>Still, conceptually it is one of the most beautiful algorithms in the chapter because it makes a powerful point: greed is not always rational. Sometimes intelligence means being willing to step backward so that a much better region becomes reachable.</p>
+
+        <h2 id="s17"><span class="n">17</span> Local beam search: many guesses, one shared conversation</h2>
+        <p>Local beam search keeps <span class="fml">k</span> states at once instead of just one. At each iteration, it generates all successors of all <span class="fml">k</span> current states and then keeps the best <span class="fml">k</span> among the whole pool.</p>
+        <p>That means the states are not independent. They communicate implicitly through selection. If one state discovers a promising region, several of the next generation’s states may come from that region, concentrating search effort there. This is why local beam search is not the same as running <span class="fml">k</span> independent hill climbers. Independent restarts do not share discoveries. Beam search does.</p>
+        <p>The advantage is diversity with coordination. The downside is that the beam can collapse: if many top successors all come from the same region, the search may lose coverage and become redundant. <strong>Stochastic beam search</strong> reduces this by choosing the next <span class="fml">k</span> states probabilistically according to fitness rather than deterministically taking the top <span class="fml">k</span>. That preserves some variety and prevents over-clustering.</p>
+        <p>Beam ideas sit conceptually between hill climbing and population-based methods like genetic algorithms. You already see the shift from “one current state” to “a group of candidate states evolving over time.”</p>
+
+        <h2 id="s18"><span class="n">18</span> Genetic algorithms: search by evolution</h2>
+        <p>Genetic algorithms, or GAs, take the population idea seriously. Instead of improving one state, they maintain a population of <span class="fml">k</span> candidates, usually encoded as strings called chromosomes. Each candidate gets a <strong>fitness</strong> score measuring how good it is for the task.</p>
+        <p>A standard generation cycle has four ideas:</p>
+        <ol>
+          <li><strong>Selection:</strong> choose parents, biased toward higher fitness.</li>
+          <li><strong>Crossover:</strong> combine parent strings to create children.</li>
+          <li><strong>Mutation:</strong> randomly perturb a small part of a child.</li>
+          <li><strong>Replacement:</strong> form the next generation and repeat.</li>
+        </ol>
+        <p>Selection can be done by roulette-wheel sampling, where probability is proportional to fitness, or tournament selection, where a few candidates compete and the best wins. Crossover usually cuts the parent strings at a random point and swaps suffixes. Mutation flips a bit or changes a gene with low probability. Mutation is small but essential because it injects novelty and prevents the population from becoming genetically identical too early.</p>
+        <div class="osc-diagram">
+          <svg viewBox="0 0 640 210" xmlns="http://www.w3.org/2000/svg">
+            <style>.box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}.boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}.boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}.boxr{fill:#f3d9cf;stroke:#2a2620;stroke-width:1.5}.lbl{font-family:monospace;font-size:12px;fill:#2a2620}.lblf{font-family:monospace;font-size:10px;fill:#948a78}.ttl{font-family:monospace;font-size:12px;font-weight:700;fill:#2a2620}.arr{stroke:#c96442;stroke-width:1.8;fill:none}</style>
+            <text x="24" y="32" class="ttl">genetic crossover</text>
+            <rect x="28" y="52" width="256" height="34" rx="8" class="boxy"/>
+            <rect x="28" y="108" width="256" height="34" rx="8" class="boxg"/>
+            <rect x="358" y="80" width="256" height="34" rx="8" class="boxr"/>
+            <text x="46" y="74" class="lbl">parent A: 10110 | 01101</text>
+            <text x="46" y="130" class="lbl">parent B: 01001 | 11010</text>
+            <text x="378" y="102" class="lbl">child:    10110 | 11010</text>
+            <path d="M286 69 C332 69, 334 91, 356 91" class="arr"/>
+            <path d="M286 125 C332 125, 334 103, 356 103" class="arr"/>
+            <line x1="156" y1="48" x2="156" y2="146" stroke="#2a2620" stroke-dasharray="5 5"/>
+            <text x="132" y="162" class="lblf">crossover point</text>
+          </svg>
+          <p class="cap">Fig 2 — A one-point crossover keeps the prefix from one parent and the suffix from the other; mutation then adds small random variation.</p>
+        </div>
+        <p>For 8-queens, one convenient encoding is a length-8 vector where the position in the vector is the column and the value is the row of the queen in that column. For example, <span class="fml">[4,6,8,2,7,1,3,5]</span> means the queen in column 1 is in row 4, the queen in column 2 is in row 6, and so on. Fitness can be defined as the number of non-attacking pairs, or the negative number of conflicts.</p>
+        <p>You may also see binary or decimal encodings in demonstrations. The exact encoding matters because crossover only makes sense if useful partial structures survive and combine meaningfully. This leads to the famous <strong>building blocks hypothesis</strong>: good solutions are assembled from smaller, useful schemata that evolution can discover and recombine.</p>
+        <div class="osc-analogy"><span class="lab">think of it like</span>Hill climbing edits one draft repeatedly. A genetic algorithm keeps a whole room of drafts, lets the better ones inspire future drafts, occasionally splices good halves together, and introduces a few wild edits so the room does not become boring and stuck.</div>
+        <p>Genetic algorithms do not guarantee global optimality. They can converge prematurely, lose diversity, or waste effort if representation and fitness are poorly designed. But in huge, ugly, discontinuous search spaces, they are often attractive precisely because they do not need gradients or delicate mathematical structure. They just need a way to evaluate candidate quality.</p>
+
+        <h2 id="s19"><span class="n">19</span> Online search and LRTA*: acting before you know the world</h2>
+        <p>Most search algorithms in the earlier chapters assume an offline planning setting: the agent knows the transition model and can compute a whole plan before acting. But what if the agent does not know the map? What if the environment is partly unknown or changes as the agent explores?</p>
+        <p>That is where <strong>online search</strong> enters. The agent must act, observe, update its knowledge, then act again. It is learning the environment while operating inside it. This is closer to how robots and many real-world systems actually behave.</p>
+        <p>LRTA* stands for <strong>Learning Real-Time A*</strong>. The basic idea is that the agent uses current heuristic estimates to choose actions but also updates those estimates from experience so the heuristic becomes more accurate over time. When it discovers that a state was more costly than expected, it raises the heuristic estimate accordingly.</p>
+        <p>This is powerful because the agent does not wait for a full perfect plan. It behaves now, learns now, corrects now. That makes online search essential in unknown or dynamic environments where complete precomputation is impossible or pointless.</p>
+        <div class="osc-warn"><span class="lab">watch out</span>Online search is not just “A* but slower.” It solves a different problem setting. The agent may need to commit to moves before the full state graph is known, and mistakes can cost real movement.</div>
+        <p>The mental shift is important. Offline search asks, “What is the best plan?” Online search asks, “Given what I know right now, what should I do next, and how should I revise my beliefs after I see the result?”</p>
+
+        <h2 id="s20"><span class="n">20</span> A quick comparison table you can revise from</h2>
+        <p>Before wrapping the chapter together, it helps to place the major methods side by side. Students often remember formulas but forget the use-case story. This table is the missing bridge: it tells you what each method optimises, what information it trusts, and what failure mode usually appears first.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>Main score</th>
+              <th>Best for</th>
+              <th>Main strength</th>
+              <th>Main weakness</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Greedy best-first</td>
+              <td><span class="fml">h(n)</span></td>
+              <td>Fast rough routing</td>
+              <td>Strong directional focus</td>
+              <td>Can be badly suboptimal</td>
+            </tr>
+            <tr>
+              <td>A*</td>
+              <td><span class="fml">g(n)+h(n)</span></td>
+              <td>Least-cost path search</td>
+              <td>Optimal with the right heuristic</td>
+              <td>Heavy memory use</td>
+            </tr>
+            <tr>
+              <td>IDA*</td>
+              <td><span class="fml">f</span>-cutoff DFS</td>
+              <td>Huge path spaces with tight memory</td>
+              <td>Memory efficient</td>
+              <td>Repeats work across iterations</td>
+            </tr>
+            <tr>
+              <td>Hill climbing</td>
+              <td>Best local neighbor</td>
+              <td>Quick optimisation</td>
+              <td>Very cheap and simple</td>
+              <td>Gets stuck locally</td>
+            </tr>
+            <tr>
+              <td>Simulated annealing</td>
+              <td>Objective + temperature</td>
+              <td>Rugged landscapes</td>
+              <td>Can escape local optima</td>
+              <td>Cooling schedule is delicate</td>
+            </tr>
+            <tr>
+              <td>Local beam</td>
+              <td>Best <span class="fml">k</span> states</td>
+              <td>Parallel local improvement</td>
+              <td>Shared discovery across states</td>
+              <td>Beam collapse</td>
+            </tr>
+            <tr>
+              <td>Genetic algorithm</td>
+              <td>Population fitness</td>
+              <td>Huge black-box spaces</td>
+              <td>Diversity and recombination</td>
+              <td>Needs careful encoding and tuning</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2 id="s21"><span class="n">21</span> How all the chapter pieces fit together</h2>
+        <p>Chapter 4 looks broad on first read because it mixes A*, hill climbing, annealing, beam search, genetic algorithms, and online methods. But there is one clean thread holding it all together: <strong>blind expansion is too expensive, so we need guidance</strong>. The only thing that changes is the source and style of guidance.</p>
+        <p>In heuristic path search, the guidance is an estimate of remaining cost. In local search, the guidance is the objective value of neighboring states. In genetic algorithms, the guidance is fitness over a population. In online search, the guidance is a heuristic that gets repaired as the world reveals itself.</p>
+        <p>Once you see that, the chapter stops feeling like a list of algorithms and starts feeling like a family portrait. Every algorithm is asking some version of the same question: “How can I avoid wasting effort on hopeless parts of the space?”</p>
+        <ul class="osc-takeaways">
+          <li>Greedy best-first search uses only <span class="fml">h(n)</span>, so it is often fast but can be spectacularly shortsighted.</li>
+          <li>A* uses <span class="fml">f(n)=g(n)+h(n)</span>, which balances known path cost with estimated remaining cost.</li>
+          <li>Admissibility protects A* tree search; consistency is the stronger condition that makes A* graph search clean and safe with a closed list.</li>
+          <li>Heuristics become stronger when they are closer to the true cost while still staying admissible; dominance and the max trick are practical tools.</li>
+          <li>Relaxed problems, pattern databases, landmarks, and learned models are major heuristic sources.</li>
+          <li>IDA* trades repeated work for much smaller memory use.</li>
+          <li>Local search is for optimisation problems where only the final state matters, not the route.</li>
+          <li>Hill climbing is simple but trap-prone; simulated annealing escapes by accepting worse moves with temperature-controlled probability.</li>
+          <li>Beam search and genetic algorithms use multiple candidates in parallel, sharing information across a population.</li>
+          <li>Online search matters when the agent must act in an unknown environment and improve estimates from experience.</li>
+        </ul>
+
+        <h2 id="s22"><span class="n">22</span> References and extra reads</h2>
+        <p>If you revise from only one source, make it the textbook first. But this chapter becomes much easier once you see the same ideas from two or three angles.</p>
+        <ul>
+          <li><strong>Russell, Norvig.</strong> <em>Artificial Intelligence: A Modern Approach</em>, 4th ed. Chapter 4 for the canonical textbook treatment of heuristic search, local search, and online search.</li>
+          <li><strong>Hart, Nilsson, Raphael.</strong> The original A* paper, useful if you want to see why optimality and admissibility are treated so carefully.</li>
+          <li><strong>Pearl.</strong> Classic work on heuristic search for deeper intuition about heuristic quality and effective branching factor.</li>
+          <li><strong>Practical puzzle-search literature.</strong> Read about pattern databases for the 15-puzzle and Rubik’s cube if you want to see admissible heuristics become industrial-strength.</li>
+          <li><strong>Modern optimisation notes.</strong> Any serious tutorial on simulated annealing, evolutionary algorithms, or beam search helps connect the AIMA chapter to real optimisation workloads.</li>
+        </ul>
+
+        <h2 id="s23"><span class="n">23</span> Chapter 4 cheatsheet</h2>
+        <div class="osc-cheat">
+          <div class="ch-bar"><span>// chapter cheatsheet</span><span class="ch-tag">concept quick-ref</span></div>
+          <div class="ch-body">
+            <p class="ch-sec">informed search</p>
+            <div class="ch-row"><span class="ch-cmd"><b>Greedy best-first</b></span><span class="ch-desc"><span class="fml">f(n)=h(n)</span>. Uses only the estimate to the goal. Often fast, not generally optimal, can be incomplete in problematic spaces.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>A*</b></span><span class="ch-desc"><span class="fml">f(n)=g(n)+h(n)</span>. Balances cost so far and estimated cost remaining.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Admissible</b></span><span class="ch-desc"><span class="fml">h(n)\le h^*(n)</span>. Never overestimates the true remaining cost.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Consistent</b></span><span class="ch-desc"><span class="fml">h(n)\le c(n,n')+h(n')</span>. Triangle inequality for heuristics; implies admissible.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Effective branching factor</b></span><span class="ch-desc">Defined by <span class="fml">N+1=1+b^*+(b^*)^2+\cdots+(b^*)^d</span>. Closer to 1 means a stronger heuristic.</span></div>
+            <p class="ch-sec">8-puzzle heuristics</p>
+            <div class="ch-row"><span class="ch-cmd"><b>h1</b></span><span class="ch-desc">Number of misplaced tiles. Admissible, but weaker.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>h2</b></span><span class="ch-desc">Sum of Manhattan distances. Admissible and dominates h1.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Composite</b></span><span class="ch-desc"><span class="fml">\max(h_1,h_2)</span> is admissible and dominates both.</span></div>
+            <p class="ch-sec">local search</p>
+            <div class="ch-row"><span class="ch-cmd"><b>Hill climbing</b></span><span class="ch-desc">Move to the best neighbor. Fails at local maxima, plateaus, ridges.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Simulated annealing</b></span><span class="ch-desc">Accept worse move with probability <span class="fml">e^{\Delta E/T}</span>. High <span class="fml">T</span> explores, low <span class="fml">T</span> exploits.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Local beam</b></span><span class="ch-desc">Keep <span class="fml">k</span> states, generate all successors, keep best <span class="fml">k</span>.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>Genetic algorithm</b></span><span class="ch-desc">Population → selection → crossover → mutation → next generation.</span></div>
+            <p class="ch-sec">memory-light path search</p>
+            <div class="ch-row"><span class="ch-cmd"><b>IDA*</b></span><span class="ch-desc">Depth-first search with increasing <span class="fml">f</span>-cost thresholds. Low memory, repeated work.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>LRTA*</b></span><span class="ch-desc">Online search that acts in real time and updates heuristic estimates from experience.</span></div>
+          </div>
+        </div>
+
+        <h2 id="s24"><span class="n">24</span> Quick FAQ before you close the chapter</h2>
+        <details class="osc-faq"><summary>Why doesn’t A* stop the moment it first generates the goal?</summary><p>Because a cheaper route to that same goal may still exist through another frontier node with smaller <span class="fml">f</span>. In the Romania example, Bucharest is first generated through Fagaras at cost 450, but later reached through Pitesti at cost 418.</p></details>
+        <details class="osc-faq"><summary>If consistency implies admissibility, why do we even talk about admissibility separately?</summary><p>Because admissibility is the core lower-bound property that explains optimality for tree search, while consistency is the stronger local condition that makes graph-search behavior especially clean. The distinction helps you understand exactly which guarantee depends on which assumption.</p></details>
+        <details class="osc-faq"><summary>When should I choose local search over A*?</summary><p>Choose local search when the path itself is irrelevant and the state space is huge. Choose A* when the path matters and you need a shortest or least-cost route under an explicit model.</p></details>
+        <details class="osc-faq"><summary>Are genetic algorithms just random search with fancy biology words?</summary><p>No. They are stochastic, but not structureless. Selection amplifies fitter candidates, crossover recombines partial structures, and mutation maintains diversity. Their success depends heavily on representation, fitness design, and parameter tuning.</p></details>
+      </div>
+      <div class="post-nav"><a href="/bits/aci-book-aima-3.html">&larr; Chapter 3</a><a href="/bits/aci-book-aima-5.html">Chapter 5 &rarr;</a></div>
+    </article>
+    <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer>
+    </div>
+    <aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside>
+  </div>
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

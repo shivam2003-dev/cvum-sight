@@ -245,6 +245,34 @@
         </table>
         <p>The one-line thesis: <strong>developers build the agent — the platform builds the trust.</strong></p>
 
+        <h2 id="threats">Concrete threats → which control catches them</h2>
+        <p>The pattern is easier to trust when you map each defence to the attack it stops. None of these rely on the agent behaving correctly — that's the point.</p>
+        <table class="papers">
+          <thead><tr><th>Attack</th><th>What goes wrong</th><th>Control that stops it</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>Prompt injection → exfiltration</strong></td><td>A poisoned input convinces the model to POST data to an attacker endpoint.</td><td>Default-deny NetworkPolicy — the connection isn't on the declared allow-list, so the packet is dropped at the cell wall regardless of what the model "decided."</td></tr>
+            <tr><td class="p"><strong>Confused deputy</strong></td><td>Agent with broad rights is tricked into acting for a user who lacks them.</td><td>Token exchange + intersection authz — the tool checks the <em>user's</em> scope (<code>sub</code>=user), not the agent's. User is the ceiling.</td></tr>
+            <tr><td class="p"><strong>Stolen agent credential</strong></td><td>An attacker pops the agent pod and grabs its token.</td><td>The agent only ever holds a <em>reference</em> token; real tokens live at the gateway, secrets in the vault. Nothing replayable to steal.</td></tr>
+            <tr><td class="p"><strong>Privilege creep via delegation</strong></td><td>A chain of agents accumulates more authority than any single user granted.</td><td>Act-chaining where authority can only narrow, plus a fresh ingress check at every hop. The chain ends with strictly less than it started.</td></tr>
+            <tr><td class="p"><strong>Silent over-reach</strong></td><td>An agent quietly does something high-stakes nobody approved.</td><td>CIBA out-of-band approval for high-stakes actions; one trace ID with full attribution makes even denials auditable.</td></tr>
+            <tr><td class="p"><strong>Data leak to a third-party model</strong></td><td>PII ends up in a prompt sent to an external LLM provider.</td><td>PII redaction + guardrails at the agent→AI gate, model allow-list, and an attributed audit trail of who sent what to which model.</td></tr>
+          </tbody>
+        </table>
+
+        <div class="bm-warn"><strong>Where teams get this wrong.</strong> The common failure is putting the security logic <em>in the agent</em> — having the agent check scopes, hold tokens, decide whether to escalate. That collapses the moment the agent is compromised, because the thing enforcing the rules is the thing under attacker control. The whole architecture is built on the opposite assumption: the agent is untrusted, so every decision (authn, authz, redaction, escalation, audit) happens at the gateway/platform, where the agent can't reach it. If you find yourself writing auth code inside the agent, you've left the pattern.</div>
+
+        <h2 id="choices">Choosing the pieces</h2>
+        <p>The pattern names categories, not products. The realistic options for each cell primitive:</p>
+        <table class="papers">
+          <thead><tr><th>Role</th><th>Options</th><th>How to choose</th></tr></thead>
+          <tbody>
+            <tr><td class="p">Boundary (NetworkPolicy)</td><td>Cilium, Antrea, Kube-OVN</td><td>Cilium if you also want L7 policy and Hubble flow visibility (and it pairs with the fintech talk's eBPF story); Antrea/Kube-OVN if that's already your CNI.</td></tr>
+            <tr><td class="p">Confidentiality (mTLS)</td><td>Istio, Linkerd, Cilium mesh</td><td>Linkerd for the lightest operational weight; Istio if you need its richer policy/telemetry; Cilium mesh to avoid a sidecar entirely.</td></tr>
+            <tr><td class="p">Gateway / PEP</td><td>Envoy Gateway, Contour, Kgateway</td><td>Whichever you can configure to do the OAuth dance and call your policy engine per request — the PEP role matters more than the brand.</td></tr>
+            <tr><td class="p">Identity / token exchange</td><td>Keycloak, ThunderID, any RFC 8693 IDP</td><td>Must support token exchange (RFC 8693) and CIBA. This is non-negotiable — the whole intersection-authz story depends on it.</td></tr>
+          </tbody>
+        </table>
+
         <h2 id="faq">FAQ</h2>
 
         <details class="faq">
@@ -270,6 +298,26 @@
         <details class="faq">
           <summary>How do agent-to-agent delegation chains stay safe?</summary>
           <p>Token exchange with a nested <code>act</code> claim records the full chain (e.g. alice → analytics_agent → reporting_agent), authority can only <em>narrow</em> at each hop, and every ingress gateway re-checks rather than trusting the caller. The chain ends with strictly less authority than it began, fully attributable to the original user.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Isn't a gateway in front of every call a performance problem?</summary>
+          <p>It adds a hop, but the work is cheap relative to an agent's actual cost. The expensive part of an agent call is the LLM inference (hundreds of milliseconds to seconds); a token check and policy evaluation at the gateway is sub-millisecond to low-millisecond. The gateway also lets you cache token-exchange results and short-circuit allow-list denials before any network round-trip. The latency budget is dominated by the model, not the PEP.</p>
+        </details>
+
+        <details class="faq">
+          <summary>How is this different from a normal service mesh with mTLS?</summary>
+          <p>A service mesh gives you the <em>transport</em> half — mutual TLS, default-deny, traffic encryption. That's necessary but not sufficient for agents. This pattern adds the <em>identity and intent</em> half: token exchange so calls carry the acting user, intersection authorization so the user is the ceiling, CIBA for human approval, and act-chaining for delegation. The mesh stops an unauthorised <em>connection</em>; the gateway stops an unauthorised <em>action</em>. Agents need both.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Can I retrofit this onto agents already in production?</summary>
+          <p>Mostly yes, because the design deliberately keeps security out of the agent code — so you're adding platform layers, not rewriting agents. The order that usually works: (1) put each agent in its own namespace and flip on default-deny NetworkPolicy; (2) front it with a gateway and move token handling there; (3) register the agent identity in the IDP and pull secrets into a vault (agent holds references); (4) introduce token exchange and intersection authz at the tool gates; (5) wire one trace ID across both layers. Each step shrinks blast radius on its own.</p>
+        </details>
+
+        <details class="faq">
+          <summary>What happens when the IDP or gateway is down?</summary>
+          <p>By design the system fails closed: no valid token or no reachable PEP means the call is denied, not waved through. That's the correct behaviour under "assume breach" — availability of an agent action is less important than not authorising an unverified one. In practice you make the gateway and IDP highly available (they're standard cloud-native components) rather than relaxing the check, and you reserve CIBA/step-up for high-stakes actions so a consent outage doesn't block routine work.</p>
         </details>
 
         <h2 id="takeaways">Takeaways</h2>

@@ -112,9 +112,13 @@
 
         <div class="bm-warn"><strong>Why the obvious fixes don't work.</strong> Two traditional provisioning models both fail GenAI's volatility. <strong>Upfront provisioning</strong> reserves capacity for peak demand — high OpEx, low utilisation, wasted spend in idle periods. <strong>Queued provisioning</strong> makes workloads wait for regional availability — time-to-market delays and stalled innovation. The core failure is the same: static models can't adapt to uneven, spiky traffic, so regional spikes cause local failures while global capacity sits idle.</p></div>
 
+        <p>It's worth understanding <em>why</em> GPU scarcity is regional rather than global, because it's the physical fact the whole architecture works around. A cloud "region" is a specific cluster of datacenters in a geography, and GPUs are physical cards racked in <em>those buildings</em>. When NVIDIA's latest accelerators are supply-constrained (as they perpetually are), a cloud provider can't instantly stock every region equally — some regions get the new H100/B200 capacity first, others wait. On top of that, your own org has per-region quotas. So "we have 200 idle H100s" can be globally true while <code>us-central1</code> specifically is dry. You cannot teleport a GPU between regions; the only thing you <em>can</em> move cheaply is the <em>job</em>. That asymmetry — hardware is fixed in place, jobs are portable — is the entire premise of MultiKueue: bring the work to the silicon, since you can't bring the silicon to the work.</p>
+
         <h2 id="kueue">Foundation — what Kueue actually is</h2>
 
         <p>Before you can chase GPUs across regions, you need a sane way to manage them in <em>one</em> cluster. That's Kueue: a Kubernetes-native job queueing system that manages quotas and fair access to high-demand hardware for batch and training workloads. Instead of every pod fighting the scheduler directly, jobs enter a queue and Kueue admits them only when quota and capacity allow. It's built for exactly the four jobs the deck listed — multi-team sharing, large-scale training, batch inference, and squeezing utilisation out of scarce datacenter GPUs.</p>
+
+        <div class="bm-note"><strong>Why batch GPU jobs need a queue at all — the default scheduler can't do it.</strong> Kubernetes' built-in scheduler places pods <em>one at a time</em>, greedily. That's fine for a web service, but a distributed training job needs <strong>all</strong> its workers running at once (it's gang-scheduled — 8 GPUs or nothing useful happens). With the default scheduler, a 8-GPU job can grab 5 GPUs, then block waiting for 3 more that never come — holding 5 idle GPUs hostage while a second job does the same. That's <em>resource deadlock</em> and partial-allocation waste. Kueue fixes it with <strong>all-or-nothing admission</strong>: a job is admitted only when its full quota is available, so GPUs aren't fragmented across half-started jobs. Add quotas and fair-sharing on top and you have orderly multi-team access to scarce hardware instead of a scheduler free-for-all.</div>
 
         <h3>The object model</h3>
         <p>Kueue's hierarchy is small but precise, and getting it straight is the whole game:</p>
@@ -222,6 +226,8 @@
         </table>
         <p>The deck's architecture used GKE worker clusters with GPU nodepools, scale-from-zero enabled, the Cluster Autoscaler for dynamic provisioning, and <code>best-effort-atomic-scaleup</code> as the admission controller for workers. That last choice is exactly what triggers the failure mode below — atomicity is a double-edged sword.</p>
 
+        <div class="bm-note"><strong>Scale-from-zero is what makes federation economical — and what makes it fragile.</strong> The worker clusters run GPU nodepools that scale <em>to zero</em> when idle: you pay for no GPU nodes until a job needs them, then the Cluster Autoscaler provisions hardware on demand. That's the cost win — no idle reservation per region. But it widens a dangerous gap: between "Kueue's quota says this job fits" (logical) and "a GPU node actually booted and joined the cluster" (physical), there's now a provisioning step that <em>can fail</em> — the region may simply have no spare hardware to give. <code>ProvisioningRequest</code> is the handshake across that gap, and the provisioning <em>class</em> decides what happens when the hardware isn't there: <code>check-capacity-autoscaling</code> verifies real capacity <em>before</em> committing (fail fast), while <code>best-effort-atomic-scaleup</code> optimistically accepts and tries to scale all-or-nothing (which, as the next section shows, can accept-then-hang).</div>
+
         <h2 id="bug">The real bug — the SchedulingGated deadlock</h2>
 
         <p>This is the part worth the price of admission. In a clean global federation you'd expect the manager to route around an exhausted region. In practice, the team hit a <strong>regional dispatch failure</strong>: the manager commits a job to a region that has <em>no</em> capacity, while valid capacity sits idle in a secondary worker — and nothing fails over.</p>
@@ -272,6 +278,31 @@
 
         <p>The demo wired it all together on GKE: a manager cluster (<code>mkueue-manager-us-central1</code>) and two worker clusters (<code>mkueue-worker-us-central1</code>, <code>mkueue-worker-asia-southeast1</code>) in one fleet, with the GKE console showing scaling issues, unschedulable pods, and webhook-verification warnings — i.e. exactly the SchedulingGated symptoms in the wild before the dispatch logic is hardened.</p>
 
+        <h2 id="fixing">Fixing the deadlock — what actually works</h2>
+
+        <p>The talk left the fix as "harden the dispatch logic," but it's worth spelling out concretely, because each lever fixes a different part of the failure chain. The deadlock has three independent contributing causes — a stale capacity view, an optimistic provisioning class, and region pinning — and you can attack any of them.</p>
+
+        <table class="papers">
+          <thead><tr><th>Lever</th><th>What it changes</th><th>Trade-off</th></tr></thead>
+          <tbody>
+            <tr><td class="p"><strong>Swap to <code>check-capacity-autoscaling</code></strong></td><td>Verifies real cloud capacity <em>before</em> admitting, so the job is never pinned to an empty region. Fail-fast instead of accept-then-hang.</td><td>Slightly slower admission (a capacity check round-trip); can still thrash if every region is genuinely full.</td></tr>
+            <tr><td class="p"><strong>ProvisioningRequest timeout + retry</strong></td><td>Treat a long-pending ACCEPTED request as a failure and release the job back to the manager for re-dispatch.</td><td>Need to tune the timeout — too short and you abandon a node that was about to boot; too long and the stall persists.</td></tr>
+            <tr><td class="p"><strong>Don't hard-pin — keep workloads eligible</strong></td><td>Leave the job admissible on multiple workers until one genuinely admits it, so a stuck region doesn't strand the job.</td><td>More cross-cluster chatter; quota accounting on the manager must avoid double-counting in-flight dispatches.</td></tr>
+            <tr><td class="p"><strong>Shorten the manager's capacity refresh</strong></td><td>Fresher snapshots mean fewer wrong pins in the first place.</td><td>More API load on workers; never eliminates the race, only narrows it.</td></tr>
+          </tbody>
+        </table>
+
+        <div class="bm-fix"><strong>The pragmatic combination.</strong> In production you don't pick one — you layer them. Use <code>check-capacity-autoscaling</code> so most bad pins never happen, add a ProvisioningRequest timeout so the ones that slip through self-heal instead of hanging, and keep jobs eligible on more than one worker so a single stuck region can't strand work. Fresh capacity views are the cheap baseline under all of it. Defence in depth: each layer catches what the previous one missed.</div>
+
+        <h3>Detecting it before users complain</h3>
+        <p>The symptom is quiet — no crash, no error event, just a pod that never schedules. Watch for these signals:</p>
+        <ul>
+          <li>Pods stuck in <code>SchedulingGated</code> for longer than your provisioning SLO (alert on age, not just count).</li>
+          <li>ProvisioningRequest objects in <code>Accepted</code> state with no backing nodes appearing — the ACCEPTED-but-empty tell.</li>
+          <li>A worker cluster reporting idle GPU capacity <em>while</em> the manager's queue depth is non-zero — the "idle next door" signature.</li>
+          <li>Webhook-verification warnings in the GKE console, which the demo showed accompanying the stuck state.</li>
+        </ul>
+
         <h2 id="faq">FAQ</h2>
 
         <details class="faq">
@@ -292,6 +323,26 @@
         <details class="faq">
           <summary>What is a ProvisioningRequest class and why does it matter here?</summary>
           <p>It's how Kueue asks the Cluster Autoscaler to guarantee nodes before admitting a job. <code>best-effort-atomic-scaleup</code> scales a node group all-or-nothing; <code>check-capacity-autoscaling</code> verifies real capacity first; <code>queue-dws-provisioning</code> uses GKE Dynamic Workload Scheduling. The atomic class is what produced the ACCEPTED-but-empty state behind the deadlock.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Does MultiKueue move running pods between clusters?</summary>
+          <p>No. MultiKueue places a job <em>before</em> it runs — it dispatches the workload to a worker cluster, which then executes it locally. It does not live-migrate a running pod across clusters. That's why a wrong placement is costly: once a job is pinned and provisioning is accepted, there's no built-in mechanism to pick it up and run it elsewhere unless you keep it eligible on multiple workers in the first place.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Why does the manager use a "stale" view at all — can't it just check live?</summary>
+          <p>A global scheduler can't synchronously query every worker's real-time capacity for every decision without huge latency and API load, so it works off periodically refreshed snapshots. There's always a window between snapshot and decision where reality has moved on — a spot node got reclaimed, another job grabbed the last GPUs. Shrinking the refresh interval narrows the window but never closes it; that's why fail-fast admission (capacity-check) and re-dispatch on timeout matter more than chasing perfect freshness.</p>
+        </details>
+
+        <details class="faq">
+          <summary>How does spot/preemptible capacity fit in?</summary>
+          <p>Spot harvesting is part of the cost win — workers can run GPU nodepools on preemptible instances, and the federation chases whichever region has cheap spare capacity. The catch: spot nodes can vanish mid-job, and a reclaimed node looks a lot like "no capacity," so the same dispatch-hardening (timeout, re-dispatch, multi-worker eligibility) is what keeps spot from turning into stuck jobs.</p>
+        </details>
+
+        <details class="faq">
+          <summary>Is this Kueue-specific, or a general federation problem?</summary>
+          <p>The pattern is general. Any system that (1) makes placement decisions on a cached view of capacity, (2) commits optimistically before the resource physically exists, and (3) pins the work to that decision will hit some version of the accept-then-hang deadlock. Kueue/MultiKueue is just where this talk hit it; the lessons — fresh views, fail-fast admission, re-dispatch, don't hard-pin — transfer to any global scheduler.</p>
         </details>
 
         <h2 id="takeaways">Takeaways</h2>

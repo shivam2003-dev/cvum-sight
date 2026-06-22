@@ -600,8 +600,155 @@ loop:
         <p>The deck closes by tracing a forward pass through an <em>evolved</em> CNN so you see what the layers learned: a 32×32×3 image becomes 3072 normalised numbers → Conv (edges: ears, body outline) → ReLU <code>f(x)=max(0,x)</code> (drop negatives) → Conv (textures: fur, eye regions) → Max-pool 2×2 (shrink, keep strongest features — "is it present?" not "exactly where") → higher layers (triangular ears, small nose, whiskers) → flatten to a vector → Dense ("whiskers + triangular ears → likely cat") → Softmax <code>P(y<sub>i</sub>)=e<sup>z<sub>i</sub></sup>/Σe<sup>z<sub>j</sub></sup></code> giving Cat=0.92, Dog=0.08. During training, a wrong prediction creates a loss that backprop + gradient descent use to nudge the weights.</p>
         <div class="bm-note"><strong>CS6 in one breath.</strong> First half: ACO worked on a 5-city TSP (start node 4, α=0.5 β=0.75 ρ=0.1 Q=100) — each ant scores next cities by (τ)<sup>α</sup>(1/dist)<sup>β</sup>, picks probabilistically, builds tour 4→2→3→5→1→4, then pheromone evaporates 10% and good (shorter) tours deposit more (100/cost), so the colony converges on short routes. Second half: Neural Architecture Search uses evolution to <em>design</em> networks (architecture = "DNA" via GA; weights via gradient descent). Neuroevolution loop = GA loop on networks. NEAT grows graphs from minimal, uses innovation numbers for crossover and speciation for diversity, but only handles tiny networks. DeepNEAT makes each node a whole layer (Conv/Dense/LSTM + hyperparams) but produces messy, non-reusable structures. CoDeepNEAT co-evolves two populations — <strong>blueprints</strong> (high-level skeleton, nodes = module placeholders) and <strong>modules</strong> (reusable sub-networks) — then builds the phenotype by dropping a chosen module into each blueprint node. A cat-vs-dog run climbs ~50% → ~95% over 50 generations via evaluate→select→crossover→mutate→speciate.</div>
 
-        <h2 id="more">More lectures landing soon</h2>
-        <p>CS7–CS8 (the remaining mid-sem decks — logic, knowledge representation and reasoning) are being written up in the same plain-language style and will appear here as each deck is processed.</p>
+        <!-- ============================== CS7 ============================== -->
+        <h2 id="cs7">CS7 — Game playing: adversarial search &amp; minimax</h2>
+        <p class="lec-badge">Lecture CS#7 · Module 3 · adversarial settings · game trees · static evaluation · minimax</p>
+        <p>CS7 opens Module 3 and switches the whole frame of the course. Everything in CS2–CS6 assumed the world is <em>passive</em> — it sits still while a single agent searches. Games break that assumption: there is a second agent who is actively trying to make you lose. CS7 first recaps how NAS (NEAT/CoDeepNEAT) wrapped up, then introduces <strong>adversarial search</strong>, the <strong>game tree</strong>, <strong>static evaluation functions</strong>, and the <strong>minimax</strong> algorithm.</p>
+
+        <h3>From normal search to adversarial search</h3>
+        <p>In ordinary (single-agent) search the only question is "what sequence of actions gets me to the goal cheapest?" In a game you must also ask "what will my opponent do in response?" Your opponent's gain is your loss — these are <strong>two-player zero-sum</strong> games. You can't plan a fixed path because after every move you make, the opponent gets to move, and they will pick whatever is <em>worst for you</em>.</p>
+        <table class="papers">
+          <thead><tr><th>Aspect</th><th>Normal search</th><th>Adversarial search</th></tr></thead>
+          <tbody>
+            <tr><td class="p">Number of agents</td><td>Usually one</td><td>At least two, with conflicting goals</td></tr>
+            <tr><td class="p">Goal</td><td>Reach a goal state</td><td>Win / maximise your utility</td></tr>
+            <tr><td class="p">Environment</td><td>Passive</td><td>Strategic and competitive</td></tr>
+            <tr><td class="p">Next state depends on</td><td>Only your action</td><td>Your action <em>and</em> the opponent's action</td></tr>
+            <tr><td class="p">Example</td><td>Route finding</td><td>Chess, tic-tac-toe, Go, checkers</td></tr>
+          </tbody>
+        </table>
+        <p>Games are studied in AI because they are a clean, hard testbed: a small set of rules but an astronomically large search space, where smart pruning beats brute force. Characteristics that describe a game are its <strong>observability</strong> (can you see the whole board?), <strong>stochasticity</strong> (is there dice/chance?), <strong>time granularity</strong> (turn-based vs real-time) and <strong>number of players</strong>.</p>
+
+        <h3>A game as a search problem</h3>
+        <p>Just like CS2 formalised a problem with five components, a game is formalised with six. This is the bridge that lets us reuse search machinery on a competitive setting:</p>
+        <table class="papers">
+          <thead><tr><th>Component</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td class="p">Initial state S<sub>0</sub></td><td>The starting board / position</td></tr>
+            <tr><td class="p">PLAYER(s)</td><td>Whose turn it is in state s</td></tr>
+            <tr><td class="p">ACTIONS(s)</td><td>The legal moves available from s</td></tr>
+            <tr><td class="p">RESULT(s, a)</td><td>The new state after playing move a (the transition model)</td></tr>
+            <tr><td class="p">TERMINAL-TEST(s)</td><td>Is the game over (win / lose / draw)?</td></tr>
+            <tr><td class="p">UTILITY(s, p)</td><td>The final numeric payoff to player p at a terminal state</td></tr>
+          </tbody>
+        </table>
+        <p>Typical utilities: <strong>Win = +1, Draw = 0, Loss = −1</strong> (chess often uses ±1/0; tic-tac-toe the same). We name the two players <strong>MAX</strong> (wants the score as <em>high</em> as possible) and <strong>MIN</strong> (the opponent, wants it as <em>low</em> as possible). Because the game is zero-sum, if MAX scores +1 then MIN effectively gets −1 — exactly opposite goals.</p>
+
+        <h3>The game tree</h3>
+        <p>A <strong>game tree</strong> lays out every possible sequence of moves. Levels alternate between the players: the root is MAX's turn, the next level is MIN's turn, then MAX again, and so on. Leaves are terminal states (or, when the tree is too deep, estimated states — see below). The rule for backing values up the tree:</p>
+        <ul>
+          <li>At a <strong>MAX node</strong>, take the <em>largest</em> value among the children (MAX picks the best move for itself).</li>
+          <li>At a <strong>MIN node</strong>, take the <em>smallest</em> value among the children (MIN picks the move that hurts MAX most).</li>
+        </ul>
+        <div class="diagram-container" style="margin:22px 0;text-align:center">
+          <svg viewBox="0 0 460 220" xmlns="http://www.w3.org/2000/svg" style="max-width:460px;width:100%">
+            <style>
+              .gt-edge{stroke:#948a78;stroke-width:1.4;fill:none}
+              .gt-max{fill:#f0c040;stroke:#2a2620;stroke-width:1.4}
+              .gt-min{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.4}
+              .gt-leaf{fill:#fff;stroke:#948a78;stroke-width:1.2}
+              .gt-t{font-family:var(--font-mono,monospace);font-size:12px;fill:#2a2620;text-anchor:middle}
+              .gt-lbl{font-family:var(--font-mono,monospace);font-size:11px;fill:#948a78}
+            </style>
+            <line class="gt-edge" x1="230" y1="40" x2="120" y2="110"/>
+            <line class="gt-edge" x1="230" y1="40" x2="340" y2="110"/>
+            <line class="gt-edge" x1="120" y1="110" x2="70" y2="180"/>
+            <line class="gt-edge" x1="120" y1="110" x2="170" y2="180"/>
+            <line class="gt-edge" x1="340" y1="110" x2="290" y2="180"/>
+            <line class="gt-edge" x1="340" y1="110" x2="390" y2="180"/>
+            <rect class="gt-max" x="214" y="24" width="32" height="32" rx="4"/><text class="gt-t" x="230" y="45">4</text>
+            <circle class="gt-min" cx="120" cy="110" r="17"/><text class="gt-t" x="120" y="115">4</text>
+            <circle class="gt-min" cx="340" cy="110" r="17"/><text class="gt-t" x="340" y="115">2</text>
+            <rect class="gt-leaf" x="56" y="166" width="28" height="28" rx="4"/><text class="gt-t" x="70" y="185">4</text>
+            <rect class="gt-leaf" x="156" y="166" width="28" height="28" rx="4"/><text class="gt-t" x="170" y="185">7</text>
+            <rect class="gt-leaf" x="276" y="166" width="28" height="28" rx="4"/><text class="gt-t" x="290" y="185">2</text>
+            <rect class="gt-leaf" x="376" y="166" width="28" height="28" rx="4"/><text class="gt-t" x="390" y="185">6</text>
+            <text class="gt-lbl" x="8" y="44">MAX</text>
+            <text class="gt-lbl" x="8" y="114">MIN</text>
+            <text class="gt-lbl" x="8" y="185">leaves</text>
+          </svg>
+          <p class="diagram-label" style="font-size:.8rem;color:var(--ink-faint)">Fig — squares = MAX nodes, circles = MIN nodes. Left MIN = min(4,7)=4, right MIN = min(2,6)=2, root MAX = max(4,2)=4.</p>
+        </div>
+
+        <h3>The minimax principle</h3>
+        <p><strong>Minimax</strong> chooses the move with the best <em>guaranteed</em> outcome, assuming the opponent always plays optimally against you. The key mental shift: MAX does <em>not</em> grab the branch that contains the single biggest leaf — because after MAX moves, MIN replies and will steer toward the worst leaf in that branch. So <strong>MAX picks the branch whose worst case is best</strong> ("maximise the minimum").</p>
+        <p>Worked through on the tree above: evaluate the MIN nodes first — left MIN = min(4,7)=4, right MIN = min(2,6)=2 — then the root MAX = max(4,2)=<strong>4</strong>. Best move for MAX is the <em>left</em> branch, with a guaranteed value of 4, because even after MIN's best response MAX still gets 4. The classic student mistake is to chase the +5 (or here, the 7) leaf; but MIN sits between MAX and that leaf and will never let MAX have it.</p>
+        <div class="bm-warn"><strong>Why we can't just search the whole tree.</strong> For tic-tac-toe full search to terminal states is fine. For chess or Go the tree is astronomically large — you cannot reach the leaves. So in practice minimax searches to a fixed <strong>depth limit</strong> and then applies a <strong>static evaluation function</strong> to estimate how good the non-terminal position is. You trade certainty for tractability, but a few plies of lookahead plus a decent evaluation already beats most humans.</div>
+
+        <h3>Static evaluation functions</h3>
+        <p>A <strong>static evaluation function</strong> estimates the utility of a non-terminal position by looking at the board <em>as it is</em>, without searching deeper. A good one gives higher numbers to states that are good for MAX, lower numbers to states good for MIN, is fast to compute, and correlates with the real chance of winning. A chess example: <code>Eval = material advantage + king safety + mobility + board control</code>, e.g. 5 + 2 + 1 + 2 = <strong>+10</strong> for White (MAX).</p>
+        <p>The simplest possible version is just a piece count: <code>Score = (MAX pieces) − (MIN pieces)</code>. With MAX holding 8 pieces and MIN holding 5, Score = +3 (positive ⇒ good for MAX, negative ⇒ good for MIN, zero ⇒ balanced). It's crude, but it gives the agent a usable estimate exactly when full search is impossible. When you back these <em>estimated</em> leaf values up the tree with the minimax rule, you get a backed-up minimax value — e.g. left MIN = min(+3,+5)=+3, right MIN = min(−2,+4)=−2, root = max(+3,−2)=<strong>+3</strong>.</p>
+        <div class="bm-note"><strong>CS7 in one breath.</strong> Games = adversarial search: two agents, zero-sum, your gain is the opponent's loss, so plan around the opponent's best reply. Formalise a game with 6 parts (S<sub>0</sub>, PLAYER, ACTIONS, RESULT, TERMINAL-TEST, UTILITY) and label players MAX/MIN. A game tree alternates MAX/MIN levels; back values up — max at MAX nodes, min at MIN nodes. Minimax = "maximise the minimum": MAX picks the branch whose worst-case outcome is best, not the branch with the single biggest leaf, because MIN moves in between. Real games are too big to reach leaves, so cut off at a depth limit and use a fast static evaluation function (material + king safety + mobility + control, or just piece count) to score non-terminal positions, then minimax those estimates.</div>
+
+        <!-- ============================== CS8 ============================== -->
+        <h2 id="cs8">CS8 — Alpha-beta pruning &amp; Monte Carlo Tree Search</h2>
+        <p class="lec-badge">Lecture CS#8 · Module 3 · alpha-beta pruning · move ordering · MCTS · mid-sem wrap-up</p>
+        <p>CS8 is the last mid-sem deck. It makes minimax <em>faster</em> with <strong>alpha-beta pruning</strong> (same answer, far fewer nodes), shows why <strong>move ordering</strong> matters, then introduces a completely different, simulation-based approach — <strong>Monte Carlo Tree Search (MCTS)</strong>, the engine behind modern Go programs — and closes with mid-semester exam logistics.</p>
+
+        <h3>Alpha-beta pruning — same result, fewer nodes</h3>
+        <p>Plain minimax evaluates every leaf. <strong>Alpha-beta</strong> is an improved minimax that <em>skips</em> branches which cannot possibly change the final decision. It gives the <strong>exact same move</strong> as minimax, just dramatically faster. The idea: as you search, keep two running bounds.</p>
+        <ul>
+          <li><strong>Alpha (α)</strong> — the best (highest) value MAX is guaranteed so far along the current path. Starts at −∞.</li>
+          <li><strong>Beta (β)</strong> — the best (lowest) value MIN is guaranteed so far. Starts at +∞.</li>
+        </ul>
+        <p><strong>General principle:</strong> at a node n, if a player already has a better option at the parent of n (or higher up), then n will never actually be reached in optimal play — so the entire subtree under n can be pruned. The cutoff test is simply <strong>β ≤ α</strong>: once that becomes true, stop expanding the remaining siblings, because they can't affect the result.</p>
+        <table class="papers">
+          <thead><tr><th>At a MAX node</th><th>At a MIN node</th></tr></thead>
+          <tbody>
+            <tr><td>If value &gt; α, set α = value</td><td>If value &lt; β, set β = value</td></tr>
+            <tr><td>If β ≤ α → prune remaining siblings</td><td>If β ≤ α → prune remaining siblings</td></tr>
+          </tbody>
+        </table>
+        <div class="diagram-container" style="margin:22px 0;text-align:center">
+          <svg viewBox="0 0 480 210" xmlns="http://www.w3.org/2000/svg" style="max-width:480px;width:100%">
+            <style>
+              .ab-edge{stroke:#948a78;stroke-width:1.4;fill:none}
+              .ab-edge.cut{stroke:#c96442;stroke-width:1.6;stroke-dasharray:4 3}
+              .ab-max{fill:#f0c040;stroke:#2a2620;stroke-width:1.4}
+              .ab-min{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.4}
+              .ab-leaf{fill:#fff;stroke:#948a78;stroke-width:1.2}
+              .ab-leaf.pruned{fill:#f3e2dc;stroke:#c96442;stroke-dasharray:3 2}
+              .ab-t{font-family:var(--font-mono,monospace);font-size:12px;fill:#2a2620;text-anchor:middle}
+              .ab-lbl{font-family:var(--font-mono,monospace);font-size:11px;fill:#948a78}
+              .ab-cut{font-family:var(--font-mono,monospace);font-size:11px;fill:#c96442;text-anchor:middle}
+            </style>
+            <line class="ab-edge" x1="240" y1="34" x2="120" y2="104"/>
+            <line class="ab-edge" x1="240" y1="34" x2="360" y2="104"/>
+            <line class="ab-edge" x1="120" y1="104" x2="70" y2="174"/>
+            <line class="ab-edge" x1="120" y1="104" x2="170" y2="174"/>
+            <line class="ab-edge" x1="360" y1="104" x2="310" y2="174"/>
+            <line class="ab-edge cut" x1="360" y1="104" x2="410" y2="174"/>
+            <rect class="ab-max" x="224" y="18" width="32" height="32" rx="4"/><text class="ab-t" x="240" y="39">6</text>
+            <circle class="ab-min" cx="120" cy="104" r="17"/><text class="ab-t" x="120" y="109">6</text>
+            <circle class="ab-min" cx="360" cy="104" r="17"/><text class="ab-t" x="360" y="109">≤2</text>
+            <rect class="ab-leaf" x="56" y="160" width="28" height="28" rx="4"/><text class="ab-t" x="70" y="179">6</text>
+            <rect class="ab-leaf" x="156" y="160" width="28" height="28" rx="4"/><text class="ab-t" x="170" y="179">8</text>
+            <rect class="ab-leaf" x="296" y="160" width="28" height="28" rx="4"/><text class="ab-t" x="310" y="179">2</text>
+            <rect class="ab-leaf pruned" x="396" y="160" width="28" height="28" rx="4"/><text class="ab-t" x="410" y="179">✕</text>
+            <text class="ab-lbl" x="8" y="38">MAX</text>
+            <text class="ab-lbl" x="8" y="108">MIN</text>
+            <text class="ab-cut" x="430" y="138">prune</text>
+          </svg>
+          <p class="diagram-label" style="font-size:.8rem;color:var(--ink-faint)">Fig — left MIN returns 6, so α=6 at the root. The right MIN sees a 2 first (≤2 &lt; 6 = α), so β ≤ α holds and its remaining child is pruned — never evaluated.</p>
+        </div>
+        <p>Reading the figure: the left MIN node evaluates its children (6, 8) and returns 6, so MAX now has α = 6 guaranteed. The right MIN node then sees a child worth 2. Since MIN will pick at most 2 there, and MAX already has 6 elsewhere, MAX will never choose the right branch — so the right MIN's <em>other</em> child is irrelevant and gets pruned. Same root answer (6), one fewer leaf evaluated. On a big tree this compounds enormously.</p>
+        <div class="bm-note"><strong>Move ordering is everything.</strong> Alpha-beta's savings depend entirely on the <em>order</em> you examine moves. If you happen to look at the best move first, you set tight α/β bounds early and prune aggressively — in the best case alpha-beta examines roughly the square root of the nodes minimax would, effectively doubling your search depth for the same cost. Examine moves in the worst order and you prune nothing. That's why real engines spend effort on good move ordering (try captures, killer moves, history heuristics first).</div>
+
+        <h3>Monte Carlo Tree Search (MCTS)</h3>
+        <p>Alpha-beta needs a good static evaluation function. For games like Go, no one knew how to write one — the board is too subtle. <strong>MCTS</strong> sidesteps the problem: instead of evaluating a position with hand-crafted rules, it <em>plays out random games</em> (simulations / "rollouts") from that position and uses the win/loss statistics as the evaluation. It blends tree search with the reinforcement-learning idea of learning from sampled outcomes.</p>
+        <p>The naïve version — run many full random simulations at every node — is far too slow and noisy (a single rollout gives only a 0/1 signal). MCTS's insight is to use simulation results to <em>grow the tree selectively</em>, balancing <strong>exploitation</strong> (spend effort on moves that look promising) against <strong>exploration</strong> (try moves whose value is still uncertain). The standard balance is the <strong>UCB (Upper Confidence Bound)</strong> formula: a node's selection score increases with its win rate (exploit) and decreases with how often it's already been visited (explore), and every option is tried at least once.</p>
+        <p>MCTS applies to <strong>combinatorial games</strong> — two-player, sequential (turn-taking), perfect-information, finite well-defined moves: chess, checkers, Go, tic-tac-toe. Each iteration runs four phases:</p>
+        <table class="papers">
+          <thead><tr><th>Phase</th><th>What happens</th></tr></thead>
+          <tbody>
+            <tr><td class="p">1. Selection</td><td>Start at the root and repeatedly pick the most promising child (UCB = balance high win-rate vs few visits) until you reach a node with unexplored moves.</td></tr>
+            <tr><td class="p">2. Expansion</td><td>Add one new child node for an unexplored legal move — the tree grows a little rather than all at once.</td></tr>
+            <tr><td class="p">3. Simulation (rollout)</td><td>From the new node, play the game to the end using random / lightweight-heuristic moves. The aim isn't perfect play, just an estimate of win / loss / draw.</td></tr>
+            <tr><td class="p">4. Backpropagation</td><td>Send the result back up every node on the path, updating each node's visit count and win score (and hence its average win rate).</td></tr>
+          </tbody>
+        </table>
+        <p>Repeat these four phases thousands of times; the tree grows preferentially toward strong moves, and when the time budget runs out you play the child with the best statistics. This is exactly the family of methods that powered AlphaGo (with neural networks guiding selection and simulation), and they recur in cybersecurity, robotics and text generation too.</p>
+        <div class="bm-note"><strong>CS8 in one breath.</strong> Alpha-beta pruning = minimax + two bounds (α = best for MAX so far, β = best for MIN so far); when β ≤ α, the rest of that subtree can't change the answer, so prune it. Same result as minimax, far fewer nodes; with good <em>move ordering</em> it roughly square-roots the work and doubles reachable depth. MCTS replaces a hand-written evaluation with random rollouts: four phases — <strong>Selection</strong> (UCB-guided descent), <strong>Expansion</strong> (add a child), <strong>Simulation</strong> (random playout to a result), <strong>Backpropagation</strong> (update visit counts + win scores) — repeated many times, then play the most-visited / highest-value move. UCB balances exploitation (high win rate) vs exploration (few visits). MCTS suits two-player, sequential, perfect-information, finite games (Go, chess, tic-tac-toe) and is the basis of AlphaGo. CS8 also closes the mid-sem (EC2): CS1–CS8, 2 hours, 30 marks, subjective, online at the exam centre.</div>
 
         <h2 id="refs">References</h2>
         <ul class="reflist">

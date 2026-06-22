@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "glm-5-2",
+    title: "GLM-5.2 — built for long-horizon tasks, the whole architecture in plain words.",
+    date: "Jun 22, 2026",
+    cat: "ml",
+    tags: ["ml", "llm", "glm", "mixture-of-experts", "long-context", "agents"],
+    time: 20,
+    words: 4050,
+    excerpt: "One read to understand Z.ai's open-weights flagship. GLM-5.2 is a 744B-parameter Mixture-of-Experts model with only ~40B active per token, a verified 1,000,000-token context window, 128K output, and a new sparse-attention trick called IndexShare that cuts per-token compute ~2.9× at full context. Plain-language walkthrough of MoE, why a million-token window is hard, what \"long-horizon\" really means, the reasoning-effort modes, the agent toolkit (tools/MCP/JSON/caching), the benchmarks (FrontierSWE within ~1% of Claude Opus 4.8, Code Arena #1), pricing (~1/6th of GPT-5.5), and the honest limitations. No prior deep knowledge assumed."
+  },
+  {
     slug: "kubecon-mumbai-2026-field-report",
     title: "KubeCon India 2026, Mumbai — the field report.",
     date: "Jun 19, 2026",

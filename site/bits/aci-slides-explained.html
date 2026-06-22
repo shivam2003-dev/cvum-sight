@@ -506,8 +506,102 @@ loop:
         <p>Evaporation (1−ρ) drives <em>exploration</em> (forget stale trails); reinforcement (Q/f<sub>k</sub>) drives <em>exploitation</em> (strengthen good trails). It stops after a set number of iterations — with the caveat that an ant can "drop" if it hasn't reached the destination before the iteration cap.</p>
         <div class="bm-note"><strong>CS5 in one breath.</strong> Local beam search keeps k states, pools all successors, keeps best k (stochastic variant picks them probabilistically to keep diversity). Genetic algorithms = population + fitness + selection (roulette wheel) + crossover (single/multi/uniform point) + mutation, repeated over generations; crossover exploits, mutation explores; no convergence guarantee. Offline search (BFS/UCS/A*/hill climbing/beam) has a full model up front; online search agents act-observe-update because the world is unknown/dynamic. ACO: ants lay pheromone (τ), pick edges by τ<sup>α</sup>η<sup>β</sup>, pheromone evaporates (ρ) and reinforces (Q/f<sub>k</sub>) — evaporation = exploration, reinforcement = exploitation.</div>
 
+        <h2 id="cs6">CS6 — ACO in action + Neural Architecture Search</h2>
+        <p class="lec-badge">Lecture CS#6 · ant colony optimization worked example · neuroevolution · NEAT → DeepNEAT → CoDeepNEAT</p>
+        <p>CS6 has two halves. First it takes the Ant Colony Optimization machinery from CS5 and <strong>runs it by hand</strong> on a small Travelling Salesman Problem so you can see every number move. Then it pivots to a bigger idea: instead of using evolution to find a <em>route</em>, use it to design a <em>neural network</em> — Neural Architecture Search (NAS), the "era of self-designing AI."</p>
+
+        <h3>ACO on the Travelling Salesman Problem — a full walkthrough</h3>
+        <p>The Travelling Salesman Problem (TSP): visit every city exactly once and return to the start, with the <em>shortest</em> total distance. With n cities there are (n−1)!/2 possible tours — it blows up fast, so we don't brute force it. ACO lets a colony of ants <em>discover</em> a short tour by laying pheromone.</p>
+        <p>The deck uses 5 cities, the ant starting at <strong>node 4</strong>, and these settings:</p>
+        <table class="papers">
+          <thead><tr><th>Parameter</th><th>Value</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="p">α (alpha)</td><td>0.5</td><td>Weight on pheromone — how much an ant trusts the trail</td></tr>
+            <tr><td class="p">β (beta)</td><td>0.75</td><td>Weight on visibility η=1/distance — how much it trusts "shorter is better"</td></tr>
+            <tr><td class="p">ρ (rho)</td><td>0.1</td><td>Evaporation — 10% of old pheromone fades each update</td></tr>
+            <tr><td class="p">Q</td><td>100</td><td>Pheromone constant — total laid is Q/(tour cost)</td></tr>
+          </tbody>
+        </table>
+        <p>The mechanics from CS5 stay the same; here's how one ant builds a tour step by step:</p>
+        <ol>
+          <li><strong>Stand at node 4.</strong> List the cities not yet visited (1, 2, 3, 5).</li>
+          <li><strong>Score every reachable next city</strong> with the transition rule <code>NTP<sub>ij</sub> = (τ<sub>ij</sub>)<sup>α</sup>(η<sub>ij</sub>)<sup>β</sup> / Σ(τ<sub>ih</sub>)<sup>α</sup>(η<sub>ih</sub>)<sup>β</sup></code>. Here η<sub>ij</sub> = 1/distance(i,j), so close cities get a higher η. The numerator rewards "lots of pheromone <em>and</em> short edge"; the denominator just normalises so the probabilities over all unvisited cities sum to 1.</li>
+          <li><strong>Pick the next city probabilistically</strong> from those scores (roulette-wheel style — higher NTP = more likely, but not guaranteed; that randomness is what keeps the colony exploring).</li>
+          <li><strong>Move, mark the city visited, repeat</strong> until all five are covered, then return to the start node 4 to close the loop.</li>
+        </ol>
+        <p>Working it through with these numbers, the ant builds the tour <strong>4 → 2 → 3 → 5 → 1 → 4</strong>. Once the tour is complete you compute its total cost f<sub>k</sub>, then update pheromone on every edge:</p>
+        <p style="text-align:center"><code>τ<sub>ij</sub><sup>new</sup> = (1−ρ)·τ<sub>ij</sub><sup>old</sup> + Δτ<sub>ij</sub></code>, with <code>Δτ<sub>ij</sub> = Q/f<sub>k</sub> = 100/f<sub>k</sub></code> on edges the ant used, and 0 elsewhere.</p>
+        <p>So every edge first loses 10% (evaporation), and the edges on this tour gain 100/(tour length). A <em>shorter</em> tour means a <em>bigger</em> deposit, so good routes get reinforced harder. Run many ants over many iterations and the pheromone concentrates on the genuinely short edges — the colony converges on a near-optimal tour without anyone ever computing all (n−1)!/2 possibilities.</p>
+        <div class="bm-note"><strong>Read the two exponents like a dial.</strong> α high, β low → ants follow the crowd (pheromone dominates) and can lock onto a mediocre route early. α low, β high → ants chase short edges greedily and ignore collective experience. The deck's α=0.5, β=0.75 leans slightly toward "short edges matter a bit more than the trail," with ρ=0.1 evaporating slowly so good trails persist. Tuning these is the whole art of ACO.</div>
+
+        <h3>The pivot: from routes to architectures</h3>
+        <p>Second half of CS6. Designing a neural network by hand is hard — how many layers? what filter sizes? which connections? The search space is astronomically large and humans are the bottleneck. <strong>Neural Architecture Search</strong> asks: what if evolution designs the network for us? CS6 frames this as <em>bilevel optimization</em>:</p>
+        <table class="papers">
+          <thead><tr><th>Level</th><th>What evolves</th><th>How</th></tr></thead>
+          <tbody>
+            <tr><td class="p">High level — "DNA"</td><td>The architecture / topology (which layers, how connected)</td><td>Evolutionary algorithm (mutation + crossover over generations)</td></tr>
+            <tr><td class="p">Low level — "weights"</td><td>The numbers inside each network</td><td>Ordinary gradient descent / backprop</td></tr>
+          </tbody>
+        </table>
+        <p>So the genetic algorithm searches <em>structures</em>, and for each candidate structure normal training fills in the weights. The structure is the genotype; the trained network is the phenotype.</p>
+
+        <h3>Neuroevolution and NEAT</h3>
+        <p><strong>Neuroevolution</strong> = using genetic algorithms to evolve neural networks. The core loop is exactly the GA loop from CS5: (1) create a population of networks, (2) train each, (3) measure fitness (how well it performs), (4) select the best, (5) breed new ones via mutation and crossover, (6) repeat.</p>
+        <p><strong>NEAT</strong> (NeuroEvolution of Augmenting Topologies) is the classic method. Key ideas:</p>
+        <ul>
+          <li>A network is a <strong>graph</strong> — nodes are neurons, edges are connections (with weights).</li>
+          <li>It <strong>starts minimal</strong> (tiny networks, few connections) and <em>augments</em> — adds nodes and connections over generations, growing complexity only when it helps.</li>
+          <li>Every new connection gets a unique <strong>innovation number</strong>. During crossover these IDs let two different-shaped parents line up matching genes correctly — solving the "how do you cross two networks of different size" problem.</li>
+          <li><strong>Speciation</strong> — similar networks are grouped into species that evolve separately, so a promising-but-not-yet-optimised new structure isn't immediately killed off by older, fitter rivals. This protects diversity.</li>
+        </ul>
+        <div class="bm-warn"><strong>Why NEAT isn't enough.</strong> NEAT evolves <em>individual neurons and connections</em>. That's fine for small networks, but modern deep learning needs CNNs and LSTMs with many <em>layers</em> — NEAT can't realistically evolve those layer-by-layer architectures. This limitation is exactly what DeepNEAT and CoDeepNEAT were built to fix.</div>
+
+        <h3>DeepNEAT — nodes become layers</h3>
+        <p>DeepNEAT extends NEAT to deep networks with one change in meaning: <strong>a node is no longer a single neuron — it's an entire layer.</strong></p>
+        <ul>
+          <li>Each node stores layer details: type (Convolution, Dense, LSTM) plus hyperparameters (number of filters, kernel size, activation function).</li>
+          <li>Edges define how layers connect — the flow of data. Unlike NEAT, edges <strong>don't store weights</strong> (weights are learned later by gradient descent).</li>
+          <li>To build the actual network: walk the chromosome graph, create one layer per node, wire them per the edges. Multiple inputs to a node are merged by concatenation or summation; size mismatches are fixed with pooling/downsampling.</li>
+        </ul>
+        <div class="bm-warn"><strong>DeepNEAT's flaw.</strong> The networks it generates tend to be random, tangled, and structureless. Real architectures like ResNet and GoogLeNet succeed because they <em>repeat well-organised blocks</em>. DeepNEAT doesn't reuse learned structure or create repeatable patterns — so we need reusable building blocks.</div>
+
+        <h3>CoDeepNEAT — co-evolving blueprints + modules</h3>
+        <p>CoDeepNEAT (the "Co" = co-evolution) is the headline method of CS6. It splits evolution into <strong>two populations that evolve at the same time</strong>:</p>
+        <table class="papers">
+          <thead><tr><th>Population</th><th>Role</th><th>Analogy</th></tr></thead>
+          <tbody>
+            <tr><td class="p">Blueprints (macro-architecture)</td><td>High-level graph of the whole network. Each blueprint node is a <em>module species ID</em> (a placeholder), <strong>not</strong> a real layer. Edges define data flow between modules.</td><td>The skeleton / floor plan</td></tr>
+            <tr><td class="p">Modules (micro-architecture)</td><td>Small reusable sub-networks — a few layers with their types and hyperparameters. Evolved independently in subpopulations.</td><td>Reusable Lego blocks</td></tr>
+          </tbody>
+        </table>
+        <p>This mirrors how real deep networks are built: you design a good block once and reuse it, instead of building every layer from scratch. The result is networks that are structured, efficient, and scalable.</p>
+
+        <h3>Phenotype construction — from genotype to trainable network</h3>
+        <p>The <strong>phenotype</strong> is the actual deep network that gets trained. You assemble it like this:</p>
+        <ol>
+          <li><strong>Select a blueprint</strong> — it defines the overall structure / data flow.</li>
+          <li><strong>For each blueprint node</strong> (a module species placeholder), <strong>pick a concrete module</strong> from that species' subpopulation.</li>
+          <li><strong>Replace each node with its chosen module</strong> — every placeholder expands into a small sub-network.</li>
+          <li><strong>Connect the modules</strong> following the blueprint's edges → a complete deep network.</li>
+        </ol>
+        <p>In the deck's "Assembled Network" diagram: the top diamond is the input, white nodes are intermediate flow, <strong>yellow nodes are inserted modules</strong> (each yellow node = one expanded sub-network, and the same module can be reused at several positions), and the bottom node is the output. Innovation numbers again keep crossover aligned so recombination stays valid.</p>
+
+        <h3>The full generational loop (cat-vs-dog example)</h3>
+        <p>CS6 grounds all of this in a concrete CNN-evolving run:</p>
+        <ul>
+          <li><strong>Initialization ("The Big Bang")</strong> — start with ~100 randomly generated, <em>simple</em> networks (minimal layers). Starting simple lets complexity grow only when it earns its keep.</li>
+          <li><strong>Fitness evaluation</strong> — instantiate each architecture, train it briefly (e.g. 5–10 epochs) on the cat-vs-dog dataset, and score it by <strong>validation accuracy</strong> (90 correct out of 100 → fitness 90%). Validation, not training, accuracy — so we reward generalisation, not memorisation.</li>
+          <li><strong>Selection</strong> — fitness-proportionate (roulette wheel): A=80%, B=60%, C=40%, D=20% means A and B breed often, C sometimes, D rarely. Balances exploitation and exploration.</li>
+          <li><strong>Crossover</strong> — recombine two parent architectures. Parent1 (Conv→Pool→Dense) × Parent2 (Conv→Conv→Dense) → child Conv→Conv→Dense (inherits deeper feature extraction). Innovation numbers align matching layers.</li>
+          <li><strong>Mutation</strong> — add a layer, add a skip connection, or tweak a hyperparameter (e.g. change filter 3×3 → 5×5 to capture broader features; can lift validation accuracy 85% → 92%).</li>
+          <li><strong>Speciation</strong> — group by similarity (shallow nets vs deep nets), compete within species to preserve diversity.</li>
+          <li><strong>Repeat across generations</strong> — Gen 1 ≈ 50% (random), Gen 20 ≈ 75% (basic features), Gen 50 ≈ 95% (advanced feature extraction). Keep the highest-validation architecture.</li>
+        </ul>
+        <p>The deck closes by tracing a forward pass through an <em>evolved</em> CNN so you see what the layers learned: a 32×32×3 image becomes 3072 normalised numbers → Conv (edges: ears, body outline) → ReLU <code>f(x)=max(0,x)</code> (drop negatives) → Conv (textures: fur, eye regions) → Max-pool 2×2 (shrink, keep strongest features — "is it present?" not "exactly where") → higher layers (triangular ears, small nose, whiskers) → flatten to a vector → Dense ("whiskers + triangular ears → likely cat") → Softmax <code>P(y<sub>i</sub>)=e<sup>z<sub>i</sub></sup>/Σe<sup>z<sub>j</sub></sup></code> giving Cat=0.92, Dog=0.08. During training, a wrong prediction creates a loss that backprop + gradient descent use to nudge the weights.</p>
+        <div class="bm-note"><strong>CS6 in one breath.</strong> First half: ACO worked on a 5-city TSP (start node 4, α=0.5 β=0.75 ρ=0.1 Q=100) — each ant scores next cities by (τ)<sup>α</sup>(1/dist)<sup>β</sup>, picks probabilistically, builds tour 4→2→3→5→1→4, then pheromone evaporates 10% and good (shorter) tours deposit more (100/cost), so the colony converges on short routes. Second half: Neural Architecture Search uses evolution to <em>design</em> networks (architecture = "DNA" via GA; weights via gradient descent). Neuroevolution loop = GA loop on networks. NEAT grows graphs from minimal, uses innovation numbers for crossover and speciation for diversity, but only handles tiny networks. DeepNEAT makes each node a whole layer (Conv/Dense/LSTM + hyperparams) but produces messy, non-reusable structures. CoDeepNEAT co-evolves two populations — <strong>blueprints</strong> (high-level skeleton, nodes = module placeholders) and <strong>modules</strong> (reusable sub-networks) — then builds the phenotype by dropping a chosen module into each blueprint node. A cat-vs-dog run climbs ~50% → ~95% over 50 generations via evaluate→select→crossover→mutate→speciate.</div>
+
         <h2 id="more">More lectures landing soon</h2>
-        <p>CS6–CS8 (adversarial search &amp; games, logic &amp; knowledge representation, and the rest of the mid-sem syllabus) are being written up in the same plain-language style and will appear here as each deck is processed.</p>
+        <p>CS7–CS8 (the remaining mid-sem decks — logic, knowledge representation and reasoning) are being written up in the same plain-language style and will appear here as each deck is processed.</p>
 
         <h2 id="refs">References</h2>
         <ul class="reflist">

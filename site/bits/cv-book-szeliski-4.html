@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Szeliski Ch4 — Feature Detection and Matching — CV Book Notes — cvam.sight</title>
+<meta name="description" content="Szeliski Chapter 4 explained in plain language: Harris corners, structure tensor, SIFT, feature matching, Canny edges, Hough lines, and HoG.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<script>
+MathJax = {
+  tex: { inlineMath: [['\(','\)']], displayMath: [['\[','\]']], packages: {'[+]': ['ams']} },
+  options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] }
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html" class="active">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="/bits/cv-book-explained.html" style="color:var(--ink-faint);text-decoration:none">&larr; Computer Vision Book Explained</a></p>
+      <div class="post-header">
+        <p class="meta">BOOK NOTES · SZELISKI 2ND ED. · CHAPTER 4</p>
+        <h1>Szeliski Chapter 4 — Feature Detection & Matching.</h1>
+        <div class="tag-row">
+          <span class="tag fill">computer-vision</span>
+          <span class="tag">szeliski</span>
+          <span class="tag">chapter-4</span>
+          <span class="tag">AIMLCZG525</span>
+        </div>
+      </div>
+      <div class="post-body osc-body">
+
+        <div class="osc-tldr">
+          <p class="osc-tldr-label">// the one-minute version</p>
+          <p>Chapter 4 explains how to turn raw pixels into repeatable local evidence. It covers points, patches, Harris corners, the structure tensor, adaptive non-maximum suppression, scale-space, SIFT keypoints and descriptors, nearest-neighbour matching, Lowe ratio test, Canny edges, Hough lines, line fitting, and HoG. The main exam lesson is that detection, description, and matching are separate steps: find stable places, summarise their neighbourhoods, then reject ambiguous or geometrically inconsistent correspondences.</p>
+        </div>
+
+        <p class="osc-lead">This is the feature chapter for the Computer Vision mid-sem arc. It is where gradients and pyramids become practical matching systems, and where local image structure starts supporting stitching, tracking, recognition, and 3D geometry.</p>
+        <h2 id="s1"><span class="n">01</span> Why features are the bridge from pixels to geometry and recognition</h2>
+<p>Raw pixels are too fragile for many vision tasks. If the camera shifts by a few pixels, the entire image array changes. If lighting changes, pixel intensities change. If an object scales or rotates, a fixed patch no longer lines up. Feature detection and matching solve a practical problem: find image locations and descriptions that are repeatable enough to recognise the same scene part across images.</p>
+<p>Chapter 4 is where Szeliski moves from generic image operations to local image evidence. A feature can be a corner, blob, edge point, line, patch, or descriptor vector. Good features should be repeatable under viewpoint and illumination changes, distinctive enough to match, accurately localised, efficient to compute, and numerous enough for robust estimation. Different applications prefer different trade-offs. Image stitching wants reliable matches across views. Tracking wants stable points over time. Recognition wants descriptors that survive object appearance changes. 3D reconstruction wants accurate correspondences.</p>
+<div class="osc-key"><span class="lab">key idea</span>A feature is useful only if it can be found again. Detection asks “where should I look?” Description asks “what does this neighbourhood look like?” Matching asks “which detections correspond?”</div>
+<p>For CV1-CV7, this chapter covers many exam-famous names: Harris, structure tensor, non-maximum suppression, scale-space, SIFT, nearest-neighbour matching, Lowe ratio test, Canny, Hough transform, and HoG. They are easier to remember if you view them as answers to a single question: how do we turn messy local pixel patterns into stable evidence?</p>
+        <h2 id="s2"><span class="n">02</span> Points and patches: repeatability, distinctiveness, locality, and invariance</h2>
+<p>A point feature usually means an interest point: a location worth describing because its neighbourhood is informative. A flat wall is bad because every nearby patch looks similar. A straight edge is partly informative but ambiguous along the edge direction. A corner is strong because shifting the window in any direction changes appearance. A blob is useful because it has a characteristic centre and scale. A textured patch can be distinctive even if it is not a textbook corner.</p>
+<p>Repeatability means the detector finds the same physical scene point in different images. Distinctiveness means the descriptor for that point is not easily confused with many others. Locality means the feature occupies a small neighbourhood, so it can survive partial occlusion and local deformation. Invariance means the feature or descriptor handles transformations such as translation, rotation, scale, affine distortion, brightness shift, or contrast change.</p>
+<div class="osc-catch"><span class="lab">the catch</span>No feature is invariant to everything. If it were completely invariant to appearance, it would also lose distinctiveness. Feature design is always a balance.</div>
+<p>A patch descriptor can be as simple as raw pixel values after normalisation. But raw patches fail under rotation, scale, and illumination changes. More advanced descriptors summarise gradients or binary intensity tests to gain robustness. Chapter 4’s central arc is this progression from local patches to carefully engineered invariant descriptors.</p>
+        <h2 id="s3"><span class="n">03</span> Harris corner detector: the structure tensor and the cornerness score</h2>
+<p>The Harris detector starts with a local question: if I shift a small window around this pixel, how much does the image patch change? In a flat region, small shifts change little. Along an edge, shifts along the edge change little but shifts across the edge change a lot. At a corner, shifts in both directions cause large change. This intuition is formalised using the second-moment matrix, often called the structure tensor:</p>
+<div class="osc-key"><span class="lab">formula</span>\[
+M = \sum_{(x,y)\in W} w(x,y)
+egin{bmatrix}
+I_x^2 & I_xI_y\
+I_xI_y & I_y^2
+\end{bmatrix}.
+\]</div>
+<p>The eigenvalues \(\lambda_1,\lambda_2\) of \(M\) describe gradient energy in two principal directions. If both are small, the region is flat. If one is large and one small, it is an edge. If both are large, it is a corner. Harris avoids explicitly computing eigenvalues by using</p>
+<div class="osc-key"><span class="lab">formula</span>\[
+R = \det(M) - k\,\operatorname{trace}(M)^2.
+\]</div>
+<p>Large positive \(R\) indicates a corner. Negative values often indicate edges. After computing the response, the detector applies thresholding and non-maximum suppression so that only local peaks remain.</p>
+<div class="osc-analogy"><span class="lab">think of it like</span>Put a small sticker on the image and wiggle it. On a blank wall, nothing changes. On a stripe, one wiggle direction matters. On a checkerboard corner, every wiggle direction matters.</div>
+        <h2 id="s4"><span class="n">04</span> Non-maximum suppression and adaptive non-maximum suppression</h2>
+<p>Detectors usually produce a response value at every pixel. If we keep every pixel with a high value, we get clusters of detections around the same structure. Non-maximum suppression keeps only points that are local maxima in a neighbourhood. This turns a response map into a sparse set of features.</p>
+<p>Standard non-maximum suppression uses a fixed neighbourhood size. Adaptive non-maximum suppression, often used in feature matching and image stitching pipelines, tries to keep strong points that are also spatially well distributed. For each candidate, it estimates a suppression radius: how far away is the nearest significantly stronger candidate? Points with large radii are kept. This avoids placing all features on one highly textured object while leaving the rest of the image empty.</p>
+<div class="osc-key"><span class="lab">key idea</span>Good matching needs both quality and coverage. A thousand corners on one poster are less useful for estimating a global homography than fewer corners spread across the whole image.</div>
+<p>In practical CV work, feature distribution matters. Homography estimation, fundamental matrix estimation, and tracking become unstable if features are concentrated in a tiny region. ANMS is a simple strategy that improves geometric conditioning without changing the detector response itself.</p>
+        <h2 id="s5"><span class="n">05</span> Scale invariance: why a fixed-size corner detector is not enough</h2>
+<p>A corner detector with a fixed window size has a hidden assumption: the structure appears at that scale. But the same physical point may occupy many pixels in one image and few pixels in another. A small window may see only part of a large blob; a large window may blur away a tiny corner. Scale invariance asks the detector to find both location and characteristic scale.</p>
+<p>Scale-space builds a family of progressively smoothed images \(L(x,y,\sigma)=G_\sigma * I(x,y)\). Features are searched not only over \(x,y\), but also over \(\sigma\). A blob detector may look for maxima of the scale-normalised Laplacian:</p>
+<div class="osc-key"><span class="lab">formula</span>\[
+\sigma^2
+abla^2 G_\sigma * I.
+\]</div>
+<p>The \(\sigma^2\) normalisation is important because derivative magnitudes naturally change with scale. Without normalisation, comparisons across scales are biased. SIFT uses Difference of Gaussians as an efficient approximation to Laplacian-of-Gaussian blob detection. The result is a keypoint with location and scale.</p>
+<div class="osc-warn"><span class="lab">watch out</span>Resizing an image and using the same pixel-radius detector is not automatically scale invariant. The detector must select or normalise scale in a repeatable way.</div>
+        <h2 id="s6"><span class="n">06</span> SIFT step by step: DoG extrema, localisation, orientation, and descriptor</h2>
+<div class="osc-diagram">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <style>.box{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.5}.boxy{fill:#f0c040;stroke:#2a2620;stroke-width:1.5}.boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}.boxr{fill:#f3d9cf;stroke:#2a2620;stroke-width:1.5}.boxb{fill:#d8e3ea;stroke:#2a2620;stroke-width:1.5}.lbl{font-family:monospace;font-size:11px;fill:#2a2620}.ttl{font-family:monospace;font-size:12px;font-weight:700;fill:#2a2620}.arr{stroke:#c96442;stroke-width:2;fill:none}</style>
+            <rect x="32" y="85" width="115" height="70" rx="10" class="boxy"/><text x="58" y="112" class="ttl">Gaussian</text><text x="60" y="133" class="lbl">scale space</text>
+            <rect x="180" y="85" width="115" height="70" rx="10" class="boxg"/><text x="214" y="112" class="ttl">DoG</text><text x="198" y="133" class="lbl">extrema</text>
+            <rect x="328" y="85" width="115" height="70" rx="10" class="boxb"/><text x="354" y="112" class="ttl">orient</text><text x="344" y="133" class="lbl">dominant angle</text>
+            <rect x="476" y="85" width="135" height="70" rx="10" class="boxr"/><text x="509" y="112" class="ttl">descriptor</text><text x="506" y="133" class="lbl">4x4x8 = 128</text>
+            <path d="M147 120 H180" class="arr"/><path d="M295 120 H328" class="arr"/><path d="M443 120 H476" class="arr"/>
+          </svg>
+          <p class="cap">Fig 1 — SIFT is a pipeline: find stable scale-space extrema, assign a repeatable orientation, then describe local gradient structure.</p>
+        </div>
+<p>SIFT, the Scale-Invariant Feature Transform, is famous because it combines several good design choices into one robust pipeline. First, it constructs a Gaussian scale-space. Adjacent blurred images are subtracted to form Difference-of-Gaussian images. Local extrema in this 3D volume of \((x,y,\sigma)\) become keypoint candidates. This finds blob-like structures at characteristic scales.</p>
+<p>Second, SIFT refines keypoint location and rejects unstable candidates. Low-contrast points are discarded because they are sensitive to noise. Edge-like responses are rejected because they are poorly localised along the edge direction. Third, SIFT assigns one or more dominant orientations based on local gradient directions. By rotating the descriptor frame to this orientation, the descriptor becomes rotation invariant.</p>
+<p>Finally, SIFT constructs a descriptor. Around the keypoint, gradients are accumulated into orientation histograms over a \(4	imes4\) grid of cells, with 8 orientation bins per cell. That gives \(4	imes4	imes8=128\) values. The descriptor is normalised to reduce sensitivity to illumination scale, clipped to reduce the effect of large gradients, and normalised again.</p>
+<div class="osc-key"><span class="lab">descriptor shape</span>\[
+	ext{SIFT descriptor length}=4	imes4	imes8=128.
+\]</div>
+<p>The brilliance of SIFT is not one trick. It is the combination: scale selection, orientation alignment, gradient histograms, local pooling, and normalisation. Each part removes a nuisance factor while preserving enough distinctiveness to match.</p>
+        <h2 id="s7"><span class="n">07</span> Feature descriptors: raw patches, gradient histograms, binary descriptors, and normalisation</h2>
+<p>After detection, we need description. A descriptor converts the neighbourhood around a keypoint into a vector that can be compared with descriptors from another image. Raw pixel patches are simple but sensitive to brightness, rotation, and scale. Normalised patches subtract mean and divide by standard deviation, which helps with brightness and contrast but not with geometric changes.</p>
+<p>Gradient-based descriptors such as SIFT are more robust because gradients reduce sensitivity to additive brightness shifts and histograms tolerate small localisation errors. HoG, used widely for object detection, also accumulates gradient orientations in local cells. Binary descriptors such as BRIEF, ORB, and FREAK compare pairs of pixel intensities to produce bit strings. They are fast and matched with Hamming distance, which makes them useful for real-time systems.</p>
+<div class="osc-cards">
+  <div class="osc-card"><h4>Raw patch</h4><p>Simple and distinctive in controlled settings; fragile to rotation, scale, and lighting.</p></div>
+  <div class="osc-card"><h4>SIFT-like histogram</h4><p>More robust to small shifts, rotation, scale, and contrast changes; higher compute cost.</p></div>
+  <div class="osc-card"><h4>Binary descriptor</h4><p>Fast, compact, Hamming-distance matching; often less distinctive than rich float descriptors.</p></div>
+</div>
+<p>Descriptor normalisation is not cosmetic. If one image is brighter, raw gradient magnitudes may be larger. Normalising the vector makes matching depend more on pattern than absolute strength. But too much normalisation can also reduce useful contrast information. Again, feature design is a trade-off.</p>
+        <h2 id="s8"><span class="n">08</span> Feature matching: nearest neighbours, ratio test, cross-checks, and outliers</h2>
+<div class="osc-diagram">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <style>.box{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.4}.boxy{fill:#f0c040;stroke:#2a2620;stroke-width:1.4}.boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.4}.boxr{fill:#f3d9cf;stroke:#2a2620;stroke-width:1.4}.boxb{fill:#d8e3ea;stroke:#2a2620;stroke-width:1.4}.lbl{font-family:monospace;font-size:11px;fill:#2a2620}.ttl{font-family:monospace;font-size:12px;font-weight:700;fill:#2a2620}.arr{stroke:#c96442;stroke-width:1.7;fill:none}.faint{stroke:#948a78;stroke-width:1.1;fill:none}</style>
+            <rect x="40" y="45" width="245" height="170" rx="10" class="box"/><text x="115" y="35" class="ttl">image A</text>
+            <rect x="395" y="45" width="245" height="170" rx="10" class="box"/><text x="470" y="35" class="ttl">image B</text>
+            <circle cx="95" cy="85" r="7" class="boxy"/><circle cx="190" cy="135" r="7" class="boxg"/><circle cx="120" cy="180" r="7" class="boxr"/>
+            <circle cx="455" cy="92" r="7" class="boxy"/><circle cx="545" cy="142" r="7" class="boxg"/><circle cx="502" cy="185" r="7" class="boxr"/><circle cx="590" cy="75" r="7" class="boxb"/>
+            <path d="M95 85 C210 50,340 55,455 92" class="arr"/><path d="M190 135 C295 112,420 118,545 142" class="arr"/><path d="M120 180 C235 205,380 205,502 185" class="arr"/><path d="M190 135 C310 50,455 50,590 75" class="faint"/>
+            <text x="260" y="235" class="lbl">ratio test keeps distinctive matches and rejects ambiguous neighbours</text>
+          </svg>
+          <p class="cap">Fig 2 — feature matching is a correspondence problem. Good descriptors make the true neighbour much closer than the false alternatives.</p>
+        </div>
+<p>Given descriptors from two images, matching often begins with nearest-neighbour search. For a descriptor \(d_i\) in image A, find the descriptor \(d_j\) in image B with the smallest distance. For SIFT-like descriptors, Euclidean distance is common. For binary descriptors, Hamming distance counts bit differences.</p>
+<p>Nearest neighbour alone produces many false matches because some features are ambiguous. Lowe’s ratio test compares the closest and second-closest distances. Accept a match only if</p>
+<div class="osc-key"><span class="lab">formula</span>\[
+rac{\|d-d_1\|}{\|d-d_2\|} < 	au,
+\]
+where \(d_1\) is the nearest descriptor, \(d_2\) the second nearest, and \(	au\) is often around 0.7 to 0.8.</div>
+<p>The ratio test keeps matches whose best neighbour is clearly better than the runner-up. Cross-checking adds another constraint: A’s best match should also choose A when matched backward from B. Even after these tests, outliers remain. Geometric verification with RANSAC is usually needed before estimating homographies, fundamental matrices, or camera pose.</p>
+<div class="osc-warn"><span class="lab">watch out</span>A visually plausible descriptor match can still be geometrically impossible. Matching should usually be followed by a model-consistency check.</div>
+        <h2 id="s9"><span class="n">09</span> Edges and Canny: derivatives, non-maximum suppression, and hysteresis</h2>
+<p>An edge is a location of strong intensity change. Derivative filters estimate gradients \(I_x\) and \(I_y\). The gradient magnitude is \(\sqrt{I_x^2+I_y^2}\), and orientation is \(	an^{-1}(I_y/I_x)\). Because derivatives amplify noise, edge detection usually begins with Gaussian smoothing or derivative-of-Gaussian filters.</p>
+<p>Canny edge detection is a classic multi-step method. It smooths the image, computes gradients, thins responses using non-maximum suppression along the gradient direction, and uses hysteresis thresholding. Hysteresis uses a high threshold for strong edge seeds and a low threshold for connected weak edge pixels. This keeps meaningful continuous edges while rejecting isolated weak noise.</p>
+<div class="osc-key"><span class="lab">Canny pipeline</span>smooth \(
+ightarrow\) gradient \(
+ightarrow\) non-max suppression \(
+ightarrow\) double threshold \(
+ightarrow\) edge tracking by hysteresis.</div>
+<p>Edges are useful for shape, boundaries, vanishing points, lane detection, and line extraction. But not every edge is an object boundary. Shadows, texture, highlights, and surface markings also create edges. This is a major conceptual trap: image edges are intensity events, not guaranteed semantic boundaries.</p>
+        <h2 id="s10"><span class="n">10</span> Lines and the Hough transform</h2>
+<p>Line detection turns local edge evidence into global geometric structure. The Hough transform maps each edge point to a set of possible lines in parameter space. A common line parameterisation is</p>
+<div class="osc-key"><span class="lab">formula</span>\[
+
+ho = x\cos	heta + y\sin	heta.
+\]</div>
+<p>Each image edge point votes for all \((
+ho,	heta)\) lines that could pass through it. If many points lie on the same image line, their votes intersect at a peak in accumulator space. Detecting peaks gives line candidates. The polar form avoids the infinite slope problem of \(y=mx+c\).</p>
+<p>Hough transforms are robust to gaps because points do not need to be connected. They are also robust to some noise because voting aggregates evidence. But accumulator resolution matters: too coarse merges lines; too fine spreads votes. Computational cost can be high if the parameter space is large.</p>
+<div class="osc-catch"><span class="lab">the catch</span>Hough detects parameter agreement, not object meaning. A detected line may be a shadow, texture seam, road marking, or actual boundary.</div>
+        <h2 id="s11"><span class="n">11</span> Successive approximation, line segments, and practical fitting</h2>
+<p>Hough gives candidate global lines, but many applications need finite line segments. Successive approximation methods, split-and-merge algorithms, and iterative line fitting convert edge chains into simpler geometric primitives. A common strategy is to trace connected edge pixels, fit a line to a chain, measure deviation, split where error is high, and repeat until segments approximate the curve well.</p>
+<p>Least-squares line fitting minimises distances between points and a line, but ordinary vertical-residual fitting is biased when lines are near vertical. Orthogonal distance fitting is better for geometry. Robust fitting is needed when outliers exist. RANSAC can fit a line by repeatedly sampling two points, counting inliers, and keeping the model with strongest support.</p>
+<p>In lecture terms, this is the move from pixel-level edges to geometric primitives. Edges are local. Lines and segments are structured. Once you have segments, you can reason about vanishing points, rectangles, document boundaries, lane markings, and man-made scene geometry.</p>
+        <h2 id="s12"><span class="n">12</span> HoG: histograms of oriented gradients for object shape</h2>
+<p>HoG, Histograms of Oriented Gradients, describes local shape by counting gradient orientations in cells. It became famous for pedestrian detection, but the idea is broader: object shape is often captured better by local edge orientation distributions than by raw colour. Like SIFT, HoG uses gradient histograms. Unlike SIFT, it is typically computed densely over a detection window rather than sparsely at keypoints.</p>
+<p>A typical HoG pipeline computes gradients, bins orientations in small cells, groups cells into blocks, normalises each block, and concatenates the results. Block normalisation gives robustness to local illumination and contrast changes. A classifier such as a linear SVM can then learn which gradient patterns indicate an object.</p>
+<div class="osc-key"><span class="lab">key idea</span>SIFT describes distinctive local keypoints for matching. HoG describes dense local orientation structure for detection. Both rely on gradient histograms and normalisation.</div>
+<p>HoG is a useful historical bridge to CNNs. Early convolutional layers often learn oriented edge-like filters, and pooling/normalisation provide some local robustness. Modern networks replaced hand-crafted HoG in many tasks, but understanding HoG still teaches why gradients, cells, blocks, and local normalisation are powerful.</p>
+        <h2 id="s13"><span class="n">13</span> How Chapter 4 connects to CV lectures and project work</h2>
+<p>In the CV1-CV7 sequence, Chapter 4 is the feature engineering centre. It uses Chapter 3’s gradients, smoothing, pyramids, histograms, and non-maximum suppression to build real correspondence tools. Harris and SIFT are especially important because they show two levels of maturity: corners are good local structures, while SIFT turns local structures into scale- and rotation-aware descriptors that can be matched across images.</p>
+<p>For project work, the usual pipeline is detect features, compute descriptors, match descriptors, remove ambiguous matches, estimate a geometric model with RANSAC, and then use inliers for stitching, tracking, localisation, or 3D reconstruction. If the result fails, debug each stage separately. Are there enough features? Are they distributed well? Are descriptors distinctive? Is the ratio threshold too strict or too loose? Are matches geometrically consistent? Is there repetitive texture?</p>
+<div class="osc-quickrow"><span>Harris</span><span>find stable corners</span><span>structure tensor + NMS</span></div>
+<div class="osc-quickrow"><span>SIFT</span><span>match across scale/rotation</span><span>DoG + orientation + 128-D descriptor</span></div>
+<div class="osc-quickrow"><span>Canny/Hough</span><span>extract shape primitives</span><span>edges + lines</span></div>
+<p>Modern learned features exist, but the classical chapter remains valuable because it exposes the design logic. Repeatability, distinctiveness, invariance, localisation, and efficiency are still the criteria used to judge learned detectors and descriptors.</p>
+        <h2 id="s14"><span class="n">14</span> Worked revision example: stitching two overlapping images</h2>
+        <p>Image stitching is a perfect example because it uses almost every major idea in Chapter 4. Suppose you take two overlapping photos of the same building from roughly the same camera centre, or of a faraway scene where parallax is small. The goal is to align them into a panorama. A pixel-by-pixel comparison will fail because the images are shifted, rotated, slightly scaled, and photometrically different. Instead, we detect features independently in both images.</p>
+        <p>First, choose a detector. Harris corners can work if scale change is small. SIFT is safer when the images differ in scale or rotation. The detector should produce repeatable locations on windows, roof corners, signs, brick intersections, or other textured structures. Then apply non-maximum suppression so clusters collapse into single points. If all features lie on one textured sign, adaptive non-maximum suppression can improve spatial coverage. Good coverage matters because the homography should be constrained across the overlap, not only in a small region.</p>
+        <p>Second, compute descriptors. A raw patch may fail if one image is rotated or exposed differently. SIFT descriptors summarise local gradient orientation patterns in a scale- and orientation-normalised frame, making them more stable. Third, match descriptors using nearest neighbours. At this stage there will be false matches: repeated windows, similar bricks, and accidental texture similarities. Lowe’s ratio test removes matches where the best candidate is not clearly better than the second best. Cross-checking can remove additional asymmetric matches.</p>
+        <p>Fourth, estimate the geometric model. For a panorama under the right assumptions, a homography maps points from one image to the other. But false matches still exist, so use RANSAC. It samples minimal sets of correspondences, estimates a homography, counts inliers under a reprojection-error threshold, and keeps the model with the best support. The inlier matches are the ones that agree with one coherent projective warp. This is the step that turns descriptor similarity into geometric consistency.</p>
+        <div class="osc-key"><span class="lab">pipeline</span>detect \(
+ightarrow\) describe \(
+ightarrow\) match \(
+ightarrow\) ratio test \(
+ightarrow\) RANSAC \(
+ightarrow\) warp \(
+ightarrow\) blend.</div>
+        <p>Finally, warp and blend. The homography moves one image into the other image’s coordinate system. Interpolation resamples pixels. Exposure differences may create seams, so blending or gain compensation may be needed. Notice how Chapter 4 depends on earlier chapters: image formation explains why a homography is valid only under planar or pure-rotation assumptions; image processing explains smoothing, gradients, pyramids, and warping; feature detection supplies robust correspondences.</p>
+        <p>This example also gives a debugging checklist. If there are too few matches, lower the detector threshold, improve contrast, or use a more robust detector. If matches are many but wrong, tighten the ratio threshold or use better descriptors. If RANSAC finds few inliers, the scene may violate the homography assumption because of parallax, moving objects, or rolling shutter. If alignment is good in one region and bad elsewhere, the scene may be non-planar. If the geometry is correct but the seam is visible, the problem is photometric blending, not feature matching. This separation of failure modes is exactly what makes the chapter practically valuable.</p>
+
+        <p>There is a second stitching lesson: descriptor matching is not the same as recognition. A SIFT match says two local gradient patterns are similar under the descriptor’s assumptions. It does not say the same object category is present, and it does not say the match is globally correct. Repetitive structures such as building windows, tiles, railings, and book spines create many locally plausible but globally wrong matches. This is why geometric verification is not an optional final polish; it is part of the definition of a reliable correspondence pipeline.</p>
+        <p>Feature scale also affects stitching quality. If features are too tiny, they may be unstable under blur, compression, and viewpoint change. If they are too large, they may cover regions that are not truly planar or that include moving objects. SIFT’s scale selection helps, but it does not remove the need to inspect matches. A useful visual debugging step is to draw matches before and after ratio testing, then draw only RANSAC inliers. The progression often reveals exactly where the pipeline is failing.</p>
+        <p>Finally, remember that modern learned matchers still follow the same conceptual stages. They may learn keypoints, descriptors, matching scores, or outlier rejection, but they still need repeatable evidence, distinctive representation, and consistency checks. Classical Chapter 4 vocabulary therefore remains useful even when the implementation changes. If a learned matcher fails on low texture, repetitive patterns, motion blur, or strong viewpoint change, the explanation usually sounds very similar to the classical failure modes.</p>
+
+        <p>For exam diagrams, draw the pipeline rather than isolated boxes. A Harris answer should show gradients, products of gradients, Gaussian windowing, response score, thresholding, and NMS. A SIFT answer should show scale-space, DoG extrema, localisation, orientation, descriptor grid, and matching. A Canny answer should show smoothing, gradients, thinning, and hysteresis. Pipeline memory is stronger than name memory.</p>
+
+        <p>Also practise explaining failure cases in words. Low texture gives too few stable detections. Repetition gives ambiguous descriptors. Motion blur weakens gradients. Viewpoint change breaks simple patch assumptions. Illumination change changes raw intensities. Occlusion removes correspondences. These are not random bugs; each one attacks a specific requirement of useful features.</p>
+
+        <h2 id="s15"><span class="n">15</span> References and extra reads</h2>
+<p>The primary reference is Richard Szeliski, <em>Computer Vision: Algorithms and Applications</em>, 2nd edition, Chapter 4. Also read the original Harris and Stephens corner detector paper, David Lowe’s SIFT paper, Canny’s edge detection paper, and practical OpenCV tutorials for Harris, SIFT/ORB, BFMatcher/FLANN, Canny, and Hough lines. For HoG, read Dalal and Triggs on pedestrian detection.</p>
+<p>Good exercises are: implement Harris from gradients and a Gaussian window, compare NMS radii, build a small DoG scale-space, match SIFT descriptors with and without the ratio test, run RANSAC after matching, tune Canny thresholds, and visualise Hough accumulator peaks. These experiments turn names into intuition.</p>
+        <h2 id="faq"><span class="n">FAQ</span> Quick questions students usually ask</h2>
+        <details class="osc-faq"><summary>Why are corners better than edges for matching?</summary><p>Edges are ambiguous along their length: many positions look similar. Corners change in two directions, so they are better local anchors.</p></details>
+        <details class="osc-faq"><summary>Why does SIFT use gradients instead of raw pixels?</summary><p>Gradients reduce sensitivity to brightness shifts and capture local shape. Histograms add tolerance to small localisation errors.</p></details>
+        <details class="osc-faq"><summary>What does the ratio test reject?</summary><p>It rejects descriptors whose nearest neighbour is not much better than the second nearest, which usually means the match is ambiguous.</p></details>
+        <details class="osc-faq"><summary>Is Canny an edge detector or a line detector?</summary><p>Canny detects edge pixels. Line detection, such as Hough transform, groups edge evidence into line models.</p></details>
+        <details class="osc-faq"><summary>Why still learn classical features if CNNs exist?</summary><p>Classical features teach repeatability, invariance, localisation, and matching logic, which remain important even in learned systems.</p></details>
+
+        <h2 id="gotchas"><span class="n">!!</span> Exam traps, implementation gotchas, and debugging smells</h2>
+        <div class="osc-gotchas">
+          <p class="gh">common catches &amp; gotchas</p>
+          <ul>
+            <li><b>Detector and descriptor are different</b> — Harris can detect points; SIFT includes both detection and description.</li>
+            <li><b>Many corners in one area are not enough</b> — spatial distribution matters for stable geometry.</li>
+            <li><b>Scale invariance needs scale selection</b> — fixed-window detectors fail when object size changes.</li>
+            <li><b>Nearest neighbour is not reliable alone</b> — use ratio tests, cross-checks, and RANSAC.</li>
+            <li><b>Edges are not always boundaries</b> — texture, shadow, and highlights also create gradients.</li>
+            <li><b>Hough resolution changes results</b> — accumulator bin size controls merging, splitting, and noise sensitivity.</li>
+          </ul>
+        </div>
+
+        <h2 id="takeaways"><span class="n">++</span> Takeaways and chapter cheatsheet</h2>
+        <ul class="osc-takeaways">
+          <li>Good features are repeatable, distinctive, local, well-localised, efficient, and robust to expected changes.</li>
+          <li>Harris uses the structure tensor to identify patches that change strongly in two directions.</li>
+          <li>Scale-space and SIFT handle unknown feature size and rotation through DoG extrema, orientation assignment, and gradient histograms.</li>
+          <li>Matching needs ambiguity rejection, especially Lowe ratio test and geometric verification.</li>
+          <li>Canny turns gradients into thin connected edges; Hough turns edge votes into line hypotheses.</li>
+          <li>HoG and SIFT show why gradient orientation histograms are powerful for both matching and detection.</li>
+        </ul>
+
+        <div class="osc-cheat">
+          <div class="ch-bar"><span>// chapter cheatsheet</span><span class="ch-tag">concept quick-ref</span></div>
+          <div class="ch-body">
+            <p class="ch-sec">features</p>
+            <div class="ch-row"><span class="ch-cmd"><b>repeatability</b></span><span class="ch-desc">Same physical point should be detected across images.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>distinctiveness</b></span><span class="ch-desc">Descriptor should be hard to confuse with many others.</span></div>
+            <p class="ch-sec">Harris</p>
+            <div class="ch-row"><span class="ch-cmd"><b>structure tensor</b></span><span class="ch-desc">Windowed matrix of gradient products; eigenvalues describe local variation.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>corner score</b></span><span class="ch-desc">\(R=\det(M)-k\operatorname{trace}(M)^2\).</span></div>
+            <p class="ch-sec">selection</p>
+            <div class="ch-row"><span class="ch-cmd"><b>NMS</b></span><span class="ch-desc">Keep local maxima in detector response.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>ANMS</b></span><span class="ch-desc">Keep strong features that are spatially well distributed.</span></div>
+            <p class="ch-sec">SIFT</p>
+            <div class="ch-row"><span class="ch-cmd"><b>DoG</b></span><span class="ch-desc">Difference of Gaussians approximates scale-normalised blob detection.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>orientation</b></span><span class="ch-desc">Dominant local gradient direction gives rotation invariance.</span></div>
+            <div class="ch-row"><span class="ch-cmd"><b>128-D</b></span><span class="ch-desc">4x4 cells times 8 orientation bins.</span></div>
+            <p class="ch-sec">matching</p>
+            <div class="ch-row"><span class="ch-cmd"><b>ratio test</b></span><span class="ch-desc">Accept only if nearest neighbour is clearly better than second nearest.</span></div>
+            <p class="ch-sec">edges</p>
+            <div class="ch-row"><span class="ch-cmd"><b>Canny</b></span><span class="ch-desc">Smooth, gradient, NMS, double threshold, hysteresis.</span></div>
+            <p class="ch-sec">lines</p>
+            <div class="ch-row"><span class="ch-cmd"><b>Hough</b></span><span class="ch-desc">Vote in \((
+ho,	heta)\) parameter space.</span></div>
+            <p class="ch-sec">detection</p>
+            <div class="ch-row"><span class="ch-cmd"><b>HoG</b></span><span class="ch-desc">Dense histograms of gradient orientations with block normalisation.</span></div>
+          </div>
+        </div>
+
+      </div>
+      <div class="post-nav">
+        <a href="/bits/cv-book-explained.html">← Book hub</a><a href="/bits/computer-vision.html">CV vault →</a>
+      </div>
+    </article>
+    <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer>
+    </div>
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

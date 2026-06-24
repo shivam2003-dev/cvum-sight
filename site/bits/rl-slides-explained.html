@@ -191,6 +191,19 @@ def get_action():
         <h3 id="cs2-init">Optimistic initial values &amp; the 10-armed testbed</h3>
         <p>How you <strong>initialize</strong> the estimates matters. Setting them <em>optimistically high</em> encourages early exploration: every arm disappoints relative to the rosy initial guess, so the agent keeps trying others until reality sets in — exploration for free, without \(\varepsilon\). To compare methods fairly the slides use the <strong>10-armed testbed</strong>: 2000 randomly generated 10-armed bandit problems, true values drawn from a \(\mathcal{N}(0,1)\), each pull's reward \(\mathcal{N}(q_*(a), 1)\). Run a method 1000 steps per problem, average over the 2000 runs to see its typical behaviour.</p>
 
+        <h3 id="cs2-ucb">Smarter exploration — UCB</h3>
+        <p>\(\varepsilon\)-greedy explores blindly: when it explores it picks <em>any</em> action equally, even obviously bad ones. <strong>Upper-Confidence-Bound (UCB)</strong> selection explores by <em>uncertainty</em> instead — it favours actions that are either promising or under-sampled:</p>
+        <div class="eq">\[ A_t = \arg\max_a\left[\,Q_t(a) + c\sqrt{\frac{\ln t}{N_t(a)}}\,\right] \]</div>
+        <p>\(N_t(a)\) is how many times \(a\) has been chosen, and \(c>0\) tunes exploration. The square-root term is a measure of uncertainty: each time \(a\) is picked, \(N_t(a)\) grows and the term shrinks (we are surer); each time a <em>different</em> action is picked, \(t\) grows but \(N_t(a)\) does not, so \(a\)'s bonus slowly rises until it gets retried. UCB often beats \(\varepsilon\)-greedy on stationary bandits but is harder to extend to large state spaces.</p>
+
+        <h3 id="cs2-gradient">Learning preferences — gradient bandits</h3>
+        <p>A different idea: instead of estimating values, learn a numerical <strong>preference</strong> \(H_t(a)\) for each action and choose by a <strong>soft-max</strong>:</p>
+        <div class="eq">\[ \pi_t(a) = \Pr\{A_t=a\} = \frac{e^{H_t(a)}}{\sum_b e^{H_t(b)}} \]</div>
+        <p>Preferences are nudged up for actions that beat a running <em>baseline</em> (the average reward so far) and down otherwise, by stochastic gradient ascent. The preference has no meaning as a reward — only relative preferences matter. This is the first taste of <strong>policy-gradient</strong> methods, which act on a parameterized policy directly rather than through value estimates — a major theme after the mid-sem.</p>
+
+        <h3 id="cs2-results">What the testbed actually shows</h3>
+        <p>Running these methods on the 10-armed testbed gives the chapter's punchline: greedy improves fastest at the very start but plateaus low, because it locks onto an early favourite and never corrects. \(\varepsilon=0.1\) explores a lot and finds the best arm quickly but keeps making 10% random moves forever; \(\varepsilon=0.01\) learns slower but eventually overtakes it. The lesson: <em>some</em> exploration almost always beats none, and the right amount depends on the noise — noisier rewards reward more exploration, near-deterministic rewards reward greed.</p>
+
         <div class="bm-note"><strong>CS2–CS3 in one breath.</strong> k-armed bandit isolates explore/exploit. Each arm has a true value \(q_*(a)=\mathbb{E}[R\mid a]\); estimate it by averaging rewards (or incrementally: \(Q \leftarrow Q + \alpha(R-Q)\)). Greedy exploits; \(\varepsilon\)-greedy explores with prob \(\varepsilon\) so estimates converge. Constant \(\alpha\) for non-stationary worlds; optimistic initial values spur early exploration; the 10-armed testbed benchmarks it all.</div>
 
         <h2 id="cs3">CS3–CS5 — Markov decision processes</h2>
@@ -294,6 +307,21 @@ until v stops changing; then read off the greedy policy</pre>
 
         <div class="bm-warn"><strong>The catch with DP.</strong> It needs the <em>full model</em> p(s′,r\|s,a) and sweeps <em>every</em> state — infeasible when the model is unknown or the state space is huge. That limitation is exactly what motivates the next chapter: learning from sampled experience instead.</div>
 
+        <h3 id="cs4-pseudo">The algorithms, as pseudocode</h3>
+        <p>Both DP methods are short loops over the state set. Policy evaluation sweeps the expectation backup until values stop moving; value iteration sweeps the optimality backup instead:</p>
+        <pre class="code">Policy Evaluation (for v_π):           Value Iteration (for v_*):
+  init V(s)=0                            init V(s)=0
+  repeat:                                repeat:
+    for each s:                            for each s:
+      V(s) ← Σ_a π(a|s) ·                    V(s) ← max_a
+        Σ p(s',r|s,a)[r + γ V(s')]              Σ p(s',r|s,a)[r + γ V(s')]
+  until max change < θ                   until max change < θ
+  return V ≈ v_π                         return greedy policy w.r.t. V</pre>
+        <p>The <em>only</em> difference is the \(\max_a\) versus the \(\sum_a\pi(a\mid s)\) — the same swap that turns the Bellman expectation equation into the optimality equation. Both update <strong>in place</strong> (one array, overwrite as you go), which uses fresh values immediately and converges faster.</p>
+
+        <h3 id="cs4-worked">A tiny worked sweep</h3>
+        <p>Take two states \(A,B\) with \(\gamma=0.9\). Suppose from \(A\) the best action gives reward \(0\) and lands in \(B\) for sure, and \(B\) is terminal with value \(0\) but the action that reaches it earns \(+10\). One value-iteration sweep with \(V_0(A)=V_0(B)=0\): \(V_1(B)=\max(\cdot)=10\) (the terminal-reaching action), then \(V_1(A)=0+0.9\cdot V_0(B)=0\); next sweep \(V_2(A)=0+0.9\cdot V_1(B)=0.9\cdot10=9\). The value of \(B\)'s payoff "backs up" one state per sweep until \(V(A)=9\) stabilizes. That spreading of value outward from reward is exactly the grid-world animation made numeric.</p>
+
         <div class="bm-note"><strong>CS4–CS6 in one breath.</strong> If you know the MDP, solve it with DP. Policy evaluation iterates the Bellman expectation backup to get \(v_\pi\); policy improvement acts greedily on \(v_\pi\) (guaranteed no worse). Alternating them = policy iteration → optimal policy. Value iteration uses the Bellman optimality backup once per sweep → \(v_*\) directly. Both are instances of Generalized Policy Iteration. Limitation: needs the model and full sweeps.</div>
 
         <h2 id="cs6">CS6–CS7 — Monte Carlo methods</h2>
@@ -324,6 +352,11 @@ until v stops changing; then read off the greedy policy</pre>
         </ul>
 
         <div class="bm-note"><strong>The big trade-off MC introduces.</strong> DP needs a model but updates from full distributions (low variance, exact). MC needs no model but learns from sampled full-episode returns — so it must <em>wait until an episode ends</em> and its estimates are noisier (higher variance). This bias–variance, model vs model-free tension is the doorway to temporal-difference learning (TD, Q-learning, SARSA), which the post-mid-sem lectures build on top of these foundations.</div>
+
+        <h3 id="cs6-is">Importance sampling, a little deeper</h3>
+        <p>Off-policy learning needs to estimate returns under the target policy \(\pi\) from episodes generated by a different behaviour policy \(b\). The trick is to <strong>reweight</strong> each return by how much more (or less) likely its trajectory was under \(\pi\) than under \(b\) — the <strong>importance-sampling ratio</strong>:</p>
+        <div class="eq">\[ \rho_{t:T-1} = \prod_{k=t}^{T-1}\frac{\pi(A_k\mid S_k)}{b(A_k\mid S_k)} \]</div>
+        <p>Beautifully, the environment's unknown transition probabilities appear identically in numerator and denominator and <strong>cancel</strong> — so \(\rho\) depends only on the two policies and the actions taken, never on the model. The <strong>coverage</strong> assumption is required: any action \(\pi\) might take must be possible under \(b\) (\(\pi(a\mid s)>0\Rightarrow b(a\mid s)>0\)). There are two ways to average the reweighted returns: <strong>ordinary</strong> IS (divide by the number of episodes) is unbiased but can have enormous variance; <strong>weighted</strong> IS (divide by the sum of the \(\rho\)'s) is slightly biased but far lower variance, and is what you use in practice.</p>
 
         <div class="bm-note"><strong>CS6–CS7 in one breath.</strong> Monte Carlo = learn values by averaging actual returns from sampled episodes — model-free, episodic only. First-visit / every-visit MC estimate \(v_\pi\); estimate \(q_\pi\) directly for control. Ensure all state–action pairs are sampled via exploring starts, on-policy \(\varepsilon\)-soft, or off-policy with importance sampling. Same GPI loop as DP, but learned from experience instead of computed from a model.</div>
 

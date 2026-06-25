@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "kog-laneformer-monokernel",
+    title: "KOG LaneFormer-2B &amp; the monokernel — co-designing a model, runtime &amp; GPU kernel for batch-1 latency.",
+    date: "Jun 24, 2026",
+    cat: "ml",
+    tags: ["ml", "llm-inference", "gpu", "latency", "mi300x", "tensor-parallelism"],
+    time: 19,
+    words: 3700,
+    excerpt: "How KOG hit 3,000 output tokens/second on a single request (batch size 1) from a 2B model on 8× AMD MI300X — no quantization, no speculative decoding — by co-designing three layers usually owned separately: the model (LaneFormer-2B, lane-structured GQA + sliding-window), the parallelism (Delayed Tensor Parallelism, hiding the all-reduce behind δ layers of compute), and the runtime (a single persistent \"monokernel\" for the whole decode pass). Purely technical: why batch-1 decode is memory-bandwidth bound, a worked MBU ceiling, the kernel-launch arithmetic that forces fusion, publish-dependent (NaN-poll) sync, Gumbel-argmax sampling, and why vLLM/TensorRT-LLM hit a software ceiling below the hardware limit."
+  },
+  {
     slug: "build-your-own-ai-lab",
     title: "Build your own AI lab — the complete 2026 guide to self-hosting GLM-5.2, DeepSeek V4 &amp; friends.",
     date: "Jun 22, 2026",

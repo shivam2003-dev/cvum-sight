@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KOG LaneFormer-2B &amp; the monokernel — co-designing for batch-1 latency — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<script>
+MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .eq{background:rgba(240,192,64,.14);border-radius:6px;padding:10px 14px;margin:10px 0;overflow-x:auto;display:block;text-align:center}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Jun 24, 2026 · ml · 19 min read · 3700 words <span class="difficulty advanced">advanced</span></p>
+        <h1>KOG LaneFormer-2B &amp; the monokernel — co-designing a model, runtime, and GPU kernel for batch-1 latency.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">llm-inference</span>
+          <span class="tag">gpu</span>
+          <span class="tag">latency</span>
+          <span class="tag">mi300x</span>
+          <span class="tag">tensor-parallelism</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">KOG generate <strong>3,000 output tokens/second on a single request</strong> (batch size 1) from a 2B model on an 8× AMD MI300X node — and 2,100 tok/s on 8× NVIDIA H200 — with <strong>no quantization, no speculative decoding, no pruning</strong>. They do it by treating three things usually owned by three different teams as one co-designed system: the <strong>model</strong> (LaneFormer-2B), the <strong>parallelism scheme</strong> (Delayed Tensor Parallelism), and the <strong>GPU runtime</strong> (a single persistent "monokernel" for the whole decode pass). This is a purely technical walkthrough of how each piece works and why, at batch 1, the bottleneck is memory bandwidth and inter-GPU synchronization — not FLOPs.</p>
+
+        <h2 id="problem">The problem: batch-1 decode is a latency problem, not a throughput problem</h2>
+        <p>Almost all production LLM serving optimizes <strong>throughput</strong>: pack many requests into a big batch so the GPU's matrix engines stay busy and amortize fixed costs across tokens. That maximizes tokens/second/GPU but does nothing for the <em>latency of a single stream</em>. For a real-time agent — one that must read its own output, call a tool, and react inside a tight loop — what matters is how fast <em>one</em> request decodes. That is <strong>batch size 1</strong>, and it has completely different physics.</p>
+        <p>At batch 1, autoregressive decoding generates one token at a time, and producing each token requires reading <em>all</em> the active model weights out of HBM once. The math per layer is a matrix–<em>vector</em> product (GEMV), not a matrix–matrix product (GEMM). GEMV has <strong>very low arithmetic intensity</strong>: a handful of FLOPs per byte loaded. So the GPU's tensor cores sit mostly idle; the limiting resource is how fast you can stream weights through memory. The metric that matters is <strong>Memory-Bandwidth Utilization (MBU)</strong>, not FLOPs utilization.</p>
+        <div class="bm-note"><strong>The governing inequality.</strong> For a model of \(P\) parameters at \(b\) bytes each, one decoded token must move at least \(P\cdot b\) bytes of weights from HBM. If the GPU sustains \(B\) bytes/s of bandwidth, the theoretical floor on per-token time is \(t_{\min}=\tfrac{P\cdot b}{B}\), so the speed ceiling is \(\tfrac{B}{P\cdot b}\) tokens/s. Everything KOG do is an attempt to actually <em>reach</em> that ceiling instead of leaving most of the bandwidth unused — and to reduce \(P\cdot b\) via the model design.</div>
+
+        <h3 id="mbu-worked">A worked bandwidth ceiling</h3>
+        <p>Put numbers on it. LaneFormer-2B is ~2.3B parameters at FP16 (2 bytes), so the weights are about \(2.3\text{B}\times 2 = 4.6\) GB. One decoded token must stream all of them once. The model is tensor-parallel across 8 MI300X GPUs, each holding \(\tfrac18\) of the weights (~0.575 GB) and streaming its shard with its own ~4.3 TB/s of bandwidth — so the <em>effective</em> bandwidth for the whole model is roughly \(8\times 4.3 = 34.4\) TB/s:</p>
+        <div class="eq">\[ t_{\min} \approx \frac{4.6\ \text{GB}}{34.4\ \text{TB/s}} \approx 0.134\ \text{ms/token} \;\Longrightarrow\; \approx 7{,}500\ \text{tok/s (pure weight floor)} \]</div>
+        <p>The measured 3,000 tok/s is therefore around <strong>40% of the naive weight-only ceiling</strong> — consistent with the ~36% MBU they quote — with the remaining gap eaten by KV-cache streaming, the residual cross-GPU synchronization, attention math, and sampling. The point of the worked figure is the <em>shape</em> of the problem: you are nowhere near compute-bound; every microsecond not spent moving useful weight bytes is wasted ceiling. That is why the rest of the article is about removing overheads (launches, blocking comm, cache pollution) rather than adding compute tricks.</p>
+
+        <h2 id="codesign">The thesis: co-design, not a faster kernel bolted onto an existing model</h2>
+        <p>The central claim is that the fastest single-request inference comes from designing the model, the parallelism, and the runtime <em>together</em>. Standard stacks layer a generic model (defined in PyTorch) on top of a generic runtime (vLLM / TensorRT-LLM) on top of generic kernels (cuBLAS, CUTLASS, Triton, NCCL). Each layer is individually good, but the boundaries between them impose costs — kernel launches, intermediate tensors, blocking collectives — that dominate at batch 1. KOG instead build the whole vertical slice in-house and let decisions in one layer simplify another. Three pillars:</p>
+        <table class="papers">
+          <tr><th>Layer</th><th>KOG's choice</th><th>What it removes</th></tr>
+          <tr><td class="d">Model</td><td>LaneFormer-2B (lane-structured, GQA, sliding-window)</td><td>Excess weight &amp; KV streaming; awkward sharding</td></tr>
+          <tr><td class="d">Parallelism</td><td>Delayed Tensor Parallelism (DTP)</td><td>Per-layer blocking all-reduce</td></tr>
+          <tr><td class="d">Runtime</td><td>Single persistent monokernel (HIP/CUDA + inline asm)</td><td>Kernel launches, CPU scheduling, intermediate round-trips</td></tr>
+        </table>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+            <text x="20" y="24" class="smk" font-size="13">standard stack vs KOG co-design</text>
+            <rect x="40" y="44" width="200" height="30" class="box" rx="4"/><text x="140" y="64" class="sm" text-anchor="middle">model (PyTorch)</text>
+            <rect x="40" y="80" width="200" height="30" class="box" rx="4"/><text x="140" y="100" class="sm" text-anchor="middle">runtime (vLLM/TRT-LLM)</text>
+            <rect x="40" y="116" width="200" height="30" class="box" rx="4"/><text x="140" y="136" class="sm" text-anchor="middle">kernels (cuBLAS/NCCL)</text>
+            <text x="60" y="170" class="sm">boundaries = launches, copies,</text><text x="60" y="184" class="sm">blocking all-reduce</text>
+            <path class="arr" d="M260 95 H320" marker-end="url(#a)"/>
+            <rect x="340" y="60" width="300" height="86" class="boxg" rx="6"/>
+            <text x="490" y="88" class="smk" text-anchor="middle" font-size="12">one co-designed slice</text>
+            <text x="490" y="108" class="sm" text-anchor="middle">LaneFormer + DTP + monokernel</text>
+            <text x="490" y="126" class="sm" text-anchor="middle">no internal boundaries to pay for</text>
+            <defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 1 — the cost lives in the seams between layers; co-design removes the seams.</p>
+        </div>
+
+        <h2 id="laneformer">Pillar 1 — the LaneFormer-2B model</h2>
+        <p>LaneFormer is a Transformer variant whose layout is chosen for <strong>8-way splitting across the 8 GPUs of a node</strong>. The unit of split is a "lane," and the model is described in terms of one lane replicated eight times. Headline specs:</p>
+        <table class="papers">
+          <tr><th>Property</th><th>Value</th></tr>
+          <tr><td class="d">Total parameters</td><td>~2.3B</td></tr>
+          <tr><td class="d">Layers</td><td>15</td></tr>
+          <tr><td class="d">Attention</td><td>Causal Grouped-Query Attention (GQA)</td></tr>
+          <tr><td class="d">Heads</td><td>32 query heads, 16 key/value heads — evenly sharded across the 8 lanes</td></tr>
+          <tr><td class="d">Per-lane heads</td><td>4 Q, 2 K, 2 V (head dim 96) → 768 QKV outputs per lane</td></tr>
+          <tr><td class="d">Sliding-window attention</td><td>in 10 of the 15 layers</td></tr>
+          <tr><td class="d">Context length</td><td>4,096 (128k extension in progress)</td></tr>
+          <tr><td class="d">Precision</td><td>FP16 (no quantization)</td></tr>
+          <tr><td class="d">Tokenizer</td><td>Llama-2-based</td></tr>
+          <tr><td class="d">Training</td><td>~4T tokens pre-train + ~2T mid-train (code/reasoning) + ~210M post-train; via NVIDIA Nemotron datasets on 256 H100s</td></tr>
+          <tr><td class="d">Quality</td><td>~50% HumanEval (competitive at 2B scale)</td></tr>
+        </table>
+
+        <h3 id="why-gqa">Why GQA and sliding windows — both cut what you stream</h3>
+        <p>Every architectural choice serves the batch-1 bandwidth floor. <strong>Grouped-Query Attention</strong> shares each key/value head across several query heads (here 32 Q over 16 KV), which halves the <strong>KV cache</strong> that must be read every step relative to full multi-head attention. <strong>Sliding-Window Attention</strong> in 10 of 15 layers bounds how much of the KV cache each of those layers attends to, so KV streaming does not grow without limit as the context fills. Both are "conservative" choices — well-understood, not novel — deliberately so: the only genuinely new idea is the parallelism scheme, and the rest of the model is kept boring to isolate that variable.</p>
+
+        <h3 id="lanes">What a "lane" actually is</h3>
+        <p>A lane is a vertical slice of the model — its share of the attention heads and MLP — assigned to one GPU. Because heads divide evenly (32 Q / 8 lanes = 4 Q per lane; 16 KV / 8 = 2 KV per lane), each GPU owns a clean, equal partition with no ragged remainder. The QKV projection on a lane therefore emits exactly \(4\times96 + 2\times96 + 2\times96 = 768\) scalars per token. This evenness is not cosmetic: it means the monokernel's compile-time work partition (below) maps cleanly onto the hardware, and DTP's per-lane bookkeeping stays symmetric.</p>
+
+        <h2 id="dtp">Pillar 2 — Delayed Tensor Parallelism (DTP)</h2>
+        <p>Splitting a model across 8 GPUs with classic <strong>tensor parallelism (TP)</strong> means each GPU computes a partial result for every layer, and the partials must be summed across GPUs with an <strong>all-reduce</strong> before the next layer can start. At batch 1 that all-reduce is a disaster: it is a <em>blocking</em> collective on the critical path of every single layer, and once your kernels and weight streaming are already tuned, this communication becomes the dominant latency term.</p>
+        <p>Standard TP does, per layer \(n\):</p>
+        <div class="eq">\[ X^{(n+1)} = X^{(n)} + \sum_{l=1}^{L} o_l^{(n)} \qquad\text{(immediate all-reduce of the } L \text{ lane outputs)} \]</div>
+        <p>The question DTP asks: <em>can we hide that communication behind computation instead of paying it every layer?</em> The answer is to <strong>launch the communication early and consume it late</strong>. After a lane computes its output, it immediately ships it to the other GPUs — but instead of waiting, it keeps computing the next \(\delta\) layers using only <em>local</em> outputs. By the time those \(\delta\) layers are done, the data from the other lanes has landed, and it gets aggregated then. The schedule has three phases:</p>
+        <div class="eq">\[ \underbrace{\text{first } \delta \text{ layers: local only (scaled by } \sqrt{L})}_{\text{warm-up}} \;\to\; \underbrace{X_l^{(n+1)} = X_l^{(n)} + o_l^{(n)} + \!\!\sum_{j\neq l}\! o_j^{(n-\delta)}}_{\text{steady state: aggregate } \delta \text{ layers late}} \;\to\; \underbrace{\text{last } \delta \text{ layers: no comm}}_{\text{drain}} \]</div>
+        <p>In the steady state each lane folds in its <em>own</em> current output \(o_l^{(n)}\) plus the <em>other lanes'</em> outputs from \(\delta\) layers ago, \(o_j^{(n-\delta)}\). The delay \(\delta\) is chosen (calibrated to 2 layers for LaneFormer) to give the interconnect "enough time for communications from each device to land on the other devices." Crucially this is a <strong>training-time</strong> change as well as an inference one — the model is trained with the delayed aggregation baked in, so there is no accuracy penalty: KOG report training loss comparable to a fully-synchronized baseline.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="20" y="22" class="smk" font-size="13">standard TP: communication on the critical path</text>
+            <rect x="40" y="34" width="80" height="24" class="box" rx="3"/><text x="80" y="50" class="sm" text-anchor="middle">compute L1</text>
+            <rect x="124" y="34" width="90" height="24" class="boxy" rx="3"/><text x="169" y="50" class="sm" text-anchor="middle">all-reduce ⏸</text>
+            <rect x="218" y="34" width="80" height="24" class="box" rx="3"/><text x="258" y="50" class="sm" text-anchor="middle">compute L2</text>
+            <rect x="302" y="34" width="90" height="24" class="boxy" rx="3"/><text x="347" y="50" class="sm" text-anchor="middle">all-reduce ⏸</text>
+            <text x="40" y="92" class="smk" font-size="13">DTP: communication hidden behind compute</text>
+            <rect x="40" y="104" width="80" height="24" class="box" rx="3"/><text x="80" y="120" class="sm" text-anchor="middle">compute L1</text>
+            <rect x="124" y="104" width="80" height="24" class="box" rx="3"/><text x="164" y="120" class="sm" text-anchor="middle">compute L2</text>
+            <rect x="208" y="104" width="80" height="24" class="box" rx="3"/><text x="248" y="120" class="sm" text-anchor="middle">compute L3</text>
+            <rect x="124" y="134" width="240" height="18" class="boxg" rx="3"/><text x="244" y="147" class="sm" text-anchor="middle">comm for L1 flows in background, consumed at L3 (δ=2)</text>
+            <text x="40" y="185" class="sm">no ⏸ stalls — the interconnect runs while the ALUs run.</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — DTP turns a blocking per-layer all-reduce into background traffic consumed δ layers later.</p>
+        </div>
+
+        <div class="bm-fix"><strong>Why DTP is the keystone of the co-design.</strong> It only works because the <em>model</em> was designed and trained for it (the lane structure and the δ-delayed residual are part of the architecture), and because the <em>runtime</em> can launch async transfers and keep computing (the monokernel never returns to the CPU). Neither a stock model nor a stock runtime could express it. This is co-design paying off concretely.</div>
+
+        <h2 id="monokernel">Pillar 3 — the monokernel runtime</h2>
+        <p>The third pillar is the most extreme. Instead of launching a sequence of kernels (one for QKV projection, one for attention, one for the FFN, one for sampling, repeated per layer), KOG run the <strong>entire decode pass in a single persistent GPU kernel</strong> — a "monokernel." It launches once, stays resident, and never returns to the host until the token is produced.</p>
+
+        <h3 id="launch-cost">The arithmetic that forces this</h3>
+        <p>A kernel launch on the MI300X costs roughly <strong>4.5 µs</strong> of overhead, plus the HBM weight stream is interrupted at each boundary (~0.5 µs restart penalty) and intermediate tensors must be written to and read back from memory (>1 µs round-trip). Multiply by the number of kernels. KOG's illustrative figure: a 25-layer model at their working batch would burn about \(25\times(\text{several launches})\approx 1{,}125\,\mu s\) of pure launch overhead per token — capping speed near <strong>890 tokens/s before any other optimization</strong>. To beat that ceiling you cannot launch per stage; you must fuse everything into one resident program.</p>
+        <div class="eq">\[ \text{tokens/s ceiling from launches} \approx \frac{1}{N_{\text{launches}}\times t_{\text{launch}}} \;\Longrightarrow\; \text{drive } N_{\text{launches}}\to 1 \]</div>
+
+        <h3 id="partition">Compile-time work partition (no scheduler)</h3>
+        <p>Inside the monokernel there is <strong>no dynamic task scheduling</strong>. Work is partitioned across the hardware at compile time by the programmer. The kernel launches with fixed dimensions — on MI300X, <code>gridDim = (256,)</code> and <code>blockDim = (64, 8)</code> — mapping one logical block onto each of the 256 active Compute Units across the chip's 8 chiplets. Because the assignment is static, there is zero runtime overhead for "what should this CU do next" — it already knows.</p>
+        <pre class="code">// conceptual shape of the persistent kernel
+__global__ void decode_monokernel(...) {   // gridDim=256, blockDim=(64,8)
+  persistent: for each of the 15 layers {
+     qkv_projection();      // GEMV via dot2, FP32 accumulate, DPP wave-reduce
+     attention();           // 3-stage: per-CU → cross-CU softmax fix → out-proj
+     launch_dtp_comm();      // async ship lane output to peers (non-blocking)
+     ffn();                 // streams weights while attention of next runs
+     consume_dtp_comm(layer-δ);  // fold in peers' outputs from δ layers ago
+  }
+  sample();                 // argmax(logits + Gumbel noise), no full softmax
+}</pre>
+
+        <h3 id="streaming">Weight streaming — keeping HBM saturated</h3>
+        <p>Since batch-1 decode is bandwidth-bound, the whole game is keeping the HBM pipe full of <em>useful</em> weights. KOG use two loading paths: weights routed through AMD's <strong>64 KiB Local Data Share (LDS)</strong> for flexible thread access and lower register pressure, and direct <strong>register loads</strong> for the rest. All weight loads carry <strong>non-temporal (NT) scope bits</strong>, telling the cache "don't bother keeping these" — weights are read once per token and never reused, so caching them would only evict genuinely reusable data. The FFN (almost <strong>80% of each layer's weights</strong>) is prefetched <em>during</em> the compute-heavy attention stage, so its bytes are already arriving when it is time to use them. Offline, weights are pre-transformed (RMSNorm folded in, layouts repacked) so no rearrangement happens on the hot path.</p>
+
+        <h3 id="sync">Cross-GPU synchronization without atomics</h3>
+        <p>With DTP shipping partials between GPUs, the kernel still needs a fast way to know "has the peer's data arrived?" Conventional grid sync uses arrival counters with atomic increments and epoch numbers — KOG measured that at <strong>7.59–7.88 µs</strong>. They replace it with <strong>publish-dependent buffers</strong>: a destination buffer is initialized to a sentinel (NaN), and the consumer simply <em>polls that memory</em> until a real (non-NaN) value appears. No atomics, no counters. This drops synchronization latency to <strong>0.80–0.93 µs</strong> — roughly a 9× reduction. It matters because grid synchronization is about <strong>35% of token-generation time</strong>; they further flatten cross-die latency by duplicating tensors per I/O die (topology-aware placement).</p>
+
+        <h3 id="fused">The fused operations, briefly</h3>
+        <ul>
+          <li><strong>QKV projection</strong> — a GEMV computed on the scalar/vector ALUs with <code>dot2</code> instructions (not the matrix cores, which are wasted at batch 1), partial products accumulated in FP32 and reduced within a wavefront via Data-Parallel Primitive (DPP) ops.</li>
+          <li><strong>Attention</strong> — a three-stage pipeline: each CU computes attention over its tile of the KV cache, then a cross-CU aggregation applies the softmax correction (online-softmax style), then the output projection. Partitioning the sequence dimension across CUs avoids any single CU owning a long column.</li>
+          <li><strong>FFN</strong> — weight-streamed and overlapped with attention as above.</li>
+          <li><strong>Sampling</strong> — done with the <strong>Gumbel-max trick</strong>: \(\arg\max_i(\text{logit}_i + g_i)\) with \(g_i\) i.i.d. Gumbel noise is distributionally equivalent to sampling from the softmax, but requires no softmax normalization. Because lanes hold shards of the vocabulary, sharing a partially-reduced <em>argmax</em> instead of full probability vectors cuts cross-device vocabulary traffic by roughly 800%.</li>
+        </ul>
+
+        <h3 id="asm">Why it needed inline assembly</h3>
+        <p>The compiler could not always express what the design required, so the kernel uses targeted inline assembly: <code>__hip_atomic_load/store</code> with 3-dword (96-bit) data types and <code>global_load_dwordx3</code> with <code>sc1</code> scoped-L2-coherence bits (necessary on MI300X's chiplet memory), and manual <code>s_waitcnt</code> placement where the compiler could not track memory-ordering dependencies. They also had to inspect generated assembly to prevent Loop-Invariant Code Motion from causing register spills, and to stop the compiler inserting <code>s_waitcnt vmcnt(0)</code> barriers that would stall the very weight streaming the design depends on.</p>
+
+        <h2 id="ceiling">Why standard frameworks leave the bandwidth on the table</h2>
+        <p>A natural objection: vLLM and TensorRT-LLM are excellent and battle-tested — why can't they hit the same numbers? Because their generality, which is exactly what makes them good throughput servers, imposes batch-1 costs they cannot remove:</p>
+        <table class="papers">
+          <tr><th>Generic-stack cost</th><th>Effect at batch 1</th><th>Monokernel answer</th></tr>
+          <tr><td class="d">One kernel per stage/layer</td><td>~4.5 µs launch × many → an 890 tok/s-class ceiling</td><td>Single persistent kernel, launched once</td></tr>
+          <tr><td class="d">Intermediate tensors in HBM</td><td>&gt;1 µs store/load round-trip per boundary</td><td>Stages fused; activations stay in registers/LDS</td></tr>
+          <tr><td class="d">Blocking NCCL all-reduce per layer</td><td>Communication on the critical path</td><td>DTP — comm hidden behind δ layers of compute</td></tr>
+          <tr><td class="d">Atomic-counter grid sync</td><td>~7.8 µs per sync, ×35% of token time</td><td>Publish-dependent (NaN-poll) buffers, ~0.8 µs</td></tr>
+          <tr><td class="d">Cache-resident weights</td><td>Single-use weights evict reusable data</td><td>Non-temporal load hints</td></tr>
+          <tr><td class="d">Matrix cores for GEMV</td><td>Tensor cores idle at low arithmetic intensity</td><td>Scalar/vector ALU <code>dot2</code> + DPP reductions</td></tr>
+        </table>
+        <p>None of these is a flaw in the generic frameworks; each is the price of supporting arbitrary models, arbitrary batch sizes, and a clean module boundary between model code and runtime. KOG trade that generality away — their stack runs <em>their</em> model on <em>their</em> runtime — and recover the difference. That is the whole bet: a "software ceiling" sits well below the hardware's physical bandwidth limit, and you reach the hardware limit only by collapsing the software layers that created the ceiling. The reported 3.5× speedup over standard frameworks on Instinct is the size of that gap.</p>
+
+        <h2 id="results">The numbers, and what they're bounded by</h2>
+        <table class="papers">
+          <tr><th>Node</th><th>Tokens/s per request (batch 1)</th><th>Precision</th></tr>
+          <tr><td class="d">8× AMD MI300X</td><td>3,000+</td><td>FP16</td></tr>
+          <tr><td class="d">8× NVIDIA H200</td><td>2,100</td><td>FP16</td></tr>
+        </table>
+        <p>For reference, the MI300X result is in the same range KOG cite for purpose-built wafer-scale hardware (Cerebras WSE quoted at ~3,000 tok/s on a much larger model), achieved here on standard datacenter GPUs. The MI300X provides ~<strong>4.3 TB/s</strong> empirical bandwidth, and the entire stack exists to convert as much of that as possible into tokens. KOG also report a <strong>3.5×</strong> generation speedup versus standard frameworks on AMD Instinct — the gap they attribute to those frameworks hitting a "software ceiling" (launch overhead, blocking collectives, cache pollution) well below the hardware's physical limit.</p>
+        <div class="bm-warn"><strong>Read the result precisely.</strong> "3,000 tokens/s" here is <em>per single request at batch 1</em>, not aggregate node throughput. A throughput-optimized server batching dozens of requests will report a much larger tokens/s/node number while delivering far <em>worse</em> single-stream latency. The two regimes optimize opposite quantities; KOG deliberately target the latency one because real-time agents live or die on single-stream speed.</div>
+
+        <h2 id="agent-loop">What 3,000 tok/s actually buys an agent</h2>
+        <p>The latency framing only matters if the number crosses a useful threshold. 3,000 tokens/s is <strong>~0.33 ms per token</strong>; 2,100 tok/s is ~0.48 ms. An agent that must emit, say, a 200-token tool call and then react sees that step complete in ~67 ms at MI300X speed versus several hundred milliseconds on a throughput-tuned server delivering a few hundred single-stream tok/s. For a loop that runs many such steps — plan, call, read result, revise — the difference compounds into the gap between an agent that feels interactive and one that feels like a batch job. This is the workload KOG explicitly target: single-request, low-latency, tight agentic loops, where you genuinely cannot batch because there is only one logical conversation in flight and each step depends on the last. Throughput servers win on cost-per-token at scale; latency engines win here, and the two are not substitutes.</p>
+
+        <h2 id="nvidia">The NVIDIA port — same idea, different floor</h2>
+        <p>The headline 3,000 tok/s is on AMD MI300X, but KOG built the same monokernel design for NVIDIA, reaching <strong>2,100 tok/s/request on an 8× H200 node</strong>. The architecture-level ideas port directly — single persistent kernel, DTP, NT weight streaming, polling sync, Gumbel-argmax sampling — because none of them depend on a vendor; they depend on the <em>shape</em> of batch-1 decode. What changes is the low-level substrate: HIP and AMD-specific inline assembly (chiplet-scoped <code>sc1</code> coherence bits, <code>dot2</code>/DPP, LDS sizing) become CUDA and the H200's own memory hierarchy and bandwidth. The fact that the same co-design wins on both vendors is itself evidence that the gains come from removing software overheads, not from exploiting one chip's quirk — the quirks only decide <em>where</em> the new, higher ceiling sits.</p>
+
+        <h2 id="scaling">Scaling the idea to frontier models</h2>
+        <p>A 2B model fits comfortably and streams fast; the interesting question is whether the approach survives at frontier scale. KOG's projection applies the same MBU-bound reasoning to large MoE models with quantization: for a DeepSeek-V4-class system (~49B active parameters per token, FP8/MXFP4), they estimate roughly <strong>305–1,410 tokens/s per request</strong> depending on GPU generation, assuming a conservative 36% MBU. The active-parameter count of MoE is what makes this plausible — only the active experts' weights stream per token, so a 1.6T-total model can behave, bandwidth-wise, like a ~49B one. The stated target band is <strong>1,000–5,000 tok/s/request on standard datacenter GPUs</strong> as hardware improves.</p>
+
+        <h2 id="takeaways">Technical takeaways</h2>
+        <ul>
+          <li><strong>Batch-1 latency is a memory-bandwidth problem.</strong> Optimize MBU, not FLOPs; the per-token floor is \(P\cdot b / B\).</li>
+          <li><strong>The boundaries between model, runtime, and kernel are where latency hides.</strong> Kernel launches (~4.5 µs each), blocking all-reduce, and intermediate round-trips dominate once the math itself is tuned.</li>
+          <li><strong>Delayed Tensor Parallelism</strong> removes per-layer communication from the critical path by launching transfers early and consuming them \(\delta\) layers later — and it is trained in, so accuracy is preserved.</li>
+          <li><strong>The monokernel</strong> fuses the whole decode pass into one persistent kernel with compile-time work partition, NT weight streaming, FFN/attention overlap, polling-based sync (0.8 µs vs 7.8 µs), and Gumbel-argmax sampling.</li>
+          <li><strong>The model is deliberately conservative</strong> (GQA, sliding window, even head sharding) so that the one genuinely new idea — DTP — can be isolated, and so that what must stream per token is as small and as evenly distributed as possible.</li>
+        </ul>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="https://huggingface.co/blog/kogai/kog-laneformer-2b-the-latency-first-model" target="_blank" rel="noopener">KOG — LaneFormer-2B: the latency-first model (Hugging Face)</a> <span>· model architecture, GQA, lanes, training</span></li>
+          <li><a href="https://blog.kog.ai/real-time-llm-inference-on-standard-gpus-3-000-tokens-s-per-request/" target="_blank" rel="noopener">KOG — Real-time LLM inference on standard GPUs (3,000 tok/s/request)</a> <span>· the co-design overview &amp; numbers</span></li>
+          <li><a href="https://blog.kog.ai/building-a-single-kernel-latency-optimized-llm-inference-engine-on-amd-mi300x-gpus/" target="_blank" rel="noopener">KOG — Single-kernel, latency-optimized inference on MI300X</a> <span>· the monokernel deep dive</span></li>
+          <li><a href="https://blog.kog.ai/delayed-tensor-parallelism-for-faster-transformer-inference/" target="_blank" rel="noopener">KOG — Delayed Tensor Parallelism</a> <span>· the DTP method &amp; schedule</span></li>
+          <li><a href="https://www.amd.com/en/blogs/2025/kog-reaches-3-5x-breakthrough-inference-speed-on-amd-instinct-mi.html" target="_blank" rel="noopener">AMD — KOG reaches 3.5× inference speed on Instinct MI300X</a> <span>· independent corroboration</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="build-your-own-ai-lab.html">← prev: build your own AI lab</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

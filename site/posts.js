@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "frontier-digest-001",
+    title: "Frontier Digest #1 — orchestrators, agent memory, and a reckoning on evaluation.",
+    date: "Jun 24, 2026",
+    cat: "ml",
+    tags: ["ml", "papers", "agents", "orchestration", "evaluation", "weekly"],
+    time: 15,
+    words: 3000,
+    excerpt: "Edition #1 of a weekly AI-research digest — ten papers from the past seven days, threaded into themes instead of listed. The throughline: agents are becoming engineered systems (Sakana Fugu's orchestrator-as-a-model, Agent-as-a-Router, Skill-MAS, Agent-Native Memory, Autodata) while evaluation gets a hard audit (Reliability without Validity's 541k-judgment study, NatureBench's 17.8% science ceiling, an LLM-as-a-Judge lab). Plus Critique of the Agent Model's agentic-vs-agentive line, an agent-communication-protocol taxonomy, and A Pinch of Human Data. With a one-glance table, per-paper cards, cross-links, and a patterns-this-week synthesis.",
+    series: "frontier-digest",
+    seriesNum: "001"
+  },
+  {
     slug: "kog-laneformer-monokernel",
     title: "KOG LaneFormer-2B &amp; the monokernel — co-designing a model, runtime &amp; GPU kernel for batch-1 latency.",
     date: "Jun 24, 2026",

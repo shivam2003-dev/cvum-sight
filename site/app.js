@@ -176,7 +176,8 @@
       deepseek: "DeepSeek",
       "ai-tools": "AI Coding Tools",
       flashattention: "FlashAttention",
-      "yc-paper-club": "YC Paper Club"
+      "yc-paper-club": "YC Paper Club",
+      gpu: "Silicon to Scale"
     };
     const seenSeries = {};
     const collapsed = [];
@@ -215,7 +216,8 @@
         const seriesHubs = {
           deepseek: "series-deepseek.html",
           "ai-tools": "series-ai-tools.html",
-          "yc-paper-club": "series-yc-paper-club.html"
+          "yc-paper-club": "series-yc-paper-club.html",
+          gpu: "series-gpu.html"
         };
         const href = seriesHubs[item.key] || `posts/${escapeHtml(p.slug)}.html`;
         return `<li>

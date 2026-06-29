@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUDA Kernel Optimization &amp; the Roofline Model — cvam.sight</title>
+<meta name="description" content="A repeatable method for making GPU kernels fast: the Roofline model, arithmetic intensity, the optimization-technique taxonomy, and tuning occupancy — applied to real ML kernels.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.9rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">GPU Programming &amp; Optimization · Phase 2 — Optimization</p>
+        <p class="series-banner-title">Kernel Optimization &amp; the Roofline Model</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 3 of 6 · Phase 2 of 3</p>
+        <div class="series-banner-nav">
+          <a href="gpu-1-1-architecture.html" class="done">1.1 Architecture</a>
+          <a href="gpu-1-2-memory.html" class="done">1.2 Memory</a>
+          <a href="gpu-2-1-optimization.html" class="active">2.1 Optimize</a>
+          <a href="gpu-2-2-tooling.html">2.2 Tooling</a>
+          <a href="gpu-3-1-multi-gpu.html">3.1 Multi-GPU</a>
+          <a href="gpu-3-2-datacenter.html">3.2 Datacenter</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 29, 2026 · ml · 24 min read · 4900 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Kernel optimization &amp; the Roofline model.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">gpu</span>
+          <span class="tag">cuda</span>
+          <span class="tag">roofline</span>
+          <span class="tag">optimization</span>
+          <span class="tag">phase-2</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Before you optimize, find out what is limiting you. The <strong>Roofline model</strong> answers one question — "is this kernel compute-bound or memory-bound?" — and that answer tells you which optimizations can possibly help. Then there is a small, well-studied toolbox of techniques (the optimization taxonomy from Hijma et al.): improve memory access, increase parallelism, reduce instruction overhead, use the memory hierarchy, and exploit hardware units. This article is the method: measure the ceiling, find the bottleneck, apply the matching technique, repeat.</p>
+
+        <p>Phase 1 gave you the rules the hardware rewards. But knowing the rules is not the same as knowing <em>which</em> rule to apply to <em>this</em> kernel. Spending a day perfecting coalescing on a kernel that is actually compute-bound is wasted effort. Optimization without measurement is guessing. So Phase 2 starts with the single most useful analytical tool in GPU performance — the Roofline model — and then organizes the techniques into a taxonomy you can match against the bottleneck it reveals.</p>
+
+        <h2>Arithmetic intensity: the number that decides everything</h2>
+
+        <p>Every kernel has a fundamental ratio: how much arithmetic it does per byte it moves from memory. This is <strong>arithmetic intensity</strong> (AI), measured in FLOPs per byte.</p>
+
+        <div class="eq">arithmetic intensity = (floating-point operations) / (bytes moved from DRAM)</div>
+
+        <p>It is a property of the <em>algorithm and its data movement</em>, not of the hardware. Some examples make it concrete:</p>
+
+        <table class="papers">
+          <thead><tr><th>Operation</th><th>Arithmetic intensity</th><th>Character</th></tr></thead>
+          <tbody>
+            <tr><td>Vector add (<code>c = a + b</code>)</td><td class="d">~0.08 FLOP/byte</td><td>deeply memory-bound</td></tr>
+            <tr><td>SAXPY / element-wise scale</td><td class="d">~0.17 FLOP/byte</td><td>memory-bound</td></tr>
+            <tr><td>Attention / softmax (naive)</td><td class="d">~1–10 FLOP/byte</td><td>memory-bound</td></tr>
+            <tr><td>Dense matrix multiply (large, tiled)</td><td class="d">~50–250 FLOP/byte</td><td>compute-bound</td></tr>
+            <tr><td>Convolution (well-tiled)</td><td class="d">~tens FLOP/byte</td><td>borderline → compute-bound</td></tr>
+          </tbody>
+        </table>
+
+        <p>Vector add does one add for every 12 bytes it touches (two 4-byte reads, one 4-byte write) — its intensity is hopelessly low, so it will <em>always</em> be limited by memory bandwidth no matter how fast the ALUs are. Matrix multiply, by contrast, does O(N³) work on O(N²) data, so its intensity grows with size and it becomes compute-bound. This single ratio predicts which wall you will hit.</p>
+
+        <h2>The Roofline model</h2>
+
+        <p>The Roofline model (Williams, Waterman &amp; Patterson) plots achievable performance (FLOP/s, vertical) against arithmetic intensity (FLOP/byte, horizontal), both on log scales. It draws two ceilings — the "roofline":</p>
+
+        <ul>
+          <li>A <strong>sloped roof</strong> on the left: the memory-bandwidth ceiling. Performance here = arithmetic intensity × peak memory bandwidth. Low-intensity kernels are capped by how fast you can stream bytes.</li>
+          <li>A <strong>flat roof</strong> on the right: the peak compute ceiling. Performance here = the GPU's peak FLOP/s. High-intensity kernels are capped by raw arithmetic throughput.</li>
+        </ul>
+
+        <p>The two meet at the <strong>ridge point</strong> — the arithmetic intensity at which a kernel transitions from memory-bound to compute-bound. For an H100 with ~3.35 TB/s HBM3 and ~67 TFLOP/s FP64 (or far more for Tensor-Core formats), the ridge sits around 20–60 FLOP/byte depending on the precision you compare. Anything to the left of the ridge is memory-bound; anything to the right is compute-bound.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 320" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">The Roofline model — where does your kernel sit?</text>
+            <!-- axes -->
+            <line x1="80" y1="270" x2="630" y2="270" class="ink" stroke="#2a2620" stroke-width="1.5"/>
+            <line x1="80" y1="50" x2="80" y2="270" class="ink" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="350" y="300" class="sm" text-anchor="middle">arithmetic intensity (FLOP/byte) — log scale →</text>
+            <text x="30" y="160" class="sm" text-anchor="middle" transform="rotate(-90 30 160)">attainable FLOP/s (log) →</text>
+            <!-- sloped roof -->
+            <line x1="80" y1="270" x2="320" y2="90" stroke="#c96442" stroke-width="2.5"/>
+            <text x="150" y="175" class="sm" transform="rotate(-37 150 175)" style="fill:#c96442">memory BW bound (slope = bandwidth)</text>
+            <!-- flat roof -->
+            <line x1="320" y1="90" x2="630" y2="90" stroke="#2a2620" stroke-width="2.5"/>
+            <text x="470" y="82" class="sm" text-anchor="middle">peak compute ceiling</text>
+            <!-- ridge point -->
+            <circle cx="320" cy="90" r="5" fill="#f0c040" stroke="#2a2620"/>
+            <line x1="320" y1="90" x2="320" y2="270" stroke="#948a78" stroke-width="1" stroke-dasharray="4 3"/>
+            <text x="320" y="285" class="sm" text-anchor="middle">ridge</text>
+            <!-- kernels -->
+            <circle cx="150" cy="220" r="6" class="boxr"/><text x="150" y="240" class="sm" text-anchor="middle">vector add</text>
+            <circle cx="230" cy="155" r="6" class="boxr"/><text x="230" y="140" class="sm" text-anchor="middle">attention</text>
+            <circle cx="460" cy="120" r="6" class="boxg"/><text x="460" y="140" class="sm" text-anchor="middle">naive GEMM</text>
+            <circle cx="500" cy="92" r="6" class="boxg"/><text x="540" y="108" class="sm" text-anchor="middle">tiled GEMM (near roof)</text>
+            <text x="180" y="60" class="sm" style="fill:#6a8f5f">↑ optimize toward the roof above your point</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — A kernel's arithmetic intensity places it under the sloped (memory) or flat (compute) roof. Optimization moves a point up toward its ceiling; the ceiling itself tells you which techniques can help.</p>
+        </div>
+
+        <p>The Roofline model's power is diagnostic. Plot your kernel's measured performance as a point. If it sits far below the roofline directly above it, you have headroom — and the kernel's <em>position relative to the ridge</em> tells you which direction to push:</p>
+
+        <ul>
+          <li><strong>Memory-bound and below the sloped roof:</strong> you are wasting bandwidth. Apply memory techniques — coalescing, caching/reuse in shared memory, fewer/larger transactions. Adding FLOPs will not help.</li>
+          <li><strong>Compute-bound and below the flat roof:</strong> you are wasting ALU throughput. Apply compute techniques — better instruction mix, Tensor Cores, lower precision, removing redundant work, fixing divergence.</li>
+          <li><strong>Already near the roofline:</strong> the kernel is close to optimal for its intensity. The only way up is to <em>change the algorithm's intensity</em> — e.g. fuse operations so you move fewer bytes per FLOP, pushing the point rightward toward the ridge.</li>
+        </ul>
+
+        <div class="bm-note"><strong>This is why fusion matters so much.</strong> Operator fusion (combining several ops into one kernel) does not add arithmetic — it removes the intermediate writes and reads to HBM between ops. That raises arithmetic intensity, sliding a memory-bound point rightward toward the ridge and a higher ceiling. FlashAttention is the famous example: it fuses the whole attention computation to avoid materializing the giant N×N score matrix in HBM, turning a memory-bound operation into a far faster one.</div>
+
+        <h2>The optimization taxonomy</h2>
+
+        <p>Hijma et al.'s survey of GPU optimization techniques organizes the field into a handful of families. Rather than a grab-bag of tricks, think of them as categories you select from based on what the Roofline told you. The five families:</p>
+
+        <h3>1. Memory access optimizations</h3>
+        <p>The highest-leverage family for the (very common) memory-bound case. Covered in depth in article 1.2: <strong>coalescing</strong> global access, <strong>Struct-of-Arrays</strong> layout, using <strong>shared memory</strong> for reuse, avoiding <strong>bank conflicts</strong>, and using <strong>read-only/constant caches</strong> (<code>__ldg</code>, <code>__constant__</code>) for data all threads share. The goal is fewer bytes moved and every moved byte used.</p>
+
+        <h3>2. Increasing parallelism &amp; occupancy</h3>
+        <p>Make sure the SMs have enough independent work to hide latency: right-size thread blocks, expose more parallelism in the algorithm, manage register/shared-memory pressure so occupancy is sufficient. This is where the <strong>Occupancy Calculator</strong> earns its keep (next section). Remember the lesson from 1.2: aim for <em>enough</em> occupancy, not maximum.</p>
+
+        <h3>3. Reducing instruction overhead</h3>
+        <p>Do less work per useful result: <strong>loop unrolling</strong> (<code>#pragma unroll</code>) to cut loop-control instructions, <strong>fast math intrinsics</strong> (<code>__sinf</code>, <code>__expf</code>, <code>--use_fast_math</code>) when precision allows, replacing expensive division/modulo with shifts and multiplies, and minimizing redundant address computation. Most useful for compute-bound kernels.</p>
+
+        <h3>4. Exploiting the memory hierarchy &amp; data reuse</h3>
+        <p>The fusion/tiling family: <strong>tiling</strong> to maximize reuse, <strong>register blocking</strong> (each thread computes several outputs so loaded values are reused in registers), and <strong>kernel fusion</strong> to keep intermediates on-chip. This is what raises arithmetic intensity and moves you toward the ridge.</p>
+
+        <h3>5. Exploiting specialized hardware</h3>
+        <p>Use the units the GPU built for your problem: <strong>Tensor Cores</strong> for matrix math (via CUTLASS, cuBLAS, or WMMA intrinsics), <strong>asynchronous copy</strong> (<code>cp.async</code>, TMA) to overlap memory movement with compute, <strong>warp-level primitives</strong> (<code>__shfl_sync</code> for register-to-register exchange without shared memory), and <strong>lower precision</strong> (FP16/BF16/FP8) to double or quadruple effective throughput and halve memory traffic.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">Match the technique family to the Roofline diagnosis</text>
+            <rect x="40" y="45" width="280" height="150" class="boxr" rx="6"/>
+            <text x="180" y="68" class="smk" text-anchor="middle" style="font-weight:bold">MEMORY-BOUND</text>
+            <text x="180" y="92" class="sm" text-anchor="middle">→ coalesce &amp; SoA layout</text>
+            <text x="180" y="112" class="sm" text-anchor="middle">→ shared-memory tiling</text>
+            <text x="180" y="132" class="sm" text-anchor="middle">→ fuse ops (raise intensity)</text>
+            <text x="180" y="152" class="sm" text-anchor="middle">→ lower precision (fewer bytes)</text>
+            <text x="180" y="172" class="sm" text-anchor="middle">→ async copy to overlap</text>
+            <rect x="360" y="45" width="280" height="150" class="boxg" rx="6"/>
+            <text x="500" y="68" class="smk" text-anchor="middle" style="font-weight:bold">COMPUTE-BOUND</text>
+            <text x="500" y="92" class="sm" text-anchor="middle">→ Tensor Cores / WMMA</text>
+            <text x="500" y="112" class="sm" text-anchor="middle">→ fix warp divergence</text>
+            <text x="500" y="132" class="sm" text-anchor="middle">→ unroll &amp; fast intrinsics</text>
+            <text x="500" y="152" class="sm" text-anchor="middle">→ remove redundant work</text>
+            <text x="500" y="172" class="sm" text-anchor="middle">→ lower precision (more FLOP/s)</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — The Roofline diagnosis routes you to a technique family. Lower precision appears on both sides — it helps memory <em>and</em> compute, which is why it is so universally applied in deep learning.</p>
+        </div>
+
+        <h2>The Occupancy Calculator in practice</h2>
+
+        <p>From article 1.2 you know occupancy is a <code>min()</code> over register, shared-memory, and block limits. The Occupancy Calculator turns that into concrete numbers. The modern workflow:</p>
+
+        <pre class="code"># 1. See per-thread register + shared-memory usage at compile time
+nvcc -Xptxas -v -o kernel kernel.cu
+# ptxas info: Used 48 registers, 12288 bytes smem
+
+# 2. Query the achievable occupancy from the runtime API
+int blocks;
+cudaOccupancyMaxActiveBlocksPerMultiprocessor(&amp;blocks, myKernel, 256, 0);
+# blocks = how many 256-thread blocks fit per SM
+
+# 3. Let the runtime pick a good block size for you
+int minGrid, blockSize;
+cudaOccupancyMaxPotentialBlockSize(&amp;minGrid, &amp;blockSize, myKernel, 0, 0);</pre>
+
+        <p>The calculator's real value is showing you the <em>limiting resource</em>. If it reports that registers cap you at 50% occupancy, you can cap registers with <code>__launch_bounds__(256, 4)</code> (telling the compiler "I want at least 4 blocks of 256 threads per SM"), which trades a little per-thread register budget for more resident warps — and then you <em>measure</em> whether it actually helped, because, as always, more occupancy is not automatically faster.</p>
+
+        <h2>Optimizing ML kernels specifically</h2>
+
+        <p>The Niteesh &amp; Ampareeshan analysis of optimizing ML models with CUDA highlights how these general techniques specialize for deep learning, where the workload is dominated by big matrix multiplies and element-wise ops:</p>
+
+        <ul>
+          <li><strong>Mixed precision is the biggest single lever.</strong> Training and inference in FP16/BF16 (with FP32 accumulation) roughly doubles Tensor-Core throughput and halves memory traffic — helping on both axes of the Roofline. FP8 on Hopper pushes this further. This is why every modern training stack defaults to mixed precision.</li>
+          <li><strong>Fuse the element-wise tail.</strong> A matmul followed by bias-add, activation, and dropout should be one fused kernel, not four. Each separate kernel would round-trip the activations through HBM; fusion keeps them in registers/shared memory. Libraries like cuDNN and compilers like Triton/torch.compile do this automatically, but understanding <em>why</em> lets you spot when they fail to.</li>
+          <li><strong>Pick the right library before writing a kernel.</strong> cuBLAS and cuDNN contain hand-tuned, architecture-specific GEMM and convolution kernels that are extremely hard to beat. The optimization skill is often knowing when to call them vs when a fused custom kernel (CUTLASS, Triton) wins — typically when your shape is unusual or you can fuse surrounding ops the library cannot.</li>
+          <li><strong>Batch to raise intensity.</strong> A single-sequence inference is memory-bound (low intensity); batching many requests amortizes the weight loads over more compute, sliding the operation toward the compute roof. This is the core economics of inference serving and connects directly to Phase 3.</li>
+        </ul>
+
+        <h2>A worked optimization session</h2>
+
+        <p>Here is the method end to end on a hypothetical slow kernel, in the order you would actually do it:</p>
+
+        <ol>
+          <li><strong>Measure first.</strong> Run the kernel under Nsight Compute (article 2.2). It reports achieved FLOP/s, memory throughput, and where you sit on the Roofline. Say it shows 15% of peak memory bandwidth and 3% of peak compute — clearly memory-bound and far below the sloped roof.</li>
+          <li><strong>Check coalescing.</strong> The profiler's memory-transaction efficiency is 18%. That points straight at a strided access. Fix the indexing so thread <code>i</code> hits element <code>i</code>. Re-measure: bandwidth jumps to 60%.</li>
+          <li><strong>Add reuse.</strong> The kernel re-reads the same input across threads. Tile it into shared memory. Now arithmetic intensity rises and the point moves right; bandwidth pressure drops and the kernel speeds up again.</li>
+          <li><strong>Tune occupancy.</strong> The Occupancy Calculator says shared memory now limits you to 33%. Shrink the tile slightly or adjust block size; re-measure. Maybe it helps, maybe it does not — only the measurement decides.</li>
+          <li><strong>Consider fusion / precision.</strong> If a neighboring element-wise op exists, fuse it. If precision allows, drop to FP16. Re-measure against the new ceiling.</li>
+          <li><strong>Stop when near the roofline.</strong> Once the point is close to the ceiling above it, further micro-optimization has diminishing returns. The kernel is as fast as its algorithm allows on this hardware.</li>
+        </ol>
+
+        <div class="bm-warn"><strong>The cardinal rule: never optimize without measuring before and after.</strong> Intuition about GPU performance is wrong often enough that every change must be validated by the profiler. A "clearly faster" rewrite that the data says is slower is extremely common — register pressure, occupancy cliffs, and cache effects routinely defy intuition. Measure, change one thing, measure again.</div>
+
+        <h2>Common pitfalls</h2>
+        <div class="bm-note">
+          <p><strong>Optimizing the wrong bound.</strong> Polishing coalescing on a compute-bound kernel (or adding Tensor Cores to a memory-bound one) yields nothing. Always Roofline first.</p>
+          <p><strong>Chasing occupancy as a goal.</strong> Covered twice now because it is the most common trap. Occupancy is a means to latency hiding, full stop.</p>
+          <p><strong>Premature kernel-writing.</strong> cuBLAS/cuDNN/CUTLASS often beat a hand-written kernel by a wide margin. Reach for a custom kernel when you can fuse or your shape is odd — not by default.</p>
+          <p><strong>Ignoring launch overhead.</strong> For many tiny kernels, the per-launch overhead dominates. Fuse them or use CUDA Graphs to amortize launch cost.</p>
+        </div>
+
+        <h2>FAQ</h2>
+        <details class="faq"><summary>How do I find my kernel's arithmetic intensity without hand-counting FLOPs?</summary><p>Nsight Compute reports it directly — it counts executed floating-point instructions and DRAM bytes and can plot your kernel on a Roofline chart for you. You rarely need to compute it by hand; you use the hand calculation to sanity-check the profiler and to reason about algorithm changes.</p></details>
+        <details class="faq"><summary>Is the Roofline ridge point the same for every GPU?</summary><p>No — it depends on the ratio of peak compute to peak bandwidth, which differs by GPU and by precision. An H100 comparing FP8 Tensor-Core peak against HBM3 has a very different ridge than the same chip comparing FP64. Always Roofline against the specific peak FLOP/s for the precision you actually use.</p></details>
+        <details class="faq"><summary>Does lower precision ever hurt?</summary><p>Numerically, yes — FP16 has limited range and can overflow/underflow, which is why mixed precision keeps a FP32 master copy and accumulates in FP32. FP8 needs careful scaling. The speed is nearly free; the cost is the engineering to keep training stable, which mature frameworks now handle for you.</p></details>
+        <details class="faq"><summary>When is loop unrolling worth it?</summary><p>When loop-control overhead is a meaningful fraction of the loop body — short, hot inner loops with small trip counts. For long loops with heavy bodies, unrolling barely helps and can hurt by raising register pressure and lowering occupancy. Let the profiler decide.</p></details>
+        <details class="faq"><summary>What's the difference between cuBLAS and CUTLASS?</summary><p>cuBLAS is a closed, pre-tuned library you call. CUTLASS is an open template library that lets you <em>build</em> GEMM-like kernels and fuse custom epilogues into them. Use cuBLAS for standard matmuls; use CUTLASS when you need to fuse or customize. Both are covered in article 2.2.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li><strong>Arithmetic intensity</strong> (FLOP/byte) is a property of your algorithm and decides which wall you hit.</li>
+          <li>The <strong>Roofline model</strong> diagnoses memory-bound vs compute-bound and shows your headroom to the ceiling.</li>
+          <li>The optimization <strong>taxonomy</strong> — memory access, parallelism/occupancy, instruction overhead, hierarchy/reuse, specialized hardware — is selected by the Roofline diagnosis.</li>
+          <li><strong>Fusion</strong> raises intensity by removing HBM round-trips — the highest-leverage change for memory-bound ML kernels.</li>
+          <li>Use the <strong>Occupancy Calculator</strong> to find the limiting resource; tune it, then <em>measure</em>.</li>
+          <li><strong>Mixed precision</strong> helps both axes and is the single biggest lever for deep learning kernels.</li>
+          <li>Never optimize without measuring before and after.</li>
+        </ul>
+
+        <p>Next, <strong>article 2.2</strong> covers the toolchain that makes all of this measurable and writable: Nsight Systems and Nsight Compute for profiling, and CUTLASS, TensorRT, Triton, and Helion for actually producing fast kernels without hand-writing PTX.</p>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://dl.acm.org/doi/10.1145/1498765.1498785" target="_blank">Williams, Waterman &amp; Patterson — <em>Roofline: An Insightful Visual Performance Model</em></a> <span>— the original Roofline paper.</span></li>
+          <li><a href="https://doi.org/10.1002/cpe.3284" target="_blank">Hijma et al. — <em>Optimization Techniques for GPU Programming</em></a> <span>— the survey behind the technique taxonomy.</span></li>
+          <li><a href="https://www.researchgate.net/" target="_blank">Niteesh &amp; Ampareeshan — <em>Optimizing Machine Learning Models with CUDA: A Comprehensive Performance Analysis</em></a> <span>— mixed precision, fusion, and library choice for ML.</span></li>
+          <li><a href="https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/" target="_blank">CUDA C++ Best Practices Guide</a> <span>— the canonical optimization checklist.</span></li>
+          <li><a href="https://developer.nvidia.com/blog/cuda-pro-tip-occupancy-api-simplifies-launch-configuration/" target="_blank">NVIDIA — Occupancy API &amp; launch configuration</a> <span>— using the calculator from code.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="gpu-1-2-memory.html">← 1.2 GPU memory</a>
+        <a href="gpu-2-2-tooling.html">2.2 Profilers &amp; kernel DSLs →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

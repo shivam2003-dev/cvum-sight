@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPU Datacenters — Scheduling, Virtualization &amp; Multi-Tenancy — cvam.sight</title>
+<meta name="description" content="From one job to a whole cluster: how GPU datacenters schedule deep-learning workloads, virtualize and partition GPUs (MIG, MPS, time-slicing, vGPU), and share devices safely between tenants — and why a huge cluster often sits half-idle.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.9rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">GPU Programming &amp; Optimization · Phase 3 — Scale</p>
+        <p class="series-banner-title">GPU Datacenters: Scheduling &amp; Multi-Tenancy</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Article 6 of 6 · Phase 3 of 3</p>
+        <div class="series-banner-nav">
+          <a href="gpu-1-1-architecture.html" class="done">1.1 Architecture</a>
+          <a href="gpu-1-2-memory.html" class="done">1.2 Memory</a>
+          <a href="gpu-2-1-optimization.html" class="done">2.1 Optimize</a>
+          <a href="gpu-2-2-tooling.html" class="done">2.2 Tooling</a>
+          <a href="gpu-3-1-multi-gpu.html" class="done">3.1 Multi-GPU</a>
+          <a href="gpu-3-2-datacenter.html" class="active">3.2 Datacenter</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 29, 2026 · ml · 25 min read · 5000 words <span class="difficulty advanced">advanced</span></p>
+        <h1>GPU datacenters — scheduling &amp; multi-tenancy.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">gpu</span>
+          <span class="tag">scheduling</span>
+          <span class="tag">virtualization</span>
+          <span class="tag">multi-tenant</span>
+          <span class="tag">phase-3</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">A GPU cluster is a fleet of the most expensive compute on earth, and the central problem is <strong>utilization</strong>: huge clusters routinely sit at 40–60% because jobs queue for whole GPUs they barely use. Two levers fix it. <strong>Scheduling</strong> decides which job runs where and when (the Wei Gao taxonomy maps the design space). <strong>Sharing</strong> lets multiple workloads use one GPU at once — via partitioning (MIG), process multiplexing (MPS), time-slicing, or kernel-level interception — with the hard constraints being <em>isolation</em> (one tenant must not hurt another) and <em>performance predictability</em>. This is where GPU programming meets systems and economics.</p>
+
+        <p>The series has climbed from a single warp to a multi-node training job. The last level is the whole datacenter: thousands of GPUs shared by many teams and many jobs. At this scale the question is no longer "is my kernel fast" but "is this $40-million cluster actually being used." The answer is depressingly often "not much" — and recovering that wasted capacity is one of the highest-value problems in the field, because every idle GPU-hour is money burned. This article covers the two mechanisms that fight idleness: scheduling and sharing.</p>
+
+        <h2>Why utilization is the problem</h2>
+
+        <p>Deep-learning clusters are notoriously underutilized, and the reasons are structural, not careless:</p>
+
+        <ul>
+          <li><strong>Whole-GPU allocation.</strong> The default unit of allocation is an entire GPU. A job that needs 8 GB of an 80 GB GPU, or that keeps the device busy 20% of the time, still <em>holds the whole device</em> — the other 90% of memory and 80% of compute sit idle but unavailable to anyone else.</li>
+          <li><strong>Gang scheduling.</strong> A distributed job needing 64 GPUs cannot start until all 64 are free simultaneously. So GPUs sit reserved-but-idle waiting for the gang to assemble — the "fragmentation" problem.</li>
+          <li><strong>Bursty, interactive workloads.</strong> Inference and notebook/interactive jobs have spiky demand; provisioning for the peak leaves the trough empty.</li>
+          <li><strong>Heterogeneous, evolving demand.</strong> A mix of huge training jobs, small fine-tunes, and latency-sensitive inference competes for the same pool, and any static partition is wrong most of the time.</li>
+        </ul>
+
+        <p>Wei Gao et al.'s survey of deep-learning workload scheduling in GPU datacenters frames the whole field around this: the scheduler's job is to maximize cluster utilization and throughput while honoring fairness and the very different needs of training (throughput, long-running, gang) versus inference (latency, bursty, SLO-bound).</p>
+
+        <h2>The scheduling taxonomy</h2>
+
+        <p>Following the Wei Gao taxonomy, datacenter GPU schedulers vary along a few key axes. Understanding the axes is understanding why no single scheduler wins:</p>
+
+        <table class="papers">
+          <thead><tr><th>Axis</th><th>Choices</th><th>Trade-off</th></tr></thead>
+          <tbody>
+            <tr><td>Objective</td><td>utilization · fairness · job-completion-time · SLO/deadline</td><td>Maximizing one usually costs another.</td></tr>
+            <tr><td>Preemption</td><td>non-preemptive vs preemptive (checkpoint &amp; requeue)</td><td>Preemption raises utilization but adds checkpoint overhead.</td></tr>
+            <tr><td>Job knowledge</td><td>black-box vs profiled (knows the job's scaling curve)</td><td>Profiling enables smarter packing but needs instrumentation.</td></tr>
+            <tr><td>Placement</td><td>consolidated (locality-aware) vs spread</td><td>Locality cuts communication (Phase 3.1!); spreading aids fault tolerance.</td></tr>
+            <tr><td>Elasticity</td><td>fixed vs elastic (grow/shrink GPU count mid-run)</td><td>Elastic fills gaps but needs the job to support reconfiguration.</td></tr>
+          </tbody>
+        </table>
+
+        <p>Two ideas from the literature recur because they directly attack the utilization problem:</p>
+
+        <ul>
+          <li><strong>Topology / locality-aware placement.</strong> A scheduler that knows the interconnect (article 3.1) places a tensor-parallel group's GPUs within one NVLink domain and a job's GPUs close on the network fabric. Ignoring topology means putting chatty workers across slow links — the scheduler can hand you a scaling disaster before your code runs a single kernel.</li>
+          <li><strong>Preemption and elasticity for filling gaps.</strong> Systems like Gandiva, Tiresias, Themis, and Pollux (representative of the research line Gao surveys) use job profiling, preemption, and elastic resource allocation to pack the cluster tighter — checkpointing a low-priority training job to free GPUs for an urgent one, or growing a job to use idle capacity and shrinking it when demand returns.</li>
+        </ul>
+
+        <div class="bm-note"><strong>The scheduler is where Phase 3.1 and 3.2 meet.</strong> A communication-aware <em>job</em> (Megatron mapping tensor parallelism to NVLink) only helps if the <em>scheduler</em> actually placed those GPUs in one NVLink domain. Topology-aware scheduling and topology-aware parallelism are two halves of the same optimization — and a mismatch between them silently wastes both the cluster's money and the model's training time.</div>
+
+        <h2>Sharing one GPU: the four mechanisms</h2>
+
+        <p>Scheduling decides <em>which whole GPUs</em> go to which job. But the deepest waste is <em>within</em> a single GPU — the job that uses 10% of it. GPU <strong>sharing</strong> (a.k.a. multi-tenancy or GPU virtualization) lets several workloads use one physical GPU at once. There are four mechanisms, from hardware-rigid to software-flexible, and they trade isolation against flexibility:</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 270" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">Four ways to share one GPU — rigid+isolated → flexible+soft</text>
+            <!-- MIG -->
+            <rect x="40" y="40" width="140" height="95" class="box" rx="5"/>
+            <text x="110" y="58" class="smk" text-anchor="middle" style="font-weight:bold">MIG</text>
+            <rect x="50" y="66" width="120" height="18" class="boxg"/><text x="110" y="79" class="sm" text-anchor="middle">slice 1 (HW)</text>
+            <rect x="50" y="88" width="120" height="18" class="boxg"/><text x="110" y="101" class="sm" text-anchor="middle">slice 2 (HW)</text>
+            <rect x="50" y="110" width="120" height="18" class="boxg"/><text x="110" y="123" class="sm" text-anchor="middle">slice 3 (HW)</text>
+            <text x="110" y="150" class="sm" text-anchor="middle">hard partition</text>
+            <text x="110" y="165" class="sm" text-anchor="middle" style="fill:#6a8f5f">best isolation</text>
+            <!-- MPS -->
+            <rect x="195" y="40" width="140" height="95" class="box" rx="5"/>
+            <text x="265" y="58" class="smk" text-anchor="middle" style="font-weight:bold">MPS</text>
+            <text x="265" y="82" class="sm" text-anchor="middle">procs run</text>
+            <text x="265" y="98" class="sm" text-anchor="middle">concurrently,</text>
+            <text x="265" y="114" class="sm" text-anchor="middle">shared context</text>
+            <text x="265" y="150" class="sm" text-anchor="middle">spatial share</text>
+            <text x="265" y="165" class="sm" text-anchor="middle">weak isolation</text>
+            <!-- time slicing -->
+            <rect x="350" y="40" width="140" height="95" class="box" rx="5"/>
+            <text x="420" y="58" class="smk" text-anchor="middle" style="font-weight:bold">Time-slicing</text>
+            <text x="420" y="82" class="sm" text-anchor="middle">round-robin</text>
+            <text x="420" y="98" class="sm" text-anchor="middle">whole GPU,</text>
+            <text x="420" y="114" class="sm" text-anchor="middle">one at a time</text>
+            <text x="420" y="150" class="sm" text-anchor="middle">temporal share</text>
+            <text x="420" y="165" class="sm" text-anchor="middle">no mem isolation</text>
+            <!-- kernel intercept -->
+            <rect x="505" y="40" width="140" height="95" class="box" rx="5"/>
+            <text x="575" y="58" class="smk" text-anchor="middle" style="font-weight:bold">Kernel intercept</text>
+            <text x="575" y="82" class="sm" text-anchor="middle">software layer</text>
+            <text x="575" y="98" class="sm" text-anchor="middle">rewrites/limits</text>
+            <text x="575" y="114" class="sm" text-anchor="middle">launches</text>
+            <text x="575" y="150" class="sm" text-anchor="middle">fine control</text>
+            <text x="575" y="165" class="sm" text-anchor="middle" style="fill:#c96442">most flexible</text>
+            <!-- axis -->
+            <line x1="40" y1="195" x2="645" y2="195" class="ink" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="60" y="215" class="sm" text-anchor="start">hardware-enforced, rigid</text>
+            <text x="630" y="215" class="sm" text-anchor="end">software, flexible</text>
+            <path d="M40 195 L645 195" class="arr" marker-end="url(#a4)"/>
+            <text x="340" y="240" class="sm" text-anchor="middle">Choose by what you need most: strict isolation (MIG) or flexible packing (intercept).</text>
+            <defs><marker id="a4" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 1 — The sharing spectrum. Hardware partitioning gives the strongest isolation but the least flexibility; software interception gives the finest-grained packing but must build isolation itself.</p>
+        </div>
+
+        <h3>1. MIG (Multi-Instance GPU) — hardware partitioning</h3>
+        <p>On Ampere and later data-center GPUs, MIG physically partitions one GPU into up to seven isolated instances, each with its own dedicated slice of SMs, L2 cache, and memory. The isolation is hardware-enforced: one instance cannot touch another's memory or steal its compute, and a crash in one does not affect the others. This makes MIG ideal for multi-tenant clouds and for guaranteeing predictable performance. The cost is rigidity — the partitions are fixed sizes set at configuration time, so you cannot dynamically give a busy tenant more than its slice, and unused capacity in one slice cannot be lent to another.</p>
+
+        <h3>2. MPS (Multi-Process Service) — spatial multiplexing</h3>
+        <p>MPS lets multiple processes submit work to one GPU <em>concurrently</em>, sharing a single GPU context so their kernels can run side by side on different SMs rather than time-slicing. This raises utilization when individual processes each under-fill the GPU (common for inference). The catch: isolation is weak. Processes share memory space, so one can exhaust memory or, in older versions, a fault in one could affect others. MPS is great for trusted co-located workloads (e.g. several inference replicas you own); it is not a security boundary between untrusted tenants.</p>
+
+        <h3>3. Time-slicing — temporal multiplexing</h3>
+        <p>The simplest software sharing: the GPU round-robins between workloads, each getting the whole device for a time quantum. Easy and universally supported (it is how a single display GPU serves many apps), but it provides <em>no memory isolation</em> (workloads must fit together or evict each other) and adds context-switch overhead. It suits low-intensity, bursty, latency-tolerant workloads where each only needs the GPU occasionally.</p>
+
+        <h3>4. Kernel-space interception — software-defined sharing</h3>
+        <p>The most flexible and the most active research area. A software shim sits between the application and the GPU driver, <strong>intercepting CUDA/kernel launches</strong> and API calls. By controlling which kernels are submitted and when, it can enforce fine-grained limits on compute and memory per tenant, throttle one workload to protect another's latency, and oversubscribe memory transparently — all without hardware partitioning and without changing the application. The Efficient Performance-Aware GPU Sharing literature builds exactly here: intercepting at the kernel/driver boundary to deliver both <strong>compatibility</strong> (apps run unmodified) and <strong>isolation</strong> (one tenant's bursts cannot starve another), with much finer control than MIG's fixed slices. The challenge is doing it with low overhead and strong enough isolation to be trustworthy.</p>
+
+        <h2>The two hard constraints: isolation and predictability</h2>
+
+        <p>Every sharing mechanism is judged on two things, and the Survey of Multi-Tenant Deep Learning Inference on GPU returns to both repeatedly:</p>
+
+        <ul>
+          <li><strong>Isolation.</strong> One tenant must not be able to read another's data (security), exhaust shared memory and crash a neighbor (fault isolation), or hog compute and wreck a neighbor's latency (performance isolation). MIG gives all three in hardware; software methods must build them, and performance isolation is the hardest to guarantee.</li>
+          <li><strong>Performance predictability (QoS).</strong> A latency-sensitive inference service co-located with a throughput-hungry training job must still meet its SLO. This is the central tension in multi-tenant inference: the <strong>interference</strong> between co-located workloads — contention for SMs, cache, and memory bandwidth — makes latency unpredictable. Performance-aware sharing systems monitor this interference and throttle the aggressor to protect the latency-critical tenant.</li>
+        </ul>
+
+        <div class="bm-warn"><strong>Interference is the multi-tenancy tax.</strong> Two workloads that each run fine alone can each run much slower together, because they fight over the very resources Phase 1 taught you about — shared L2, memory bandwidth, SM occupancy. This is why naive co-location can <em>hurt</em> overall goodput, and why "performance-aware" sharing (measure interference, throttle the offender, respect SLOs) is the whole game rather than just cramming jobs together. Packing without QoS awareness trades idle GPUs for slow GPUs — not always a win.</div>
+
+        <h2>How this maps onto Kubernetes</h2>
+
+        <p>In practice most of this is operated through Kubernetes, which schedules GPUs via the NVIDIA device plugin. Plain Kubernetes treats a GPU as an indivisible resource (<code>nvidia.com/gpu: 1</code>) — the whole-GPU-allocation problem in container form. The ecosystem layers the sharing mechanisms on top:</p>
+
+        <ul>
+          <li><strong>MIG via the device plugin</strong> — advertise each MIG slice as a schedulable resource so pods request a fraction of a GPU with hardware isolation.</li>
+          <li><strong>Time-slicing and MPS</strong> configured through the plugin for soft sharing of a single GPU among several pods.</li>
+          <li><strong>Dynamic Resource Allocation (DRA)</strong> — the newer Kubernetes API for expressing richer GPU requirements (specific topology, sharing mode) than a flat integer count.</li>
+          <li><strong>Gang/topology-aware schedulers</strong> (Volcano, Kueue, and similar) to handle the all-or-nothing placement of distributed jobs with locality awareness.</li>
+        </ul>
+
+        <p>This is the production realization of everything above: the cluster scheduler (Wei Gao's domain) and the sharing mechanism (MIG/MPS/intercept) made operable for real multi-tenant fleets.</p>
+
+        <h2>Choosing a sharing strategy</h2>
+
+        <table class="papers">
+          <thead><tr><th>You have…</th><th>Use…</th><th>Because</th></tr></thead>
+          <tbody>
+            <tr><td>Untrusted tenants, strict SLAs</td><td class="d">MIG</td><td>Hardware isolation; predictable performance.</td></tr>
+            <tr><td>Your own inference replicas, want density</td><td class="d">MPS</td><td>Concurrent execution; you trust the co-tenants.</td></tr>
+            <tr><td>Bursty dev/notebook workloads</td><td class="d">Time-slicing</td><td>Simple; each needs the GPU only occasionally.</td></tr>
+            <tr><td>Mixed latency + throughput, need QoS</td><td class="d">Kernel interception</td><td>Fine-grained, performance-aware throttling.</td></tr>
+            <tr><td>Big distributed training jobs</td><td class="d">Whole GPUs + gang/topology scheduler</td><td>They saturate the GPU anyway; locality matters.</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Where the series has taken you</h2>
+
+        <p>Step back and see the whole arc. The same principle — <strong>keep the expensive resource busy by hiding the latency of the cheap-but-slow level below it</strong> — appears at every scale:</p>
+
+        <div class="eq">warp scheduling → occupancy → kernel fusion → comm/compute overlap → cluster scheduling</div>
+
+        <ul>
+          <li><strong>Phase 1:</strong> hide HBM latency behind warps; coalesce and tile to feed the ALUs.</li>
+          <li><strong>Phase 2:</strong> diagnose the bottleneck with the Roofline, raise intensity by fusing, and use the tools to measure and write fast kernels.</li>
+          <li><strong>Phase 3.1:</strong> hide interconnect latency behind compute; map parallelism to the link.</li>
+          <li><strong>Phase 3.2:</strong> hide whole-GPU idleness behind other tenants' work; schedule and share to keep the fleet busy.</li>
+        </ul>
+
+        <p>It is latency hiding and resource packing all the way down — from 32 threads in a warp to 32,000 GPUs in a datacenter. Learn the pattern once and it transfers across every level.</p>
+
+        <h2>FAQ</h2>
+        <details class="faq"><summary>Can I use MIG and MPS together?</summary><p>Yes — a common pattern is to MIG-partition a GPU for coarse isolation between tenants, then run MPS <em>within</em> a MIG instance to pack several of one tenant's processes into their slice. They operate at different granularities and compose.</p></details>
+        <details class="faq"><summary>Why not just buy more GPUs instead of sharing?</summary><p>Because GPUs are scarce and extremely expensive, and the waste is enormous: a cluster at 50% utilization is effectively paying double. Sharing recovers capacity you already own. At hyperscale, a few points of utilization improvement is worth millions, which is why this is such an active research and product area.</p></details>
+        <details class="faq"><summary>Is GPU sharing safe for untrusted tenants?</summary><p>Only with hardware isolation (MIG) can you make strong security claims between untrusted tenants. MPS and most software sharing share memory space and are meant for co-tenants you trust. Kernel-interception systems aim to add isolation in software, but proving it is robust enough for hostile tenants is hard — for true multi-tenant clouds with untrusted users, MIG (or whole-GPU allocation) remains the safe default.</p></details>
+        <details class="faq"><summary>What makes inference scheduling different from training scheduling?</summary><p>Training is throughput-oriented, long-running, gang-scheduled, and tolerant of preemption (checkpoint and resume). Inference is latency-oriented, bursty, SLO-bound, and intolerant of jitter. A scheduler optimal for one is wrong for the other, which is why mixed clusters are hard and why inference often gets its own pool with QoS-aware sharing.</p></details>
+        <details class="faq"><summary>Does sharing help training jobs at all?</summary><p>Rarely — a well-tuned training job already saturates its GPUs (that was the whole point of Phases 1–2), so there is little spare capacity to share. Sharing pays off most for <em>under-utilizing</em> workloads: small models, inference at low load, interactive notebooks, and data-preprocessing steps. Match the mechanism to the workload's actual GPU appetite.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li>The datacenter problem is <strong>utilization</strong>: whole-GPU allocation, gang scheduling, and bursty demand leave clusters at 40–60%.</li>
+          <li>The <strong>Wei Gao taxonomy</strong> maps schedulers by objective, preemption, job knowledge, placement, and elasticity — no single design wins.</li>
+          <li><strong>Topology-aware scheduling</strong> and topology-aware parallelism (Phase 3.1) are two halves of one optimization.</li>
+          <li>Four sharing mechanisms: <strong>MIG</strong> (hardware partition, best isolation), <strong>MPS</strong> (concurrent, weak isolation), <strong>time-slicing</strong> (temporal, no memory isolation), <strong>kernel interception</strong> (software, most flexible).</li>
+          <li>The two hard constraints are <strong>isolation</strong> and <strong>performance predictability</strong>; <strong>interference</strong> between co-located workloads is the multi-tenancy tax.</li>
+          <li>In production this runs on <strong>Kubernetes</strong> (device plugin, MIG, DRA, gang schedulers).</li>
+          <li>The whole series is one idea at six scales: <strong>hide latency, pack the resource, keep the expensive thing busy.</strong></li>
+        </ul>
+
+        <p>That closes the GPU Programming &amp; Optimization series — from a single warp of 32 threads to a datacenter of tens of thousands of GPUs, held together by one repeating principle. Thanks for reading the whole thing.</p>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://arxiv.org/abs/2205.11913" target="_blank">Gao et al. — <em>Deep Learning Workload Scheduling in GPU Datacenters: Taxonomy, Challenges and Vision</em></a> <span>— the scheduling survey behind this article.</span></li>
+          <li><a href="https://arxiv.org/abs/2203.07900" target="_blank">A Survey of Multi-Tenant Deep-Learning Inference on GPU</a> <span>— isolation, interference, and QoS in sharing.</span></li>
+          <li><a href="https://www.usenix.org/conference/atc" target="_blank">Efficient Performance-Aware GPU Sharing via Kernel-Space Interception</a> <span>— compatibility + isolation at the kernel boundary.</span></li>
+          <li><a href="https://docs.nvidia.com/datacenter/tesla/mig-user-guide/" target="_blank">NVIDIA MIG User Guide</a> <span>— hardware GPU partitioning.</span></li>
+          <li><a href="https://docs.nvidia.com/deploy/mps/" target="_blank">NVIDIA Multi-Process Service (MPS)</a> <span>— concurrent process execution on one GPU.</span></li>
+          <li><a href="https://github.com/NVIDIA/k8s-device-plugin" target="_blank">NVIDIA Kubernetes Device Plugin</a> <span>— MIG, time-slicing, and DRA in Kubernetes.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="gpu-3-1-multi-gpu.html">← 3.1 Multi-GPU &amp; model parallelism</a>
+        <a href="../series-gpu.html">Back to the series →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

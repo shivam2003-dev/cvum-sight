@@ -16,6 +16,78 @@
 
 const POSTS = [
   {
+    slug: "gpu-1-1-architecture",
+    title: "How a GPU actually works — SIMT, warps &amp; the silicon.",
+    date: "Jun 29, 2026",
+    cat: "ml",
+    tags: ["ml", "gpu", "cuda", "simt", "architecture", "phase-1"],
+    time: 23,
+    words: 4600,
+    excerpt: "Series opener (Phase 1.1). A GPU is not a fast CPU — it's a throughput machine that hides memory latency by keeping thousands of threads in flight. Threads run in lock-step warps of 32 (SIMT); divergence is a per-warp cost; the SM switches warps for free to cover ~500-cycle HBM stalls. The memory hierarchy, the execution chain (grid → block → warp → thread → lane), and how it all maps onto NVIDIA Ampere/Hopper and AMD RDNA/CDNA.",
+    series: "gpu",
+    seriesNum: "1.1"
+  },
+  {
+    slug: "gpu-1-2-memory",
+    title: "GPU memory — coalescing, shared memory &amp; occupancy.",
+    date: "Jun 29, 2026",
+    cat: "ml",
+    tags: ["ml", "gpu", "cuda", "memory", "coalescing", "phase-1"],
+    time: 24,
+    words: 4800,
+    excerpt: "Phase 1.2. Three rules decide whether a kernel is fast: coalesce a warp's 32 reads into one transaction (thread i → element i, Struct-of-Arrays), stage reused data in shared memory while dodging bank conflicts (the [N][N+1] padding trick), and keep enough warps resident (occupancy) to hide the latency you can't remove. Worked numbers, the occupancy min() over registers/shared-mem/block caps, register spilling, and why max occupancy isn't the goal.",
+    series: "gpu",
+    seriesNum: "1.2"
+  },
+  {
+    slug: "gpu-2-1-optimization",
+    title: "Kernel optimization &amp; the Roofline model.",
+    date: "Jun 29, 2026",
+    cat: "ml",
+    tags: ["ml", "gpu", "cuda", "roofline", "optimization", "phase-2"],
+    time: 24,
+    words: 4900,
+    excerpt: "Phase 2.1. Measure before you optimize. Arithmetic intensity (FLOP/byte) and the Roofline model tell you whether you're memory- or compute-bound — which decides which technique family (the Hijma taxonomy: memory access, parallelism, instruction overhead, hierarchy/reuse, specialized hardware) can possibly help. Why fusion raises intensity, the Occupancy Calculator in practice, mixed precision for ML kernels, and a worked end-to-end optimization session.",
+    series: "gpu",
+    seriesNum: "2.1"
+  },
+  {
+    slug: "gpu-2-2-tooling",
+    title: "The GPU toolchain — profilers &amp; kernel DSLs.",
+    date: "Jun 29, 2026",
+    cat: "ml",
+    tags: ["ml", "gpu", "nsight", "triton", "cutlass", "phase-2"],
+    time: 23,
+    words: 4700,
+    excerpt: "Phase 2.2. Two halves of the toolchain: profilers to see what's slow (Nsight Systems for the whole-app timeline — is the GPU even busy? — then Nsight Compute for one kernel's Roofline, occupancy and stall reasons), and kernel producers to write fast code without raw PTX (CUTLASS for fusible GEMMs, TensorRT for deploying models, Triton for Python tile-kernels, Helion one rung above). The abstraction ladder and how to pick a rung.",
+    series: "gpu",
+    seriesNum: "2.2"
+  },
+  {
+    slug: "gpu-3-1-multi-gpu",
+    title: "Multi-GPU &amp; model parallelism.",
+    date: "Jun 29, 2026",
+    cat: "ml",
+    tags: ["ml", "gpu", "distributed", "megatron", "nvlink", "phase-3"],
+    time: 25,
+    words: 5000,
+    excerpt: "Phase 3.1. Past one GPU, communication is the bottleneck and the interconnect hierarchy (HBM ≫ NVLink ≫ PCIe ≫ InfiniBand) governs every choice. The four ways to split work (data, tensor, pipeline, sequence parallelism), Megatron-LM's two-all-reduces-per-layer design, the NCCL collectives, why tensor parallelism must stay inside an NVLink domain, and the Oden &amp; Nölp lesson: synchronization and access overhead — not raw compute — decide scaling efficiency.",
+    series: "gpu",
+    seriesNum: "3.1"
+  },
+  {
+    slug: "gpu-3-2-datacenter",
+    title: "GPU datacenters — scheduling &amp; multi-tenancy.",
+    date: "Jun 29, 2026",
+    cat: "ml",
+    tags: ["ml", "gpu", "scheduling", "virtualization", "multi-tenant", "phase-3"],
+    time: 25,
+    words: 5000,
+    excerpt: "Phase 3.2 (series finale). Why a $40M GPU cluster sits at 40–60% utilization, and the two levers that fix it: scheduling (the Wei Gao taxonomy — objective, preemption, job knowledge, placement, elasticity) and sharing (MIG hardware partitioning, MPS, time-slicing, kernel-space interception) under the hard constraints of isolation and predictable performance. Interference as the multi-tenancy tax, the Kubernetes realization (device plugin, MIG, DRA), and the one idea that ties the whole series together.",
+    series: "gpu",
+    seriesNum: "3.2"
+  },
+  {
     slug: "gpt-5-6-system-card",
     title: "GPT-5.6 — Sol, Terra &amp; Luna, reading the system card.",
     date: "Jun 25, 2026",

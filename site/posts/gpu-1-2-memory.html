@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPU Memory — Coalescing, Shared Memory &amp; Occupancy — cvam.sight</title>
+<meta name="description" content="The three memory rules that decide whether a GPU kernel is fast: coalesced global access, the shared-memory scratchpad (and bank conflicts), and occupancy. With diagrams and worked numbers.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.9rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">GPU Programming &amp; Optimization · Phase 1 — Architecture</p>
+        <p class="series-banner-title">GPU Memory: Coalescing, Shared Memory &amp; Occupancy</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 2 of 6 · Phase 1 of 3</p>
+        <div class="series-banner-nav">
+          <a href="gpu-1-1-architecture.html" class="done">1.1 Architecture</a>
+          <a href="gpu-1-2-memory.html" class="active">1.2 Memory</a>
+          <a href="gpu-2-1-optimization.html">2.1 Optimize</a>
+          <a href="gpu-2-2-tooling.html">2.2 Tooling</a>
+          <a href="gpu-3-1-multi-gpu.html">3.1 Multi-GPU</a>
+          <a href="gpu-3-2-datacenter.html">3.2 Datacenter</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 29, 2026 · ml · 24 min read · 4800 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>GPU memory — coalescing, shared memory &amp; occupancy.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">gpu</span>
+          <span class="tag">cuda</span>
+          <span class="tag">memory</span>
+          <span class="tag">coalescing</span>
+          <span class="tag">phase-1</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Three rules decide whether a kernel is fast: (1) make a warp's 32 reads land in one contiguous chunk so the hardware <em>coalesces</em> them into a single transaction; (2) stage reused data in <em>shared memory</em>, the on-chip scratchpad — while avoiding <em>bank conflicts</em>; (3) keep enough warps resident (<em>occupancy</em>) to hide the memory latency you cannot remove. Article 1.1 gave you the machine; this article gives you the rules that machine rewards.</p>
+
+        <p>In article 1.1 we established the core truth: a GPU is bandwidth-starved, not compute-starved. The arithmetic units can almost always go faster than memory can feed them. So the craft of GPU programming is mostly the craft of moving bytes efficiently — getting the right data, to the right place, at the right time, in the widest possible transactions. This article is the practical core of that craft. Everything in Phases 2 and 3 builds on these three ideas.</p>
+
+        <h2>Rule 1: Coalesced global memory access</h2>
+
+        <p>When a warp executes a load instruction, all 32 threads issue their addresses at once. The memory subsystem does not service 32 separate requests. Instead it looks at the 32 addresses and groups them into <strong>memory transactions</strong> of a fixed size — typically 32, 64, or 128 bytes, aligned to those boundaries. The fewer transactions needed to satisfy the warp, the better.</p>
+
+        <p><strong>Coalescing</strong> is what happens in the best case: if the 32 threads access 32 consecutive 4-byte words (a contiguous 128-byte block, properly aligned), the hardware satisfies the whole warp with a <em>single</em> 128-byte transaction. Maximum efficiency: every byte fetched is a byte used.</p>
+
+        <p>The opposite case is a <strong>scattered</strong> or <strong>strided</strong> access. If each thread reads a word far from its neighbors, the warp may need up to 32 separate transactions — and because each transaction still moves a minimum of 32 bytes, you might fetch 32×32 = 1024 bytes to use only 32×4 = 128 of them. That is a 8× waste of bandwidth on the metric that matters most.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Coalesced vs strided access for one warp (showing 8 of 32 lanes)</text>
+            <!-- coalesced -->
+            <text x="170" y="42" class="smk" text-anchor="middle" style="fill:#6a8f5f;font-weight:bold">COALESCED — thread i reads element i</text>
+            <g>
+              <rect x="40" y="55" width="32" height="26" class="boxg"/><rect x="72" y="55" width="32" height="26" class="boxg"/><rect x="104" y="55" width="32" height="26" class="boxg"/><rect x="136" y="55" width="32" height="26" class="boxg"/><rect x="168" y="55" width="32" height="26" class="boxg"/><rect x="200" y="55" width="32" height="26" class="boxg"/><rect x="232" y="55" width="32" height="26" class="boxg"/><rect x="264" y="55" width="32" height="26" class="boxg"/>
+              <text x="56" y="72" class="sm" text-anchor="middle">t0</text><text x="88" y="72" class="sm" text-anchor="middle">t1</text><text x="120" y="72" class="sm" text-anchor="middle">t2</text><text x="152" y="72" class="sm" text-anchor="middle">t3</text><text x="184" y="72" class="sm" text-anchor="middle">t4</text><text x="216" y="72" class="sm" text-anchor="middle">t5</text><text x="248" y="72" class="sm" text-anchor="middle">t6</text><text x="280" y="72" class="sm" text-anchor="middle">t7</text>
+            </g>
+            <rect x="40" y="92" width="256" height="22" class="boxy"/>
+            <text x="168" y="107" class="sm" text-anchor="middle">1 transaction (128 B) — every byte used</text>
+
+            <!-- strided -->
+            <text x="510" y="42" class="smk" text-anchor="middle" style="fill:#c96442;font-weight:bold">STRIDED — thread i reads element i×8</text>
+            <g>
+              <rect x="380" y="55" width="20" height="26" class="boxr"/><text x="390" y="72" class="sm" text-anchor="middle">t0</text>
+              <rect x="420" y="55" width="20" height="26" class="box"/>
+              <rect x="460" y="55" width="20" height="26" class="boxr"/><text x="470" y="72" class="sm" text-anchor="middle">t1</text>
+              <rect x="500" y="55" width="20" height="26" class="box"/>
+              <rect x="540" y="55" width="20" height="26" class="boxr"/><text x="550" y="72" class="sm" text-anchor="middle">t2</text>
+              <rect x="580" y="55" width="20" height="26" class="box"/>
+              <rect x="620" y="55" width="20" height="26" class="boxr"/><text x="630" y="72" class="sm" text-anchor="middle">t3</text>
+            </g>
+            <g>
+              <rect x="380" y="92" width="40" height="22" class="boxr"/>
+              <rect x="460" y="92" width="40" height="22" class="boxr"/>
+              <rect x="540" y="92" width="40" height="22" class="boxr"/>
+              <rect x="620" y="92" width="20" height="22" class="boxr"/>
+            </g>
+            <text x="510" y="130" class="sm" text-anchor="middle">many transactions — most bytes wasted</text>
+
+            <text x="340" y="165" class="smk" text-anchor="middle" style="font-weight:bold">The fix: row-major layout + thread i ↔ element i</text>
+            <text x="340" y="188" class="sm" text-anchor="middle">Access pattern, not data size, decides bandwidth efficiency.</text>
+            <text x="340" y="208" class="sm" text-anchor="middle" style="fill:#c96442">A strided kernel can waste 8–32× of your multi-TB/s HBM bandwidth.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Same number of elements, very different bandwidth. Coalesced access maps thread <code>i</code> to element <code>i</code>; strided access leaves most of each transaction unused.</p>
+        </div>
+
+        <p>The practical rule is short: <strong>thread <code>i</code> should access element <code>i</code>.</strong> When you index global memory as <code>data[blockIdx.x * blockDim.x + threadIdx.x]</code>, consecutive threads hit consecutive addresses and the access coalesces automatically. The classic mistake is the opposite — giving each thread a <em>row</em> of a matrix to march down. Then on any given step, the 32 threads are 32 rows apart in memory, and every access is maximally strided.</p>
+
+        <pre class="code">// BAD: thread marches down a column-major stride
+for (int k = 0; k &lt; N; k++)
+    sum += A[threadIdx.x * N + k];   // each thread far from its neighbor
+
+// GOOD: consecutive threads, consecutive addresses
+for (int k = 0; k &lt; N; k++)
+    sum += A[k * N + threadIdx.x];   // warp reads one contiguous row of A</pre>
+
+        <p>This single transformation — swapping which index the thread ID drives — is often a 5–10× speedup for memory-bound kernels, and it costs nothing. It is the first thing to check on any slow kernel.</p>
+
+        <div class="bm-note"><strong>Array-of-Structs vs Struct-of-Arrays.</strong> A related coalescing trap: storing <code>struct Particle{float x,y,z;}</code> in an array means a warp reading all the <code>x</code> values strides by 12 bytes. Storing three separate arrays (<code>xs[]</code>, <code>ys[]</code>, <code>zs[]</code>) — "Struct-of-Arrays" — makes each field contiguous and coalesces perfectly. SoA layout is one of the highest-leverage data-layout choices on a GPU.</div>
+
+        <h2>Rule 2: Shared memory, the programmer-managed scratchpad</h2>
+
+        <p>Coalescing makes each trip to HBM efficient. The next idea is to <em>avoid trips to HBM altogether</em> by keeping reused data on-chip. That on-chip store is <strong>shared memory</strong>: a small (up to ~228 KB per SM on Hopper), fast (~20–30 cycle latency, roughly 100× lower than HBM) pool that is <em>private to a thread block</em> and explicitly managed by you. Unlike a CPU cache, nothing fills it automatically — you decide what to load, when, and how to index it.</p>
+
+        <p>The canonical use is <strong>tiling</strong>: when many threads in a block need overlapping data, load a tile into shared memory once, then let every thread read it from shared memory many times instead of hammering HBM. Matrix multiply is the textbook case. Naively, computing one output element reads a full row and column from global memory; for an N×N output that re-reads each input value N times. Tiled multiply loads a small sub-block of A and B into shared memory, and each loaded value is reused by an entire tile of threads.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Tiled matrix multiply: load once into shared memory, reuse many times</text>
+            <!-- global -->
+            <rect x="40" y="40" width="120" height="120" class="box"/>
+            <text x="100" y="34" class="sm" text-anchor="middle">A in global (HBM)</text>
+            <rect x="60" y="70" width="40" height="40" class="boxr"/>
+            <text x="100" y="180" class="sm" text-anchor="middle">slow · ~500 cyc</text>
+            <!-- arrow -->
+            <path d="M165 100 L255 100" class="arr" marker-end="url(#a2)"/>
+            <text x="210" y="92" class="sm" text-anchor="middle">load tile ONCE</text>
+            <!-- shared -->
+            <rect x="260" y="55" width="90" height="90" class="boxy"/>
+            <text x="305" y="48" class="sm" text-anchor="middle">shared mem tile</text>
+            <text x="305" y="105" class="sm" text-anchor="middle">~25 cyc</text>
+            <!-- arrows to threads -->
+            <path d="M352 80 L430 60" class="arr" marker-end="url(#a2)"/>
+            <path d="M352 100 L430 100" class="arr" marker-end="url(#a2)"/>
+            <path d="M352 120 L430 140" class="arr" marker-end="url(#a2)"/>
+            <text x="400" y="48" class="sm" text-anchor="middle">reuse MANY times</text>
+            <rect x="435" y="45" width="200" height="30" class="boxg"/><text x="535" y="64" class="sm" text-anchor="middle">thread computes C[0][j]</text>
+            <rect x="435" y="85" width="200" height="30" class="boxg"/><text x="535" y="104" class="sm" text-anchor="middle">thread computes C[1][j]</text>
+            <rect x="435" y="125" width="200" height="30" class="boxg"/><text x="535" y="144" class="sm" text-anchor="middle">thread computes C[2][j]</text>
+            <text x="340" y="195" class="sm" text-anchor="middle">Each HBM byte is loaded once but consumed by a whole tile of threads.</text>
+            <text x="340" y="215" class="sm" text-anchor="middle" style="fill:#6a8f5f">Reuse factor = tile width. A 32×32 tile cuts HBM traffic ~32×.</text>
+            <defs><marker id="a2" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 2 — Tiling turns an HBM-bound problem into a shared-memory-bound one. The arithmetic is unchanged; the memory traffic collapses.</p>
+        </div>
+
+        <p>Threads cooperating through shared memory must <strong>synchronize</strong>. After loading a tile, every thread calls <code>__syncthreads()</code> — a barrier that makes all threads in the block wait until the whole tile is loaded before anyone reads it. Forgetting this barrier is one of the most common GPU bugs: threads read shared memory before their neighbors have written it, producing nondeterministic garbage that only shows up under certain timings.</p>
+
+        <pre class="code">__shared__ float tileA[32][32];
+__shared__ float tileB[32][32];
+
+tileA[ty][tx] = A[...];   // each thread loads one element
+tileB[ty][tx] = B[...];
+__syncthreads();          // <-- wait for the WHOLE tile
+
+for (int k = 0; k &lt; 32; k++)
+    acc += tileA[ty][k] * tileB[k][tx];   // fast shared-mem reads
+__syncthreads();          // wait before overwriting the tile next iteration</pre>
+
+        <h3>Bank conflicts: shared memory's one trap</h3>
+
+        <p>Shared memory is not uniformly fast. It is divided into <strong>32 banks</strong> (matching the warp size), each serving one 4-byte word per cycle. If the 32 threads of a warp access 32 <em>different</em> banks, all 32 reads happen in parallel — full speed. But if two or more threads hit the <em>same</em> bank (different addresses), the accesses <strong>serialize</strong>: an N-way bank conflict takes N times as long.</p>
+
+        <p>The classic trigger is a column access of a 32-wide shared array: <code>tile[threadIdx.x][k]</code> with a 32-column tile makes every thread land in the same bank, a 32-way conflict that erases shared memory's advantage. The standard fix is <strong>padding</strong> — declare the array one column wider (<code>[32][33]</code>) so consecutive rows shift across banks and the column access spreads out.</p>
+
+        <div class="bm-fix"><strong>The padding trick:</strong> change <code>__shared__ float tile[32][32];</code> to <code>__shared__ float tile[32][33];</code>. The extra unused column changes the stride so that a column access touches 32 distinct banks instead of one. A few wasted bytes buys a 32× shared-memory speedup. This shows up constantly in transpose and reduction kernels.</div>
+
+        <h2>Rule 3: Occupancy — keeping enough warps resident</h2>
+
+        <p>Coalescing and shared memory reduce how much you wait on memory. <strong>Occupancy</strong> determines how well you <em>hide</em> the waiting that remains. Recall from article 1.1: the SM hides memory latency by switching to a ready warp whenever one stalls. That only works if there are ready warps to switch to. Occupancy is the formal measure of how many.</p>
+
+        <div class="eq">occupancy = (active warps per SM) / (maximum warps per SM)</div>
+
+        <p>On Ampere/Hopper an SM can hold up to 64 resident warps (2048 threads). If your kernel keeps 32 warps resident, that is 50% occupancy. The maximum is bounded by whichever resource runs out first across all the blocks you want resident:</p>
+
+        <ul>
+          <li><strong>Registers.</strong> Each SM has a fixed register file (65,536 32-bit registers on Ampere). If each thread uses 64 registers, the SM can host 65,536 / 64 = 1024 threads = 16 warps = 25% occupancy. Register-hungry kernels self-limit.</li>
+          <li><strong>Shared memory.</strong> Each block claims its shared memory for its whole life. If a block uses 48 KB and the SM has 100 KB available, only 2 blocks fit — regardless of how many warps that is.</li>
+          <li><strong>Block size.</strong> The SM has a hard cap on resident blocks (e.g. 32) and threads (2048). Tiny blocks can hit the block cap before the thread cap.</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Occupancy is limited by whichever resource runs out first</text>
+            <!-- three columns -->
+            <g>
+              <text x="130" y="45" class="sm" text-anchor="middle">registers</text>
+              <rect x="90" y="55" width="80" height="120" class="box"/>
+              <rect x="90" y="115" width="80" height="60" class="boxg"/>
+              <text x="130" y="150" class="sm" text-anchor="middle">used</text>
+              <text x="130" y="195" class="sm" text-anchor="middle">allows 48 warps</text>
+            </g>
+            <g>
+              <text x="340" y="45" class="sm" text-anchor="middle">shared memory</text>
+              <rect x="300" y="55" width="80" height="120" class="box"/>
+              <rect x="300" y="95" width="80" height="80" class="boxy"/>
+              <text x="340" y="140" class="sm" text-anchor="middle">used</text>
+              <text x="340" y="195" class="sm" text-anchor="middle" style="fill:#c96442">allows 24 warps ← LIMIT</text>
+            </g>
+            <g>
+              <text x="550" y="45" class="sm" text-anchor="middle">thread/block cap</text>
+              <rect x="510" y="55" width="80" height="120" class="box"/>
+              <rect x="510" y="75" width="80" height="100" class="boxr"/>
+              <text x="550" y="130" class="sm" text-anchor="middle">used</text>
+              <text x="550" y="195" class="sm" text-anchor="middle">allows 64 warps</text>
+            </g>
+            <text x="340" y="215" class="sm" text-anchor="middle">Achieved occupancy = min(48, 24, 64) = 24 warps. Shared memory is the bottleneck here.</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — The occupancy calculation is a min() over resource limits. Lowering whichever resource binds (here, shared memory per block) raises occupancy.</p>
+        </div>
+
+        <p>NVIDIA ships an <strong>Occupancy Calculator</strong> (now built into Nsight Compute and the CUDA API <code>cudaOccupancyMaxActiveBlocksPerMultiprocessor</code>) that takes your block size, register count, and shared-memory usage and tells you the theoretical occupancy and what is limiting it. We use it hands-on in article 2.1.</p>
+
+        <div class="bm-warn"><strong>Higher occupancy is not always better.</strong> This is the most misunderstood point in GPU tuning. Occupancy is a means (latency hiding), not an end (throughput). Past the point where you have enough warps to cover memory latency — often around 50% — more occupancy gives nothing, and chasing it can force register spilling or smaller tiles that <em>hurt</em>. Many of the fastest kernels (FlashAttention, CUTLASS GEMMs) deliberately run at modest occupancy with large per-thread tiles. The goal is enough latency hiding, not maximum warps.</div>
+
+        <h2>Putting the three rules together</h2>
+
+        <p>The three rules interact, and the interaction is the whole art. Tiling (shared memory) <em>requires</em> coalesced loads to fill the tile efficiently. Large tiles improve data reuse but consume more shared memory and registers, lowering occupancy. The sweet spot is a kernel that: loads global memory coalesced, stages reused data in conflict-free shared memory, uses enough registers for good per-thread work without spilling, and keeps just enough warps resident to hide the residual latency.</p>
+
+        <table class="papers">
+          <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td>Low memory throughput, high transaction count</td><td>Uncoalesced / strided global access</td><td>Map thread i → element i; switch to Struct-of-Arrays</td></tr>
+            <tr><td>HBM-bound despite data reuse</td><td>Re-reading the same data from global</td><td>Tile into shared memory; add <code>__syncthreads()</code></td></tr>
+            <tr><td>Shared-memory kernel slower than expected</td><td>Bank conflicts on column access</td><td>Pad arrays (<code>[N][N+1]</code>)</td></tr>
+            <tr><td>ALUs idle, stalls not hidden</td><td>Too few resident warps (low occupancy)</td><td>Reduce registers/shared mem per block; resize blocks</td></tr>
+            <tr><td>Occupancy high but still slow</td><td>Register spilling or wrong bottleneck</td><td>Profile; bigger tiles, accept lower occupancy</td></tr>
+            <tr><td>Half the warp idle on a branch</td><td>Intra-warp divergence</td><td>Restructure so warps are internally unanimous</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Revisiting divergence with data layout in mind</h2>
+
+        <p>Article 1.1 introduced warp divergence; data layout gives you the lever to control it. Since divergence only costs you when lanes <em>within a warp</em> disagree, you can often eliminate it by <strong>sorting or grouping data so that a warp's 32 elements take the same branch.</strong> A ray tracer that sorts rays by which object they hit, or an inference batch that groups sequences of similar length, converts random per-lane branching into per-warp uniform branching — same logic, no serialization. This "data reordering to align with warps" theme returns in the optimization-techniques literature in article 2.1.</p>
+
+        <h2>A note on registers and spilling</h2>
+
+        <p>Registers are the fastest memory — one cycle, per-thread-private. The compiler allocates them automatically, but the count per thread is the single biggest driver of occupancy. When a kernel needs more registers than are available at your target occupancy, the compiler <strong>spills</strong> excess values to "local memory," which despite the name lives in slow global HBM (cached in L1/L2). Spilling can quietly tank performance. You can see per-thread register counts with <code>nvcc -Xptxas -v</code> or in Nsight Compute, and cap them with <code>__launch_bounds__</code> or <code>-maxrregcount</code> — trading register pressure against occupancy deliberately rather than letting the compiler guess.</p>
+
+        <h2>FAQ</h2>
+
+        <details class="faq"><summary>Is coalescing automatic, or do I have to do something?</summary><p>The hardware coalesces automatically — but only if your access pattern allows it. You do not call a "coalesce" function; you write your indexing so consecutive threads touch consecutive addresses, and the hardware then merges them. Coalescing is something you <em>enable</em> by data layout, not something you invoke.</p></details>
+        <details class="faq"><summary>How is shared memory different from the L1 cache?</summary><p>On modern NVIDIA GPUs they are physically the same SRAM, split between an automatic L1 cache and a programmer-managed shared-memory partition (you can tune the split). The difference is control: L1 fills and evicts on its own; shared memory holds exactly what you put there until you overwrite it. For predictable reuse patterns, explicit shared memory beats relying on the cache.</p></details>
+        <details class="faq"><summary>What exactly is a bank conflict, in one sentence?</summary><p>Two or more threads in the same warp trying to read different addresses that fall in the same shared-memory bank, forcing those accesses to happen one after another instead of in parallel.</p></details>
+        <details class="faq"><summary>Why doesn't maxing out occupancy always help?</summary><p>Because occupancy only buys latency hiding, and once latency is hidden, extra warps do nothing useful — meanwhile, achieving that occupancy often means using fewer registers or smaller tiles per thread, which can reduce the actual work efficiency. The fastest kernels balance the two; they don't blindly maximize one.</p></details>
+        <details class="faq"><summary>Does any of this apply to writing Triton or just raw CUDA?</summary><p>All of it. Triton (article 2.2) hides the index arithmetic, but coalescing, shared-memory reuse, and occupancy are still exactly what determine performance — Triton just lets you express the tiling at a higher level. The rules are properties of the hardware, not of the language.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li><strong>Coalesce:</strong> map thread <code>i</code> to element <code>i</code> so a warp's 32 reads become one transaction. Prefer Struct-of-Arrays.</li>
+          <li><strong>Tile:</strong> stage reused data in shared memory, synchronize with <code>__syncthreads()</code>, and collapse HBM traffic by the tile width.</li>
+          <li><strong>Avoid bank conflicts</strong> with padding (<code>[N][N+1]</code>).</li>
+          <li><strong>Occupancy</strong> = active/max warps; it is a <code>min()</code> over registers, shared memory, and block caps. Aim for <em>enough</em>, not maximum.</li>
+          <li><strong>Registers</strong> drive occupancy; spilling to local memory (slow HBM) is a silent killer — watch the per-thread count.</li>
+          <li>Use <strong>data layout</strong> to align branches with warps and kill divergence.</li>
+        </ul>
+
+        <p>Phase 1 is done — you have the machine and the rules it rewards. <strong>Phase 2</strong> opens with article 2.1: turning these rules into a repeatable optimization method using the Roofline model, the optimization-technique taxonomy from the research literature, and the occupancy calculator in anger.</p>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/" target="_blank">CUDA C++ Best Practices Guide — Memory Optimizations</a> <span>— the authoritative source on coalescing, shared memory, and bank conflicts.</span></li>
+          <li><a href="https://www.elsevier.com/books/programming-massively-parallel-processors/hwu/978-0-323-91231-0" target="_blank">Kirk &amp; Hwu — <em>Programming Massively Parallel Processors</em></a> <span>— the tiled matrix-multiply derivation in full.</span></li>
+          <li><a href="https://developer.nvidia.com/blog/using-shared-memory-cuda-cc/" target="_blank">NVIDIA Dev Blog — Using Shared Memory in CUDA</a> <span>— worked examples of tiling and the padding trick.</span></li>
+          <li><a href="https://developer.nvidia.com/blog/how-access-global-memory-efficiently-cuda-c-kernels/" target="_blank">NVIDIA Dev Blog — Efficient Global Memory Access</a> <span>— coalescing transactions visualized.</span></li>
+          <li><a href="https://docs.nvidia.com/nsight-compute/" target="_blank">Nsight Compute Occupancy section</a> <span>— the modern home of the Occupancy Calculator.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="gpu-1-1-architecture.html">← 1.1 How a GPU works</a>
+        <a href="gpu-2-1-optimization.html">2.1 Kernel optimization &amp; Roofline →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-GPU &amp; Model Parallelism — Megatron-LM &amp; the Cost of Synchronization — cvam.sight</title>
+<meta name="description" content="Scaling past one GPU: data, tensor, pipeline, and sequence parallelism, the interconnects (NVLink/InfiniBand) that decide what's possible, Megatron-LM, and why synchronization and access overhead dominate at scale.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.9rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">GPU Programming &amp; Optimization · Phase 3 — Scale</p>
+        <p class="series-banner-title">Multi-GPU &amp; Model Parallelism</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 5 of 6 · Phase 3 of 3</p>
+        <div class="series-banner-nav">
+          <a href="gpu-1-1-architecture.html" class="done">1.1 Architecture</a>
+          <a href="gpu-1-2-memory.html" class="done">1.2 Memory</a>
+          <a href="gpu-2-1-optimization.html" class="done">2.1 Optimize</a>
+          <a href="gpu-2-2-tooling.html" class="done">2.2 Tooling</a>
+          <a href="gpu-3-1-multi-gpu.html" class="active">3.1 Multi-GPU</a>
+          <a href="gpu-3-2-datacenter.html">3.2 Datacenter</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 29, 2026 · ml · 25 min read · 5000 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Multi-GPU &amp; model parallelism.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">gpu</span>
+          <span class="tag">distributed</span>
+          <span class="tag">megatron</span>
+          <span class="tag">nvlink</span>
+          <span class="tag">phase-3</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">One GPU is not enough for big models, so you split work across many — and the moment you do, a new bottleneck appears: <strong>communication</strong>. There are four ways to split (data, tensor, pipeline, sequence parallelism), each with a different communication pattern, and which combination works depends entirely on your <strong>interconnect</strong> (fast NVLink inside a node, slower InfiniBand between nodes). Megatron-LM is the reference implementation. The recurring theme — and the lesson from the multi-GPU Python work of Oden &amp; Nölp — is that synchronization and memory-access overheads, not raw compute, decide how well you scale.</p>
+
+        <p>Everything so far in this series has been about making one GPU fast. But a frontier model's weights do not fit on one GPU — GLM-5.2 and DeepSeek V4 are hundreds of billions to over a trillion parameters — and even when they fit, you want to train or serve them faster than one device allows. So you reach for many GPUs. The catch: as soon as work spans multiple devices, they must <em>talk</em> to each other, and that communication is slow compared to on-chip compute. The entire discipline of multi-GPU programming is managing that communication so it does not erase the benefit of the extra hardware.</p>
+
+        <h2>The new bottleneck: the interconnect</h2>
+
+        <p>Recall the memory hierarchy from article 1.1. Multi-GPU adds two more, much slower, levels at the bottom:</p>
+
+        <table class="papers">
+          <thead><tr><th>Link</th><th>Scope</th><th>Approx. bandwidth</th><th>Relative speed</th></tr></thead>
+          <tbody>
+            <tr><td>HBM (on-device)</td><td>within a GPU</td><td class="d">2–8 TB/s</td><td>baseline</td></tr>
+            <tr><td>NVLink / NVSwitch</td><td>GPUs in one node</td><td class="d">~400–900 GB/s</td><td>~5–10× slower than HBM</td></tr>
+            <tr><td>PCIe 5.0</td><td>GPU ↔ CPU / GPU ↔ GPU (no NVLink)</td><td class="d">~64 GB/s</td><td>~50–100× slower</td></tr>
+            <tr><td>InfiniBand / Ethernet</td><td>between nodes</td><td class="d">~25–100 GB/s per link</td><td>~100× slower</td></tr>
+          </tbody>
+        </table>
+
+        <p>This table is the master constraint of distributed training. Communication that stays <em>inside a node</em> over NVLink is an order of magnitude cheaper than communication that crosses <em>between nodes</em> over InfiniBand. Every parallelism decision below is really a decision about which data crosses which link. The art is putting the chattiest communication on the fastest link.</p>
+
+        <div class="bm-note"><strong>This is the same lesson as article 1.2, one level up.</strong> On a single GPU you minimized HBM traffic and kept reused data on-chip. Across GPUs you minimize inter-node traffic and keep the chattiest exchanges on NVLink. The pattern — move computation to data, not data to computation; reuse to avoid transfers — repeats at every scale of the hierarchy.</div>
+
+        <h2>The four ways to split work</h2>
+
+        <h3>1. Data parallelism — replicate the model, split the batch</h3>
+        <p>The simplest and most common. Every GPU holds a <em>full copy</em> of the model and processes a different slice of the input batch. After each backward pass, the GPUs must average their gradients so all replicas stay identical — an <strong>all-reduce</strong> across all devices. Data parallelism scales throughput beautifully <em>as long as the model fits on one GPU</em> and the gradient all-reduce does not dominate. Its limit is memory: it does nothing to help a model too big for a single device.</p>
+
+        <p>The modern refinement is <strong>sharded data parallelism</strong> (ZeRO / FSDP), which splits the optimizer states, gradients, and even parameters across the data-parallel group instead of replicating them — trading extra communication for a large memory saving, which lets data parallelism handle much bigger models than naive replication.</p>
+
+        <h3>2. Tensor parallelism — split each layer across GPUs</h3>
+        <p>When a single layer is too big or you want to cut per-layer latency, <strong>tensor parallelism</strong> splits the math of one layer across GPUs. A big matrix multiply <code>Y = XW</code> is partitioned by splitting <code>W</code> into column blocks; each GPU computes part of the output, and the partial results are combined with an all-reduce or all-gather. This is the core idea of Megatron-LM (below). Because it requires an all-reduce <em>within every layer</em>, tensor parallelism is extremely communication-heavy and is therefore almost always confined <em>inside a single node</em>, where NVLink can absorb the traffic.</p>
+
+        <h3>3. Pipeline parallelism — split the layers across GPUs</h3>
+        <p>Put layers 1–10 on GPU 0, layers 11–20 on GPU 1, and so on — the model is a <strong>pipeline</strong> of stages. A batch flows through stage by stage. The problem is the <strong>pipeline bubble</strong>: while GPU 0 works on the first layers, GPU 1 sits idle waiting for GPU 0's output, and vice versa. The fix is <strong>micro-batching</strong>: split the batch into many micro-batches and keep them flowing so all stages stay busy, the way a CPU instruction pipeline overlaps stages. Pipeline parallelism communicates only the activations <em>at stage boundaries</em> — far less than tensor parallelism — so it tolerates the slower inter-node links and is used to span nodes.</p>
+
+        <h3>4. Sequence / context parallelism — split the sequence</h3>
+        <p>For very long contexts, the activations and attention computation can be split along the <em>sequence</em> dimension across GPUs. This is increasingly important as context windows reach hundreds of thousands of tokens (the KV-cache pressure from the DeepSeek series), and it adds its own communication pattern for the attention step.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Three axes of parallelism, three communication patterns</text>
+            <!-- data parallel -->
+            <text x="115" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Data parallel</text>
+            <rect x="55" y="50" width="55" height="55" class="boxg"/><text x="82" y="80" class="sm" text-anchor="middle">full</text><text x="82" y="93" class="sm" text-anchor="middle">model</text>
+            <rect x="120" y="50" width="55" height="55" class="boxg"/><text x="147" y="80" class="sm" text-anchor="middle">full</text><text x="147" y="93" class="sm" text-anchor="middle">model</text>
+            <text x="115" y="122" class="sm" text-anchor="middle">split BATCH</text>
+            <text x="115" y="138" class="sm" text-anchor="middle" style="fill:#c96442">all-reduce gradients</text>
+            <!-- tensor parallel -->
+            <text x="340" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Tensor parallel</text>
+            <rect x="280" y="50" width="55" height="55" class="boxy"/><text x="307" y="80" class="sm" text-anchor="middle">½ of</text><text x="307" y="93" class="sm" text-anchor="middle">layer</text>
+            <rect x="345" y="50" width="55" height="55" class="boxy"/><text x="372" y="80" class="sm" text-anchor="middle">½ of</text><text x="372" y="93" class="sm" text-anchor="middle">layer</text>
+            <text x="340" y="122" class="sm" text-anchor="middle">split EACH LAYER</text>
+            <text x="340" y="138" class="sm" text-anchor="middle" style="fill:#c96442">all-reduce per layer · NVLink only</text>
+            <!-- pipeline parallel -->
+            <text x="565" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Pipeline parallel</text>
+            <rect x="505" y="50" width="55" height="55" class="boxr"/><text x="532" y="80" class="sm" text-anchor="middle">layers</text><text x="532" y="93" class="sm" text-anchor="middle">1–10</text>
+            <rect x="570" y="50" width="55" height="55" class="boxr"/><text x="597" y="80" class="sm" text-anchor="middle">layers</text><text x="597" y="93" class="sm" text-anchor="middle">11–20</text>
+            <text x="565" y="122" class="sm" text-anchor="middle">split DEPTH (stages)</text>
+            <text x="565" y="138" class="sm" text-anchor="middle" style="fill:#c96442">send activations · tolerates InfiniBand</text>
+            <!-- combined -->
+            <rect x="55" y="165" width="570" height="60" class="box" rx="6"/>
+            <text x="340" y="187" class="smk" text-anchor="middle" style="font-weight:bold">3D parallelism = combine all three</text>
+            <text x="340" y="207" class="sm" text-anchor="middle">tensor parallel INSIDE a node (NVLink) · pipeline + data parallel ACROSS nodes (InfiniBand)</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Real large-model training combines all three axes ("3D parallelism"), mapping each to the link that suits its communication cost.</p>
+        </div>
+
+        <h2>Megatron-LM: the reference for tensor parallelism</h2>
+
+        <p>NVIDIA's Megatron-LM is the canonical implementation of tensor (and combined) parallelism for transformers, and its design choices are worth knowing because nearly every large-model training stack borrows them. Its central trick is splitting the transformer's two big sublayers — the MLP and the multi-head attention — across GPUs with the <em>minimum possible synchronization</em>:</p>
+
+        <ul>
+          <li><strong>MLP block.</strong> The first linear layer's weight is split by columns (so each GPU produces a slice of the hidden activation with no communication), the nonlinearity is applied locally, and the second linear is split by rows so that a single <strong>all-reduce</strong> at the end recombines the result. Two matrix multiplies, one communication.</li>
+          <li><strong>Attention block.</strong> Different attention heads go to different GPUs (heads are independent), and again a single all-reduce recombines the output projection. The natural head-parallelism of multi-head attention maps cleanly onto tensor parallelism.</li>
+        </ul>
+
+        <p>The result is just <strong>two all-reduces per transformer layer</strong> (one for attention, one for MLP) in the forward pass. Megatron also introduced <strong>sequence parallelism</strong> to split the parts of the layer (layernorm, dropout) that tensor parallelism leaves replicated, shaving more memory. Combined with pipeline and data parallelism, Megatron's "3D parallelism" is how models with hundreds of billions of parameters are trained on thousands of GPUs.</p>
+
+        <div class="bm-warn"><strong>Why tensor parallelism stays inside a node.</strong> Two all-reduces <em>per layer</em>, for dozens of layers, every forward and backward pass, is an enormous amount of communication. On NVLink (hundreds of GB/s, low latency) it overlaps with compute and is tolerable. Push it across InfiniBand between nodes and the all-reduces dominate, scaling collapses, and your expensive GPUs sit idle waiting on the network. This is the single most important practical rule of distributed training: <strong>tensor-parallel groups must fit within one NVLink domain.</strong></div>
+
+        <h2>Collective communication: NCCL and the operations that matter</h2>
+
+        <p>All four parallelism styles are built from a small set of <strong>collective operations</strong>, implemented for NVIDIA GPUs by <strong>NCCL</strong> (the NVIDIA Collective Communications Library). Knowing the collectives is knowing the vocabulary of distributed GPU work:</p>
+
+        <table class="papers">
+          <thead><tr><th>Collective</th><th>What it does</th><th>Used for</th></tr></thead>
+          <tbody>
+            <tr><td><strong>all-reduce</strong></td><td>Every GPU ends with the sum (or mean) of all GPUs' inputs</td><td>Gradient averaging (DP); tensor-parallel layer outputs</td></tr>
+            <tr><td><strong>all-gather</strong></td><td>Every GPU ends with the concatenation of all inputs</td><td>Reassembling sharded params (FSDP); tensor parallel</td></tr>
+            <tr><td><strong>reduce-scatter</strong></td><td>Sum across GPUs, each keeps one shard of the result</td><td>Sharded gradient reduction (ZeRO/FSDP)</td></tr>
+            <tr><td><strong>broadcast</strong></td><td>One GPU's data copied to all</td><td>Distributing weights at startup</td></tr>
+            <tr><td><strong>point-to-point send/recv</strong></td><td>One GPU to one GPU</td><td>Pipeline stage boundaries</td></tr>
+          </tbody>
+        </table>
+
+        <p>NCCL is topology-aware: it knows whether two GPUs are connected by NVLink, PCIe, or InfiniBand and chooses ring or tree algorithms accordingly. Most of the time you never call NCCL directly — PyTorch DDP/FSDP, DeepSpeed, and Megatron issue the collectives for you — but understanding which collective each parallelism style triggers is how you reason about where the time goes.</p>
+
+        <h2>The real lesson: synchronization &amp; access overhead dominate</h2>
+
+        <p>It is tempting to think distributed training is about adding more compute. In practice, as the work of Oden &amp; Nölp on efficient multi-GPU programming in Python shows, the things that actually decide your scaling efficiency are <strong>synchronization</strong> and <strong>data-access overhead</strong> — not how many FLOP/s you added. Their findings generalize well beyond Python:</p>
+
+        <ul>
+          <li><strong>Synchronization is the silent tax.</strong> Every barrier and every collective forces GPUs to wait for the slowest participant. A single straggler — one slow GPU, one congested network link — stalls the entire group. Reducing the <em>number</em> and <em>frequency</em> of synchronization points often matters more than speeding up any individual GPU.</li>
+          <li><strong>Implicit data movement is expensive and easy to trigger accidentally.</strong> In high-level multi-GPU Python, an innocuous-looking operation can silently copy a large array across PCIe or between devices. Reducing these implicit transfers — by keeping data resident on the device that needs it and being explicit about placement — was where Oden &amp; Nölp found the largest speedups.</li>
+          <li><strong>Overlap communication with computation.</strong> The best distributed code never waits idly for a collective to finish. It launches the communication asynchronously and keeps computing other work meanwhile, hiding the transfer behind compute — the exact same latency-hiding principle as warp scheduling in article 1.1, now at cluster scale. (This is precisely the idea behind the KOG article's "Delayed Tensor Parallelism," which hides the all-reduce behind several layers of compute.)</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Overlap communication with compute, or pay for it twice</text>
+            <!-- serial -->
+            <text x="80" y="45" class="sm" text-anchor="start" style="fill:#c96442;font-weight:bold">NOT overlapped (slow):</text>
+            <rect x="80" y="52" width="120" height="26" class="boxg"/><text x="140" y="69" class="sm" text-anchor="middle">compute</text>
+            <rect x="200" y="52" width="160" height="26" class="boxr"/><text x="280" y="69" class="sm" text-anchor="middle">wait on all-reduce</text>
+            <rect x="360" y="52" width="120" height="26" class="boxg"/><text x="420" y="69" class="sm" text-anchor="middle">compute</text>
+            <text x="500" y="69" class="sm" text-anchor="start">← GPU idle during comm</text>
+            <!-- overlapped -->
+            <text x="80" y="115" class="sm" text-anchor="start" style="fill:#6a8f5f;font-weight:bold">Overlapped (fast):</text>
+            <rect x="80" y="122" width="120" height="26" class="boxg"/><text x="140" y="139" class="sm" text-anchor="middle">compute</text>
+            <rect x="200" y="122" width="160" height="26" class="boxg"/><text x="280" y="139" class="sm" text-anchor="middle">compute (next work)</text>
+            <rect x="200" y="152" width="160" height="16" class="boxr"/><text x="280" y="164" class="sm" text-anchor="middle">all-reduce in background</text>
+            <text x="380" y="139" class="sm" text-anchor="start" style="fill:#6a8f5f">← comm hidden behind compute</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — Communication you cannot eliminate, you hide. Async collectives overlapped with computation are the difference between linear and sub-linear scaling.</p>
+        </div>
+
+        <h2>Scaling efficiency: the number that matters</h2>
+
+        <p>The metric for all of this is <strong>scaling efficiency</strong>: if one GPU does work at rate R, do N GPUs reach N×R? Perfect (linear) scaling is the goal; reality falls short because of the communication and synchronization above.</p>
+
+        <div class="eq">scaling efficiency = (throughput on N GPUs) / (N × throughput on 1 GPU)</div>
+
+        <ul>
+          <li><strong>Strong scaling</strong> — fixed problem size, more GPUs. Hardest, because per-GPU work shrinks while communication stays, so the communication fraction grows and efficiency drops. Amdahl's law in hardware form.</li>
+          <li><strong>Weak scaling</strong> — grow the problem with the GPU count (e.g. bigger batch or model). Easier to keep efficient, because each GPU stays well-fed. Large-model training is mostly a weak-scaling story.</li>
+        </ul>
+
+        <p>A well-tuned 3D-parallel training run on thousands of GPUs can hold scaling efficiency in the 50–70% range — and getting there is almost entirely about the communication management in this article, not about faster kernels. Past a point, the kernels are fine; the network is the frontier.</p>
+
+        <h2>Practical guidance</h2>
+        <div class="bm-fix">
+          <p><strong>Order of reach.</strong> Use the smallest parallelism that fits: pure data parallelism if the model fits on one GPU; add FSDP/ZeRO sharding when memory is tight; add tensor parallelism (inside a node) when a layer is too big or latency matters; add pipeline parallelism (across nodes) when even that is not enough. Combine all three only at the largest scale.</p>
+          <p><strong>Map parallelism to links.</strong> Tensor parallel → within NVLink domain. Pipeline + data parallel → across InfiniBand. Never let per-layer all-reduces cross node boundaries.</p>
+          <p><strong>Measure communication explicitly.</strong> Nsight Systems (article 2.2) shows NCCL collectives on the timeline — look for GPUs idling on communication, and for collectives that fail to overlap with compute. That gap is your scaling loss, made visible.</p>
+        </div>
+
+        <h2>FAQ</h2>
+        <details class="faq"><summary>If I have 8 GPUs in one server, do I need any of this, or does PyTorch just handle it?</summary><p>For a model that fits on one GPU, <code>DistributedDataParallel</code> handles 8-GPU data parallelism with a few lines and you get near-linear scaling over NVLink. You only reach for tensor/pipeline parallelism when the model itself does not fit, or when you need lower per-step latency than data parallelism alone provides.</p></details>
+        <details class="faq"><summary>What's the difference between DDP and FSDP?</summary><p>DDP replicates the full model on every GPU and all-reduces gradients — simple, but every GPU needs to hold the whole model plus optimizer states. FSDP (Fully Sharded Data Parallel) shards parameters, gradients, and optimizer states across the group, gathering each layer's params just-in-time for its forward/backward. FSDP uses more communication but far less memory, letting data parallelism scale to models that would never fit under DDP.</p></details>
+        <details class="faq"><summary>Why is tensor parallelism limited to ~8 GPUs in practice?</summary><p>Because its per-layer all-reduce is so communication-intensive that it only stays efficient within a single NVLink/NVSwitch domain — which is typically 8 GPUs in a node. Beyond that you would be doing per-layer collectives over InfiniBand, and scaling falls off a cliff. So tensor parallelism handles the "within a node" axis; pipeline and data parallelism handle "across nodes."</p></details>
+        <details class="faq"><summary>Does inference need model parallelism too?</summary><p>Yes — a model whose weights exceed one GPU's memory must be sharded for inference as well, usually with tensor parallelism inside a node (as in vLLM/TensorRT-LLM). The communication pressure is lower than training (no gradient all-reduce), but the same NVLink-domain rule applies. The KOG article is an extreme case study of inference-time tensor parallelism.</p></details>
+        <details class="faq"><summary>Is the pipeline bubble ever fully eliminated?</summary><p>Never fully, but micro-batching and clever schedules (interleaved/1F1B) shrink it to a small fraction. The bubble is fundamental: at the start and end of each batch, some stages have no work. More micro-batches amortize the fixed bubble over more useful work, which is why pipeline parallelism wants many micro-batches in flight.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li>Past one GPU, <strong>communication is the bottleneck</strong>, and the <strong>interconnect hierarchy</strong> (HBM ≫ NVLink ≫ PCIe ≫ InfiniBand) governs every decision.</li>
+          <li>Four ways to split: <strong>data</strong> (replicate, split batch), <strong>tensor</strong> (split each layer), <strong>pipeline</strong> (split depth), <strong>sequence</strong> (split context).</li>
+          <li><strong>Megatron-LM</strong> does tensor parallelism with just two all-reduces per layer — and must stay inside an NVLink domain.</li>
+          <li>Collectives (all-reduce, all-gather, reduce-scatter) via <strong>NCCL</strong> are the vocabulary; each parallelism style triggers specific ones.</li>
+          <li><strong>Synchronization and implicit data movement</strong> — not raw compute — decide scaling efficiency (Oden &amp; Nölp).</li>
+          <li><strong>Overlap communication with compute</strong> — the same latency-hiding idea as warp scheduling, at cluster scale.</li>
+          <li>Reach for the <strong>smallest parallelism that fits</strong>; map each axis to the link that suits its communication cost.</li>
+        </ul>
+
+        <p>The final article, <strong>3.2</strong>, zooms out one more level — from a training job to the whole datacenter: how GPU clusters are scheduled, virtualized, and shared safely between many tenants, and why a $40M cluster can sit at 50% utilization.</p>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://arxiv.org/abs/1909.08053" target="_blank">Shoeybi et al. — <em>Megatron-LM: Training Multi-Billion Parameter Models Using Model Parallelism</em></a> <span>— the tensor-parallel reference.</span></li>
+          <li><a href="https://arxiv.org/abs/2104.04473" target="_blank">Narayanan et al. — <em>Efficient Large-Scale Training on GPU Clusters Using Megatron-LM</em></a> <span>— 3D parallelism and scaling to thousands of GPUs.</span></li>
+          <li><a href="https://arxiv.org/abs/1910.02054" target="_blank">Rajbhandari et al. — <em>ZeRO: Memory Optimizations Toward Training Trillion Parameter Models</em></a> <span>— sharded data parallelism.</span></li>
+          <li><a href="https://ieeexplore.ieee.org/" target="_blank">Oden &amp; Nölp — <em>Efficient Multi-GPU Programming in Python: Reducing Synchronization and Access Overheads</em></a> <span>— the synchronization/access lesson.</span></li>
+          <li><a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/" target="_blank">NVIDIA NCCL documentation</a> <span>— the collective operations and topology awareness.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="gpu-2-2-tooling.html">← 2.2 Profilers &amp; kernel DSLs</a>
+        <a href="gpu-3-2-datacenter.html">3.2 Datacenters &amp; multi-tenancy →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

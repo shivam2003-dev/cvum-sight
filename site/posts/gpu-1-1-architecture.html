@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How a GPU Actually Works — SIMT, Warps &amp; the Hardware — cvam.sight</title>
+<meta name="description" content="The GPU execution model from the silicon up: SIMT, warps, SMs, the scheduler, and how NVIDIA Ampere/Hopper and AMD RDNA/CDNA actually run your threads.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.9rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">GPU Programming &amp; Optimization · Phase 1 — Architecture</p>
+        <p class="series-banner-title">How a GPU Actually Works</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 1 of 6 · Phase 1 of 3</p>
+        <div class="series-banner-nav">
+          <a href="gpu-1-1-architecture.html" class="active">1.1 Architecture</a>
+          <a href="gpu-1-2-memory.html">1.2 Memory</a>
+          <a href="gpu-2-1-optimization.html">2.1 Optimize</a>
+          <a href="gpu-2-2-tooling.html">2.2 Tooling</a>
+          <a href="gpu-3-1-multi-gpu.html">3.1 Multi-GPU</a>
+          <a href="gpu-3-2-datacenter.html">3.2 Datacenter</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 29, 2026 · ml · 23 min read · 4600 words <span class="difficulty beginner">beginner</span></p>
+        <h1>How a GPU actually works — SIMT, warps &amp; the silicon.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">gpu</span>
+          <span class="tag">cuda</span>
+          <span class="tag">simt</span>
+          <span class="tag">architecture</span>
+          <span class="tag">phase-1</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">A GPU is not a fast CPU. It is a throughput machine that hides memory latency by keeping thousands of threads in flight and switching between them for free. Threads run in lock-step groups of 32 (a <em>warp</em>) on a Streaming Multiprocessor (SM). Understand the warp, the SM, and the memory hierarchy, and every optimization in the rest of this series stops being magic and starts being arithmetic. This is the foundation article — no CUDA code required yet, just the mental model.</p>
+
+        <p>Most people who write GPU code start from CPU intuition: a few fast cores, branch prediction, deep caches, out-of-order execution. That intuition is not just unhelpful for GPUs — it is actively wrong. A GPU throws away almost everything a CPU spends transistors on (big caches, branch predictors, speculative execution) and spends those transistors on one thing: raw arithmetic units, thousands of them. The price you pay is that the GPU is dumb about latency. A single thread on a GPU is slow. The trick is that a GPU never runs a single thread — it runs tens of thousands, and uses the sheer number of them to hide the fact that any one of them is stalled waiting on memory.</p>
+
+        <p>This article builds the model from the bottom up: the CPU/GPU split, SIMT and the warp, the Streaming Multiprocessor, how warps get scheduled to hide latency, the memory hierarchy that everything bottlenecks on, and finally how this maps onto real silicon — NVIDIA Ampere and Hopper, and AMD RDNA and CDNA. By the end you should be able to look at a kernel and reason about why it is fast or slow before you ever open a profiler.</p>
+
+        <h2>CPU vs GPU: latency machine vs throughput machine</h2>
+
+        <p>The cleanest way to understand a GPU is by contrast. A CPU is a <strong>latency-optimized</strong> device. Its entire design answers the question: "how do I finish <em>this one</em> instruction stream as fast as possible?" So it spends transistors on:</p>
+
+        <ul>
+          <li><strong>Large caches</strong> (tens of MB of L3) so data is close.</li>
+          <li><strong>Branch predictors and speculation</strong> so it rarely stalls on a branch.</li>
+          <li><strong>Out-of-order execution</strong> so independent instructions fill the gaps while one waits.</li>
+          <li><strong>High clock speeds</strong> (4–5 GHz) and a handful of very wide, very smart cores.</li>
+        </ul>
+
+        <p>A GPU is a <strong>throughput-optimized</strong> device. Its design answers a different question: "how do I finish <em>this huge pile</em> of independent work per second?" It does not care how long any single item takes. So it spends transistors on:</p>
+
+        <ul>
+          <li><strong>Thousands of simple ALUs</strong> instead of a few complex cores.</li>
+          <li><strong>Tiny per-thread resources</strong> but enormous register files shared across many threads.</li>
+          <li><strong>Latency hiding by oversubscription</strong> — keep so many threads resident that when some stall on memory, others always have work ready.</li>
+          <li><strong>Modest clocks</strong> (~1.5–2 GHz) but massive parallel width.</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <text x="170" y="20" class="smk" text-anchor="middle" style="font-size:13px;font-weight:bold">CPU — few big cores</text>
+            <rect x="60" y="35" width="100" height="80" class="box" rx="4"/>
+            <rect x="180" y="35" width="100" height="80" class="box" rx="4"/>
+            <text x="110" y="70" class="sm" text-anchor="middle">core</text>
+            <text x="110" y="85" class="sm" text-anchor="middle">+ big cache</text>
+            <text x="230" y="70" class="sm" text-anchor="middle">core</text>
+            <text x="230" y="85" class="sm" text-anchor="middle">+ predictor</text>
+            <rect x="60" y="125" width="220" height="35" class="boxy" rx="4"/>
+            <text x="170" y="147" class="sm" text-anchor="middle">large shared L3 cache</text>
+            <text x="170" y="185" class="sm" text-anchor="middle">optimize: time-to-finish ONE stream</text>
+
+            <text x="510" y="20" class="smk" text-anchor="middle" style="font-size:13px;font-weight:bold">GPU — thousands of tiny ALUs</text>
+            <g>
+              <!-- grid of small ALUs -->
+              <g fill="#dfead8" stroke="#2a2620" stroke-width="1">
+                <rect x="400" y="35" width="16" height="16"/><rect x="420" y="35" width="16" height="16"/><rect x="440" y="35" width="16" height="16"/><rect x="460" y="35" width="16" height="16"/><rect x="480" y="35" width="16" height="16"/><rect x="500" y="35" width="16" height="16"/><rect x="520" y="35" width="16" height="16"/><rect x="540" y="35" width="16" height="16"/><rect x="560" y="35" width="16" height="16"/><rect x="580" y="35" width="16" height="16"/><rect x="600" y="35" width="16" height="16"/><rect x="620" y="35" width="16" height="16"/>
+                <rect x="400" y="55" width="16" height="16"/><rect x="420" y="55" width="16" height="16"/><rect x="440" y="55" width="16" height="16"/><rect x="460" y="55" width="16" height="16"/><rect x="480" y="55" width="16" height="16"/><rect x="500" y="55" width="16" height="16"/><rect x="520" y="55" width="16" height="16"/><rect x="540" y="55" width="16" height="16"/><rect x="560" y="55" width="16" height="16"/><rect x="580" y="55" width="16" height="16"/><rect x="600" y="55" width="16" height="16"/><rect x="620" y="55" width="16" height="16"/>
+                <rect x="400" y="75" width="16" height="16"/><rect x="420" y="75" width="16" height="16"/><rect x="440" y="75" width="16" height="16"/><rect x="460" y="75" width="16" height="16"/><rect x="480" y="75" width="16" height="16"/><rect x="500" y="75" width="16" height="16"/><rect x="520" y="75" width="16" height="16"/><rect x="540" y="75" width="16" height="16"/><rect x="560" y="75" width="16" height="16"/><rect x="580" y="75" width="16" height="16"/><rect x="600" y="75" width="16" height="16"/><rect x="620" y="75" width="16" height="16"/>
+                <rect x="400" y="95" width="16" height="16"/><rect x="420" y="95" width="16" height="16"/><rect x="440" y="95" width="16" height="16"/><rect x="460" y="95" width="16" height="16"/><rect x="480" y="95" width="16" height="16"/><rect x="500" y="95" width="16" height="16"/><rect x="520" y="95" width="16" height="16"/><rect x="540" y="95" width="16" height="16"/><rect x="560" y="95" width="16" height="16"/><rect x="580" y="95" width="16" height="16"/><rect x="600" y="95" width="16" height="16"/><rect x="620" y="95" width="16" height="16"/>
+              </g>
+              <rect x="400" y="125" width="232" height="35" class="boxy" rx="4"/>
+              <text x="516" y="147" class="sm" text-anchor="middle">small caches + huge register file</text>
+              <text x="516" y="185" class="sm" text-anchor="middle">optimize: work-finished-per-second (throughput)</text>
+            </g>
+          </svg>
+          <p class="diagram-label">Fig 1 — Same transistor budget, opposite philosophy. The CPU spends them on making one stream fast; the GPU spends them on running many streams at once.</p>
+        </div>
+
+        <p>This is why a GPU's single-thread performance is genuinely bad and that is fine by design. The whole machine is a bet that your problem has enough independent parallel work to keep those ALUs busy. Matrix multiply, convolution, attention, ray tracing, particle simulation — these are embarrassingly parallel, which is exactly why GPUs ate them.</p>
+
+        <h2>The unit of execution: the warp (SIMT)</h2>
+
+        <p>Here is the single most important idea in GPU programming, and the one CPU intuition gets most wrong: <strong>threads do not execute individually. They execute in lock-step groups of 32 called a warp.</strong> (AMD calls its group a <em>wavefront</em>; it is 32 or 64 threads depending on architecture. The idea is identical.)</p>
+
+        <p>NVIDIA's name for this model is <strong>SIMT — Single Instruction, Multiple Thread.</strong> It sits between two older ideas:</p>
+
+        <ul>
+          <li><strong>SIMD</strong> (Single Instruction, Multiple Data), as in CPU vector units: one instruction operates on a fixed-width vector. The programmer or compiler must explicitly pack data into vectors.</li>
+          <li><strong>SIMT:</strong> you write code as if each thread is independent and scalar — it has its own program counter conceptually, its own registers, its own index. But the hardware <em>executes</em> 32 of those threads together, issuing one instruction to all 32 lanes per cycle.</li>
+        </ul>
+
+        <p>So SIMT gives you the <em>programming convenience</em> of independent scalar threads with the <em>hardware efficiency</em> of SIMD vector execution. You get to write <code>c[i] = a[i] + b[i]</code> per thread and the hardware quietly runs 32 such adds in one shot.</p>
+
+        <div class="bm-note"><strong>Why 32?</strong> The warp size of 32 is a hardware constant on every NVIDIA GPU ever made, and it is the magic number behind almost every performance rule in this series. Thread block sizes should be multiples of 32. Memory access patterns are judged 32 threads at a time. Branch costs are paid per-warp. If you remember one number from this article, remember 32.</div>
+
+        <h2>Warp divergence: the cost of branches</h2>
+
+        <p>Because all 32 threads in a warp share a single instruction stream, what happens when they hit a branch and disagree? Say half the warp takes the <code>if</code> and half takes the <code>else</code>:</p>
+
+        <pre class="code">if (threadIdx.x % 2 == 0)
+    x = expensive_path_A();   // even lanes want this
+else
+    x = expensive_path_B();   // odd lanes want this</pre>
+
+        <p>The hardware cannot run two different instructions on one warp at the same time. So it <strong>serializes</strong>: it runs path A with the odd lanes <em>masked off</em> (their results discarded), then runs path B with the even lanes masked off. Both halves of the warp pay for both paths. This is <strong>warp divergence</strong>, and in the worst case a branch can cut your throughput in half (or worse, with nested branches).</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">A divergent branch inside one warp serializes both paths</text>
+            <rect x="40" y="40" width="160" height="34" class="boxy" rx="4"/>
+            <text x="120" y="62" class="sm" text-anchor="middle">warp hits if/else (32 lanes)</text>
+            <path d="M200 57 L260 57" class="arr" marker-end="url(#a1)"/>
+            <rect x="260" y="34" width="180" height="30" class="box" rx="4"/>
+            <text x="350" y="53" class="sm" text-anchor="middle">run path A · odd lanes MASKED</text>
+            <rect x="260" y="74" width="180" height="30" class="box" rx="4"/>
+            <text x="350" y="93" class="sm" text-anchor="middle">run path B · even lanes MASKED</text>
+            <path d="M440 49 L500 65" class="arr" marker-end="url(#a1)"/>
+            <path d="M440 89 L500 73" class="arr" marker-end="url(#a1)"/>
+            <rect x="500" y="55" width="150" height="30" class="boxy" rx="4"/>
+            <text x="575" y="74" class="sm" text-anchor="middle">reconverge</text>
+            <text x="340" y="140" class="sm" text-anchor="middle">total time = time(A) + time(B), not max(A,B). Lanes idle while masked.</text>
+            <text x="340" y="165" class="sm" text-anchor="middle" style="fill:#c96442">If all 32 lanes agree on the branch, there is NO divergence cost.</text>
+            <defs><marker id="a1" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 2 — Divergence is a per-warp cost. Branches are not free, but they are only expensive when threads <em>within the same warp</em> disagree.</p>
+        </div>
+
+        <p>The crucial nuance: divergence is only costly <em>within</em> a warp. If your branch splits cleanly along warp boundaries — say, warps 0–3 take one path and warps 4–7 take the other — there is no penalty at all, because each warp is internally unanimous. This is why a condition like <code>if (blockIdx.x &lt; N)</code> is usually cheap (whole blocks agree) while <code>if (data[threadIdx.x] &gt; 0)</code> on random data is expensive (lanes disagree). We will return to this in article 1.2; for now, just hold the rule: <strong>keep threads in a warp doing the same thing.</strong></p>
+
+        <h2>The Streaming Multiprocessor (SM): where warps live</h2>
+
+        <p>Warps do not float in space — they run on a <strong>Streaming Multiprocessor</strong>, the GPU's fundamental compute building block. (AMD calls the equivalent a <em>Compute Unit</em>, CU.) A modern data-center GPU has dozens to over a hundred SMs; an NVIDIA H100 has 132. Each SM is a small, self-contained parallel processor with:</p>
+
+        <ul>
+          <li><strong>CUDA cores / ALUs</strong> — the arithmetic lanes that actually execute warp instructions (FP32, INT32, and on newer parts FP64 and FP16 units).</li>
+          <li><strong>Tensor Cores</strong> — specialized matrix-multiply-accumulate units (since Volta) that do the heavy lifting for deep learning. A single Tensor Core instruction multiplies small matrix tiles in one shot.</li>
+          <li><strong>Warp schedulers</strong> — typically 4 per SM, each able to issue an instruction from a ready warp every cycle.</li>
+          <li><strong>A register file</strong> — large (256 KB per SM on Ampere/Hopper) and partitioned among all resident threads.</li>
+          <li><strong>Shared memory / L1 cache</strong> — a fast, on-chip scratchpad (up to ~228 KB per SM on Hopper) that threads in a block use to cooperate. This is the single most important optimization lever and gets its own treatment in article 1.2.</li>
+          <li><strong>Load/Store units and Special Function Units (SFUs)</strong> for memory ops and transcendentals (sin, exp, rsqrt).</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 280" xmlns="http://www.w3.org/2000/svg">
+            <rect x="30" y="30" width="620" height="230" class="box" rx="6"/>
+            <text x="340" y="50" class="smk" text-anchor="middle" style="font-weight:bold">One Streaming Multiprocessor (SM)</text>
+            <!-- 4 processing blocks -->
+            <g>
+              <rect x="45" y="65" width="145" height="120" class="boxg" rx="4"/>
+              <text x="117" y="82" class="sm" text-anchor="middle">processing block 0</text>
+              <rect x="55" y="90" width="125" height="20" class="box"/><text x="117" y="104" class="sm" text-anchor="middle">warp scheduler</text>
+              <rect x="55" y="115" width="60" height="55" class="boxy"/><text x="85" y="146" class="sm" text-anchor="middle">FP32/INT</text>
+              <rect x="120" y="115" width="60" height="55" class="boxy"/><text x="150" y="142" class="sm" text-anchor="middle">Tensor</text><text x="150" y="155" class="sm" text-anchor="middle">Core</text>
+            </g>
+            <g>
+              <rect x="200" y="65" width="145" height="120" class="boxg" rx="4"/>
+              <text x="272" y="82" class="sm" text-anchor="middle">processing block 1</text>
+              <rect x="210" y="90" width="125" height="20" class="box"/><text x="272" y="104" class="sm" text-anchor="middle">warp scheduler</text>
+              <rect x="210" y="115" width="60" height="55" class="boxy"/><text x="240" y="146" class="sm" text-anchor="middle">FP32/INT</text>
+              <rect x="275" y="115" width="60" height="55" class="boxy"/><text x="305" y="142" class="sm" text-anchor="middle">Tensor</text><text x="305" y="155" class="sm" text-anchor="middle">Core</text>
+            </g>
+            <g>
+              <rect x="355" y="65" width="145" height="120" class="boxg" rx="4"/>
+              <text x="427" y="82" class="sm" text-anchor="middle">processing block 2</text>
+              <rect x="365" y="90" width="125" height="20" class="box"/><text x="427" y="104" class="sm" text-anchor="middle">warp scheduler</text>
+              <rect x="365" y="115" width="60" height="55" class="boxy"/><text x="395" y="146" class="sm" text-anchor="middle">FP32/INT</text>
+              <rect x="430" y="115" width="60" height="55" class="boxy"/><text x="460" y="142" class="sm" text-anchor="middle">Tensor</text><text x="460" y="155" class="sm" text-anchor="middle">Core</text>
+            </g>
+            <g>
+              <rect x="510" y="65" width="125" height="120" class="boxg" rx="4"/>
+              <text x="572" y="82" class="sm" text-anchor="middle">processing block 3</text>
+              <rect x="520" y="90" width="105" height="20" class="box"/><text x="572" y="104" class="sm" text-anchor="middle">warp scheduler</text>
+              <rect x="520" y="115" width="50" height="55" class="boxy"/><text x="545" y="146" class="sm" text-anchor="middle">FP32</text>
+              <rect x="575" y="115" width="50" height="55" class="boxy"/><text x="600" y="142" class="sm" text-anchor="middle">Tensor</text>
+            </g>
+            <!-- shared resources -->
+            <rect x="45" y="195" width="590" height="25" class="boxy" rx="4"/>
+            <text x="340" y="212" class="sm" text-anchor="middle">register file (256 KB) — split across all resident warps</text>
+            <rect x="45" y="225" width="590" height="25" class="boxy" rx="4"/>
+            <text x="340" y="242" class="sm" text-anchor="middle">Shared memory / L1 cache (up to ~228 KB) — block-private scratchpad</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — An SM is divided into processing blocks, each with its own warp scheduler and ALU/Tensor lanes, all sharing one register file and one shared-memory/L1 pool.</p>
+        </div>
+
+        <p>When you launch a kernel, you launch a <strong>grid</strong> of <strong>thread blocks</strong>. The GPU's global scheduler assigns whole blocks to SMs. A block stays resident on one SM for its entire life — it never migrates. Within the SM, the block's threads are chopped into warps of 32, and those warps compete for the warp schedulers. Several blocks can be resident on one SM simultaneously, as long as their combined registers and shared memory fit. That co-residency is what creates the pool of warps the SM needs to hide latency — the subject of the next section.</p>
+
+        <h2>Latency hiding: the whole point</h2>
+
+        <p>Now the payoff. A read from GPU global memory (HBM) costs roughly 400–800 clock cycles of latency. On a CPU, a stall like that is a disaster — out-of-order execution and caches exist precisely to avoid it. A GPU has none of that machinery. So how does it not grind to a halt every time a thread touches memory?</p>
+
+        <p>The answer is <strong>zero-cost context switching between warps.</strong> Because every resident warp's full state (registers, program counter) lives permanently in the SM's huge register file, the warp scheduler can switch from a stalled warp to a ready one in a <em>single cycle</em>, with no save/restore. There is no context to swap — it is all already on-chip.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">One warp scheduler keeps the ALUs busy by switching warps</text>
+            <line x1="60" y1="180" x2="640" y2="180" class="ink" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="350" y="200" class="sm" text-anchor="middle">time →</text>
+            <!-- warp lanes -->
+            <g>
+              <rect x="70" y="40" width="70" height="22" class="boxy"/><text x="105" y="55" class="sm" text-anchor="middle">W0 run</text>
+              <rect x="140" y="40" width="120" height="22" class="box" stroke-dasharray="4 3"/><text x="200" y="55" class="sm" text-anchor="middle">W0 stalled (mem)</text>
+              <rect x="260" y="40" width="70" height="22" class="boxy"/><text x="295" y="55" class="sm" text-anchor="middle">W0 run</text>
+            </g>
+            <g>
+              <rect x="140" y="68" width="70" height="22" class="boxg"/><text x="175" y="83" class="sm" text-anchor="middle">W1 run</text>
+              <rect x="210" y="68" width="120" height="22" class="box" stroke-dasharray="4 3"/><text x="270" y="83" class="sm" text-anchor="middle">W1 stalled</text>
+            </g>
+            <g>
+              <rect x="210" y="96" width="70" height="22" class="boxg"/><text x="245" y="111" class="sm" text-anchor="middle">W2 run</text>
+              <rect x="280" y="96" width="120" height="22" class="box" stroke-dasharray="4 3"/><text x="340" y="111" class="sm" text-anchor="middle">W2 stalled</text>
+            </g>
+            <g>
+              <rect x="280" y="124" width="70" height="22" class="boxg"/><text x="315" y="139" class="sm" text-anchor="middle">W3 run</text>
+            </g>
+            <text x="340" y="168" class="sm" text-anchor="middle" style="fill:#c96442">The hardware unit is NEVER idle — there is always some ready warp to issue.</text>
+          </svg>
+          <p class="diagram-label">Fig 4 — Latency hiding through oversubscription: while warp 0 waits on memory, the scheduler issues warps 1, 2, 3. With enough resident warps, the stall is completely covered.</p>
+        </div>
+
+        <p>This reframes the entire optimization problem. On a CPU you fight latency. On a GPU you <em>hide</em> it — and you hide it by having enough independent warps resident that there is always one ready to run. The ratio of resident warps to the maximum the SM can hold is called <strong>occupancy</strong>, and it is one of the central knobs in GPU performance. Low occupancy means few warps to switch between, which means memory stalls poke through as idle ALU time. We will define occupancy precisely and learn to tune it in articles 1.2 and 2.1; for now the intuition is enough: <strong>more resident warps → better latency hiding → higher throughput</strong> (up to a point).</p>
+
+        <h2>The memory hierarchy: where performance is won or lost</h2>
+
+        <p>Compute is rarely the GPU bottleneck. Memory almost always is. A modern GPU can do tens of TFLOP/s of arithmetic but can only stream a few TB/s of data from its main memory — so for most kernels, the question is not "how fast can it compute" but "how fast can I feed it." The memory hierarchy, fastest and smallest first:</p>
+
+        <table class="papers">
+          <thead><tr><th>Level</th><th>Scope</th><th>Approx. latency</th><th>Approx. size</th><th>Bandwidth</th></tr></thead>
+          <tbody>
+            <tr><td>Registers</td><td>per-thread</td><td class="d">~1 cycle</td><td class="d">256 KB / SM</td><td class="d">~enormous</td></tr>
+            <tr><td>Shared memory / L1</td><td>per-block</td><td class="d">~20–30 cycles</td><td class="d">~228 KB / SM</td><td class="d">~10s TB/s</td></tr>
+            <tr><td>L2 cache</td><td>whole GPU</td><td class="d">~200 cycles</td><td class="d">~50 MB (Hopper)</td><td class="d">~several TB/s</td></tr>
+            <tr><td>Global memory (HBM)</td><td>whole GPU</td><td class="d">~400–800 cycles</td><td class="d">40–192 GB</td><td class="d">~2–8 TB/s</td></tr>
+            <tr><td>Host (CPU) RAM over PCIe/NVLink</td><td>system</td><td class="d">~microseconds</td><td class="d">100s GB–TB</td><td class="d">~32–900 GB/s</td></tr>
+          </tbody>
+        </table>
+
+        <p>Two facts drive everything. First, each level down is roughly an order of magnitude slower and larger — exactly like a CPU hierarchy, but with the twist that shared memory is <em>programmer-managed</em>, not an automatic cache. Second, the gap between compute throughput and HBM bandwidth is wide and growing; this gap is what the <strong>Roofline model</strong> (article 2.1) formalizes, and it is why so much of GPU optimization is really memory optimization in disguise.</p>
+
+        <div class="bm-warn"><strong>The mental model that matters:</strong> a GPU kernel is fast when (a) its warps stay busy hiding memory latency, (b) its memory accesses are <em>coalesced</em> so a warp's 32 reads turn into one wide transaction, and (c) it reuses data in shared memory and registers instead of re-fetching from HBM. Almost every technique in this series is a variation on one of those three. Article 1.2 makes (b) and (c) concrete.</div>
+
+        <h2>Mapping the model onto real silicon</h2>
+
+        <p>The abstract model — SM, warps, schedulers, hierarchy — is stable across GPU generations. What changes each generation is the <em>counts and special units</em>. A quick tour of the architectures named in this series.</p>
+
+        <h3>NVIDIA Ampere (A100, RTX 30-series)</h3>
+
+        <p>Ampere (2020) is the workhorse that trained most of the models you have heard of. Per the NVIDIA A100 whitepaper: 108 SMs, 3rd-generation Tensor Cores adding <strong>TF32</strong> (a 19-bit format that gave a near-free speedup for FP32 training) and structured sparsity support (skip half the weights for up to 2× throughput). The A100 introduced 40/80 GB of HBM2e at up to ~2 TB/s and a 40 MB L2. Crucially for this series, Ampere added <strong>asynchronous copy</strong> (<code>cp.async</code>) — letting a thread launch a global→shared-memory copy that proceeds in the background, a key ingredient in modern fused kernels like FlashAttention.</p>
+
+        <h3>NVIDIA Hopper (H100, H200)</h3>
+
+        <p>Hopper (2022) is the current data-center standard. 132 SMs, 4th-gen Tensor Cores with the <strong>Transformer Engine</strong> and FP8 support (doubling throughput again for LLM training/inference), HBM3 at ~3.35 TB/s (H100) or HBM3e at ~4.8 TB/s (H200), and a 50 MB L2. Hopper added <strong>thread block clusters</strong> and <strong>distributed shared memory</strong> — letting blocks on different SMs share data directly — plus the <strong>Tensor Memory Accelerator (TMA)</strong> for bulk asynchronous memory movement. These features exist specifically to feed the Tensor Cores fast enough.</p>
+
+        <h3>AMD CDNA (MI250X, MI300X)</h3>
+
+        <p>CDNA is AMD's data-center compute architecture — the GPU behind the KOG monokernel article and a growing share of HPC and AI clusters. Its building block is the <strong>Compute Unit (CU)</strong>, analogous to an SM, and it executes <strong>wavefronts</strong> (AMD's warps). The MI300X is notable for 192 GB of HBM3 — far more memory than an H100 — which makes it attractive for serving very large models on a single device. AMD's matrix engines are the equivalent of Tensor Cores, and the software stack is <strong>ROCm/HIP</strong> rather than CUDA, though HIP is deliberately CUDA-like to ease porting.</p>
+
+        <h3>AMD RDNA (Radeon, consumer)</h3>
+
+        <p>RDNA is AMD's <em>graphics</em>-focused line (gaming GPUs). It shares the CU/wavefront vocabulary but is tuned for rendering and shader workloads rather than HPC matrix math — narrower wavefronts (32-wide "wave32" mode by default), smaller register files, no high-throughput FP64. The split between RDNA (graphics) and CDNA (compute) mirrors NVIDIA's quieter split between consumer GeForce and data-center parts: same core ideas, different transistor allocation for different markets.</p>
+
+        <table class="papers">
+          <thead><tr><th>Concept</th><th>NVIDIA / CUDA</th><th>AMD / ROCm</th></tr></thead>
+          <tbody>
+            <tr><td>Compute block</td><td>Streaming Multiprocessor (SM)</td><td>Compute Unit (CU)</td></tr>
+            <tr><td>Lock-step thread group</td><td>Warp (32 threads)</td><td>Wavefront (32 or 64)</td></tr>
+            <tr><td>Matrix unit</td><td>Tensor Core</td><td>Matrix Core</td></tr>
+            <tr><td>Scratchpad</td><td>Shared memory</td><td>Local Data Share (LDS)</td></tr>
+            <tr><td>Programming model</td><td>CUDA</td><td>HIP / ROCm</td></tr>
+            <tr><td>Bulk async copy</td><td>cp.async / TMA</td><td>async LDS load</td></tr>
+          </tbody>
+        </table>
+
+        <h2>The execution hierarchy, end to end</h2>
+
+        <p>Tying the software and hardware sides together, here is the full chain from your launch to a lane doing arithmetic:</p>
+
+        <div class="eq">grid → thread block → warp (32 threads) → thread → lane on an ALU</div>
+
+        <ul>
+          <li><strong>Grid:</strong> the entire launch — all the work for one kernel call.</li>
+          <li><strong>Block:</strong> a group of threads that can cooperate via shared memory and barriers; assigned whole to one SM.</li>
+          <li><strong>Warp:</strong> 32 threads that execute in lock-step; the true hardware unit of scheduling.</li>
+          <li><strong>Thread:</strong> your scalar program, with its own registers and indices.</li>
+          <li><strong>Lane:</strong> the physical ALU slot a thread occupies within its warp.</li>
+        </ul>
+
+        <p>The corresponding memory scopes nest the same way: threads have private registers, blocks share shared memory, and the whole grid shares global memory. Getting work and data to line up with this nesting — block-sized chunks that fit in shared memory, warp-sized accesses that coalesce — is the entire game.</p>
+
+        <h2>Common misconceptions</h2>
+
+        <div class="bm-note">
+          <p><strong>"More threads is always faster."</strong> No — past the point where you have enough warps to hide latency, extra threads just compete for registers and shared memory and can <em>lower</em> occupancy. There is a sweet spot, not a monotonic curve.</p>
+          <p><strong>"GPUs are just for graphics / for AI."</strong> The same SIMT machine runs graphics, deep learning, molecular dynamics, finance, and databases. The architecture is general-purpose throughput; the workload just needs parallelism.</p>
+          <p><strong>"A thread is like a CPU thread."</strong> A GPU thread is far lighter — no individual stack-heavy context, scheduled 32-at-a-time, and cheap to have millions of. Treating them as heavyweight OS threads leads to badly under-parallelized code.</p>
+          <p><strong>"The GPU runs my code out of order to hide stalls."</strong> It does not. There is no per-thread out-of-order engine. Latency hiding comes entirely from switching between independent warps, which only works if you gave it enough of them.</p>
+        </div>
+
+        <h2>FAQ</h2>
+
+        <details class="faq"><summary>Is a CUDA core the same as a CPU core?</summary><p>No, and the marketing name is misleading. A "CUDA core" is a single ALU lane — closer to one lane of a CPU's vector unit than to a full CPU core. A whole SM (with its scheduler, registers, and shared memory) is the better analogue to a CPU core, and a CUDA core is one of its many arithmetic lanes.</p></details>
+        <details class="faq"><summary>If warps are 32 threads, why can I launch blocks of any size?</summary><p>You can request, say, 100 threads per block, but the hardware rounds up to whole warps — 100 threads become 4 warps (128 lanes) with the last 28 lanes permanently masked off and wasted. That is why block sizes should always be multiples of 32; otherwise you are paying for lanes that do nothing.</p></details>
+        <details class="faq"><summary>What is the difference between a warp and a thread block?</summary><p>A block is a programmer-chosen group (up to 1024 threads) that can cooperate via shared memory and synchronize with barriers. A warp is a fixed 32-thread hardware slice of a block, and it is the unit the scheduler actually issues instructions to. You program in blocks; the hardware executes in warps.</p></details>
+        <details class="faq"><summary>Does AMD's 64-wide wavefront mean its code is twice as parallel?</summary><p>Not in any meaningful "free speedup" sense — it just means the lock-step group is bigger, so divergence and coalescing are reasoned about 64 lanes at a time instead of 32. Newer AMD architectures default to 32-wide (wave32) precisely because 64-wide made divergence costlier for many workloads.</p></details>
+        <details class="faq"><summary>Why do GPUs use HBM instead of regular GDDR or DDR?</summary><p>High-Bandwidth Memory stacks DRAM dies vertically and connects them with an extremely wide bus, trading capacity and cost for raw bandwidth. Since GPU kernels are usually bandwidth-bound, paying for HBM's multi-TB/s throughput is worth it. Consumer cards often use GDDR (cheaper, less bandwidth) because gaming is less bandwidth-starved than large-model AI.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li>A GPU is a <strong>throughput machine</strong>: many simple ALUs, latency hidden by oversubscription, not avoided by caches.</li>
+          <li>Threads execute in <strong>warps of 32</strong> in lock-step (SIMT). The number 32 underlies nearly every performance rule.</li>
+          <li><strong>Divergence</strong> is a per-warp cost: branches are only expensive when lanes <em>within a warp</em> disagree.</li>
+          <li>The <strong>SM</strong> holds many resident warps and switches between them for free; the ratio of resident to maximum is <strong>occupancy</strong>.</li>
+          <li>The <strong>memory hierarchy</strong> — registers → shared/L1 → L2 → HBM — is where most kernels actually bottleneck.</li>
+          <li>NVIDIA (SM/warp/Tensor Core/CUDA) and AMD (CU/wavefront/Matrix Core/HIP) use different names for the same ideas.</li>
+        </ul>
+
+        <p>Next up, <strong>article 1.2</strong> turns these ideas into concrete rules you can apply to a kernel: memory coalescing, the shared-memory scratchpad, bank conflicts, occupancy math, and how to actually keep a warp from diverging.</p>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.elsevier.com/books/programming-massively-parallel-processors/hwu/978-0-323-91231-0" target="_blank">Kirk &amp; Hwu — <em>Programming Massively Parallel Processors</em></a> <span>— the canonical text on the CUDA execution model and evolving GPU architecture.</span></li>
+          <li><a href="https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/nvidia-ampere-architecture-whitepaper.pdf" target="_blank">NVIDIA A100 / Ampere Architecture Whitepaper</a> <span>— SM layout, 3rd-gen Tensor Cores, TF32, async copy.</span></li>
+          <li><a href="https://resources.nvidia.com/en-us-tensor-core" target="_blank">NVIDIA H100 / Hopper Architecture Whitepaper</a> <span>— Transformer Engine, FP8, thread block clusters, TMA.</span></li>
+          <li><a href="https://www.amd.com/en/technologies/cdna.html" target="_blank">AMD CDNA &amp; RDNA Architecture</a> <span>— Compute Units, wavefronts, Matrix Cores, the compute/graphics split.</span></li>
+          <li><a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/" target="_blank">CUDA C++ Programming Guide</a> <span>— the authoritative reference for SIMT, warps, and the memory model.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="build-your-own-ai-lab.html">← Build your own AI lab</a>
+        <a href="gpu-1-2-memory.html">1.2 Memory hierarchy &amp; coalescing →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

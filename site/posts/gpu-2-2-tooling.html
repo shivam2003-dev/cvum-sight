@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The GPU Toolchain — Nsight, CUTLASS, TensorRT, Triton &amp; Helion — cvam.sight</title>
+<meta name="description" content="The tools that make GPU performance measurable and writable: Nsight Systems &amp; Compute for profiling, and CUTLASS, TensorRT, Triton, and Helion for producing fast kernels without hand-writing PTX.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.9rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">GPU Programming &amp; Optimization · Phase 2 — Optimization</p>
+        <p class="series-banner-title">The GPU Toolchain: Profilers &amp; Kernel DSLs</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 4 of 6 · Phase 2 of 3</p>
+        <div class="series-banner-nav">
+          <a href="gpu-1-1-architecture.html" class="done">1.1 Architecture</a>
+          <a href="gpu-1-2-memory.html" class="done">1.2 Memory</a>
+          <a href="gpu-2-1-optimization.html" class="done">2.1 Optimize</a>
+          <a href="gpu-2-2-tooling.html" class="active">2.2 Tooling</a>
+          <a href="gpu-3-1-multi-gpu.html">3.1 Multi-GPU</a>
+          <a href="gpu-3-2-datacenter.html">3.2 Datacenter</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jun 29, 2026 · ml · 23 min read · 4700 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>The GPU toolchain — profilers &amp; kernel DSLs.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">gpu</span>
+          <span class="tag">nsight</span>
+          <span class="tag">triton</span>
+          <span class="tag">cutlass</span>
+          <span class="tag">phase-2</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Two halves of the toolchain. <strong>Profilers</strong> tell you what is slow: Nsight Systems for the timeline (is the GPU even busy? are you launch-bound? CPU-bound?), Nsight Compute for one kernel's guts (Roofline, occupancy, stall reasons). <strong>Kernel producers</strong> let you write fast code without raw PTX: CUTLASS (templated CUDA), TensorRT (inference compiler), Triton (a Python DSL), and Helion (a higher-level DSL that compiles down to Triton). Pick the highest-level tool that gives you the control you actually need.</p>
+
+        <p>Article 2.1 made one demand over and over: measure. This article is about the instruments. It splits cleanly into two parts. First, the profilers — because you cannot optimize what you cannot see, and GPU performance is famously counter-intuitive. Second, the kernel-authoring tools — because hand-writing optimized CUDA is hard, and a stack of increasingly high-level abstractions now lets you get most of the performance for a fraction of the effort.</p>
+
+        <h2>Part 1 — Profiling: the two Nsight tools</h2>
+
+        <p>NVIDIA's profiling story is two complementary tools, and using the right one for the right question saves enormous time. The mental model: <strong>Nsight Systems zooms out to the whole application; Nsight Compute zooms in to one kernel.</strong></p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">Profile top-down: Systems first, then Compute</text>
+            <rect x="40" y="40" width="600" height="70" class="boxy" rx="6"/>
+            <text x="340" y="62" class="smk" text-anchor="middle" style="font-weight:bold">Nsight Systems — system-wide timeline</text>
+            <text x="340" y="82" class="sm" text-anchor="middle">CPU threads · CUDA API calls · memcpy · kernel timeline · GPU utilization gaps</text>
+            <text x="340" y="100" class="sm" text-anchor="middle">Answers: is the GPU idle? launch-bound? blocked on H2D copies? serialized streams?</text>
+            <path d="M340 112 L340 140" class="arr" marker-end="url(#a3)"/>
+            <text x="430" y="130" class="sm" text-anchor="middle">found the hot kernel? drill in ↓</text>
+            <rect x="120" y="145" width="440" height="65" class="boxg" rx="6"/>
+            <text x="340" y="167" class="smk" text-anchor="middle" style="font-weight:bold">Nsight Compute — single-kernel deep dive</text>
+            <text x="340" y="187" class="sm" text-anchor="middle">Roofline · achieved occupancy · memory-transaction efficiency</text>
+            <text x="340" y="203" class="sm" text-anchor="middle">warp-stall reasons · per-instruction sampling · source ↔ SASS</text>
+            <defs><marker id="a3" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 1 — Always profile top-down. Nsight Systems finds <em>where</em> the time goes; Nsight Compute explains <em>why</em> a specific kernel is slow.</p>
+        </div>
+
+        <h3>Nsight Systems — the timeline</h3>
+
+        <p>Nsight Systems is a low-overhead, system-wide profiler. It shows a timeline of CPU threads, CUDA API calls, memory transfers, and kernel executions all aligned on one clock. Its job is to answer the <em>structural</em> questions that dwarf any single-kernel tuning:</p>
+
+        <ul>
+          <li><strong>Is the GPU actually busy?</strong> A surprising amount of "slow GPU code" is a GPU sitting idle while the CPU prepares work or a synchronous copy blocks. The timeline shows gaps immediately.</li>
+          <li><strong>Are you launch-bound?</strong> Thousands of tiny kernels with gaps between them means launch overhead dominates — the fix is fusion or CUDA Graphs, not kernel tuning.</li>
+          <li><strong>Are host↔device copies serializing with compute?</strong> If memcpys and kernels run back-to-back instead of overlapping, you need asynchronous copies on separate streams.</li>
+          <li><strong>Are your streams actually concurrent?</strong> The timeline reveals false serialization from an accidental synchronization point.</li>
+        </ul>
+
+        <pre class="code"># capture a timeline, then open report.nsys-rep in the GUI
+nsys profile -o report --stats=true ./my_app
+# quick text summary of where time went
+nsys stats report.nsys-rep</pre>
+
+        <div class="bm-warn"><strong>Profile Systems before Compute, always.</strong> The classic beginner mistake is to open Nsight Compute and optimize the hottest kernel — while Nsight Systems would have shown the GPU is idle 80% of the time waiting on the CPU or on copies. No amount of kernel tuning fixes an idle GPU. Get the application structure right (overlap, batching, fewer launches) before micro-optimizing any kernel.</div>
+
+        <h3>Nsight Compute — the kernel microscope</h3>
+
+        <p>Once Nsight Systems tells you which kernel matters, Nsight Compute dissects it. It re-runs the kernel with heavy instrumentation and produces the exact metrics article 2.1 asked for:</p>
+
+        <ul>
+          <li><strong>Roofline chart</strong> — your kernel plotted against the memory and compute ceilings, so you instantly see memory-bound vs compute-bound and how much headroom remains.</li>
+          <li><strong>Achieved occupancy</strong> vs theoretical, plus the limiting resource (registers / shared memory / block size).</li>
+          <li><strong>Memory-transaction efficiency</strong> — the coalescing health check; low values point straight at strided access.</li>
+          <li><strong>Warp-stall reasons</strong> — a breakdown of <em>why</em> warps are not issuing (waiting on memory, on a barrier, on a long-latency instruction). This is the single most actionable view: it names your bottleneck.</li>
+          <li><strong>Source-to-SASS correlation</strong> — maps assembly hot-spots back to your source lines.</li>
+        </ul>
+
+        <pre class="code"># profile one kernel with the full "detailed" metric set
+ncu --set full -o kernel_report ./my_app
+# or target a specific kernel by name, limit to first launch
+ncu -k myKernel -c 1 --set full ./my_app</pre>
+
+        <p>Nsight Compute is heavyweight — it can run a kernel many times to gather all counters — so you point it at the one or two kernels Nsight Systems flagged, not the whole app. The combination is the entire measured-optimization loop from article 2.1, made real.</p>
+
+        <h2>Part 2 — Producing fast kernels</h2>
+
+        <p>Now the other half: writing the kernels. There is a ladder of abstraction here, from raw CUDA C++ at the bottom to Python DSLs at the top. Higher on the ladder means less code and less hardware detail to manage, usually at some cost in peak control. The skill is choosing the lowest-effort rung that still meets your performance and flexibility needs.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">The kernel-authoring abstraction ladder</text>
+            <rect x="120" y="35" width="440" height="32" class="boxg" rx="4"/><text x="340" y="56" class="sm" text-anchor="middle">Helion — high-level Python DSL (autotunes, compiles to Triton)</text>
+            <rect x="120" y="73" width="440" height="32" class="boxg" rx="4"/><text x="340" y="94" class="sm" text-anchor="middle">Triton — Python DSL, you write tile logic; compiler handles coalescing/SM detail</text>
+            <rect x="120" y="111" width="440" height="32" class="boxy" rx="4"/><text x="340" y="132" class="sm" text-anchor="middle">CUTLASS — C++ templates for GEMM-like kernels with fusible epilogues</text>
+            <rect x="120" y="149" width="440" height="32" class="boxy" rx="4"/><text x="340" y="170" class="sm" text-anchor="middle">cuBLAS / cuDNN — pre-tuned closed libraries you just call</text>
+            <rect x="120" y="187" width="440" height="32" class="boxr" rx="4"/><text x="340" y="208" class="sm" text-anchor="middle">raw CUDA C++ / PTX — full control, full responsibility</text>
+            <text x="70" y="55" class="sm" transform="rotate(-90 70 55)">less effort</text>
+            <text x="70" y="205" class="sm" transform="rotate(-90 70 205)">more control</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — Most work should start near the top. Drop down only when the higher rung leaves performance or flexibility on the table.</p>
+        </div>
+
+        <h3>CUTLASS — templated CUDA for matrix kernels</h3>
+
+        <p>CUTLASS (CUDA Templates for Linear Algebra Subroutines) is NVIDIA's open-source library of C++ template building blocks for high-performance GEMM and convolution. It implements all the techniques from this series — hierarchical tiling across thread blocks, warps, and threads; double-buffered async copies; Tensor-Core <code>mma</code> instructions — as composable, well-tuned components. Its killer feature is the <strong>fusible epilogue</strong>: you can append your own element-wise operations (bias, activation, scaling) directly onto a GEMM so the result never round-trips through HBM. When cuBLAS's fixed set of operations is not enough but you do not want to write a GEMM from scratch, CUTLASS is the answer. The newer <strong>CuTe</strong> abstraction (tensors + layouts) makes expressing these tilings considerably cleaner.</p>
+
+        <h3>TensorRT — the inference compiler</h3>
+
+        <p>TensorRT is a different kind of tool: an <em>inference optimizer and runtime</em>. You hand it a trained model (via ONNX or a framework export) and it produces a heavily optimized "engine" for a specific GPU. Its main optimizations:</p>
+
+        <ul>
+          <li><strong>Layer/operator fusion</strong> — automatically fuses conv+bias+activation and similar chains into single kernels (exactly the fusion principle from article 2.1).</li>
+          <li><strong>Precision calibration</strong> — runs the model in FP16 or INT8 (with calibration to preserve accuracy), or FP8 on Hopper.</li>
+          <li><strong>Kernel auto-tuning</strong> — benchmarks multiple kernel implementations for each layer on your actual GPU and picks the fastest.</li>
+          <li><strong>Memory planning</strong> — reuses activation buffers to shrink the memory footprint.</li>
+        </ul>
+
+        <p>TensorRT is the standard last-mile step for deploying a model on NVIDIA hardware when latency and throughput matter. You write no kernels; you accept a longer build step in exchange for a runtime engine that is often 2–5× faster than the eager framework. <strong>TensorRT-LLM</strong> is the LLM-specialized variant, adding paged KV cache, in-flight batching, and the attention/decoding optimizations from the DeepSeek and KOG articles.</p>
+
+        <h3>Triton — write kernels in Python</h3>
+
+        <p>Triton (originally from OpenAI) is the abstraction that changed who can write GPU kernels. It is a Python DSL where you express computation in terms of <strong>blocks/tiles</strong> rather than individual threads. You write the tile logic; the Triton compiler handles the painful parts automatically — memory coalescing, shared-memory allocation, and much of the occupancy tuning. A Triton matmul or fused softmax is a few dozen readable lines and routinely matches or beats hand-tuned CUDA.</p>
+
+        <pre class="code">import triton, triton.language as tl
+
+@triton.jit
+def add_kernel(x_ptr, y_ptr, out_ptr, n, BLOCK: tl.constexpr):
+    pid = tl.program_id(0)
+    offs = pid * BLOCK + tl.arange(0, BLOCK)   # this block's tile of indices
+    mask = offs &lt; n                            # guard the tail
+    x = tl.load(x_ptr + offs, mask=mask)       # coalescing handled for you
+    y = tl.load(y_ptr + offs, mask=mask)
+    tl.store(out_ptr + offs, x + y, mask=mask)</pre>
+
+        <p>Notice what is <em>absent</em>: no <code>threadIdx</code>, no explicit shared memory, no <code>__syncthreads()</code>. You think in tiles; the compiler lowers tiles to warps and threads. This is why Triton is now the backend that PyTorch's <code>torch.compile</code> generates fused kernels into — it hits the sweet spot of control and productivity. The mental model from Phase 1 still fully applies: you choose tile sizes for coalescing and reuse, and Triton's autotuner sweeps configurations to find a good occupancy. You understand the <em>why</em>; Triton handles the <em>how</em>.</p>
+
+        <div class="bm-note"><strong>Triton did not make Phase 1 obsolete — it made it more valuable.</strong> Because Triton automates the mechanics but still exposes tile sizes, the people who get the most out of it are exactly those who understand coalescing, shared-memory reuse, and occupancy. The DSL removes the boilerplate, not the need to reason about the hardware. Someone who picks tile sizes by intuition leaves large speedups on the table; someone who reasons from the Roofline does not.</div>
+
+        <h3>Helion — a higher-level DSL above Triton</h3>
+
+        <p>Helion is a newer Python-embedded DSL (from the PyTorch ecosystem) that sits one rung <em>above</em> Triton. Where Triton still asks you to manage tiles and program IDs explicitly, Helion lets you write kernels in a more PyTorch-like, loop-oriented style and <strong>compiles down to Triton</strong>, autotuning the tiling and launch configuration for you. The pitch is "ML kernels with minimal boilerplate": you express the math close to how you would in NumPy/PyTorch, and Helion handles the decomposition into tiles, the autotuning search, and the lowering — giving much of Triton's performance with even less of the manual tile bookkeeping. It is the current frontier of the "write less, get fast kernels" trend, and a sign of where kernel authoring is heading: the human specifies <em>intent and data layout</em>, the compiler searches the implementation space.</p>
+
+        <h2>Choosing a tool: a decision guide</h2>
+
+        <table class="papers">
+          <thead><tr><th>Situation</th><th>Reach for</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>Standard dense matmul / conv</td><td class="d">cuBLAS / cuDNN</td><td>Already optimal; do not reinvent.</td></tr>
+            <tr><td>GEMM with custom fused epilogue</td><td class="d">CUTLASS</td><td>Templated GEMM + your own epilogue, no HBM round-trip.</td></tr>
+            <tr><td>Deploy a trained model fast</td><td class="d">TensorRT / TensorRT-LLM</td><td>Auto fusion, precision, kernel auto-tuning.</td></tr>
+            <tr><td>Custom fused op, want productivity</td><td class="d">Triton</td><td>Python tiles, compiler handles coalescing/occupancy.</td></tr>
+            <tr><td>ML kernel, minimal boilerplate</td><td class="d">Helion</td><td>PyTorch-like, autotunes, compiles to Triton.</td></tr>
+            <tr><td>Exotic shape, need every last %</td><td class="d">raw CUDA / CuTe</td><td>Full control when nothing higher suffices.</td></tr>
+            <tr><td>Any of the above, but slow</td><td class="d">Nsight Systems → Compute</td><td>Measure before and after every change.</td></tr>
+          </tbody>
+        </table>
+
+        <h2>How the tools fit the optimization loop</h2>
+
+        <p>Tying Phase 2 together: the workflow from article 2.1 maps directly onto these tools. You <strong>write</strong> the kernel at the highest comfortable rung (Triton/Helion, or call CUTLASS/TensorRT). You <strong>profile</strong> the application with Nsight Systems to confirm the GPU is busy and the kernel matters. You <strong>analyze</strong> that kernel with Nsight Compute to get its Roofline position, occupancy, and stall reasons. You <strong>apply</strong> the matching technique family — often just by changing a tile size in Triton or enabling a precision in TensorRT — and <strong>re-measure</strong>. The tools turn the abstract method into a tight, repeatable loop.</p>
+
+        <h2>FAQ</h2>
+        <details class="faq"><summary>Do I need Nsight Compute if I only write Triton?</summary><p>Yes — and Triton integrates with it. Triton can dump the generated PTX/SASS, and Nsight Compute profiles the resulting kernel like any other. Tile-size choices in Triton have exactly the occupancy and coalescing consequences Nsight Compute measures, so the profiler is how you tune Triton autotuning intelligently rather than blindly.</p></details>
+        <details class="faq"><summary>Is Triton NVIDIA-only?</summary><p>Triton started CUDA-focused but has growing support for AMD (ROCm) and other backends. That portability is part of its appeal — the same tile-level kernel can target multiple vendors, whereas raw CUDA is locked to NVIDIA. The abstraction layer is also a portability layer.</p></details>
+        <details class="faq"><summary>When does TensorRT not help?</summary><p>For very dynamic models (highly variable shapes, lots of control flow) the engine-build assumptions break down, and for training (TensorRT is inference-only). It also locks you to a specific GPU and TensorRT version per engine, so it adds deployment rigidity. For stable inference shapes on fixed hardware, it is excellent; for research iteration, it is overhead.</p></details>
+        <details class="faq"><summary>Helion vs Triton — should I just always use Helion?</summary><p>Helion is younger and more abstract, so it is great for standard ML kernels with minimal effort but gives you less direct control than Triton when you need to hand-tune an unusual pattern. A reasonable default: start in Helion (or torch.compile), drop to Triton when you need to control the tiling yourself, drop to CUTLASS/CUDA only when even that is not enough.</p></details>
+        <details class="faq"><summary>What's the difference between cuBLAS and cuDNN?</summary><p>cuBLAS is for dense linear algebra (matrix multiply, etc.); cuDNN is for deep-learning primitives specifically (convolutions, pooling, normalization, attention). Both are NVIDIA's pre-tuned closed libraries and both are hard to beat on their home turf.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li>Profile <strong>top-down</strong>: Nsight Systems (whole-app timeline, is the GPU busy?) before Nsight Compute (one kernel's Roofline, occupancy, stalls).</li>
+          <li>No kernel tuning fixes an <strong>idle GPU</strong> — fix application structure (overlap, batching, fewer launches) first.</li>
+          <li><strong>CUTLASS</strong> for fusible GEMMs, <strong>TensorRT</strong> for deploying trained models, <strong>cuBLAS/cuDNN</strong> for standard ops.</li>
+          <li><strong>Triton</strong> lets you write tile-level kernels in Python; the compiler handles coalescing and occupancy mechanics.</li>
+          <li><strong>Helion</strong> sits above Triton — PyTorch-like, autotuned, compiles down to Triton.</li>
+          <li>Higher-level DSLs remove boilerplate, <em>not</em> the need to understand the hardware. Phase 1 knowledge is what makes you good at them.</li>
+          <li>Pick the highest rung that meets your needs; drop down only when it leaves performance on the table.</li>
+        </ul>
+
+        <p>Phase 2 is complete: you can measure a kernel and write a fast one. <strong>Phase 3</strong> changes scale entirely — from one GPU to many. Article 3.1 covers multi-GPU programming and model parallelism (Megatron-LM and the synchronization/access overheads that dominate at scale), and article 3.2 covers the datacenter: scheduling, virtualization, and multi-tenant sharing.</p>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://developer.nvidia.com/nsight-systems" target="_blank">NVIDIA Nsight Systems</a> <span>— the system-wide timeline profiler.</span></li>
+          <li><a href="https://developer.nvidia.com/nsight-compute" target="_blank">NVIDIA Nsight Compute</a> <span>— kernel-level analysis with built-in Roofline and occupancy.</span></li>
+          <li><a href="https://github.com/NVIDIA/cutlass" target="_blank">CUTLASS</a> <span>— CUDA templates for linear algebra; CuTe layouts.</span></li>
+          <li><a href="https://developer.nvidia.com/tensorrt" target="_blank">TensorRT &amp; TensorRT-LLM</a> <span>— inference compiler and runtime.</span></li>
+          <li><a href="https://triton-lang.org/" target="_blank">OpenAI Triton</a> <span>— the Python kernel DSL.</span></li>
+          <li><a href="https://github.com/pytorch/helion" target="_blank">Helion</a> <span>— higher-level Python DSL that compiles to Triton.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="gpu-2-1-optimization.html">← 2.1 Kernel optimization</a>
+        <a href="gpu-3-1-multi-gpu.html">3.1 Multi-GPU &amp; model parallelism →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

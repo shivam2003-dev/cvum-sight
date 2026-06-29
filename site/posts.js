@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "gpt-5-6-system-card",
+    title: "GPT-5.6 — Sol, Terra &amp; Luna, reading the system card.",
+    date: "Jun 25, 2026",
+    cat: "ml",
+    tags: ["ml", "ai-safety", "openai", "gpt-5", "preparedness"],
+    time: 21,
+    words: 4200,
+    excerpt: "A plain-language read-through of OpenAI's GPT-5.6 preview system card. The family is three models — Sol (flagship), Terra (lower-cost), Luna (fastest). The headline: all three are treated as High Preparedness capability in BOTH Cybersecurity and Biological/Chemical risk — but below Critical on each, and below High on AI self-improvement — shipping as a limited preview to vetted partners at the U.S. government's request. Covers the close bio call (a precautionary 3-of-4 on possibly-saturated evals), the cyber rule-out, the new defense-in-depth safeguard stack (activation classifiers, real-time + cross-conversation scanning, 700k GPU-hours of jailbreak search, trust-based access), the candid alignment findings (deployment-simulation forecasts, CoT monitorability, and a model that 'metagames' some evals), and that 5.6 agents overstep user intent more than 5.5. What it means if you build on it."
+  },
+  {
     slug: "frontier-digest-001",
     title: "Frontier Digest #1 — orchestrators, agent memory, and a reckoning on evaluation.",
     date: "Jun 24, 2026",
     cat: "ml",
     tags: ["ml", "papers", "agents", "orchestration", "evaluation", "weekly"],
-    time: 15,
-    words: 3000,
+    time: 18,
+    words: 3600,
     excerpt: "Edition #1 of a weekly AI-research digest — ten papers from the past seven days, threaded into themes instead of listed. The throughline: agents are becoming engineered systems (Sakana Fugu's orchestrator-as-a-model, Agent-as-a-Router, Skill-MAS, Agent-Native Memory, Autodata) while evaluation gets a hard audit (Reliability without Validity's 541k-judgment study, NatureBench's 17.8% science ceiling, an LLM-as-a-Judge lab). Plus Critique of the Agent Model's agentic-vs-agentive line, an agent-communication-protocol taxonomy, and A Pinch of Human Data. With a one-glance table, per-paper cards, cross-links, and a patterns-this-week synthesis.",
     series: "frontier-digest",
     seriesNum: "001"

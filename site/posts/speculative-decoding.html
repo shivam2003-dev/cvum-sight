@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Speculative Decoding — Making LLMs Generate Faster, For Free — cvam.sight</title>
+<meta name="description" content="A comprehensive, plain-language guide to speculative decoding: why LLM generation is slow, how a small draft model + parallel verification doubles speed without changing the output, the lossless math, and the modern variants (Medusa, EAGLE, n-gram).">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.88rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Jun 30, 2026 · ml · 22 min read · 4500 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Speculative decoding — making LLMs generate faster, for free.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">llm-inference</span>
+          <span class="tag">speculative-decoding</span>
+          <span class="tag">latency</span>
+          <span class="tag">transformers</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">LLM text generation is slow because it produces one token at a time, and each token barely uses the GPU — the chip spends its time waiting on memory, not computing. Speculative decoding fixes this with a cheap trick: let a small, fast <strong>draft model</strong> guess the next few tokens, then let the big <strong>target model</strong> check all of those guesses in a <em>single</em> forward pass. Because checking many tokens at once is nearly as cheap as checking one, you get 2–3× faster generation. The clever part: a small piece of math guarantees the output is <em>exactly</em> what the big model would have produced alone — same quality, no approximation. This guide builds the whole idea from scratch.</p>
+
+        <h2>The problem: why generating text is slow</h2>
+
+        <p>To understand the fix, you have to feel the problem. A large language model generates text <strong>autoregressively</strong> — one token at a time, where each new token depends on all the tokens before it. To produce "The cat sat on the mat," the model runs a full forward pass to get "The," then another full pass (now seeing "The") to get "cat," then another to get "sat," and so on. Six tokens means six sequential passes through a model with tens or hundreds of billions of parameters.</p>
+
+        <p>Here is the painful part, and it is the key to everything: <strong>each of those forward passes barely uses the GPU.</strong> To generate one token, the GPU must load the model's entire weight matrix — hundreds of gigabytes — from memory, but then do only a tiny amount of arithmetic with it (one token's worth). The chip finishes the math almost instantly and then sits idle, waiting for the next slab of weights to arrive from memory. Generation is <strong>memory-bandwidth bound</strong>, not compute bound.</p>
+
+        <div class="bm-note"><strong>The under-used GPU is the whole opportunity.</strong> During single-token generation, a modern GPU runs its arithmetic units at a few percent of their peak. The expensive part is moving the weights from HBM, and you pay that cost whether you compute one token or a hundred. So if you could somehow process several tokens per weight-load, those extra tokens would be almost <em>free</em>. That free capacity is exactly what speculative decoding cashes in. (If "memory-bandwidth bound" and HBM are new, the <a href="gpu-1-1-architecture.html">GPU architecture article</a> explains why a GPU hides — or fails to hide — memory latency.)</div>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Why one-at-a-time is wasteful: the GPU is mostly idle</text>
+            <text x="120" y="46" class="smk" text-anchor="middle" style="font-weight:bold">Standard decode (1 token / pass)</text>
+            <!-- four passes, each loads weights, tiny compute -->
+            <g>
+              <rect x="40" y="58" width="150" height="22" class="boxr"/><text x="115" y="73" class="sm" text-anchor="middle">load ALL weights from HBM</text>
+              <rect x="190" y="58" width="20" height="22" class="boxg"/><text x="200" y="73" class="sm" text-anchor="middle">·</text>
+            </g>
+            <text x="225" y="73" class="sm" text-anchor="start">→ 1 token</text>
+            <g>
+              <rect x="40" y="84" width="150" height="22" class="boxr"/><text x="115" y="99" class="sm" text-anchor="middle">load ALL weights from HBM</text>
+              <rect x="190" y="84" width="20" height="22" class="boxg"/>
+            </g>
+            <text x="225" y="99" class="sm" text-anchor="start">→ 1 token</text>
+            <g>
+              <rect x="40" y="110" width="150" height="22" class="boxr"/><text x="115" y="125" class="sm" text-anchor="middle">load ALL weights from HBM</text>
+              <rect x="190" y="110" width="20" height="22" class="boxg"/>
+            </g>
+            <text x="225" y="125" class="sm" text-anchor="start">→ 1 token</text>
+            <text x="115" y="152" class="sm" text-anchor="middle" style="fill:#c96442">red = the slow part (memory). green = the cheap part (compute).</text>
+
+            <text x="500" y="46" class="smk" text-anchor="middle" style="font-weight:bold">If only we could get more tokens per load…</text>
+            <rect x="400" y="58" width="150" height="22" class="boxr"/><text x="475" y="73" class="sm" text-anchor="middle">load ALL weights ONCE</text>
+            <rect x="550" y="58" width="80" height="22" class="boxg"/><text x="590" y="73" class="sm" text-anchor="middle">compute</text>
+            <text x="500" y="100" class="sm" text-anchor="middle">→ verify 4 tokens at once</text>
+            <text x="500" y="122" class="sm" text-anchor="middle" style="fill:#6a8f5f">same memory cost, 4× the useful work</text>
+            <text x="500" y="150" class="sm" text-anchor="middle">this is the gap speculative decoding exploits</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Each decode step pays the full price of loading the model from memory to produce one token. Processing several tokens per load is nearly free — that idle compute is what gets reclaimed.</p>
+        </div>
+
+        <h2>The key asymmetry: generating vs checking</h2>
+
+        <p>Speculative decoding rests on one beautiful observation about transformers:</p>
+
+        <div class="eq">Generating N tokens = N sequential forward passes (slow).
+Checking N given tokens = 1 parallel forward pass (fast).</div>
+
+        <p>Why the difference? When you already <em>have</em> a candidate sequence — say someone hands you "The cat sat on" — a transformer can score all of those positions in a single forward pass, because attention looks at all positions at once. This is exactly what happens during <strong>prefill</strong> (processing the prompt) and during training: many tokens, one pass, GPU fully fed. It is the same compute-bound, efficient regime that single-token <em>generation</em> can never reach.</p>
+
+        <p>So the trick writes itself. What if we could turn the slow, sequential <em>generation</em> problem into the fast, parallel <em>checking</em> problem? We would need someone to produce candidate tokens cheaply, so the big model only ever has to <em>check</em> rather than <em>generate</em>. That "someone" is the draft model.</p>
+
+        <h2>The core idea: draft, then verify</h2>
+
+        <p>Speculative decoding uses two models that share the same vocabulary:</p>
+
+        <ul>
+          <li><strong>The target model</strong> — the big, accurate model whose output you actually want (e.g. a 70B model). Slow to run.</li>
+          <li><strong>The draft model</strong> — a small, fast model (e.g. a 1B model, or even just a few extra layers/heads). Much cheaper per token, but lower quality.</li>
+        </ul>
+
+        <p>The loop, repeated until generation is done:</p>
+
+        <ol>
+          <li><strong>Draft.</strong> The small model quickly generates a guess of the next <code>γ</code> (gamma) tokens — say 4 of them — autoregressively. This is cheap because the draft model is tiny.</li>
+          <li><strong>Verify.</strong> The target model takes the current text plus those 4 drafted tokens and runs <em>one</em> forward pass, scoring all 4 positions in parallel. This costs about the same as the target model generating a single token — but it gives us information about 4.</li>
+          <li><strong>Accept / reject.</strong> Walk left to right through the 4 drafted tokens. Keep the ones the target model agrees with; the moment it disagrees, throw away that token and everything after it.</li>
+          <li><strong>Repeat</strong> from the new, longer text.</li>
+        </ol>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">One round of draft-then-verify (γ = 4 drafted tokens)</text>
+            <!-- draft row -->
+            <text x="60" y="50" class="smk" text-anchor="start" style="font-weight:bold">1. Draft (small model, fast, sequential):</text>
+            <rect x="60" y="60" width="80" height="30" class="boxy"/><text x="100" y="79" class="sm" text-anchor="middle">"the"</text>
+            <rect x="145" y="60" width="80" height="30" class="boxy"/><text x="185" y="79" class="sm" text-anchor="middle">"cat"</text>
+            <rect x="230" y="60" width="80" height="30" class="boxy"/><text x="270" y="79" class="sm" text-anchor="middle">"sat"</text>
+            <rect x="315" y="60" width="80" height="30" class="boxy"/><text x="355" y="79" class="sm" text-anchor="middle">"down"</text>
+            <text x="430" y="79" class="sm" text-anchor="start">4 cheap guesses</text>
+            <!-- verify row -->
+            <text x="60" y="120" class="smk" text-anchor="start" style="font-weight:bold">2. Verify (big model, ONE parallel pass scores all 4):</text>
+            <rect x="60" y="130" width="335" height="30" class="box"/><text x="227" y="149" class="sm" text-anchor="middle">target model forward pass → probability for each position</text>
+            <!-- accept row -->
+            <text x="60" y="190" class="smk" text-anchor="start" style="font-weight:bold">3. Accept matching prefix, reject at first disagreement:</text>
+            <rect x="60" y="200" width="80" height="30" class="boxg"/><text x="100" y="219" class="sm" text-anchor="middle">✓ "the"</text>
+            <rect x="145" y="200" width="80" height="30" class="boxg"/><text x="185" y="219" class="sm" text-anchor="middle">✓ "cat"</text>
+            <rect x="230" y="200" width="80" height="30" class="boxg"/><text x="270" y="219" class="sm" text-anchor="middle">✓ "sat"</text>
+            <rect x="315" y="200" width="80" height="30" class="boxr"/><text x="355" y="219" class="sm" text-anchor="middle">✗ "down"</text>
+            <rect x="400" y="200" width="95" height="30" class="boxy"/><text x="447" y="219" class="sm" text-anchor="middle">"on" (resampled)</text>
+            <text x="520" y="219" class="sm" text-anchor="start" style="fill:#6a8f5f">4 tokens from</text>
+            <text x="520" y="233" class="sm" text-anchor="start" style="fill:#6a8f5f">1 target pass</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — The draft model proposes 4 tokens; the target verifies all 4 in one pass. Here it accepts "the cat sat," rejects "down," and replaces it with its own choice "on" — netting 4 tokens for the cost of roughly one target step.</p>
+        </div>
+
+        <p>Notice the payoff in Fig 2: in a single expensive target forward pass, we advanced the text by <strong>4 tokens</strong> (three accepted drafts + one correction), where standard decoding would have advanced by 1. When the draft model guesses well, you get a big multiplier. When it guesses badly, you fall back toward normal speed — never slower than the target alone by much. Best case it's a big win; worst case it's roughly break-even.</p>
+
+        <h2>The crucial guarantee: it's lossless</h2>
+
+        <p>The natural worry: "I'm using a dumb little model to write some of my tokens — doesn't that hurt quality?" The answer, and the reason this technique matters, is <strong>no — speculative decoding produces output drawn from <em>exactly</em> the same probability distribution as the target model running alone.</strong> It is not an approximation. It is not "good enough." It is mathematically identical in distribution. The draft model only affects <em>speed</em>, never <em>what</em> gets generated.</p>
+
+        <p>This is guaranteed by a verification rule called <strong>speculative sampling</strong> (a form of modified rejection sampling), introduced in the Leviathan et al. paper. For each drafted token, let:</p>
+
+        <ul>
+          <li><code>p(x)</code> = the probability the <em>target</em> model assigns to token <code>x</code>,</li>
+          <li><code>q(x)</code> = the probability the <em>draft</em> model assigned to that same token <code>x</code> when it proposed it.</li>
+        </ul>
+
+        <p>The acceptance rule for a drafted token <code>x</code> is:</p>
+
+        <div class="eq">accept x with probability  min(1, p(x) / q(x))</div>
+
+        <p>Read it intuitively. If the target likes the token at least as much as the draft did (<code>p ≥ q</code>), the ratio is ≥ 1, so you <strong>always accept</strong>. If the target likes it less than the draft did (<code>p &lt; q</code>), you accept only with probability <code>p/q</code> — sometimes you reject, precisely often enough to correct for the draft over-proposing that token.</p>
+
+        <p>And when a token <em>is</em> rejected, you don't just stop — you resample the replacement token from a carefully <strong>adjusted distribution</strong>, <code>norm(max(0, p(x) − q(x)))</code>, which removes the bias the draft introduced. This combination — accept-with-ratio, then resample-from-the-residual — is exactly what makes the algebra cancel out so the final distribution equals the target's <code>p</code>. The proof is a few lines; the consequence is profound: <strong>you can speed up generation with no quality cost whatsoever.</strong></p>
+
+        <div class="bm-fix"><strong>The free bonus token.</strong> There's a neat extra. The single target forward pass that verifies the γ drafted tokens <em>also</em> produces the target's own probability distribution for the position right after the last accepted token. So even if <em>every</em> drafted token is accepted, you get one additional "free" token sampled directly from the target. That's why γ drafted tokens can yield up to γ+1 accepted tokens per round. Worst case (first draft rejected), you still get 1 token — the resampled correction — so you never go backwards.</div>
+
+        <h2>How much faster? The acceptance-rate math</h2>
+
+        <p>The speedup hinges on one number: the <strong>acceptance rate</strong> <code>α</code> (alpha) — the probability that a drafted token gets accepted. It measures how well the draft model imitates the target. High <code>α</code> means the draft is a good stand-in and most guesses stick; low <code>α</code> means lots of wasted drafting.</p>
+
+        <p>With acceptance rate <code>α</code> and <code>γ</code> drafted tokens per round, the expected number of tokens accepted per target pass is:</p>
+
+        <div class="eq">E[tokens per round] = (1 − α^(γ+1)) / (1 − α)</div>
+
+        <p>You don't need to memorize the formula; you need the intuition it encodes:</p>
+
+        <table class="papers">
+          <thead><tr><th>Acceptance α</th><th>Draft quality</th><th>≈ tokens / target pass (γ=4)</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td>0.9</td><td>excellent stand-in</td><td class="d">~4.1</td><td>~3–4× faster</td></tr>
+            <tr><td>0.7</td><td>good</td><td class="d">~2.8</td><td>~2–3× faster</td></tr>
+            <tr><td>0.5</td><td>mediocre</td><td class="d">~1.9</td><td>~1.5–2× faster</td></tr>
+            <tr><td>0.3</td><td>poor</td><td class="d">~1.4</td><td>marginal; overhead may dominate</td></tr>
+          </tbody>
+        </table>
+
+        <p>But raw acceptance isn't the whole story. The real wall-clock speedup also depends on the <strong>cost ratio</strong> <code>c</code> — how expensive the draft model is relative to the target. Every round you pay for γ draft steps plus one target step. If the draft model is too big, those draft steps eat your savings. The sweet spot is a draft model that is <em>both</em> a good imitator (high α) <em>and</em> very cheap (low c) — and those two goals pull in opposite directions, which is the central tension of designing a speculative system.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">The trade-off: draft model must be cheap AND accurate</text>
+            <line x1="80" y1="210" x2="620" y2="210" class="ink" stroke="#2a2620" stroke-width="1.5"/>
+            <line x1="80" y1="40" x2="80" y2="210" class="ink" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="350" y="240" class="sm" text-anchor="middle">draft model size →</text>
+            <text x="34" y="125" class="sm" text-anchor="middle" transform="rotate(-90 34 125)">end-to-end speedup →</text>
+            <!-- curve: rises then falls -->
+            <path d="M80 200 Q 180 70, 300 70 Q 360 72, 430 130 Q 520 200, 620 207" fill="none" stroke="#c96442" stroke-width="2.5"/>
+            <circle cx="300" cy="70" r="5" fill="#f0c040" stroke="#2a2620"/>
+            <text x="300" y="60" class="sm" text-anchor="middle">sweet spot</text>
+            <text x="140" y="150" class="sm" text-anchor="middle">too small:</text>
+            <text x="140" y="164" class="sm" text-anchor="middle">low α, many</text>
+            <text x="140" y="178" class="sm" text-anchor="middle">rejects</text>
+            <text x="540" y="150" class="sm" text-anchor="middle">too big:</text>
+            <text x="540" y="164" class="sm" text-anchor="middle">draft cost</text>
+            <text x="540" y="178" class="sm" text-anchor="middle">eats savings</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — A draft that's too small accepts rarely; one that's too big costs nearly as much as the target. Maximum speedup is a balance — usually a draft model roughly 10–20× smaller than the target.</p>
+        </div>
+
+        <h2>The original algorithm, step by step</h2>
+
+        <p>Putting it together, here is the speculative decoding loop from Leviathan et al. (and Chen et al., who proposed it concurrently), in pseudocode:</p>
+
+        <pre class="code">def speculative_decode(prompt, target, draft, gamma):
+    tokens = prompt
+    while not done(tokens):
+        # 1. DRAFT: small model proposes gamma tokens, autoregressively
+        draft_tokens, q = [], []
+        ctx = tokens
+        for _ in range(gamma):
+            probs = draft(ctx)            # draft's distribution
+            x = sample(probs)
+            draft_tokens.append(x); q.append(probs[x])
+            ctx = ctx + [x]
+
+        # 2. VERIFY: target scores all gamma positions in ONE pass
+        p = target(tokens + draft_tokens)  # p[i] = target prob at position i
+
+        # 3. ACCEPT / REJECT left to right
+        for i, x in enumerate(draft_tokens):
+            r = uniform(0, 1)
+            if r &lt; min(1, p[i][x] / q[i]):
+                tokens.append(x)           # accept
+            else:
+                # reject: resample from adjusted residual distribution
+                tokens.append(sample(normalize(relu(p[i] - q_dist[i]))))
+                break
+        else:
+            # all gamma accepted -> take the free bonus token from target
+            tokens.append(sample(p[gamma]))
+    return tokens</pre>
+
+        <p>That's the entire mechanism. Two models, one verification pass, a ratio test, and a residual resample. Everything else in the field is a variation on making the draft cheaper, more accurate, or unnecessary.</p>
+
+        <h2>The modern variants: where the field went</h2>
+
+        <p>The 2022 paper kicked off a wave of refinements. The big practical question — "where does the draft come from, and can we avoid a second model entirely?" — drives most of them.</p>
+
+        <h3>Two-model (classic) speculative decoding</h3>
+        <p>The original setup: a separate small model from the same family (e.g. Llama-1B drafting for Llama-70B). Simple and effective when a good small sibling exists with the <em>same tokenizer</em>. The main friction is needing — and serving — a second model, plus keeping both in memory.</p>
+
+        <h3>Medusa — extra heads, no second model</h3>
+        <p>Medusa removes the separate draft model. Instead it bolts several extra "heads" onto the target model itself, each trained to predict a future token (the token 2 ahead, 3 ahead, etc.) in parallel from the same hidden state. Those heads produce the candidate continuations, which the model then verifies. One model, no separate draft to serve — at the cost of training and storing the extra heads, and slightly more complex verification over a tree of candidates.</p>
+
+        <h3>EAGLE — drafting in feature space</h3>
+        <p>EAGLE (and its successors) is currently among the strongest approaches. Rather than predicting tokens directly, it trains a light auto-regressive head to predict the target model's <em>internal feature vectors</em> one step ahead, which turns out to be a much easier and more accurate prediction problem than guessing raw tokens. Higher acceptance rates, larger speedups, and it's widely supported in production serving stacks.</p>
+
+        <h3>Self-speculative / layer-skipping</h3>
+        <p>Here the draft is the target model running a <em>subset</em> of its own layers (early exit), or with some layers skipped. No extra parameters at all — the model drafts a cheap version of itself and then verifies with the full stack. Attractive when you can't or don't want to train or serve anything extra.</p>
+
+        <h3>N-gram / prompt lookup — no model at all</h3>
+        <p>The cheapest draft is no neural network whatsoever. <strong>Prompt-lookup decoding</strong> notices that LLM outputs often repeat spans from the prompt or earlier output (think summarization, code editing, RAG, or anything quoting its input). So the "draft" is just: find a matching n-gram in the existing text and propose its continuation. Zero draft-compute, surprisingly high acceptance on repetitive/grounded tasks, and trivially easy to deploy. It does nothing on highly creative generation where little repeats.</p>
+
+        <h3>Lookahead decoding</h3>
+        <p>A draft-model-free method that uses the target model's own parallel capacity to generate and verify multiple n-grams per step via a fixed-point (Jacobi-style) iteration — trading extra compute per step for fewer steps overall.</p>
+
+        <table class="papers">
+          <thead><tr><th>Variant</th><th>Where the draft comes from</th><th>Needs a 2nd model?</th><th>Best for</th></tr></thead>
+          <tbody>
+            <tr><td>Classic (Leviathan/Chen)</td><td>separate small model</td><td>yes</td><td>when a good small sibling exists</td></tr>
+            <tr><td>Medusa</td><td>extra heads on the target</td><td>no (extra heads)</td><td>one-model deployments</td></tr>
+            <tr><td>EAGLE</td><td>feature-level draft head</td><td>no (light head)</td><td>max speedup, production serving</td></tr>
+            <tr><td>Self-speculative</td><td>target's own early layers</td><td>no</td><td>zero extra params</td></tr>
+            <tr><td>Prompt-lookup / n-gram</td><td>matching spans in the text</td><td>no (no model)</td><td>summarization, RAG, code edits</td></tr>
+            <tr><td>Lookahead</td><td>target's parallel n-gram guesses</td><td>no</td><td>draft-free speedup</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Practical considerations: when it helps (and when it doesn't)</h2>
+
+        <div class="bm-warn"><strong>Speculative decoding helps latency, not always throughput.</strong> The whole premise is that the GPU is <em>under-used</em> during generation — true at small batch sizes (one user, low concurrency), where you're memory-bound and have spare compute to spend on verification. At <em>large</em> batch sizes, the GPU is already busy processing many sequences at once (compute-bound), so there's no idle capacity to reclaim — and the extra verification work can even slow things down. Rule of thumb: speculative decoding is a <em>latency</em> optimization for interactive, low-batch serving; high-throughput batch serving benefits far less. Always measure on your real traffic.</div>
+
+        <p>A checklist of what actually matters in practice:</p>
+
+        <ul>
+          <li><strong>Shared vocabulary is mandatory (for two-model setups).</strong> Draft and target must use the <em>same tokenizer</em>, or the probability comparison <code>p(x)/q(x)</code> is meaningless. Use models from the same family.</li>
+          <li><strong>Tune γ (draft length).</strong> More drafted tokens means more potential acceptances per round, but also more wasted draft work when an early token is rejected (everything after a reject is discarded). Typical values are 3–7; the optimum depends on your acceptance rate. Some systems tune γ dynamically.</li>
+          <li><strong>Acceptance is task-dependent.</strong> Predictable text (code, structured output, factual continuations) drafts well; highly creative or high-temperature sampling drafts worse. Prompt-lookup in particular shines on tasks that quote their input and does little elsewhere.</li>
+          <li><strong>Temperature interacts with acceptance.</strong> Greedy/low-temperature decoding tends to have higher acceptance (the target is more "sure," so the draft's confident guesses match more often). High temperature flattens distributions and lowers acceptance.</li>
+          <li><strong>Memory cost.</strong> A separate draft model needs its own weights and KV cache resident alongside the target. On tight VRAM that overhead competes with batch size and context length.</li>
+          <li><strong>It composes with everything else.</strong> Speculative decoding stacks on top of paged KV cache, quantization, and tensor parallelism — it's orthogonal to those and is now a standard feature in vLLM, TensorRT-LLM, and Hugging Face <code>transformers</code>.</li>
+        </ul>
+
+        <h2>Using it in practice</h2>
+
+        <p>You rarely implement the algorithm yourself — the major serving stacks expose it as a config flag. Conceptually:</p>
+
+        <pre class="code"># Hugging Face transformers — assisted generation (two-model)
+out = target.generate(inputs, assistant_model=draft_model)
+
+# vLLM — speculative decoding via a draft model or n-gram
+#   --speculative-model <draft>  --num-speculative-tokens 5
+#   or  --speculative-model "[ngram]"  for prompt-lookup
+
+# TensorRT-LLM — supports draft-target, Medusa, EAGLE, lookahead</pre>
+
+        <p>The honest workflow is empirical: pick a candidate draft (a small sibling model, or n-gram for repetitive tasks), set γ around 4–5, measure tokens/second and acceptance on <em>your</em> prompts and batch size, then adjust. Because the output is provably identical to the target's, you can A/B purely on speed without worrying about quality regressions.</p>
+
+        <h2>FAQ</h2>
+        <details class="faq"><summary>Does speculative decoding change the model's answers?</summary><p>No. With the speculative-sampling acceptance rule, the output is drawn from exactly the same distribution as the target model decoding alone — token for token, in distribution. Quality is unchanged; only speed improves. This losslessness is the whole point and is what separates it from lossy approximations like using a smaller model outright.</p></details>
+        <details class="faq"><summary>If the draft is just a small model, why not use the small model directly?</summary><p>Because the small model alone is lower quality. Speculative decoding gives you the <em>small model's speed</em> on the tokens it gets right, while the big model catches and fixes every token it gets wrong — so you keep the big model's quality. You're borrowing the draft's speed, not its judgment.</p></details>
+        <details class="faq"><summary>What's a typical real-world speedup?</summary><p>Commonly 2–3× for interactive, low-batch serving with a well-matched draft, and more with strong methods like EAGLE on favorable tasks. Gains shrink at high batch sizes (the GPU is already busy) and on creative, high-temperature generation (lower acceptance). Numbers are very task- and setup-dependent — always benchmark.</p></details>
+        <details class="faq"><summary>Why verify all the drafted tokens in one pass instead of one at a time?</summary><p>Because that single parallel pass is the entire saving. A transformer scores N given positions in one forward pass for nearly the same memory cost as scoring one — that's the prefill/training regime. Verifying one token at a time would just be normal slow decoding again, with no benefit.</p></details>
+        <details class="faq"><summary>Do I need to train anything?</summary><p>For classic two-model and prompt-lookup: no — use an existing small model or no model at all. For Medusa and EAGLE: yes, you train the extra heads/draft head (relatively cheap, since the base model is frozen). Self-speculative needs no training but may benefit from light tuning of the early-exit layers.</p></details>
+        <details class="faq"><summary>Can the draft and target run on different GPUs?</summary><p>Yes, and in some serving setups the small draft runs on cheaper or spare hardware while the target occupies the main accelerators. The coordination (draft → verify → accept) adds some communication, so the benefit depends on the interconnect and how the scheduler overlaps the two stages.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li>LLM generation is slow because it's <strong>one token per full weight-load</strong> — memory-bound, with the GPU's compute mostly idle.</li>
+          <li><strong>Checking</strong> many tokens is a single parallel pass; <strong>generating</strong> them is many sequential passes. Speculative decoding converts generation into checking.</li>
+          <li>A cheap <strong>draft model</strong> proposes γ tokens; the <strong>target</strong> verifies all of them in one pass; you accept the agreeing prefix and correct the first disagreement.</li>
+          <li>The <strong>speculative-sampling</strong> accept rule (<code>min(1, p/q)</code> + residual resample) makes the output <strong>provably identical</strong> to the target alone — lossless.</li>
+          <li>Speedup is driven by the <strong>acceptance rate α</strong> and the draft's <strong>cost</strong>; the best draft is cheap <em>and</em> a good imitator (the central tension).</li>
+          <li>Modern variants — <strong>Medusa, EAGLE, self-speculative, prompt-lookup, lookahead</strong> — mostly remove or cheapen the draft.</li>
+          <li>It's a <strong>latency win at low batch sizes</strong>, less so at high throughput; it composes with quantization, paged KV cache, and tensor parallelism.</li>
+        </ul>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://arxiv.org/abs/2211.17192" target="_blank">Leviathan, Kalman &amp; Matias — <em>Fast Inference from Transformers via Speculative Decoding</em> (2022)</a> <span>— the foundational paper and the speculative-sampling proof.</span></li>
+          <li><a href="https://pytorch.org/blog/hitchhikers-guide-speculative-decoding/" target="_blank">PyTorch Blog — A Hitchhiker's Guide to Speculative Decoding</a> <span>— practical walkthrough and benchmarks in the PyTorch/serving stack.</span></li>
+          <li><a href="https://developer.nvidia.com/blog/an-introduction-to-speculative-decoding-for-reducing-latency-in-ai-inference/" target="_blank">NVIDIA Developer Blog — An Introduction to Speculative Decoding</a> <span>— intuition, draft-model selection, and TensorRT-LLM support.</span></li>
+          <li><a href="https://arxiv.org/abs/2302.01318" target="_blank">Chen et al. — <em>Accelerating LLM Decoding with Speculative Sampling</em> (2023)</a> <span>— the concurrent DeepMind formulation.</span></li>
+          <li><a href="https://arxiv.org/abs/2401.10774" target="_blank">Cai et al. — <em>Medusa</em></a> <span>— multiple decoding heads, no separate draft model.</span></li>
+          <li><a href="https://arxiv.org/abs/2401.15077" target="_blank">Li et al. — <em>EAGLE</em></a> <span>— feature-level drafting for higher acceptance.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="gpu-1-1-architecture.html">← How a GPU actually works</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

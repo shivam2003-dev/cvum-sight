@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "speculative-decoding",
+    title: "Speculative decoding — making LLMs generate faster, for free.",
+    date: "Jun 30, 2026",
+    cat: "ml",
+    tags: ["ml", "llm-inference", "speculative-decoding", "latency", "transformers"],
+    time: 22,
+    words: 4500,
+    excerpt: "A comprehensive, plain-language guide to the trick that makes LLMs generate 2–3× faster with zero quality loss. Why generation is slow (memory-bound, one token per full weight-load), the key asymmetry between generating and checking tokens, how a small draft model proposes tokens that the big target model verifies in a single parallel pass, and the speculative-sampling math (min(1, p/q) + residual resample) that makes the output provably identical to the target alone. Plus the acceptance-rate speedup formula, the modern variants (Medusa, EAGLE, self-speculative, prompt-lookup, lookahead), and when it actually helps (latency at low batch, not high-throughput).",
+  },
+  {
     slug: "gpu-1-1-architecture",
     title: "How a GPU actually works — SIMT, warps &amp; the silicon.",
     date: "Jun 29, 2026",

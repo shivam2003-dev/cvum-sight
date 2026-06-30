@@ -74,7 +74,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Jun 30, 2026 · ml · 22 min read · 4500 words <span class="difficulty intermediate">intermediate</span></p>
+        <p class="meta">Jun 30, 2026 · ml · 36 min read · 7200 words <span class="difficulty intermediate">intermediate</span></p>
         <h1>Speculative decoding — making LLMs generate faster, for free.</h1>
         <div class="tag-row">
           <span class="tag fill">ml</span>
@@ -207,6 +207,59 @@ Checking N given tokens = 1 parallel forward pass (fast).</div>
 
         <div class="bm-fix"><strong>The free bonus token.</strong> There's a neat extra. The single target forward pass that verifies the γ drafted tokens <em>also</em> produces the target's own probability distribution for the position right after the last accepted token. So even if <em>every</em> drafted token is accepted, you get one additional "free" token sampled directly from the target. That's why γ drafted tokens can yield up to γ+1 accepted tokens per round. Worst case (first draft rejected), you still get 1 token — the resampled correction — so you never go backwards.</div>
 
+        <h2>A fully worked example, with real numbers</h2>
+
+        <p>The accept/resample rule is much clearer with concrete probabilities. Suppose the model is choosing the next token from a tiny vocabulary of five words: <code>{cat, dog, mat, sat, on}</code>. At some position, the two models assign these probabilities:</p>
+
+        <table class="papers">
+          <thead><tr><th>token</th><th>draft q(x)</th><th>target p(x)</th><th>p/q</th><th>what happens</th></tr></thead>
+          <tbody>
+            <tr><td>cat</td><td class="d">0.50</td><td class="d">0.40</td><td class="d">0.80</td><td>accept w.p. 0.80</td></tr>
+            <tr><td>dog</td><td class="d">0.20</td><td class="d">0.10</td><td class="d">0.50</td><td>accept w.p. 0.50</td></tr>
+            <tr><td>mat</td><td class="d">0.20</td><td class="d">0.30</td><td class="d">1.50→1</td><td>always accept</td></tr>
+            <tr><td>sat</td><td class="d">0.10</td><td class="d">0.15</td><td class="d">1.50→1</td><td>always accept</td></tr>
+            <tr><td>on</td><td class="d">0.00</td><td class="d">0.05</td><td class="d">—</td><td>draft never proposes it</td></tr>
+          </tbody>
+        </table>
+
+        <p>Say the draft model sampled <code>dog</code> (it had 0.20 probability of doing so). We draw a uniform random number <code>r ∈ [0,1)</code> and accept if <code>r &lt; p(dog)/q(dog) = 0.10/0.20 = 0.5</code>. So half the time we keep <code>dog</code>; half the time we reject it. The draft proposed <code>dog</code> too eagerly (0.20 vs the target's 0.10), and the ratio test corrects for exactly that over-eagerness.</p>
+
+        <p>Now suppose we rejected. We do <em>not</em> resample from the target distribution <code>p</code> directly — that would double-count. Instead we sample from the <strong>residual distribution</strong>, the part of <code>p</code> that the draft <em>under</em>-covered:</p>
+
+        <div class="eq">p_residual(x) = norm( max(0, p(x) − q(x)) )</div>
+
+        <p>Computing <code>max(0, p − q)</code> for each token:</p>
+
+        <table class="papers">
+          <thead><tr><th>token</th><th>p − q</th><th>max(0, p−q)</th><th>normalized residual</th></tr></thead>
+          <tbody>
+            <tr><td>cat</td><td class="d">0.40 − 0.50 = −0.10</td><td class="d">0</td><td class="d">0.00</td></tr>
+            <tr><td>dog</td><td class="d">0.10 − 0.20 = −0.10</td><td class="d">0</td><td class="d">0.00</td></tr>
+            <tr><td>mat</td><td class="d">0.30 − 0.20 = +0.10</td><td class="d">0.10</td><td class="d">0.40</td></tr>
+            <tr><td>sat</td><td class="d">0.15 − 0.10 = +0.05</td><td class="d">0.05</td><td class="d">0.20</td></tr>
+            <tr><td>on</td><td class="d">0.05 − 0.00 = +0.05</td><td class="d">0.05</td><td class="d">0.20</td></tr>
+          </tbody>
+        </table>
+
+        <p>The leftover mass sums to 0.10 + 0.05 + 0.05 = 0.20, so after normalizing we resample from <code>{mat: 0.5, sat: 0.25, on: 0.25}</code>. Notice the residual gives mass to <code>on</code> — a token the draft model would <em>never</em> have proposed (q = 0). This is how speculative decoding can still output tokens the draft can't produce: rejection + residual sampling reaches them. The residual leans toward tokens the target liked more than the draft did, precisely cancelling the bias the accept step introduced.</p>
+
+        <h2>Why it's lossless — the proof, slowly</h2>
+
+        <p>The claim is that the probability of finally emitting any token <code>x</code> equals the target's <code>p(x)</code>, exactly. There are two disjoint ways token <code>x</code> can be emitted at this position:</p>
+
+        <ol>
+          <li><strong>It was drafted and accepted.</strong> Probability = (draft proposes x) × (accept) = <code>q(x) × min(1, p(x)/q(x)) = min(q(x), p(x))</code>.</li>
+          <li><strong>Some other token was drafted, rejected, and x came from the residual.</strong> Probability = (a rejection happens) × <code>p_residual(x)</code>.</li>
+        </ol>
+
+        <p>The total probability of <em>any</em> rejection is <code>1 − Σ min(q, p) = Σ max(0, q − p)</code> (the mass the draft over-proposed). And the residual distribution puts probability <code>max(0, p(x) − q(x)) / Σ max(0, p − q)</code> on <code>x</code>. Multiply the rejection probability by the residual — and because <code>Σ max(0, q−p) = Σ max(0, p−q)</code> (the over- and under-shoot are equal, both distributions summing to 1), the normalizing denominators cancel, leaving exactly <code>max(0, p(x) − q(x))</code>. Adding the two paths:</p>
+
+        <div class="eq">P(emit x) = min(q(x), p(x)) + max(0, p(x) − q(x)) = p(x)  ✓</div>
+
+        <p>That identity — <code>min(a,b) + max(0, b−a) = b</code> — is the whole proof in one line. Whatever the draft does, the accept-then-residual machinery reconstructs the target distribution token. The draft can be <em>any</em> distribution, even a terrible one; correctness never depends on draft quality, only speed does. That separation of correctness from quality is what makes speculative decoding safe to turn on by default.</p>
+
+        <div class="bm-note"><strong>One subtlety: greedy vs sampling.</strong> The proof above is for <em>sampling</em> (temperature &gt; 0). For pure greedy decoding (temperature 0, always argmax), "matching the distribution" reduces to "match the target's argmax token at each position" — you accept a drafted token iff it equals the target's top choice. Most production implementations handle both modes; the sampling case is the general one and the greedy case is the easy special case of it.</div>
+
         <h2>How much faster? The acceptance-rate math</h2>
 
         <p>The speedup hinges on one number: the <strong>acceptance rate</strong> <code>α</code> (alpha) — the probability that a drafted token gets accepted. It measures how well the draft model imitates the target. High <code>α</code> means the draft is a good stand-in and most guesses stick; low <code>α</code> means lots of wasted drafting.</p>
@@ -250,6 +303,23 @@ Checking N given tokens = 1 parallel forward pass (fast).</div>
           <p class="diagram-label">Fig 3 — A draft that's too small accepts rarely; one that's too big costs nearly as much as the target. Maximum speedup is a balance — usually a draft model roughly 10–20× smaller than the target.</p>
         </div>
 
+        <h2>The wall-clock model: why verification is almost free</h2>
+
+        <p>To turn acceptance rate into real speedup you need the cost side. Let the target's per-step time be <code>T</code> and the draft's per-step time be <code>cT</code>, where <code>c</code> is the cost ratio (e.g. <code>c = 0.05</code> if the draft is 20× cheaper). One speculative round costs:</p>
+
+        <div class="eq">round cost ≈ γ·(cT)   [draft γ tokens]  +  T   [one target verify]
+            = T·(1 + γc)</div>
+
+        <p>and yields <code>E[tokens] = (1 − α^(γ+1))/(1 − α)</code> accepted tokens. So the per-token time becomes <code>T·(1 + γc) / E[tokens]</code>, versus <code>T</code> for standard decoding. The speedup is:</p>
+
+        <div class="eq">speedup ≈ E[tokens] / (1 + γc)</div>
+
+        <p>Plug in numbers: with <code>α = 0.8</code>, <code>γ = 4</code>, <code>c = 0.05</code>, you get <code>E ≈ 3.36</code> accepted tokens and a divisor of <code>1 + 4·0.05 = 1.2</code>, so the speedup ≈ <code>3.36 / 1.2 ≈ 2.8×</code>. The <code>(1 + γc)</code> term is the tax you pay for the draft. This is why a cheap draft matters so much: if <code>c</code> were 0.3 (draft only ~3× cheaper), the divisor jumps to 2.2 and the same acceptance gives only ~1.5×. <strong>Draft cost is a denominator; acceptance is a numerator.</strong></p>
+
+        <p>The deeper reason the verify pass is cheap takes us back to the hardware. During verification, the target processes <code>γ+1</code> tokens at once instead of 1. In the language of the <a href="gpu-2-1-optimization.html">Roofline article</a>, this <em>raises the arithmetic intensity</em> of the forward pass — more compute per byte of weights loaded — sliding the operation rightward from the memory-bound regime toward compute-bound. As long as <code>γ+1</code> tokens still fit under the compute roof (true for the small γ values used in practice), the extra tokens ride along on the same weight-load for nearly free. That is the same "reuse the expensive load" principle behind tiling and batching; speculative decoding is batching <em>across time</em> (future tokens) instead of <em>across requests</em>.</p>
+
+        <div class="bm-note"><strong>Speculative decoding spends compute to buy back memory bandwidth.</strong> Standard decode wastes the GPU's arithmetic units while waiting on memory. Verification fills some of that idle compute with useful work — checking speculative tokens. You are converting a surplus resource (FLOPs) into the scarce one (effective memory bandwidth per useful token). When the surplus runs out — at high batch sizes, where compute is already saturated — the trick stops paying off. Hold onto that; it explains the throughput caveat later.</div>
+
         <h2>The original algorithm, step by step</h2>
 
         <p>Putting it together, here is the speculative decoding loop from Leviathan et al. (and Chen et al., who proposed it concurrently), in pseudocode:</p>
@@ -285,6 +355,42 @@ Checking N given tokens = 1 parallel forward pass (fast).</div>
 
         <p>That's the entire mechanism. Two models, one verification pass, a ratio test, and a residual resample. Everything else in the field is a variation on making the draft cheaper, more accurate, or unnecessary.</p>
 
+        <h2>The plumbing: KV cache, rollback &amp; tree verification</h2>
+
+        <p>The pseudocode hides the trickiest engineering: managing the <strong>KV cache</strong> across speculative rounds. Recall from <a href="../posts/deepseek-2-1-kv-cache.html">KV cache internals</a> that each model keeps a cache of key/value tensors for every token it has processed, so it never recomputes the past. Speculation complicates this because some processed tokens get <em>thrown away</em>.</p>
+
+        <h3>Drafting and the draft cache</h3>
+        <p>While the draft model generates its γ tokens, it builds up KV-cache entries for each one, just like normal decoding. Cheap, because the draft is small.</p>
+
+        <h3>Verifying appends, then maybe rolls back</h3>
+        <p>The target processes all γ drafted tokens in one pass, appending γ new entries to <em>its</em> KV cache. Then comes the catch: if only the first <code>k</code> of γ tokens are accepted, the cache entries for the rejected tokens (positions <code>k+1 … γ</code>) are now invalid — they were computed conditioned on tokens that won't be in the final sequence. The implementation must <strong>roll back</strong> the KV cache to length <code>(prefix + k + 1)</code>, discarding the speculative tail. In practice this is just moving a length pointer — the stale entries are overwritten next round — but getting the bookkeeping exactly right (for both models, across batched requests of different accept lengths) is where real implementations spend their complexity budget.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">KV cache after a round: accepted entries kept, rejected tail rolled back</text>
+            <text x="60" y="50" class="sm" text-anchor="start">target KV cache after verify pass:</text>
+            <rect x="60" y="58" width="70" height="26" class="boxg"/><text x="95" y="75" class="sm" text-anchor="middle">prefix…</text>
+            <rect x="132" y="58" width="60" height="26" class="boxg"/><text x="162" y="75" class="sm" text-anchor="middle">✓ tok1</text>
+            <rect x="194" y="58" width="60" height="26" class="boxg"/><text x="224" y="75" class="sm" text-anchor="middle">✓ tok2</text>
+            <rect x="256" y="58" width="60" height="26" class="boxg"/><text x="286" y="75" class="sm" text-anchor="middle">✓ tok3</text>
+            <rect x="318" y="58" width="60" height="26" class="boxr"/><text x="348" y="75" class="sm" text-anchor="middle">✗ tok4</text>
+            <rect x="380" y="58" width="60" height="26" class="boxr"/><text x="410" y="75" class="sm" text-anchor="middle">✗ tok5</text>
+            <text x="60" y="115" class="sm" text-anchor="start" style="fill:#c96442">roll back length pointer → drop tok4, tok5 (computed on a rejected branch)</text>
+            <text x="60" y="150" class="sm" text-anchor="start">next round starts from:</text>
+            <rect x="60" y="158" width="70" height="26" class="boxg"/><text x="95" y="175" class="sm" text-anchor="middle">prefix…</text>
+            <rect x="132" y="158" width="60" height="26" class="boxg"/><text x="162" y="175" class="sm" text-anchor="middle">tok1</text>
+            <rect x="194" y="158" width="60" height="26" class="boxg"/><text x="224" y="175" class="sm" text-anchor="middle">tok2</text>
+            <rect x="256" y="158" width="60" height="26" class="boxg"/><text x="286" y="175" class="sm" text-anchor="middle">tok3</text>
+            <rect x="318" y="158" width="70" height="26" class="boxy"/><text x="353" y="175" class="sm" text-anchor="middle">+ bonus/corr</text>
+          </svg>
+          <p class="diagram-label">Fig 4 — Verification appends KV entries for all drafted tokens; rejected ones are rolled back by resetting the cache length. Cheap, but the bookkeeping across a batch of different accept-lengths is the hard part.</p>
+        </div>
+
+        <h3>From a chain to a tree</h3>
+        <p>So far the draft proposes a single <em>linear</em> guess of γ tokens. But why bet on one continuation? <strong>Tree-based speculative decoding</strong> (used by Medusa, EAGLE, SpecInfer and others) drafts a small <em>tree</em> of candidate continuations — several alternatives at each position — and verifies the whole tree in a single target pass. If position 1 might be "the" or "a", you draft both and let verification pick the branch the target prefers. This raises the chance that <em>some</em> path through the tree is accepted, lifting the effective acceptance length.</p>
+
+        <p>Verifying a tree in one pass needs a special <strong>tree attention mask</strong>: each candidate token attends only to its own ancestors in the tree, not to sibling branches, so all branches are scored simultaneously without contaminating each other. It's a clever use of the attention mask — the same mechanism that normally enforces causal (left-to-right) attention, repurposed to encode tree structure. The cost is a slightly larger verify pass (more tokens) in exchange for higher acceptance; tuning the tree's width and depth is the modern analogue of tuning γ.</p>
+
         <h2>The modern variants: where the field went</h2>
 
         <p>The 2022 paper kicked off a wave of refinements. The big practical question — "where does the draft come from, and can we avoid a second model entirely?" — drives most of them.</p>
@@ -305,7 +411,16 @@ Checking N given tokens = 1 parallel forward pass (fast).</div>
         <p>The cheapest draft is no neural network whatsoever. <strong>Prompt-lookup decoding</strong> notices that LLM outputs often repeat spans from the prompt or earlier output (think summarization, code editing, RAG, or anything quoting its input). So the "draft" is just: find a matching n-gram in the existing text and propose its continuation. Zero draft-compute, surprisingly high acceptance on repetitive/grounded tasks, and trivially easy to deploy. It does nothing on highly creative generation where little repeats.</p>
 
         <h3>Lookahead decoding</h3>
-        <p>A draft-model-free method that uses the target model's own parallel capacity to generate and verify multiple n-grams per step via a fixed-point (Jacobi-style) iteration — trading extra compute per step for fewer steps overall.</p>
+        <p>A draft-model-free method that uses the target model's own parallel capacity to generate and verify multiple n-grams per step via a fixed-point (Jacobi-style) iteration — trading extra compute per step for fewer steps overall. Where speculative decoding guesses with a separate model, lookahead has the target model refine several rough future tokens at once until they stabilize, then verifies them. No draft to train or serve; the cost is extra parallel compute per step.</p>
+
+        <h3>Multi-Token Prediction (MTP) — baked into the model</h3>
+        <p>A recent trend (notably in DeepSeek-V3) trains the model from the start with extra prediction heads that forecast several future tokens, not just the next one. At training time this is a richer learning signal; at inference time those heads double as a built-in, well-aligned draft, so the model speculates on itself with very high acceptance because the heads were trained jointly with the backbone. MTP blurs the line between "model" and "draft" — the speculation capability is a native property of the weights rather than a bolt-on.</p>
+
+        <h3>SpecInfer and serving-system integration</h3>
+        <p>SpecInfer popularized tree-based speculation with multiple small draft models and a token-tree verifier, and pushed the ideas into production serving. The lasting contribution of this line of work is less a single algorithm than the <em>system</em> machinery — tree attention, batched verification across many requests, continuous batching that mixes speculative and non-speculative sequences — that lets these methods run efficiently inside vLLM / TensorRT-LLM rather than in a benchmark script.</p>
+
+        <h3>EAGLE-2 and EAGLE-3: dynamic trees</h3>
+        <p>EAGLE kept improving. EAGLE-2 makes the draft <em>tree</em> dynamic: instead of a fixed-shape tree, it uses the draft head's own confidence to decide where to spend the branching budget — growing the tree along promising continuations and pruning unlikely ones — which raises acceptance for the same verify cost. EAGLE-3 pushes further by drafting from multiple layers' features and dropping some of the original feature-prediction constraints, reporting some of the largest lossless speedups to date. The throughline of the EAGLE family: <strong>draft in the model's own feature space, and shape the candidate tree adaptively.</strong></p>
 
         <table class="papers">
           <thead><tr><th>Variant</th><th>Where the draft comes from</th><th>Needs a 2nd model?</th><th>Best for</th></tr></thead>
@@ -318,6 +433,46 @@ Checking N given tokens = 1 parallel forward pass (fast).</div>
             <tr><td>Lookahead</td><td>target's parallel n-gram guesses</td><td>no</td><td>draft-free speedup</td></tr>
           </tbody>
         </table>
+
+        <h2>Choosing and building a draft model</h2>
+
+        <p>For the classic two-model setup, the draft model <em>is</em> the design. Get it right and you hit 2–3×; get it wrong and you barely move. The levers:</p>
+
+        <ul>
+          <li><strong>Same family, same tokenizer.</strong> Non-negotiable for two-model speculation: the accept test compares <code>p(x)</code> and <code>q(x)</code> for the <em>same</em> token id, so both models must share a vocabulary. Llama drafts for Llama, Qwen for Qwen. Mixing families breaks the probability comparison. (Some research relaxes this with vocabulary-alignment tricks, but same-family is the safe default.)</li>
+          <li><strong>Roughly 10–20× smaller.</strong> The cost-ratio math says the draft must be much cheaper than the target, but small enough hurts acceptance. A 7B drafting for a 70B, or a 1B for a 13B, are typical pairings. The exact ratio is empirical — sweep a couple of sizes and measure end-to-end tokens/sec.</li>
+          <li><strong>Align the draft to the target by distillation.</strong> The single biggest acceptance booster: <em>distill</em> the draft on the target's outputs (or its distributions), so the draft learns to imitate the target specifically rather than just being a generically good small model. A draft trained to mimic <em>this</em> target accepts far more often than an off-the-shelf small model of the same size. This is why EAGLE/Medusa (trained against the target) beat naive small-model drafting.</li>
+          <li><strong>Quantize the draft aggressively.</strong> The draft only needs to be a good <em>guesser</em>, not perfectly accurate — every guess is checked. So you can run the draft at INT8/INT4 to cut its cost <code>c</code> with little acceptance loss, improving the speedup denominator. The target stays at full precision to preserve quality.</li>
+          <li><strong>Match the domain.</strong> Acceptance is highest when the draft has seen the target's domain. A code-tuned draft for a code target, a chat-tuned draft for a chat target. A domain-mismatched draft drags α down even at the right size.</li>
+        </ul>
+
+        <div class="bm-fix"><strong>If you don't want to train or serve a second model:</strong> start with <strong>prompt-lookup (n-gram) decoding</strong> for input-heavy tasks (summarization, RAG, editing, code completion in an open file) — it's free and often gives 2×+ on those workloads — and reach for <strong>EAGLE</strong> or <strong>Medusa</strong> when you want a single self-contained model with high speedup across general tasks. Pure two-model speculation is best when a well-matched, ideally distilled, small sibling already exists.</div>
+
+        <h2>The throughput story, in depth</h2>
+
+        <p>This deserves its own section because it's where teams get surprised. The headline again: <strong>speculative decoding optimizes latency at low concurrency, and its benefit shrinks — sometimes to nothing — as batch size grows.</strong> The reason is the surplus-compute argument from the wall-clock section, made concrete.</p>
+
+        <p>At <strong>batch size 1</strong> (one user, interactive), the target's forward pass is deeply memory-bound: it loads all the weights to serve a single token's worth of compute. There is enormous idle compute. Verifying γ+1 tokens uses that idle compute essentially for free, so the speedup is large.</p>
+
+        <p>As the <strong>batch grows</strong>, the server processes many sequences per weight-load. The forward pass becomes compute-bound — the GPU's arithmetic units fill up with real work from concurrent requests. Now there is little idle compute left to absorb verification, and the extra speculative tokens compete with genuine throughput. Worse, when speculative tokens get <em>rejected</em>, that verification compute was wasted — pure overhead. Past some batch size, speculation can <em>reduce</em> total throughput.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Speculative speedup fades as the batch fills the GPU's compute</text>
+            <line x1="80" y1="185" x2="620" y2="185" class="ink" stroke="#2a2620" stroke-width="1.5"/>
+            <line x1="80" y1="40" x2="80" y2="185" class="ink" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="350" y="210" class="sm" text-anchor="middle">batch size / concurrency →</text>
+            <text x="40" y="112" class="sm" text-anchor="middle" transform="rotate(-90 40 112)">spec speedup →</text>
+            <path d="M95 60 Q 250 70, 360 120 Q 460 160, 615 180" fill="none" stroke="#c96442" stroke-width="2.5"/>
+            <line x1="95" y1="180" x2="615" y2="180" stroke="#948a78" stroke-width="1" stroke-dasharray="4 3"/>
+            <text x="150" y="55" class="sm" text-anchor="middle" style="fill:#6a8f5f">big win (memory-bound)</text>
+            <text x="540" y="168" class="sm" text-anchor="middle" style="fill:#c96442">≈1× (compute-bound)</text>
+            <text x="350" y="100" class="sm" text-anchor="middle">latency-critical serving lives on the left</text>
+          </svg>
+          <p class="diagram-label">Fig 5 — The benefit is largest where the GPU is idle (low batch, interactive latency) and erodes as concurrency saturates compute. Match the technique to the regime.</p>
+        </div>
+
+        <p>The practical implication: speculative decoding is a <strong>latency play for interactive, low-concurrency serving</strong> — chat, agents, single-user assistants, anything where time-to-token matters and the batch is small. For maximizing tokens/sec on a fully-loaded inference fleet, plain batching often wins, and some serving stacks <em>dynamically disable</em> speculation when the batch is large enough that it stops paying off. Always benchmark at <em>your</em> real concurrency, not at batch size 1, or you'll over-estimate the gain.</p>
 
         <h2>Practical considerations: when it helps (and when it doesn't)</h2>
 
@@ -349,6 +504,58 @@ out = target.generate(inputs, assistant_model=draft_model)
 
         <p>The honest workflow is empirical: pick a candidate draft (a small sibling model, or n-gram for repetitive tasks), set γ around 4–5, measure tokens/second and acceptance on <em>your</em> prompts and batch size, then adjust. Because the output is provably identical to the target's, you can A/B purely on speed without worrying about quality regressions.</p>
 
+        <h2>Where it sits among inference optimizations</h2>
+
+        <p>Speculative decoding is one tool in a larger latency/throughput toolbox, and it's worth knowing how it relates to the others — because they compose, and they attack different bottlenecks.</p>
+
+        <table class="papers">
+          <thead><tr><th>Technique</th><th>What it attacks</th><th>Lossless?</th><th>Composes with spec-dec?</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Speculative decoding</strong></td><td>sequential decode latency</td><td>yes (exact)</td><td>—</td></tr>
+            <tr><td>Quantization (INT8/FP8/INT4)</td><td>weight memory + bandwidth</td><td>no (small quality cost)</td><td>yes — and shrinks the draft too</td></tr>
+            <tr><td>Paged KV cache (vLLM)</td><td>memory fragmentation</td><td>yes</td><td>yes</td></tr>
+            <tr><td>Tensor / pipeline parallelism</td><td>model too big for one GPU</td><td>yes</td><td>yes</td></tr>
+            <tr><td>Continuous batching</td><td>throughput / GPU utilization</td><td>yes</td><td>yes (with care at high batch)</td></tr>
+            <tr><td>Distillation to a smaller model</td><td>everything (use a small model)</td><td>no (quality drops)</td><td>n/a (different model)</td></tr>
+            <tr><td>FlashAttention</td><td>attention memory traffic</td><td>yes</td><td>yes</td></tr>
+          </tbody>
+        </table>
+
+        <p>The key distinction: most speedups either <em>change the model</em> (quantization, distillation — accepting some quality loss) or <em>improve the systems plumbing</em> (paged cache, batching, FlashAttention — lossless but bounded by the same per-step decode cost). Speculative decoding is unusual: it's <strong>lossless</strong> like the plumbing optimizations, but it attacks the fundamental <em>sequential</em> nature of decoding that none of the others touch. That's why it stacks on top of all of them — you quantize, page the cache, parallelize, batch, <em>and</em> speculate. Each addresses a different axis.</p>
+
+        <h2>A short history</h2>
+
+        <p>The idea matured fast:</p>
+
+        <table class="papers">
+          <thead><tr><th>When</th><th>Milestone</th></tr></thead>
+          <tbody>
+            <tr><td class="d">Nov 2022</td><td>Leviathan, Kalman &amp; Matias (Google) — <em>Fast Inference from Transformers via Speculative Decoding</em>: the speculative-sampling proof and the draft-target loop.</td></tr>
+            <tr><td class="d">Feb 2023</td><td>Chen et al. (DeepMind) — concurrent <em>Accelerating LLM Decoding with Speculative Sampling</em>, demonstrated on Chinchilla.</td></tr>
+            <tr><td class="d">2023</td><td>SpecInfer — token trees + multiple drafts, serving-system integration.</td></tr>
+            <tr><td class="d">Jan 2024</td><td>Medusa — extra decoding heads, no separate draft model; Lookahead decoding — draft-free Jacobi iteration.</td></tr>
+            <tr><td class="d">2024</td><td>EAGLE / EAGLE-2 — feature-level drafting and dynamic trees, state-of-the-art lossless speedups.</td></tr>
+            <tr><td class="d">2024–25</td><td>Multi-Token Prediction baked into pretraining (e.g. DeepSeek-V3); EAGLE-3; broad support in vLLM, TensorRT-LLM, and Hugging Face.</td></tr>
+          </tbody>
+        </table>
+
+        <p>In two years it went from a clever paper to a default feature in every major serving stack — fast adoption, because it's lossless and stacks on everything else.</p>
+
+        <h2>A tuning playbook &amp; troubleshooting</h2>
+
+        <p>If you're turning speculative decoding on and the numbers disappoint, walk this list:</p>
+
+        <div class="bm-warn"><strong>"I enabled it and it's barely faster (or slower)."</strong> The usual causes, in order of likelihood: (1) your <em>batch size is too high</em> — measure at batch 1 to confirm the mechanism works, then accept that high concurrency erodes it; (2) the <em>draft is too expensive</em> (cost ratio <code>c</code> too big) — use a smaller or quantized draft; (3) <em>low acceptance</em> — the draft is poorly matched (wrong domain, not distilled, or high sampling temperature); (4) <em>γ is mistuned</em> — too large wastes draft work on tokens discarded after an early reject, too small under-uses each verify pass.</div>
+
+        <ul>
+          <li><strong>Measure acceptance rate first.</strong> Most frameworks report it. If α is low (&lt;0.5), fix the draft (distill it, match the domain, lower temperature) before touching anything else — α is the master dial.</li>
+          <li><strong>Sweep γ at your acceptance rate.</strong> Higher α supports larger γ; lower α wants smaller γ. Start at 4–5. With tree methods, tune tree width/depth instead.</li>
+          <li><strong>Check the cost ratio.</strong> Profile draft-step vs target-step time. If the draft is more than ~10–15% of the target's cost, your denominator <code>(1+γc)</code> is eating the gains — shrink or quantize the draft.</li>
+          <li><strong>Lower the temperature if quality allows.</strong> Greedy/low-temp decoding accepts more (the target is more decisive, the draft matches more often). High temperature inherently caps acceptance.</li>
+          <li><strong>Confirm it's actually lossless in your setup.</strong> If outputs differ from non-speculative decoding in <em>distribution</em> (beyond expected sampling randomness with a fixed seed), the implementation's accept/resample is buggy — correct speculative decoding is exact. This is a good regression test.</li>
+          <li><strong>Watch memory.</strong> A separate draft model and its KV cache compete with the target's batch size and context length on the same VRAM. On tight memory, a draft-free method (Medusa/EAGLE/n-gram) avoids the second cache.</li>
+        </ul>
+
         <h2>FAQ</h2>
         <details class="faq"><summary>Does speculative decoding change the model's answers?</summary><p>No. With the speculative-sampling acceptance rule, the output is drawn from exactly the same distribution as the target model decoding alone — token for token, in distribution. Quality is unchanged; only speed improves. This losslessness is the whole point and is what separates it from lossy approximations like using a smaller model outright.</p></details>
         <details class="faq"><summary>If the draft is just a small model, why not use the small model directly?</summary><p>Because the small model alone is lower quality. Speculative decoding gives you the <em>small model's speed</em> on the tokens it gets right, while the big model catches and fixes every token it gets wrong — so you keep the big model's quality. You're borrowing the draft's speed, not its judgment.</p></details>
@@ -356,6 +563,11 @@ out = target.generate(inputs, assistant_model=draft_model)
         <details class="faq"><summary>Why verify all the drafted tokens in one pass instead of one at a time?</summary><p>Because that single parallel pass is the entire saving. A transformer scores N given positions in one forward pass for nearly the same memory cost as scoring one — that's the prefill/training regime. Verifying one token at a time would just be normal slow decoding again, with no benefit.</p></details>
         <details class="faq"><summary>Do I need to train anything?</summary><p>For classic two-model and prompt-lookup: no — use an existing small model or no model at all. For Medusa and EAGLE: yes, you train the extra heads/draft head (relatively cheap, since the base model is frozen). Self-speculative needs no training but may benefit from light tuning of the early-exit layers.</p></details>
         <details class="faq"><summary>Can the draft and target run on different GPUs?</summary><p>Yes, and in some serving setups the small draft runs on cheaper or spare hardware while the target occupies the main accelerators. The coordination (draft → verify → accept) adds some communication, so the benefit depends on the interconnect and how the scheduler overlaps the two stages.</p></details>
+        <details class="faq"><summary>What is the acceptance rate, exactly, and what's a good value?</summary><p>It's the probability that a drafted token survives the accept test — effectively how often the draft's guess matches what the target would have done. Above ~0.7 is good (gives ~2.5–3× with a cheap draft); below ~0.4 the overhead often isn't worth it. It depends on draft quality, how well the draft is aligned/distilled to the target, the task (predictable text accepts more), and temperature.</p></details>
+        <details class="faq"><summary>Why must I resample from the residual instead of just from the target?</summary><p>Because the accept step already emitted some tokens with probability <code>min(q,p)</code>. If, on rejection, you then sampled from the full target <code>p</code>, those tokens would be double-counted and the final distribution would be skewed. Sampling from the residual <code>max(0, p−q)</code> adds back exactly the mass the accept step missed, so the two paths sum to <code>p</code>. The one-line identity <code>min(a,b)+max(0,b−a)=b</code> is why it works.</p></details>
+        <details class="faq"><summary>Does speculative decoding help the prompt-processing (prefill) phase?</summary><p>No — prefill already processes the whole prompt in one parallel, compute-bound pass; it's the efficient regime speculation is trying to <em>reach</em>. Speculative decoding only speeds up the sequential <em>generation</em> (decode) phase. If your bottleneck is a huge prompt and a short answer, speculation won't help much; if it's a long generated answer, it will.</p></details>
+        <details class="faq"><summary>How does tree-based speculation differ from the basic linear version?</summary><p>Linear speculation bets on one continuation of γ tokens; if token <code>k</code> is wrong, everything after it is discarded. Tree speculation drafts several alternative branches and verifies them all in one pass using a tree attention mask, so even if the most-likely branch is rejected, another branch may be accepted — raising the effective accepted length per round. Medusa, EAGLE, and SpecInfer all use trees.</p></details>
+        <details class="faq"><summary>Is it worth it if I'm already serving a quantized model?</summary><p>Often yes — they're orthogonal. Quantization shrinks weight memory and speeds each step but doesn't change decoding's one-token-at-a-time nature; speculation does. They compose: you can even quantize the <em>draft</em> aggressively to cut its cost. Just benchmark the combination at your real batch size, since both interact with the memory/compute balance.</p></details>
 
         <h2>Takeaways</h2>
         <ul>
@@ -375,7 +587,10 @@ out = target.generate(inputs, assistant_model=draft_model)
           <li><a href="https://developer.nvidia.com/blog/an-introduction-to-speculative-decoding-for-reducing-latency-in-ai-inference/" target="_blank">NVIDIA Developer Blog — An Introduction to Speculative Decoding</a> <span>— intuition, draft-model selection, and TensorRT-LLM support.</span></li>
           <li><a href="https://arxiv.org/abs/2302.01318" target="_blank">Chen et al. — <em>Accelerating LLM Decoding with Speculative Sampling</em> (2023)</a> <span>— the concurrent DeepMind formulation.</span></li>
           <li><a href="https://arxiv.org/abs/2401.10774" target="_blank">Cai et al. — <em>Medusa</em></a> <span>— multiple decoding heads, no separate draft model.</span></li>
-          <li><a href="https://arxiv.org/abs/2401.15077" target="_blank">Li et al. — <em>EAGLE</em></a> <span>— feature-level drafting for higher acceptance.</span></li>
+          <li><a href="https://arxiv.org/abs/2401.15077" target="_blank">Li et al. — <em>EAGLE</em> &amp; EAGLE-2/3</a> <span>— feature-level drafting and dynamic draft trees.</span></li>
+          <li><a href="https://arxiv.org/abs/2305.09781" target="_blank">Miao et al. — <em>SpecInfer</em></a> <span>— token-tree speculation and serving-system integration.</span></li>
+          <li><a href="https://arxiv.org/abs/2402.02057" target="_blank">Fu et al. — <em>Lookahead Decoding</em></a> <span>— draft-model-free Jacobi-style parallel decoding.</span></li>
+          <li><a href="https://arxiv.org/abs/2412.19437" target="_blank">DeepSeek-V3</a> <span>— Multi-Token Prediction baked into pretraining, doubling as a native draft.</span></li>
         </ul>
 
       </div>

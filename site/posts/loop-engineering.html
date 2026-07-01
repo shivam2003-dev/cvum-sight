@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loop Engineering — Designing the Agent's Iteration, Not Its Prompt — cvam.sight</title>
+<meta name="description" content="A deep technical guide to loop engineering: the agent loop (ReAct) from the message level up, context growth and compaction, the multiple-exits termination doctrine, error-as-observation, loopmaxxing, Andrew Ng's nested loops, and a production rollout playbook.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.88rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Jul 2, 2026 · ml · 30 min read · 6000 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Loop engineering — designing the agent's iteration, not its prompt.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">agents</span>
+          <span class="tag">loop-engineering</span>
+          <span class="tag">llm</span>
+          <span class="tag">agentic</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">"Loop engineering" is the discipline that comes after prompt engineering and context engineering. A modern AI agent isn't a single prompt — it's a <em>loop</em>: the model thinks, calls a tool, sees the result, and repeats until done. Loop engineering is the craft of designing that loop well — how context flows in and out, how the loop decides to stop, how it recovers from errors, and how it avoids running forever without making progress. Andrew Ng frames the bigger picture as <em>nested</em> loops (fast coding loops inside slow feedback loops); this article works from the innermost loop outward, with the concrete engineering — message-history mechanics, the multiple-exits termination doctrine, error-as-observation, and the loopmaxxing trap — that separates a reliable agent from one that burns tokens in circles.</p>
+
+        <p>In mid-2026 the phrase caught fire. Andrew Ng noted that "loop engineering" had become a hot buzzphrase; Jensen Huang was quoted saying prompt engineering is becoming obsolete and loops are the new paradigm. Behind the hype is a real shift. For two years the skill was writing a good <em>prompt</em> — a single, careful instruction. Then it was <em>context engineering</em> — assembling the right documents, tools, and memory into the model's window. Now the frontier is <em>loop engineering</em>: you no longer type each next instruction by hand; you build a program that prompts the agent, checks its output, updates state, and re-runs it — over and over — until a goal is met. The unit of work moved from the message to the iteration.</p>
+
+        <p>This is a technical article, not a think-piece. We'll build the concept from the message level up: what one turn of an agent loop actually contains, how the conversation grows and must be managed, exactly how the loop should decide to stop, how errors become part of the loop rather than crash it, and the failure modes — chief among them "loopmaxxing" — that show up in production. Then we'll zoom out to Ng's nested-loop model and a rollout playbook.</p>
+
+        <h2>What loop engineering is (and what it replaced)</h2>
+
+        <p>Three eras of "the skill," each a strict superset of the last:</p>
+
+        <table class="papers">
+          <thead><tr><th>Era</th><th>Unit of work</th><th>You control…</th><th>Failure looks like…</th></tr></thead>
+          <tbody>
+            <tr><td>Prompt engineering</td><td>one message</td><td>the wording of a single instruction</td><td>a bad single answer</td></tr>
+            <tr><td>Context engineering</td><td>one window</td><td>what documents, tools, memory the model sees</td><td>missing/again-irrelevant context</td></tr>
+            <tr><td>Loop engineering</td><td>one iteration cycle</td><td>how the model is invoked repeatedly, and when it stops</td><td>infinite loops, runaway cost, silent non-progress</td></tr>
+          </tbody>
+        </table>
+
+        <p>The clean definition: <strong>loop engineering is designing the program that prompts, checks, remembers, and re-runs an agent — instead of you typing every next instruction by hand.</strong> The agent's behavior depends far less on any single clever prompt than on the <em>architecture of the loop</em>: exactly how the LLM is called in a cycle to reason and act, and — the part beginners miss — exactly how and when that cycle ends. Prompt quality still matters, but it's now one input to a system, not the system.</p>
+
+        <div class="bm-note"><strong>Why the term appeared now.</strong> Two things converged in 2025–26. Models got reliable enough at <em>tool calling</em> to run many autonomous steps without going off the rails, and coding agents (Claude Code, Codex CLI, and others) made the agent loop the everyday interface for real work. Once the loop is where the value is created, the loop is where the engineering goes. Native <code>/goal</code>-style commands that ask you to specify an objective up front and then run a loop against it are loop engineering baked into the tool.</div>
+
+        <h2>The anatomy of a single agent loop</h2>
+
+        <p>Start at the smallest scale: one agent, one loop. Nearly every framework — LangChain, the OpenAI Agents SDK, Claude's agent harness, Letta, Google's ADK — implements the same six-line skeleton. It is worth memorizing because everything else is a refinement of it:</p>
+
+        <pre class="code">messages = [system_prompt, user_goal]
+while not done:
+    response = call_llm(messages, tools)      # 1. invoke the model
+    messages.append(response)                 # 2. record what it said/decided
+    if response.tool_calls:                   # 3. did it want to act?
+        results = execute(response.tool_calls)# 4. run the tools
+        messages.append(results)              # 5. feed results back
+    else:
+        done = True                           # 6. no tool call = it's finished
+return response</pre>
+
+        <p>That loop is the entire mechanism of an "AI agent." The model is called with the running conversation plus a list of tools. It either emits a final answer (loop ends) or asks to call one or more tools. Your code runs those tools, appends the results to the conversation, and calls the model again — now one observation richer. The model reasons over the accumulated history each turn and decides the next move.</p>
+
+        <h3>The ReAct pattern underneath</h3>
+
+        <p>The intellectual root is <strong>ReAct</strong> (Reason + Act), from Yao et al., 2022. Its insight was to interleave two things the model produces at each step: a <em>reasoning trace</em> ("I should check the file exists before editing it") and a concrete <em>action</em> (the tool call). Crucially, "the observation from each action feeds into the next reasoning step" — so the agent adapts to what actually happened instead of blindly executing a pre-made plan. Modern agent loops are ReAct with better tooling: the reasoning is the model's chain-of-thought, the action is a structured tool call, and the observation is the tool result appended to history.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">One turn of the agent loop (the ReAct cycle)</text>
+            <!-- circular flow -->
+            <rect x="270" y="40" width="140" height="40" class="boxy" rx="6"/><text x="340" y="65" class="sm" text-anchor="middle">REASON (think)</text>
+            <rect x="470" y="110" width="140" height="40" class="boxg" rx="6"/><text x="540" y="135" class="sm" text-anchor="middle">ACT (tool call)</text>
+            <rect x="270" y="180" width="140" height="40" class="boxr" rx="6"/><text x="340" y="205" class="sm" text-anchor="middle">OBSERVE (result)</text>
+            <rect x="70" y="110" width="140" height="40" class="box" rx="6"/><text x="140" y="130" class="sm" text-anchor="middle">UPDATE history</text><text x="140" y="143" class="sm" text-anchor="middle">(append + check exit)</text>
+            <!-- arrows clockwise -->
+            <path d="M410 60 Q 500 70, 540 108" class="arr" marker-end="url(#a)"/>
+            <path d="M540 152 Q 500 195, 412 200" class="arr" marker-end="url(#a)"/>
+            <path d="M270 200 Q 180 195, 145 152" class="arr" marker-end="url(#a)"/>
+            <path d="M140 108 Q 180 70, 268 60" class="arr" marker-end="url(#a)"/>
+            <text x="340" y="130" class="sm" text-anchor="middle" style="fill:#c96442">loop until an</text>
+            <text x="340" y="145" class="sm" text-anchor="middle" style="fill:#c96442">exit condition fires</text>
+            <text x="340" y="245" class="sm" text-anchor="middle">Loop engineering = designing every arrow: what flows, how it's trimmed, and when the cycle stops.</text>
+            <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 1 — The agent loop is reason → act → observe → update, repeated. Loop engineering is the discipline of designing each transition and, above all, the exit.</p>
+        </div>
+
+        <p>That six-line skeleton is deceptively simple. The gap between the toy version and a production agent is entirely in the details we cover next: how the message history is managed so it doesn't explode, how the loop is guaranteed to terminate, and how errors are absorbed rather than fatal.</p>
+
+        <h2>The message history: where the tokens (and bugs) live</h2>
+
+        <p>Each iteration <em>appends</em> to the conversation, so the loop's context grows monotonically. Understanding that growth is half of loop engineering, because it drives both cost and correctness.</p>
+
+        <h3>The exact append order matters</h3>
+
+        <p>A subtle, extremely common bug: the assistant message that <em>contains</em> the tool calls must be appended to history <strong>before</strong> the tool-result messages, and each tool result must reference the matching <code>tool_call_id</code>. The API rejects a tool-result message that references a <code>tool_call_id</code> it hasn't seen. Get the ordering wrong and you get a validation error that doesn't obviously point at the cause.</p>
+
+        <pre class="code"># CORRECT ordering
+messages.append(assistant_msg)              # has tool_calls: [{id: "call_7", ...}]
+for call in assistant_msg.tool_calls:
+    result = execute(call)
+    messages.append({                        # tool result MUST come after,
+        "role": "tool",                      # and reference the same id
+        "tool_call_id": call.id,             # "call_7"
+        "content": str(result),
+    })</pre>
+
+        <h3>Tool results dominate the token budget</h3>
+
+        <p>Here's a number that reshapes intuition: in real agent traces, <strong>tool responses account for roughly two-thirds of total tokens</strong> (one analysis put it at 67.6%). The model's own text is a minority; the bulk is what tools hand back — file contents, API JSON, search results, error logs. This has a direct engineering consequence: the highest-leverage way to control an agent's cost and keep its context coherent is to control <em>what tools return</em>, not to trim the prompt.</p>
+
+        <div class="bm-warn"><strong>The context grows every turn, and long contexts degrade reasoning.</strong> Two failure modes come from unmanaged growth. First, <strong>cost</strong>: each iteration re-sends the entire history, so a 20-step loop pays for the early context 20 times over. Second, and worse, <strong>quality</strong>: models reason less reliably as the window fills with stale tool output and dead ends ("context rot"). An agent that was sharp at step 3 can be confused at step 30 not because the task got harder but because its own history became noise. Managing context <em>is</em> managing agent quality.</div>
+
+        <h3>Three context-management techniques inside the loop</h3>
+
+        <ul>
+          <li><strong>Paginated / windowed reads.</strong> Don't let a tool dump a 5,000-line file into context. Return a window (e.g. 200 numbered lines) and let the agent request more. The line numbers double as addresses for later edits.</li>
+          <li><strong>Surgical edits, not rewrites.</strong> When the agent modifies a file, have it emit a targeted diff (change lines 40–48) rather than re-emitting the whole file. Less output, less context, fewer chances to corrupt untouched code.</li>
+          <li><strong>Compaction and isolation.</strong> At roughly <strong>80% context utilization</strong>, trigger compaction: summarize the older turns into a condensed state and continue from the summary. For big sub-tasks, spawn a <strong>sub-agent</strong> with its own fresh context that returns only a short result to the parent — isolating the sub-task's token churn from the main loop. (This is the "orchestrator + workers" pattern many multi-agent systems use.)</li>
+        </ul>
+
+        <p>These map directly onto the KV-cache and memory realities of inference: a longer context is more expensive to serve and slower to attend over, which is exactly why compaction pays off. If you want the hardware reason long contexts cost so much, the <a href="../posts/deepseek-2-1-kv-cache.html">KV cache article</a> covers it.</p>
+
+        <h2>Termination: the single hardest part of loop engineering</h2>
+
+        <p>If there is one thing loop engineering is <em>about</em>, it's this: <strong>knowing when to stop.</strong> The naive loop — "let the agent decide when it's done" — is the number-one way to burn a token budget, because a confused agent will keep calling tools forever, each call looking locally reasonable. Every production loop needs <em>explicit, external</em> stopping conditions, and the doctrine is to have <strong>several independent exits</strong>, because any single one can fail.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">A robust loop has multiple independent exits</text>
+            <rect x="270" y="38" width="140" height="34" class="boxy" rx="6"/><text x="340" y="59" class="sm" text-anchor="middle">agent iteration</text>
+            <!-- exits fanning out -->
+            <rect x="40" y="100" width="150" height="34" class="boxg" rx="5"/><text x="115" y="121" class="sm" text-anchor="middle">✓ verifier passed</text>
+            <rect x="205" y="100" width="130" height="34" class="box" rx="5"/><text x="270" y="116" class="sm" text-anchor="middle">max iterations</text><text x="270" y="129" class="sm" text-anchor="middle">(15–25)</text>
+            <rect x="350" y="100" width="130" height="34" class="box" rx="5"/><text x="415" y="116" class="sm" text-anchor="middle">time / token</text><text x="415" y="129" class="sm" text-anchor="middle">budget</text>
+            <rect x="495" y="100" width="150" height="34" class="boxr" rx="5"/><text x="570" y="116" class="sm" text-anchor="middle">no-progress</text><text x="570" y="129" class="sm" text-anchor="middle">(3× identical)</text>
+            <path d="M300 72 Q 180 82, 120 98" class="arr" marker-end="url(#b)"/>
+            <path d="M330 72 L 285 98" class="arr" marker-end="url(#b)"/>
+            <path d="M350 72 L 405 98" class="arr" marker-end="url(#b)"/>
+            <path d="M400 72 Q 520 82, 565 98" class="arr" marker-end="url(#b)"/>
+            <text x="115" y="165" class="sm" text-anchor="middle" style="fill:#6a8f5f">success exit</text>
+            <text x="415" y="165" class="sm" text-anchor="middle">safety exits (bound the damage)</text>
+            <text x="340" y="205" class="sm" text-anchor="middle">Prefer a VERIFIER that checks the goal objectively over the agent's own "I'm done."</text>
+            <defs><marker id="b" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 2 — Termination is a set of OR-ed exits, not one condition. The success exit should be an objective check; the rest bound cost and catch stalls.</p>
+        </div>
+
+        <p>The standard set of exits, and why each exists:</p>
+
+        <ul>
+          <li><strong>A verifier (the good exit).</strong> The loop ends when an <em>objective, automated check</em> confirms the goal — tests pass, the schema validates, the linter is clean, the output matches the spec. Verification is the reinforcement-learning-style reward signal the loop climbs toward. Crucially, <strong>prefer a verifier over the agent's self-assessment</strong>: "I believe the task is complete" is unreliable; "the test suite is green" is not.</li>
+          <li><strong>Max iterations (the essential cap).</strong> A hard limit on loop turns — typical production values are <strong>15–25 steps</strong>. This is the single most important safety control; it guarantees termination regardless of everything else.</li>
+          <li><strong>Wall-clock timeout.</strong> An absolute time budget (often ~300 seconds) that catches the case where individual steps are slow even if the iteration count is low — a hung tool, a slow API.</li>
+          <li><strong>Token / cost budget.</strong> A hard spending ceiling per run, so a loop can't quietly rack up a huge bill. Especially important given tool responses dominate tokens.</li>
+          <li><strong>No-progress detection (the subtle one).</strong> Fingerprint the state each turn — the tool call, its result, the file hash. If the agent produces the <em>same</em> state (e.g. the same failing command, identical file contents) for ~3 consecutive iterations, it's stuck in a cycle; trip a circuit breaker, stop, and alert a human. This catches the "confidently spinning" failure that the other exits miss until the budget runs out.</li>
+        </ul>
+
+        <div class="bm-fix"><strong>The termination doctrine, in one line:</strong> combine an <em>objective success verifier</em> with <em>independent safety caps</em> (iterations, time, cost) and <em>stall detection</em>. Success ends the loop the right way; the caps guarantee it always ends; stall detection catches the case where it's running but not getting anywhere. Never rely on the model to tell you it's done — verify, don't trust.</div>
+
+        <h2>Error handling: turn failures into observations</h2>
+
+        <p>In a normal program an exception unwinds the stack. In an agent loop that's usually wrong — a failed tool call is <em>information the agent can use</em>. The loop-engineering pattern is to <strong>catch tool errors and feed them back as observations</strong>, so the model sees "command failed: file not found" and self-corrects on the next turn, exactly as it would react to any other tool result.</p>
+
+        <pre class="code">try:
+    result = execute(call)                    # run the tool
+except ToolError as e:
+    result = f"ERROR: {e}"                     # DON'T crash the loop —
+                                              # hand the error to the model as an observation
+messages.append({"role": "tool", "tool_call_id": call.id, "content": str(result)})</pre>
+
+        <p>But not every error should feed the loop. Distinguish <strong>retryable</strong> from <strong>fatal</strong>:</p>
+
+        <table class="papers">
+          <thead><tr><th>Class</th><th>Examples</th><th>Handling</th></tr></thead>
+          <tbody>
+            <tr><td>Retryable (transient)</td><td>HTTP 429, 500, 502, 503, 504; timeouts</td><td>Exponential backoff with jitter; retry a few times before surfacing to the model.</td></tr>
+            <tr><td>Fatal (won't fix itself)</td><td>HTTP 401, 403, 422; bad credentials; malformed request</td><td>Stop immediately — retrying wastes budget and the agent can't fix an auth failure.</td></tr>
+            <tr><td>Agent-correctable</td><td>file not found, test failed, wrong argument</td><td>Feed back as an observation so the model adjusts.</td></tr>
+          </tbody>
+        </table>
+
+        <div class="bm-note"><strong>Idempotency and the 400-calls incident.</strong> Because a loop can retry and repeat actions, side-effecting tools need <strong>idempotency keys</strong> so a retry doesn't create a duplicate order, send a duplicate email, or double-charge. And guard against runaway repetition: a widely-cited incident had an agent call a broken tool <em>400 times in five minutes</em> before anyone noticed — precisely what per-tool call caps and no-progress detection exist to prevent. Every side-effecting tool in a loop is a potential foot-gun without idempotency + rate limits.</div>
+
+        <h2>Loopmaxxing: the defining antipattern</h2>
+
+        <p>The failure mode that gave loop engineering its cautionary vocabulary is <strong>loopmaxxing</strong> — the belief that if you just run an agent through <em>enough</em> iterations, it will eventually converge on a correct answer. Sometimes it does. Often it doesn't, and here's when it reliably fails:</p>
+
+        <ul>
+          <li><strong>No objective success signal.</strong> If the goal is subjective ("make this essay better") with no binary pass/fail check, the loop has nothing to converge to — it will iterate indefinitely, each pass neither clearly right nor clearly wrong, until the budget dies.</li>
+          <li><strong>Goal drift.</strong> With an ambiguous spec, the agent's interpretation wanders across iterations; more loops make it drift <em>further</em>, not closer.</li>
+          <li><strong>Error propagation.</strong> An early mistake becomes context the agent trusts, and later steps build on it — compounding rather than correcting.</li>
+          <li><strong>Context overflow.</strong> Long runs fill the window with dead ends, degrading the very reasoning that's supposed to fix the problem.</li>
+        </ul>
+
+        <p>The cure isn't "more loops," it's <strong>better loop design</strong>: give the loop a <em>verifiable</em> target so iteration has something to hill-climb, cap it so a non-converging run dies cheaply, detect stalls, and — the deeper fix — <strong>convert the parts that don't need an LLM into deterministic code.</strong> If a step is the same every time (format this, run these tests, apply this migration), take it out of the probabilistic loop and make it a plain function. The best loop engineers shrink the LLM's role to only the genuinely open-ended decisions and let deterministic scaffolding do the rest.</p>
+
+        <h2>Andrew Ng's framing: loops inside loops</h2>
+
+        <p>Everything above is the <em>innermost</em> loop — one agent iterating on one task. Andrew Ng's contribution is to zoom out and point at the <em>nested</em> loops that build a real product, each operating on a different timescale. His framing (paraphrased):</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">Nested loops build a product — each slower and wider than the one inside it</text>
+            <rect x="40" y="40" width="600" height="190" class="box" rx="8"/>
+            <text x="620" y="58" class="sm" text-anchor="end">external feedback · days–weeks</text>
+            <rect x="90" y="70" width="500" height="150" class="boxr" rx="8"/>
+            <text x="570" y="88" class="sm" text-anchor="end">developer feedback · hours</text>
+            <rect x="150" y="100" width="380" height="110" class="boxy" rx="8"/>
+            <text x="510" y="118" class="sm" text-anchor="end">agentic coding · minutes</text>
+            <rect x="210" y="132" width="260" height="60" class="boxg" rx="8"/>
+            <text x="340" y="158" class="sm" text-anchor="middle">the agent loop</text>
+            <text x="340" y="174" class="sm" text-anchor="middle">reason → act → observe (seconds)</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — Ng's nested loops: a fast agent loop sits inside an agentic-coding loop (write→test→fix), inside a developer-feedback loop, inside an external-feedback loop. Each outer loop is slower and injects information the inner loop can't get on its own.</p>
+        </div>
+
+        <ul>
+          <li><strong>The agentic coding loop (minutes).</strong> Given a spec and, ideally, a set of <em>evals</em>, an agent writes code, tests it, and iterates until it's bug-free and meets the spec. This is the innermost loop scaled to a whole feature — and it only works well when there's an objective verifier (the evals) to hill-climb, exactly the termination doctrine above.</li>
+          <li><strong>The developer feedback loop (hours).</strong> A human reviews, asks a few colleagues, ships to alpha testers, wires up A/B tests. This loop injects <em>human context the agent doesn't have</em> — Ng frames the human's edge as a "context advantage," not mystical "taste." Human-in-the-loop exists to feed in what the model can't know.</li>
+          <li><strong>The external feedback loop (days–weeks).</strong> Real users, real telemetry, real market signal. Slow, but it's the only loop that tells you whether you built the right thing at all.</li>
+        </ul>
+
+        <p>Some practitioners add a fourth, outermost loop — <strong>hill-climbing / harness optimization</strong> — where you analyze production traces and automatically rewrite the loop itself (its prompts, tools, and stopping rules). That's loop engineering turned on loop engineering: the system tuning its own harness. The unifying idea across all four levels: <strong>fast inner loops need objective verifiers; slow outer loops inject information the inner loops structurally lack.</strong> Human oversight is a first-class primitive at every level, not just the top.</p>
+
+        <h2>Verification and evals: the loop's reward signal</h2>
+
+        <p>Since a loop is only as good as its exit, verification deserves its own treatment. A well-engineered loop has a grader that scores the agent's output against criteria. Two flavors:</p>
+
+        <ul>
+          <li><strong>Deterministic checks.</strong> Tests pass/fail, schema validation, a linter, a regex, "does the JSON parse," "does the build succeed." Cheap, fast, unambiguous — always prefer these when the goal admits them. They're the gold-standard exit.</li>
+          <li><strong>LLM-as-judge.</strong> For fuzzier goals (tone, helpfulness, faithfulness), a separate model grades the output against a rubric. Necessary for subjective tasks, but noisier — treat its score as a signal, not a certainty, and calibrate it against human labels.</li>
+        </ul>
+
+        <p>The engineering move is to wire the grader <em>into</em> the loop: a failed grade doesn't end the run, it produces feedback that goes back to the agent for another attempt (bounded by the caps). This is the difference between a loop that iterates <em>blindly</em> and one that iterates <em>toward</em> a measured target — the whole reason iteration helps at all. Investing in evals is investing in loop quality, because evals are the thing the loop optimizes.</p>
+
+        <h2>The research lineage: from ReAct to modern loops</h2>
+
+        <p>Loop engineering didn't appear from nowhere; it's the productionization of a research arc. The milestones and what each added:</p>
+
+        <table class="papers">
+          <thead><tr><th>Method</th><th>What it added to the loop</th><th>Reported result</th></tr></thead>
+          <tbody>
+            <tr><td>ReAct (2022)</td><td>interleave reasoning + acting; observations feed next step</td><td class="d">~34% gain on ALFWorld vs act-only</td></tr>
+            <tr><td>Reflexion (2023)</td><td>self-reflection: the agent writes a critique of its failure into memory and retries</td><td class="d">strong gains on trial-and-error tasks</td></tr>
+            <tr><td>LLMCompiler (2024)</td><td>plan a DAG of tool calls and run independent ones in parallel</td><td class="d">~3.6× speedup over sequential ReAct</td></tr>
+            <tr><td>Multi-agent orchestration</td><td>an orchestrator spawns worker sub-agents with isolated context</td><td class="d">large gains on broad research tasks (Anthropic)</td></tr>
+          </tbody>
+        </table>
+
+        <p>The trajectory is clear: start with a single reason-act loop (ReAct), add <em>memory of failures</em> so iteration learns (Reflexion), add <em>parallelism</em> so independent steps don't serialize (LLMCompiler), and add <em>isolation</em> so big sub-tasks don't pollute the main context (multi-agent). Each is a loop-engineering refinement, and modern harnesses combine them.</p>
+
+        <div class="bm-warn"><strong>The cost multiplier is real.</strong> Loops are expensive. A single agent loop typically burns <strong>~4× the tokens</strong> of a straight chat completion (it re-sends growing context every turn); multi-agent systems can hit <strong>~15×</strong>. That's the price of autonomy, and it's why the termination doctrine and context management aren't optional niceties — they're what keep an agent's economics viable. A loop with no caps isn't just risky, it's a budget leak.</div>
+
+        <h2>Memory: what the loop remembers between turns and runs</h2>
+
+        <p>Context management handles a <em>single</em> run's window; memory handles what persists <em>across</em> turns and runs. Production agents use several kinds:</p>
+
+        <ul>
+          <li><strong>Episodic</strong> — records of prior actions and their outcomes ("last time I ran this migration it failed on the index"). Lets the loop avoid repeating mistakes.</li>
+          <li><strong>Semantic</strong> — structured, curated domain knowledge. The <strong>CLAUDE.md pattern</strong> — a human-written project memory file — is a leading example, and it's notably more reliable than auto-generated memory because a human vetted it.</li>
+          <li><strong>Vector</strong> — similarity retrieval over a large corpus, pulled into context on demand (RAG inside the loop).</li>
+          <li><strong>File-based</strong> — state written to disk and re-read each iteration. This is the trick behind "reset the context but keep the progress" loops.</li>
+        </ul>
+
+        <h3>The Ralph loop: reset context, keep progress</h3>
+
+        <p>A striking file-based pattern (nicknamed the "Ralph loop") runs an agent in an <em>infinite shell loop</em> that <strong>resets the model's context between iterations</strong>, reading the current state from disk each time and writing progress back. It attacks both context overflow (each iteration starts fresh, so the window never rots) and premature exit (a stop hook checks objective completion criteria before letting the loop end). It's a vivid illustration that "the loop" can live outside the model entirely — the durable state is on the filesystem, and the LLM is a stateless step invoked over and over against it. Loop engineering at its most literal: the loop is a shell script; the model is a subroutine.</p>
+
+        <h2>Loop engineering vs prompt / context / harness engineering</h2>
+
+        <p>The terms get muddled. A clean separation:</p>
+
+        <table class="papers">
+          <thead><tr><th>Discipline</th><th>Question it answers</th><th>Artifact</th></tr></thead>
+          <tbody>
+            <tr><td>Prompt engineering</td><td>What do I say to the model this turn?</td><td>a prompt string / template</td></tr>
+            <tr><td>Context engineering</td><td>What information is in the window right now?</td><td>retrieval + assembly logic</td></tr>
+            <tr><td>Loop engineering</td><td>How is the model invoked repeatedly, and when does it stop?</td><td>the control loop + exits + verifier</td></tr>
+            <tr><td>Harness engineering</td><td>What tools, sandboxes, and guardrails surround the loop?</td><td>the tool layer + sandbox + policies</td></tr>
+          </tbody>
+        </table>
+
+        <p>They nest: harness engineering builds the environment, loop engineering drives the cycle inside it, context engineering fills each turn's window, prompt engineering words each message. Skill in the outer layers increasingly dominates — a great prompt inside a badly-designed loop still fails, but a mediocre prompt inside a well-designed loop (good verifier, good caps, good context management) often succeeds. That inversion is exactly why the field's attention moved outward from prompts to loops.</p>
+
+        <h2>A production rollout playbook</h2>
+
+        <p>You don't ship a fully autonomous loop on day one. The practical progression trades autonomy for safety and earns it back with evidence:</p>
+
+        <div class="bm-fix">
+          <p><strong>Phase 1 — Human approves every action.</strong> The loop proposes; a human approves each modification. You're building a baseline and watching where the agent goes wrong, with zero blast radius.</p>
+          <p><strong>Phase 2 — Automated validation replaces manual review.</strong> Once you trust the common paths, swap human approval for automated verifiers (tests, schema checks, linters) on the well-understood actions. The verifier becomes the exit.</p>
+          <p><strong>Phase 3 — Circuit breakers for stalls.</strong> Add no-progress detection and per-tool rate limits so a stuck or looping agent trips a breaker and alerts an engineer instead of grinding. Now the loop can run unattended without runaway risk.</p>
+          <p><strong>Phase 4 — Deterministic-ize the repetitive.</strong> Profile the traces: any step the LLM does the same way every time becomes plain code. Shrink the probabilistic surface to only the genuinely open-ended decisions. Cheaper, faster, more reliable.</p>
+        </div>
+
+        <p>The through-line: <strong>start with maximum human oversight and minimum autonomy, then trade oversight for verifiers and guardrails as you accumulate evidence.</strong> Autonomy is something a loop <em>earns</em> by demonstrating it's safe and convergent, not a default you switch on.</p>
+
+        <h2>A minimal but real loop, end to end</h2>
+
+        <p>Putting the pieces together — the skeleton, the exits, error-as-observation, and a verifier:</p>
+
+        <pre class="code">def run_agent(goal, tools, verifier, max_iters=20, budget_usd=1.0, deadline_s=300):
+    messages = [SYSTEM, {"role": "user", "content": goal}]
+    start, spent, recent = time.time(), 0.0, deque(maxlen=3)
+
+    for step in range(max_iters):                       # (1) hard iteration cap
+        if time.time() - start > deadline_s: return stop("timeout")   # (2) wall-clock
+        if spent > budget_usd:            return stop("budget")       # (3) cost cap
+
+        resp = call_llm(messages, tools); spent += cost(resp)
+        messages.append(resp)
+
+        if not resp.tool_calls:                          # model thinks it's done…
+            if verifier(state()): return done(resp)      # (4) …but VERIFY objectively
+            messages.append(nudge("verification failed, keep going"))
+            continue
+
+        for call in resp.tool_calls:
+            try:    out = execute(call)
+            except ToolError as e: out = f"ERROR: {e}"   # error -> observation
+            messages.append(tool_msg(call.id, out))
+
+        fp = fingerprint(state())                        # (5) no-progress detection
+        recent.append(fp)
+        if len(recent) == 3 and len(set(recent)) == 1:
+            return stop("no progress — circuit breaker")
+
+    return stop("max iterations")</pre>
+
+        <p>Every line that isn't the model call is loop engineering: the caps, the verifier gate on the "done" signal, the error absorption, the stall fingerprint. The model is one call in the middle; the reliability lives in everything around it.</p>
+
+        <h2>FAQ</h2>
+        <details class="faq"><summary>Is "loop engineering" actually new, or just a rebrand of agent design?</summary><p>The mechanics (ReAct-style loops) aren't new — what's new is treating the loop's <em>design</em> as the primary engineering surface, above prompts. The term crystallized in 2026 because models got reliable enough to run long autonomous loops and coding agents made loops the daily interface, so the loop became where reliability is won or lost. Call it a useful name for an emphasis shift rather than a brand-new technique.</p></details>
+        <details class="faq"><summary>What's the single most important thing to get right?</summary><p>Termination. Specifically: an objective verifier for the success exit, plus independent safety caps (iterations, time, cost) and no-progress detection. Everything else improves an agent; missing exits makes it dangerous. "Let the agent decide when it's done" is the most expensive default in the field.</p></details>
+        <details class="faq"><summary>How many iterations should I allow?</summary><p>Production loops commonly cap at 15–25 steps, with a wall-clock timeout around 300 seconds and a hard token/cost budget as backstops. The right number depends on your task, but the cap should exist regardless — it's the guarantee that the loop terminates no matter what the other conditions do.</p></details>
+        <details class="faq"><summary>How do I stop an agent from looping on the same failing action?</summary><p>No-progress detection: fingerprint the state each turn (tool call + result + relevant file hashes) and trip a circuit breaker if it repeats ~3 times. Also add per-tool call limits — the "agent called a broken tool 400 times" incident is exactly this failure without a breaker. And feed tool errors back as observations so the model can actually adjust rather than blindly retry.</p></details>
+        <details class="faq"><summary>Why is my agent so expensive?</summary><p>Because a loop re-sends its growing context every turn, a single agent runs ~4× the tokens of a plain chat, and multi-agent ~15×. Tool responses are ~two-thirds of the tokens, so the fix is controlling what tools return (paginate, summarize, surgical diffs) and compacting context around 80% utilization — not trimming the system prompt.</p></details>
+        <details class="faq"><summary>When should I use multiple agents instead of one loop?</summary><p>When a task has large, separable sub-tasks whose context would pollute the main loop. An orchestrator spawns worker sub-agents with isolated context that return short summaries — keeping each loop's window clean. It costs far more tokens, so reserve it for genuinely broad tasks (deep research, large refactors) where the isolation is worth the price.</p></details>
+        <details class="faq"><summary>Where do humans fit in an autonomous loop?</summary><p>At the exits you don't yet trust and at the information the model lacks. Early on, a human approves each action; as verifiers prove out, humans move to reviewing circuit-breaker alerts and injecting "context advantage" the agent can't obtain — domain knowledge, product judgment, real-user signal. Human-in-the-loop is a design primitive at every loop level, not a fallback.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li>An agent is a <strong>loop</strong>: reason → act → observe → update, repeated. Loop engineering is designing that loop, especially its <em>exit</em>.</li>
+          <li>The field moved <strong>prompt → context → loop → harness</strong> engineering; skill in the outer layers now dominates.</li>
+          <li>Manage the <strong>message history</strong>: correct <code>tool_call_id</code> ordering, tool results are ~2/3 of tokens, compact around 80% utilization, paginate reads, prefer surgical edits.</li>
+          <li><strong>Termination is the hard part</strong>: an objective verifier for success, plus max-iterations (15–25), wall-clock (~300s), cost budget, and no-progress detection — several independent exits.</li>
+          <li>Turn <strong>errors into observations</strong> (retryable vs fatal); use idempotency keys and per-tool caps so retries don't cause damage.</li>
+          <li>Avoid <strong>loopmaxxing</strong>: more iterations don't fix a loop with no objective target — give it a verifier, cap it, and move deterministic steps out of the LLM.</li>
+          <li><strong>Ng's nested loops</strong>: fast agent/coding loops (minutes) inside developer (hours) and external (days) feedback loops — fast loops need verifiers, slow loops inject missing context.</li>
+          <li>Roll out in <strong>phases</strong>: human approval → automated verifiers → circuit breakers → deterministic-ize the repetitive. Autonomy is earned.</li>
+        </ul>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://x.com/AndrewYNg/status/2071988145667928442" target="_blank">Andrew Ng — on "loop engineering" as a buzzphrase</a> <span>— the tweet that named the moment.</span></li>
+          <li><a href="https://explainx.ai/blog/andrew-ng-three-loops-0-to-1-products-2026" target="_blank">Andrew Ng's 3 Loops for 0-to-1 AI Products</a> <span>— the agentic-coding / developer / external feedback loops.</span></li>
+          <li><a href="https://www.langchain.com/blog/the-art-of-loop-engineering" target="_blank">LangChain — The Art of Loop Engineering</a> <span>— the loop primitive, verification middleware, and the fourth (optimization) loop.</span></li>
+          <li><a href="https://stevekinney.com/writing/agent-loops" target="_blank">Steve Kinney — The Anatomy of an Agent Loop</a> <span>— message ordering, the 67.6% token figure, stopping conditions, error classes.</span></li>
+          <li><a href="https://datasciencedojo.com/blog/agentic-loops-explained-from-react-to-loop-engineering-2026-guide/" target="_blank">Data Science Dojo — Agentic Loops: From ReAct to Loop Engineering</a> <span>— the five-stage anatomy, memory types, and the research progression.</span></li>
+          <li><a href="https://bdtechtalks.com/2026/06/22/ai-loop-engineering/" target="_blank">TechTalks — Demystifying loop engineering &amp; avoiding loopmaxxing</a> <span>— the antipattern and the phased rollout.</span></li>
+          <li><a href="https://arxiv.org/abs/2210.03629" target="_blank">Yao et al. — <em>ReAct: Synergizing Reasoning and Acting in Language Models</em></a> <span>— the foundational loop pattern.</span></li>
+          <li><a href="https://arxiv.org/abs/2303.11366" target="_blank">Shinn et al. — <em>Reflexion</em></a> <span>— self-reflection and verbal reinforcement across iterations.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="speculative-decoding.html">← Speculative decoding</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

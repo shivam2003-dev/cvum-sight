@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "loop-engineering",
+    title: "Loop engineering — designing the agent's iteration, not its prompt.",
+    date: "Jul 2, 2026",
+    cat: "ml",
+    tags: ["ml", "agents", "loop-engineering", "llm", "agentic"],
+    time: 30,
+    words: 6000,
+    excerpt: "The discipline after prompt and context engineering: an AI agent isn't a prompt, it's a loop (reason → act → observe → repeat), and loop engineering is designing that loop well. Built from the message level up — the six-line ReAct skeleton, tool_call_id ordering, why tool responses are ~2/3 of tokens and compaction at 80%, the multiple-exits termination doctrine (verifier + max-iterations 15–25 + wall-clock + cost budget + no-progress detection), error-as-observation (retryable vs fatal, idempotency), the loopmaxxing antipattern, Andrew Ng's nested loops (coding/developer/external feedback), the ReAct→Reflexion→LLMCompiler→multi-agent lineage, memory types + the Ralph loop, and a phased production rollout playbook. Sourced from the current technical literature.",
+  },
+  {
     slug: "speculative-decoding",
     title: "Speculative decoding — making LLMs generate faster, for free.",
     date: "Jun 30, 2026",

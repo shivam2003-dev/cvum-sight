@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "frontier-digest-002",
+    title: "Frontier Digest #2 — the week verification became the whole game.",
+    date: "Jul 5, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "releases", "funding", "weekly"],
+    time: 17,
+    words: 3400,
+    excerpt: "Edition #2 of the weekly AI newsletter (Jun 28 – Jul 5) — the WHOLE week, not just papers. Lead story: the frontier's center of gravity moves — Anthropic ships Claude Sonnet 5 (its most agentic, near-Opus at a fraction of the cost, now the free/paid default) and reportedly leaps past OpenAI on valuation as both labs move toward IPOs; Fable 5 returns after the export-control lift. Models &amp; releases, business &amp; funding (BMW i Ventures' $300M physical-AI fund), policy (voluntary release standards in the works), the ten research papers threaded around one loud throughline — the evaluator is the load-bearing part and freezing it kills progress (Red Queen Gödel Machine, Verification Horizon, RLMF, Google's Paper Assistant Tool) — plus learned self-management (AutoMem, SkillComposer) and self-evolving code reaching robots and chips (ASPIRE, HORIZON). Tools, a ranked 'what matters most,' patterns, tips, and confirmed-vs-reported tags throughout.",
+    series: "frontier-digest",
+    seriesNum: "002"
+  },
+  {
     slug: "harness-1-anatomy",
     title: "The anatomy of a harness.",
     date: "Jul 4, 2026",

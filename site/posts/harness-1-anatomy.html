@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Anatomy of a Harness — Harness Engineering M1 — cvam.sight</title>
+<meta name="description" content="What a harness is and why 'just call the API' fails: transactional inference vs a real agent, dissecting Claude Code / pi / Hermes layer by layer, the prompt/context/harness boundaries, and the agent loop from first principles. You build a bare harness.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-build{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #4a7fb5;border-radius:8px;padding:14px 16px;margin:18px 0;background:rgba(74,127,181,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .boxb{fill:#d4e3f0;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Harness Engineering · Module 1</p>
+        <p class="series-banner-title">The Anatomy of a Harness</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Module 1 of 5</p>
+        <div class="series-banner-nav">
+          <a href="harness-1-anatomy.html" class="active">01 Anatomy</a>
+          <a href="harness-2-tools.html">02 Tools</a>
+          <a href="harness-3-context.html">03 Context</a>
+          <a href="harness-4-durability.html">04 Durability</a>
+          <a href="harness-5-production.html">05 Production</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 4, 2026 · ml · 24 min read · 4800 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>The anatomy of a harness.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">agents</span>
+          <span class="tag">harness-engineering</span>
+          <span class="tag">claude-code</span>
+          <span class="tag">module-1</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">A language model can only do one thing: take text in, produce text out. Everything that makes it feel like an <em>agent</em> — editing your files, running commands, remembering across sessions, recovering from crashes — lives <strong>outside</strong> the model, in a layer called the <strong>harness</strong>. <code>Agent = Model + Harness</code>. This series builds that layer from scratch. Module 1 draws the map: why "just call the API" gives you a chatbot and not an agent, what every layer of Claude Code / pi / Hermes actually does, the precise borders between prompt, context, and harness engineering, and the agent loop from first principles. You finish by building a bare harness — a model client, a message array, and a hand-rolled loop that runs until the model stops asking for work.</p>
+
+        <p>There's a moment every builder hits: you call the chat API, get a great answer, and think "this is easy." Then you try to make it <em>do</em> something — edit a file, run a test, fix the failure, try again — and the whole thing falls apart. The model doesn't have your files. It can't run anything. It forgets everything the moment the response ends. You realize the intelligence was never the hard part. The hard part is the machinery <em>around</em> the intelligence that turns a paragraph of text into an action in the world, and back again, over and over.</p>
+
+        <p>That machinery is the <strong>harness</strong>, and building it well is <strong>harness engineering</strong>. As the saying in the field goes: "if you're not the model, you're the harness." Model labs make the intelligence; everyone else builds the layer that makes it useful. This series is a hands-on course in that layer. By the end you'll have assembled your own pi-style harness — loop, tools, context engine, recovery, orchestration — and understand every production harness by having built a small one.</p>
+
+        <h2>Why "just call the API" fails</h2>
+
+        <p>Start with the failure, because it defines everything that follows. A raw API call is <strong>transactional inference</strong>: one request, one response, no memory, no side effects. It's a pure function from text to text. That's genuinely useful for a lot of things — classification, drafting, extraction — but it is categorically <em>not</em> an agent. Compare the two:</p>
+
+        <table class="papers">
+          <thead><tr><th></th><th>Transactional inference</th><th>A real agent</th></tr></thead>
+          <tbody>
+            <tr><td>Lifetime</td><td>one request/response</td><td>a long-running session of many turns</td></tr>
+            <tr><td>State</td><td>stateless — forgets instantly</td><td>accumulating message history + persistent memory</td></tr>
+            <tr><td>Actions</td><td>none — it only emits text</td><td>reads files, runs commands, calls APIs</td></tr>
+            <tr><td>Control flow</td><td>you drive every step by hand</td><td>the model decides its own next step in a loop</td></tr>
+            <tr><td>Failure</td><td>you get a bad string, retry manually</td><td>the loop catches errors and self-corrects</td></tr>
+            <tr><td>Ends when</td><td>the response is returned</td><td>a goal is met or a stop condition fires</td></tr>
+          </tbody>
+        </table>
+
+        <p>The gap between those columns is <em>entirely</em> harness. The model is the same in both cases — the same weights, the same API. What changes an inference endpoint into an agent is the code that: keeps a running conversation, exposes tools the model can invoke, executes those tools and feeds results back, loops until the work is done, and survives errors and restarts. "Just call the API" gives you the first column. This series builds the second.</p>
+
+        <div class="bm-note"><strong>The model is a brain in a jar.</strong> A helpful mental image: the model is a disembodied reasoner with no hands, no eyes, no memory of yesterday. It can think brilliantly about what to do — but it can't <em>do</em> anything, and it wakes up with amnesia every request. The harness is the body: it gives the brain senses (tool results as observations), hands (tools that act), and a memory (persistent state). Harness engineering is building a good body for a very smart, very forgetful brain.</div>
+
+        <h2>Dissecting real harnesses, layer by layer</h2>
+
+        <p>The fastest way to understand a harness is to take three real ones apart and see that they're built from the same parts. We'll reference these throughout the series: <strong>Claude Code</strong> (Anthropic's coding agent), <strong>pi</strong> (a deliberately minimal harness by Mario Zechner), and <strong>Hermes</strong> (Nous Research's open harness). They make very different choices, but every one of them is a stack of the same layers.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 340" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">The harness stack — every layer sits between you and the model</text>
+            <rect x="120" y="35" width="440" height="30" class="boxy" rx="5"/><text x="340" y="55" class="sm" text-anchor="middle">UI / entry points — terminal, messaging, cron (what the user talks to)</text>
+            <rect x="120" y="72" width="440" height="30" class="boxb" rx="5"/><text x="340" y="92" class="sm" text-anchor="middle">Orchestration — the agent loop, sub-agents, supervision</text>
+            <rect x="120" y="109" width="440" height="30" class="boxg" rx="5"/><text x="340" y="129" class="sm" text-anchor="middle">Context engine — budget, compaction, memory, system prompt</text>
+            <rect x="120" y="146" width="440" height="30" class="boxg" rx="5"/><text x="340" y="166" class="sm" text-anchor="middle">Tools + execution — read/write/edit/bash, permissions, sandbox</text>
+            <rect x="120" y="183" width="440" height="30" class="boxb" rx="5"/><text x="340" y="203" class="sm" text-anchor="middle">Durability — checkpointing, replay, retries, sessions</text>
+            <rect x="120" y="220" width="440" height="30" class="box" rx="5"/><text x="340" y="240" class="sm" text-anchor="middle">Model client — the API call (the ONLY part that is "the model")</text>
+            <rect x="220" y="262" width="240" height="34" class="boxr" rx="5"/><text x="340" y="283" class="smk" text-anchor="middle" style="font-weight:bold">the model (weights)</text>
+            <text x="340" y="320" class="sm" text-anchor="middle">Everything above the red box is the harness. That's what this series builds.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — The harness is a stack of layers wrapping a single API call. Different harnesses emphasize different layers, but the anatomy is shared.</p>
+        </div>
+
+        <h3>pi — the minimalist</h3>
+        <p>pi is the proof that a harness doesn't need to be enormous to be real. Its entire thesis: a coding agent needs exactly <strong>four tools</strong> — <code>read</code>, <code>write</code>, <code>edit</code>, <code>bash</code> — plus a couple of helpers (<code>grep</code>, <code>find</code>, <code>ls</code>), and a system prompt <strong>under 1,000 tokens</strong>. Everything else is an <em>extension</em>. pi deliberately ships <em>without</em> MCP, without sub-agents, without permission popups, and without a plan mode — not because those are bad, but because pi's philosophy is that the core should be tiny and you should add exactly what you need. Models and providers are configured in a <code>models.json</code> file; anything more exotic is a ~20-line TypeScript extension. pi is the whole series in miniature, and your capstone is built in its spirit.</p>
+
+        <h3>Hermes — the orchestrator</h3>
+        <p>Hermes (Nous Research, MIT-licensed) makes the opposite bet: it's an <em>active orchestration layer</em>, not a thin wrapper. Its distinguishing choice is treating <strong>sessions as infrastructure</strong> — session state lives in a SQLite database (with full-text search), so a CLI, a Telegram bot, and a scheduled cron job can all attach to the same session. It separates <em>tool registration</em> (the whole installed library) from <em>tool exposure</em> (what any single run shows the model), and compresses context by <em>lineage</em> — closing a session and spawning a child seeded with a summary rather than rewriting history. Hermes is what a harness looks like when the goal is durable, always-on, externally-steerable agents.</p>
+
+        <h3>Claude Code — the batteries-included harness</h3>
+        <p>Claude Code sits between the two: a full-featured harness with <strong>skills</strong> (progressive-disclosure capabilities), <strong>hooks</strong> (deterministic code that fires on agent events), <strong>MCP</strong> (a protocol for plugging in external tools), and typed <strong>sub-agents</strong>. It bakes in permission gates (it asks before destructive commands), context compaction, and durable sessions. It's the harness most people meet first, and dissecting it in Module 5 will make sense once you've built each layer yourself.</p>
+
+        <div class="bm-note"><strong>Same anatomy, different dials.</strong> pi minimizes the core and pushes everything to extensions. Hermes maximizes orchestration and durability. Claude Code ships a rich default. But all three have a model client, a tool layer, a context engine, a loop, and some durability story. Once you can name the layers, every harness — including ones that don't exist yet — becomes legible. That's the goal of this module.</div>
+
+        <h2>Prompt vs context vs harness engineering — precise boundaries</h2>
+
+        <p>These three terms get used interchangeably and shouldn't be. They're nested layers, each a strict superset of the one inside it. Getting the boundaries precise is the difference between knowing which knob to turn when your agent misbehaves.</p>
+
+        <table class="papers">
+          <thead><tr><th>Discipline</th><th>The question it answers</th><th>Operates on</th><th>Example artifact</th></tr></thead>
+          <tbody>
+            <tr><td>Prompt engineering</td><td>What do I <em>say</em> to the model this turn?</td><td>one message</td><td>an instruction / template</td></tr>
+            <tr><td>Context engineering</td><td>What information is <em>in the window</em> right now?</td><td>one turn's context</td><td>retrieval + assembly logic</td></tr>
+            <tr><td>Harness engineering</td><td>What <em>environment</em> surrounds the model — tools, loop, memory, recovery?</td><td>the whole running system</td><td>the tool layer, loop, sandbox, checkpoints</td></tr>
+          </tbody>
+        </table>
+
+        <p>Read it as a containment hierarchy. <strong>Harness engineering builds the environment</strong> — the tools the model can call, the loop that drives it, the sandbox it runs in, the memory it persists to. <strong>Context engineering fills each turn's window</strong> — deciding what documents, tool results, and memory go into the prompt on this specific turn. <strong>Prompt engineering words the individual message.</strong> A great prompt inside a broken harness (no tools, no loop, no recovery) still produces a chatbot. A mediocre prompt inside a well-built harness often produces a working agent. That inversion — the outer layers dominating — is why the field's attention has moved outward, and why this series is about the outermost layer.</p>
+
+        <p>If you've read the <a href="loop-engineering.html">loop engineering</a> article, note the relationship: <em>loop engineering</em> is one slice of harness engineering — specifically the orchestration layer (how the model is invoked repeatedly and when it stops). Harness engineering is the whole stack: the loop <em>plus</em> the tools, context engine, sandbox, and durability that the loop depends on.</p>
+
+        <h2>The agent loop from first principles</h2>
+
+        <p>At the center of every harness is a loop. Strip away the features and it's astonishingly small — but each piece is load-bearing. Let's derive it from scratch.</p>
+
+        <p>A transactional call is: <code>response = model(messages)</code>. To make it an agent, we need the model to be able to <em>act</em>, and we need to feed the <em>result</em> of that action back so it can decide what to do next. That single feedback requirement forces a loop:</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">The minimal agent loop — four moving parts</text>
+            <rect x="40" y="50" width="130" height="44" class="box" rx="6"/><text x="105" y="70" class="sm" text-anchor="middle">messages[]</text><text x="105" y="84" class="sm" text-anchor="middle">(the state)</text>
+            <rect x="215" y="50" width="130" height="44" class="boxy" rx="6"/><text x="280" y="70" class="sm" text-anchor="middle">call model</text><text x="280" y="84" class="sm" text-anchor="middle">(a turn)</text>
+            <rect x="390" y="50" width="140" height="44" class="boxg" rx="6"/><text x="460" y="70" class="sm" text-anchor="middle">tool calls?</text><text x="460" y="84" class="sm" text-anchor="middle">execute + append</text>
+            <rect x="575" y="50" width="80" height="44" class="boxr" rx="6"/><text x="615" y="70" class="sm" text-anchor="middle">no calls</text><text x="615" y="84" class="sm" text-anchor="middle">= stop</text>
+            <path d="M170 72 L213 72" class="arr" marker-end="url(#a)"/>
+            <path d="M345 72 L388 72" class="arr" marker-end="url(#a)"/>
+            <path d="M530 72 L573 72" class="arr" marker-end="url(#a)"/>
+            <path d="M460 96 Q 460 150, 105 150 Q 105 120, 105 96" class="arr" marker-end="url(#a)"/>
+            <text x="300" y="145" class="sm" text-anchor="middle" style="fill:#c96442">loop back: results become new state for the next turn</text>
+            <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 2 — The loop: the message array is the state; each turn is one model call; tool results are appended and fed back; the loop stops when the model asks for no more work.</p>
+        </div>
+
+        <p>The four first-principles pieces:</p>
+
+        <ul>
+          <li><strong>Messages — the state.</strong> The entire memory of the agent within a session is an ordered array of messages: the system prompt, the user's goal, the model's turns (which may contain tool calls), and the tool results. Each loop iteration appends to it. The array <em>is</em> the agent's working memory.</li>
+          <li><strong>Turns — the unit of progress.</strong> One turn is one model call over the current messages. The model reads the whole history and produces its next move: either a final answer, or a request to call one or more tools.</li>
+          <li><strong>Stop conditions — when to end.</strong> The simplest, most natural stop: the model returns a turn with <em>no tool calls</em>. That means it has nothing more it wants to do — it's answering, not acting. (Real harnesses add safety stops — iteration caps, budgets — which Module 4 covers. The natural stop is "the model stopped asking for work.")</li>
+          <li><strong>Streaming — the UX layer.</strong> Models emit tokens incrementally. A harness streams them to the terminal as they arrive so the user sees thinking and output live, and — importantly — so tool calls can be surfaced the instant they're complete rather than after the whole turn. Streaming is optional for correctness but essential for a usable agent.</li>
+        </ul>
+
+        <div class="bm-warn"><strong>The stop condition is not "the model says done."</strong> A subtle but crucial point for the bare loop: you don't parse the model's prose for "I'm finished." You check a <em>structural</em> signal — did this turn contain tool calls or not? A turn with tool calls means "I want to act, then continue"; a turn with none means "I'm done acting, here's my answer." Structure, not sentiment. This is the seed of the whole termination discipline we'll harden in Module 4.</div>
+
+        <h2>You build — a bare harness</h2>
+
+        <p>Time to make it real. The deliverable for Module 1 is the smallest thing that is genuinely an agent and not a chatbot: a model client, a message array, and a hand-rolled loop that runs until the model stops asking for work. No real tools yet (that's Module 2) — but the full loop skeleton, with one trivial tool to prove the cycle works.</p>
+
+        <div class="bm-build"><strong>You build:</strong> a bare harness — model client + message array + a loop that runs turns until the model emits no tool calls. Wire in one toy tool (<code>get_time</code>) so you can watch the model call it, see the result fed back, and then stop on its own. This is the spine every later module hangs features onto.</div>
+
+        <pre class="code">import json, time
+from anthropic import Anthropic           # any model client works
+
+client = Anthropic()
+
+# 1. TOOLS — a schema (the contract) + an implementation
+TOOLS = [{
+    "name": "get_time",
+    "description": "Return the current UTC time as a string.",
+    "input_schema": {"type": "object", "properties": {}},
+}]
+def run_tool(name, args):
+    if name == "get_time":
+        return time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    return f"ERROR: unknown tool {name}"
+
+# 2. THE LOOP — the whole harness, in ~15 lines
+def run(goal, max_turns=10):
+    messages = [{"role": "user", "content": goal}]   # the STATE
+    for turn in range(max_turns):                     # a safety cap (Module 4)
+        resp = client.messages.create(                # a TURN
+            model="claude-sonnet-5", max_tokens=1024,
+            tools=TOOLS, messages=messages,
+        )
+        messages.append({"role": "assistant", "content": resp.content})
+
+        tool_calls = [b for b in resp.content if b.type == "tool_use"]
+        if not tool_calls:                            # STOP CONDITION
+            return resp                               # no tools = the model is done
+
+        results = []                                  # EXECUTE + feed back
+        for call in tool_calls:
+            out = run_tool(call.name, call.input)
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": call.id,               # must reference the call id
+                "content": str(out),
+            })
+        messages.append({"role": "user", "content": results})
+    raise RuntimeError("hit max_turns without finishing")
+
+print(run("What time is it? Use your tool, then tell me in words.").content)</pre>
+
+        <p>Read what just happened against the first-principles list. <code>messages</code> is the state. Each pass through the <code>for</code> loop is a turn. The model either asks for the <code>get_time</code> tool (we run it, append the result, loop) or answers with no tool call (we return — the natural stop). The <code>max_turns</code> cap is our only safety exit for now; Module 4 makes recovery serious. That's it. That is an agent — a real one, in fifteen lines — because it has the loop. Everything else in this series is making each layer of that loop production-grade.</p>
+
+        <div class="bm-fix"><strong>Try it, then break it.</strong> Once it runs: (1) add a second tool and watch the model chain them; (2) remove the <code>max_turns</code> cap and give it a task it can't finish — feel the loop run away (that's why caps exist); (3) print <code>messages</code> after each turn and watch the state grow. Feeling the loop's mechanics by hand is worth more than any diagram — you now know what every harness is doing underneath its features.</div>
+
+        <h2>What each module builds from here</h2>
+        <p>You have the spine. The rest of the series thickens each layer:</p>
+        <ul>
+          <li><strong>Module 2 — Tools &amp; execution:</strong> replace <code>get_time</code> with real <code>read</code>/<code>write</code>/<code>edit</code>/<code>bash</code>, with permission gates and a sandbox so the agent edits real code safely.</li>
+          <li><strong>Module 3 — Context engineering:</strong> keep the loop alive across 200 turns with compaction, memory files, and a system prompt treated as infrastructure.</li>
+          <li><strong>Module 4 — Durability &amp; orchestration:</strong> checkpoint every turn, replay on crash, classify failures, and spawn sub-agents with approval gates.</li>
+          <li><strong>Module 5 — Production &amp; capstone:</strong> dissect pi, Hermes, and Claude Code internals, learn to evaluate a harness, and assemble everything into your own pi-style harness.</li>
+        </ul>
+
+        <h2>FAQ</h2>
+        <details class="faq"><summary>Isn't the harness just "glue code"? Why call it engineering?</summary><p>Because the hard problems live there: how the loop terminates, how tools fail safely, how context survives long sessions, how the agent recovers from a crash mid-task. Those are real engineering problems with real design trade-offs — and they, not the prompt, decide whether your agent works. The model is a dependency you import; the harness is the system you build.</p></details>
+        <details class="faq"><summary>Do I need a huge framework to build a harness?</summary><p>No — pi proves a real harness can be small (four tools, a sub-1k-token prompt, a tiny core). Frameworks (LangChain, the Agents SDK) give you batteries, but building a bare harness by hand first is the point of this series: you'll understand any framework because you'll know what it's abstracting.</p></details>
+        <details class="faq"><summary>Where does the model end and the harness begin, exactly?</summary><p>The model is the single API call: text in, text (and structured tool-call requests) out. Everything else — deciding what text to send, executing the tool requests, looping, remembering, recovering — is harness. The model never touches your filesystem or runs a command; the harness does, on the model's instruction.</p></details>
+        <details class="faq"><summary>Is a chatbot a harness?</summary><p>A minimal one — it keeps message history and streams output, which are harness features. But it has no tools, no loop that acts, and no durability, so it stays transactional in spirit. The moment you add "the model can call a tool and I feed the result back and let it continue," you've crossed from chatbot to agent harness.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li><code>Agent = Model + Harness</code>. The model is intelligence; the harness is everything that makes it useful — and it's where the engineering is.</li>
+          <li>"Just call the API" is <strong>transactional inference</strong>: stateless, actionless, one-shot. An agent adds session state, tools, a loop, and recovery — all harness.</li>
+          <li>pi (minimal core + extensions), Hermes (session-as-infrastructure orchestration), and Claude Code (batteries-included) share one <strong>anatomy</strong>: model client, tools, context engine, loop, durability.</li>
+          <li><strong>Prompt ⊂ context ⊂ harness</strong> engineering — nested layers; the outer ones increasingly dominate outcomes.</li>
+          <li>The <strong>agent loop</strong> from first principles: messages are the state, a turn is one model call, the natural stop is "no tool calls," streaming is the UX.</li>
+          <li>You built a real agent in ~15 lines — because it has the loop. The rest of the series makes each layer production-grade.</li>
+        </ul>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.langchain.com/blog/the-anatomy-of-an-agent-harness" target="_blank">LangChain — The Anatomy of an Agent Harness</a> <span>— Agent = Model + Harness, the five primitives.</span></li>
+          <li><a href="https://pi.dev/" target="_blank">pi (pi.dev)</a> <span>— the minimal harness: four tools, sub-1k-token prompt, extensions.</span></li>
+          <li><a href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/README.md" target="_blank">pi coding-agent README</a> <span>— the extension model and models.json in detail.</span></li>
+          <li><a href="https://hermes-agent.nousresearch.com/" target="_blank">Hermes Agent (Nous Research)</a> <span>— sessions as infrastructure, lineage compression.</span></li>
+          <li><a href="https://arize.com/blog/how-hermes-implements-open-source-agent-harness-architecture/" target="_blank">Arize — How Hermes implements an open agent-harness architecture</a> <span>— tool registration vs exposure, SQLite sessions.</span></li>
+          <li><a href="https://www.firecrawl.dev/blog/what-is-an-agent-harness" target="_blank">Firecrawl — What Is an Agent Harness?</a> <span>— the infrastructure that makes agents work.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="loop-engineering.html">← Loop engineering</a>
+        <a href="harness-2-tools.html">Module 2 — Tools &amp; execution →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

@@ -16,6 +16,66 @@
 
 const POSTS = [
   {
+    slug: "harness-1-anatomy",
+    title: "The anatomy of a harness.",
+    date: "Jul 4, 2026",
+    cat: "ml",
+    tags: ["ml", "agents", "harness-engineering", "claude-code", "module-1"],
+    time: 24,
+    words: 4800,
+    excerpt: "Harness Engineering, Module 1. A model only takes text in and puts text out; everything that makes it an agent — editing files, running commands, remembering, recovering — lives in the harness. Agent = Model + Harness. Why 'just call the API' gives a chatbot not an agent (transactional inference vs a real agent), the harness stack dissected across Claude Code / pi / Hermes, the precise prompt ⊂ context ⊂ harness boundaries, and the agent loop from first principles (messages as state, a turn, the natural stop = no tool calls, streaming). You build a bare harness in ~15 lines.",
+    series: "harness",
+    seriesNum: "1"
+  },
+  {
+    slug: "harness-2-tools",
+    title: "Tools &amp; the execution environment.",
+    date: "Jul 4, 2026",
+    cat: "ml",
+    tags: ["ml", "agents", "harness-engineering", "tools", "module-2"],
+    time: 24,
+    words: 4900,
+    excerpt: "Harness Engineering, Module 2. Tools are how a brain-in-a-jar grows hands: a schema (contract) + an implementation. The canonical set (read/write/edit/bash/search) and why the description is a prompt; streaming tool calls into a live terminal UI; permission gates and approval modes (why Claude Code asks before rm) — also your prompt-injection defense; sandboxing and the blast-radius problem; code-mode vs tool-mode. You build real file &amp; shell tools behind a permission gate, scoped to a working dir — your harness edits actual code, safely.",
+    series: "harness",
+    seriesNum: "2"
+  },
+  {
+    slug: "harness-3-context",
+    title: "Context engineering inside the harness.",
+    date: "Jul 4, 2026",
+    cat: "ml",
+    tags: ["ml", "agents", "harness-engineering", "context", "module-3"],
+    time: 24,
+    words: 4800,
+    excerpt: "Harness Engineering, Module 3. The context window is a fixed budget re-spent every turn, and the growing conversation will blow through it. Context budgets and eviction (keep the goal, never drop by age); compaction at ~80% into a structured state snapshot (and Hermes's lineage compression); the memory hierarchy — session state, persistent files, the CLAUDE.md pattern (why human-curated beats auto-memory); and system prompts as infrastructure (pi's sub-1k-token discipline). You build compaction plus a persistent memory layer so your harness survives a 200-turn session.",
+    series: "harness",
+    seriesNum: "3"
+  },
+  {
+    slug: "harness-4-durability",
+    title: "Durability, recovery &amp; orchestration.",
+    date: "Jul 4, 2026",
+    cat: "ml",
+    tags: ["ml", "agents", "harness-engineering", "durability", "module-4"],
+    time: 25,
+    words: 5000,
+    excerpt: "Harness Engineering, Module 4. An agent that runs for an hour will hit a crash, a rate limit, or a restart. Durable execution: checkpoint every turn and tool call so a crash becomes replay, not loss (and why replay + side effects needs idempotency keys). Self-healing loops: classify failures (retry transient, escalate fatal, feed agent-correctable back, circuit-break loop pathologies). Sub-agents and handoffs for context isolation (at ~15× tokens). Supervision: plans, approvals, escalation — a human as a slow, authoritative tool. You build checkpointed execution and a sub-agent dispatcher with an approval gate.",
+    series: "harness",
+    seriesNum: "4"
+  },
+  {
+    slug: "harness-5-production",
+    title: "Production harnesses &amp; capstone.",
+    date: "Jul 4, 2026",
+    cat: "ml",
+    tags: ["ml", "agents", "harness-engineering", "capstone", "module-5"],
+    time: 25,
+    words: 5000,
+    excerpt: "Harness Engineering, Module 5 (finale). Read three real harnesses as design documents — pi (minimal core + four-layer extensions, models.json, sub-1k prompt, deliberate omissions), Hermes (sessions-as-infrastructure in SQLite, cron/messaging entry points, tool registration ≠ exposure, lineage compression, profiles), and Claude Code (skills, hooks, MCP, typed sub-agents) — seeing every choice as a dial you now understand. How to evaluate a harness (task success, reliability over N runs, efficiency, recovery, safety red-teaming). Capstone: assemble M1–M4 into your own pi-style harness and demo it.",
+    series: "harness",
+    seriesNum: "5"
+  },
+  {
     slug: "loop-engineering",
     title: "Loop engineering — designing the agent's iteration, not its prompt.",
     date: "Jul 2, 2026",

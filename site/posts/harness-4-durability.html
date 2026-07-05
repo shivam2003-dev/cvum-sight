@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Durability, Recovery &amp; Orchestration — Harness Engineering M4 — cvam.sight</title>
+<meta name="description" content="Durable execution: checkpointing every model turn and tool call and replaying on restart; self-healing loops with retries and failure classification; sub-agents and handoffs; supervision and human-in-the-loop. You build checkpointed execution and a sub-agent dispatcher with an approval gate.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-build{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #4a7fb5;border-radius:8px;padding:14px 16px;margin:18px 0;background:rgba(74,127,181,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .boxb{fill:#d4e3f0;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Harness Engineering · Module 4</p>
+        <p class="series-banner-title">Durability, Recovery &amp; Orchestration</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Module 4 of 5</p>
+        <div class="series-banner-nav">
+          <a href="harness-1-anatomy.html" class="done">01 Anatomy</a>
+          <a href="harness-2-tools.html" class="done">02 Tools</a>
+          <a href="harness-3-context.html" class="done">03 Context</a>
+          <a href="harness-4-durability.html" class="active">04 Durability</a>
+          <a href="harness-5-production.html">05 Production</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 4, 2026 · ml · 25 min read · 5000 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Durability, recovery &amp; orchestration.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">agents</span>
+          <span class="tag">harness-engineering</span>
+          <span class="tag">durability</span>
+          <span class="tag">module-4</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">An agent that runs for an hour <em>will</em> hit a crash, a timeout, a rate limit, or a machine restart. A toy harness loses everything and starts over; a real one <strong>checkpoints</strong> every model turn and tool call so it can <strong>replay</strong> from where it left off. Module 4 makes your harness durable: checkpointing and replay, self-healing loops (retries, failure classification, resumable sessions), <strong>sub-agents</strong> for when one context can't hold the job, and human-in-the-loop supervision (plans, approvals, escalation). You build checkpointed execution and a sub-agent dispatcher with an approval gate.</p>
+
+        <p>Modules 1–3 built an agent that acts, stays safe, and survives long sessions. But it's still fragile in a way that only shows up in production: it has no memory of <em>the run itself</em>. Kill the process at turn 40 of a 60-turn refactor and everything is gone — the plan, the decisions, the half-finished edits' logical thread. For an interactive session that's annoying; for a long autonomous task, or one running unattended overnight, it's fatal. This module is about making a run survive the world being unreliable.</p>
+
+        <h2>Durable execution: checkpoint every turn</h2>
+
+        <p>The core idea comes from durable-workflow systems (Temporal is the canonical reference): <strong>persist enough state after every step that you can reconstruct the run and continue.</strong> For an agent harness, the "steps" are exactly the loop's events — each model turn and each tool call. If you write those to durable storage as they happen, a crash becomes a pause, not a loss.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">Checkpoint after every event → crash becomes replay, not loss</text>
+            <rect x="40" y="55" width="90" height="34" class="boxy" rx="5"/><text x="85" y="76" class="sm" text-anchor="middle">turn 1</text>
+            <rect x="150" y="55" width="90" height="34" class="boxg" rx="5"/><text x="195" y="76" class="sm" text-anchor="middle">tool call</text>
+            <rect x="260" y="55" width="90" height="34" class="boxy" rx="5"/><text x="305" y="76" class="sm" text-anchor="middle">turn 2</text>
+            <rect x="370" y="55" width="90" height="34" class="boxg" rx="5"/><text x="415" y="76" class="sm" text-anchor="middle">tool call</text>
+            <rect x="480" y="55" width="90" height="34" class="boxr" rx="5"/><text x="525" y="72" class="sm" text-anchor="middle">💥 CRASH</text>
+            <!-- checkpoints below -->
+            <line x1="85" y1="95" x2="85" y2="120" class="arr" marker-end="url(#a)"/>
+            <line x1="195" y1="95" x2="195" y2="120" class="arr" marker-end="url(#a)"/>
+            <line x1="305" y1="95" x2="305" y2="120" class="arr" marker-end="url(#a)"/>
+            <line x1="415" y1="95" x2="415" y2="120" class="arr" marker-end="url(#a)"/>
+            <rect x="40" y="122" width="530" height="30" class="box" rx="5"/><text x="305" y="142" class="sm" text-anchor="middle">append-only checkpoint log (state after each event) — on disk / DB</text>
+            <path d="M525 152 Q 620 130, 620 90" class="arr" marker-end="url(#a)"/>
+            <text x="340" y="185" class="sm" text-anchor="middle" style="fill:#6a8f5f">restart → read the log → resume at turn 3 with full state. Nothing redone, nothing lost.</text>
+            <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 1 — An append-only checkpoint log records state after every turn and tool call. On restart the harness replays the log and continues from the last good point.</p>
+        </div>
+
+        <p>Two flavors of durability, and it's worth knowing which you need:</p>
+
+        <ul>
+          <li><strong>State snapshotting.</strong> After each event, write the current message array (and any run metadata — turn count, budget spent, plan) to durable storage. On restart, load the latest snapshot and continue the loop. Simple, and enough for most single-machine harnesses. This is essentially the Module 3 message array, persisted.</li>
+          <li><strong>Event-sourced replay.</strong> Record each event as an immutable entry in an append-only log; reconstruct state by replaying the log from the start. More powerful — you get a full audit trail, time-travel debugging, and the ability to replay with a fixed tool result — but heavier. This is what Temporal-style durable execution and Hermes's SQLite session plane give you.</li>
+        </ul>
+
+        <div class="bm-warn"><strong>The idempotency problem replay creates.</strong> Replay is safe for pure computation, but tool calls have <em>side effects</em>. If the harness crashed <em>after</em> a tool ran <code>git commit</code> but <em>before</em> it recorded the result, a naive replay runs the commit twice. The fix (from Module 2's foot-guns): record the tool result <em>as part of the same checkpoint</em> as the intent, and use <strong>idempotency keys</strong> so a re-executed side-effecting tool is a no-op if it already ran. Durable execution without idempotency turns one crash into duplicated actions — which is often worse than losing progress.</div>
+
+        <h2>Self-healing loops: retries and failure classification</h2>
+
+        <p>Checkpointing handles hard crashes. Most failures are softer — a transient network blip, a rate limit, a flaky tool — and a good harness absorbs them without a human noticing. The key is <strong>failure classification</strong>: not all errors deserve the same response.</p>
+
+        <table class="papers">
+          <thead><tr><th>Failure class</th><th>Examples</th><th>Harness response</th></tr></thead>
+          <tbody>
+            <tr><td>Transient (retryable)</td><td>rate limit (429), 5xx, network timeout</td><td>retry with exponential backoff + jitter</td></tr>
+            <tr><td>Fatal (won't self-fix)</td><td>auth (401/403), invalid request (422)</td><td>stop, surface to a human — retrying wastes budget</td></tr>
+            <tr><td>Agent-correctable</td><td>test failed, file not found, wrong arg</td><td>feed back as an observation; the model adjusts (Module 2)</td></tr>
+            <tr><td>Loop pathology</td><td>same state 3× in a row, no progress</td><td>trip a circuit breaker, stop, escalate (loop engineering)</td></tr>
+          </tbody>
+        </table>
+
+        <p>The distinction that trips people up is <em>transient</em> vs <em>agent-correctable</em>. A 429 is the harness's problem — the model can't fix a rate limit, so the harness silently backs off and retries without ever bothering the model or the human. A failed test is the <em>model's</em> problem — the harness feeds it back as an observation and lets the model reason about the fix. Sending a 429 to the model wastes tokens on something it can't act on; hiding a failed test from the model prevents it from doing its job. Route each failure to whoever can actually resolve it.</p>
+
+        <p>"Self-healing" is the sum of these: transient errors retried automatically, agent-correctable errors fed back, fatal errors escalated, and — underneath it all — checkpointing so that even a total crash resumes rather than restarts. A well-built harness can run for hours across rate limits, flaky tools, and a machine reboot, and finish the job. That resilience is a defining feature of a production harness versus a demo.</p>
+
+        <div class="bm-note"><strong>Resumable sessions are a product feature, not just a safety net.</strong> Once runs are durable, "resume where I left off" becomes a first-class capability. Hermes leans into this hard: because sessions live in a database, you can close your laptop, and a scheduled cron job or a message from Telegram can attach to the <em>same</em> session later and continue. Durability turns an agent from a thing you babysit in one sitting into a long-lived process you steer over days. The checkpoint log isn't just for crashes — it's what makes long-horizon agents possible at all.</div>
+
+        <h2>Sub-agents and handoffs</h2>
+
+        <p>Sometimes one context can't hold the job. A task with a big, separable sub-part — "analyze all 200 files and summarize the auth flow," "research these ten libraries" — would blow the main agent's context budget (Module 3) with detail the main agent doesn't need. The answer is a <strong>sub-agent</strong>: spawn a fresh agent with its own clean context window, hand it the sub-task, let it run its own loop, and return only a <em>short result</em> to the parent.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">Sub-agents isolate context: workers do the churn, parent gets a summary</text>
+            <rect x="250" y="40" width="180" height="40" class="boxy" rx="6"/><text x="340" y="65" class="sm" text-anchor="middle">orchestrator (main context)</text>
+            <path d="M300 80 L180 120" class="arr" marker-end="url(#a)"/>
+            <path d="M340 80 L340 120" class="arr" marker-end="url(#a)"/>
+            <path d="M380 80 L500 120" class="arr" marker-end="url(#a)"/>
+            <rect x="100" y="122" width="160" height="46" class="boxg" rx="6"/><text x="180" y="142" class="sm" text-anchor="middle">sub-agent: analyze auth</text><text x="180" y="158" class="sm" text-anchor="middle">(own fresh context)</text>
+            <rect x="260" y="122" width="160" height="46" class="boxg" rx="6"/><text x="340" y="142" class="sm" text-anchor="middle">sub-agent: run test suite</text><text x="340" y="158" class="sm" text-anchor="middle">(own fresh context)</text>
+            <rect x="420" y="122" width="160" height="46" class="boxg" rx="6"/><text x="500" y="142" class="sm" text-anchor="middle">sub-agent: research libs</text><text x="500" y="158" class="sm" text-anchor="middle">(own fresh context)</text>
+            <path d="M180 168 L320 200" class="arr" marker-end="url(#a)"/>
+            <path d="M340 168 L340 200" class="arr" marker-end="url(#a)"/>
+            <path d="M500 168 L360 200" class="arr" marker-end="url(#a)"/>
+            <rect x="250" y="200" width="180" height="26" class="boxy" rx="5"/><text x="340" y="217" class="sm" text-anchor="middle">only short summaries return ↑</text>
+            <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 2 — The orchestrator delegates heavy sub-tasks to sub-agents with isolated contexts; each returns a condensed result, keeping the parent's window clean. Sub-agents can also run in parallel.</p>
+        </div>
+
+        <p>Sub-agents buy three things: <strong>context isolation</strong> (the sub-task's token churn never touches the parent's window — the "isolation" tactic from Module 3), <strong>parallelism</strong> (independent sub-agents run concurrently, cutting wall-clock time), and <strong>specialization</strong> (a sub-agent can have a different system prompt, tool set, or even model — a cheap model for search, an expensive one for reasoning). A <strong>handoff</strong> is the related pattern where control passes from one agent to another specialist (a "planner" hands to a "coder") rather than nesting.</p>
+
+        <div class="bm-warn"><strong>Sub-agents are not free — spend them deliberately.</strong> Each sub-agent is a full agent loop with its own token cost; fan out to five and you can pay ~15× a single agent's tokens (a real, measured multiplier). And they add coordination complexity: the parent must specify the sub-task precisely, and a vague brief produces a confidently-wrong summary the parent then trusts. Reserve sub-agents for genuinely large, separable sub-tasks where the context isolation is worth the price — not as a default decomposition of every problem. pi, notably, ships <em>no</em> sub-agents by default (you add them via extension) precisely because they're a cost and complexity you should opt into.</div>
+
+        <h2>Supervision and human-in-the-loop</h2>
+
+        <p>Autonomy is a spectrum, and durability lets you place a human at exactly the points that matter. Three supervision patterns, in increasing autonomy:</p>
+
+        <ul>
+          <li><strong>Plans.</strong> Before executing, the agent produces a plan and a human approves it. This front-loads oversight: you review the <em>intent</em> once, cheaply, instead of every action. A checkpointed plan also becomes the agent's north star — it can be re-injected after compaction so the agent doesn't drift from what was approved.</li>
+          <li><strong>Approvals.</strong> The per-action gate from Module 2, now placed strategically: auto-allow the safe and reversible, require approval for the risky and irreversible. Durability makes this clean — the harness checkpoints, blocks on the approval, and resumes when the human answers (even if that's hours later, from a different device).</li>
+          <li><strong>Escalation.</strong> When the agent is stuck (circuit breaker tripped), uncertain, or facing a fatal error, it <em>escalates</em> to a human rather than guessing or spinning. Good escalation is specific: "I've tried X and Y, both failed with Z, I need a decision on W" — not a silent stall. Escalation is the safety valve that makes unattended autonomy acceptable.</li>
+        </ul>
+
+        <p>The unifying idea: <strong>a human is a special kind of tool the agent can call</strong> — one that's slow, expensive, and authoritative. Supervision engineering is deciding <em>when</em> the agent must call that tool. Too often and you've built a very expensive autocomplete; too rarely and you've built a liability. The right placement — plans up front, approvals on the irreversible, escalation on the stuck — is what lets a harness run mostly-autonomously while staying safe.</p>
+
+        <h2>You build — checkpointed execution + a sub-agent dispatcher</h2>
+
+        <div class="bm-build"><strong>You build:</strong> two things on top of Module 3 — (1) a checkpoint log that persists the run after every turn so a killed process resumes instead of restarting, and (2) a <code>spawn_subagent</code> tool that runs an isolated child loop behind an approval gate, returning only a summary to the parent.</div>
+
+        <pre class="code">import json, pathlib, time
+
+LOG = pathlib.Path(".harness/checkpoint.jsonl")
+LOG.parent.mkdir(exist_ok=True)
+
+def checkpoint(state):                        # append-only durable log
+    with LOG.open("a") as f:
+        f.write(json.dumps({"t": time.time(), **state}) + "\n")
+
+def resume():                                 # rebuild state from the last checkpoint
+    if not LOG.exists(): return None
+    last = LOG.read_text().strip().splitlines()[-1]
+    return json.loads(last)
+
+def durable_run(client, goal, max_turns=200):
+    prior = resume()
+    messages = prior["messages"] if prior else [{"role": "user", "content": goal}]
+    start = prior["turn"] if prior else 0
+    for turn in range(start, max_turns):
+        resp = call_with_retries(client, messages)         # self-healing (below)
+        messages.append({"role": "assistant", "content": resp.content})
+        calls = [b for b in resp.content if b.type == "tool_use"]
+        if not calls:
+            checkpoint({"turn": turn, "messages": messages, "done": True}); return resp
+        results = [{"type": "tool_result", "tool_use_id": c.id,
+                    "content": str(run_tool(c.name, c.input))} for c in calls]
+        messages.append({"role": "user", "content": results})
+        checkpoint({"turn": turn + 1, "messages": messages})   # persist AFTER each turn
+
+def call_with_retries(client, messages, tries=5):            # failure classification
+    for i in range(tries):
+        try:
+            return client.messages.create(model="claude-sonnet-5", max_tokens=2048,
+                                          tools=TOOLS, messages=messages)
+        except RateLimitError:                               # transient -> back off
+            time.sleep((2 ** i) + random.random())
+        except AuthenticationError:                          # fatal -> stop
+            raise
+    raise RuntimeError("exhausted retries")
+
+# ---- sub-agent dispatcher (a tool the model can call) ----
+def spawn_subagent(task, system=None):
+    if input(f"\n  ⚠ spawn sub-agent for: {task}\n  approve? [y/N] ").lower() != "y":
+        return "DENIED"
+    child = Anthropic()                                      # fresh client = fresh context
+    result = child.messages.create(                          # its own isolated loop (elided)
+        model="claude-sonnet-5", max_tokens=2048,
+        system=system or "You are a focused sub-agent. Do the task, return a SHORT summary.",
+        tools=TOOLS, messages=[{"role": "user", "content": task}])
+    return summarize(result)                                 # only the summary returns</pre>
+
+        <p>Everything in this module is here. <code>checkpoint</code>/<code>resume</code> give durability — kill the process mid-run and <code>durable_run</code> picks up at the last persisted turn. <code>call_with_retries</code> classifies failures — back off on transient, stop on fatal (agent-correctable errors are already handled inside <code>run_tool</code> from Module 2). And <code>spawn_subagent</code> is a tool the model can invoke to delegate a heavy sub-task to an isolated child context behind an approval gate, returning only a summary — context isolation and human-in-the-loop in one function.</p>
+
+        <div class="bm-fix"><strong>Prove the durability.</strong> Start a long task, <code>kill -9</code> the process at turn 20, and restart — it should resume at turn 21 with full state, not turn 0. Then: (1) add idempotency keys to side-effecting tools so a mid-tool crash doesn't double-commit; (2) make the approval gate persist and resume (checkpoint, block, resume on answer) so approvals can be answered later; (3) add a circuit breaker (Module's loop-pathology row) that escalates instead of spinning. Now you have a harness that survives the process dying — the line between a demo and production.</div>
+
+        <h2>FAQ</h2>
+        <details class="faq"><summary>Do I need a durable-workflow engine like Temporal, or is a JSON log enough?</summary><p>For a single-machine harness, an append-only JSON/SQLite checkpoint log is usually enough — that's essentially what the "You build" does, and what Hermes uses (SQLite). Reach for a full durable-execution engine (Temporal, etc.) when you need distributed workflows, guaranteed exactly-once semantics across services, or heavy replay/audit requirements. Start simple; the log gets you 90% of the value.</p></details>
+        <details class="faq"><summary>What exactly do I checkpoint — just the messages?</summary><p>The message array is the core (it's the agent's state, per Module 1), plus run metadata you can't reconstruct: turn count, budget spent, the approved plan, and any external side effects with their idempotency keys. The test: from a checkpoint alone, could you resume the run correctly without redoing or duplicating anything? If yes, you're checkpointing enough.</p></details>
+        <details class="faq"><summary>How is a sub-agent different from just calling the model again?</summary><p>A sub-agent runs its own full loop (multiple turns, its own tools) in its own <em>isolated context window</em>, and returns only a condensed result. A plain model call is one turn sharing the parent's context. You use a sub-agent precisely when the sub-task needs many turns and would otherwise flood the parent's window with detail it doesn't need — the isolation is the point.</p></details>
+        <details class="faq"><summary>When should the agent escalate to a human vs keep trying?</summary><p>Escalate on fatal errors it can't fix (auth, permissions), when a circuit breaker trips (no progress across several tries), or when it's about to do something irreversible and high-stakes. Keep trying on agent-correctable errors (failed tests, wrong args) — that's normal iteration. The rule: escalate when more attempts won't help or the cost of being wrong is high.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li><strong>Durable execution</strong>: checkpoint after every turn and tool call so a crash becomes a replay, not a loss. Snapshot state, or event-source for full replay/audit.</li>
+          <li>Replay + side effects needs <strong>idempotency keys</strong>, or one crash becomes a duplicated action.</li>
+          <li><strong>Self-healing</strong> = classify failures: retry transient (backoff+jitter), escalate fatal, feed agent-correctable back, circuit-break loop pathologies.</li>
+          <li><strong>Sub-agents</strong> isolate context, enable parallelism, and allow specialization — but cost ~15× tokens when fanned out, so spend them deliberately.</li>
+          <li><strong>Supervision</strong>: plans (approve intent up front), approvals (gate the irreversible), escalation (call the human when stuck). A human is a slow, authoritative tool.</li>
+          <li>Durability turns an agent from a thing you babysit into a <strong>long-lived, resumable, externally-steerable process</strong> (Hermes's model).</li>
+        </ul>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://temporal.io/blog/durable-execution-for-ai-agents" target="_blank">Temporal — Durable execution for AI agents</a> <span>— checkpointing, replay, and idempotency for agent workflows.</span></li>
+          <li><a href="https://arize.com/blog/how-hermes-implements-open-source-agent-harness-architecture/" target="_blank">Arize — Hermes harness architecture</a> <span>— sessions-as-infrastructure, resumable long-running agents.</span></li>
+          <li><a href="https://www.anthropic.com/research/building-effective-agents" target="_blank">Anthropic — Building effective agents</a> <span>— orchestrator-workers, sub-agents, and human-in-the-loop patterns.</span></li>
+          <li><a href="loop-engineering.html">Loop engineering</a> <span>— failure classification, retries, circuit breakers, the termination doctrine.</span></li>
+          <li><a href="https://www.langchain.com/blog/the-anatomy-of-an-agent-harness" target="_blank">LangChain — Anatomy of an Agent Harness</a> <span>— subagent spawning and verification hooks.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="harness-3-context.html">← Module 3 — Context</a>
+        <a href="harness-5-production.html">Module 5 — Production &amp; capstone →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

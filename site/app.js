@@ -177,7 +177,8 @@
       "ai-tools": "AI Coding Tools",
       flashattention: "FlashAttention",
       "yc-paper-club": "YC Paper Club",
-      gpu: "Silicon to Scale"
+      gpu: "Silicon to Scale",
+      harness: "Harness Engineering"
     };
     const seenSeries = {};
     const collapsed = [];
@@ -217,7 +218,8 @@
           deepseek: "series-deepseek.html",
           "ai-tools": "series-ai-tools.html",
           "yc-paper-club": "series-yc-paper-club.html",
-          gpu: "series-gpu.html"
+          gpu: "series-gpu.html",
+          harness: "series-harness.html"
         };
         const href = seriesHubs[item.key] || `posts/${escapeHtml(p.slug)}.html`;
         return `<li>

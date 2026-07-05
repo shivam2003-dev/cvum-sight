@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Context Engineering Inside the Harness — Harness Engineering M3 — cvam.sight</title>
+<meta name="description" content="Context budgets and eviction, compaction and summarization for long sessions, memory systems (session state, persistent memory files, the CLAUDE.md pattern), and system prompts as infrastructure. You build compaction plus a persistent memory layer.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-build{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #4a7fb5;border-radius:8px;padding:14px 16px;margin:18px 0;background:rgba(74,127,181,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .boxb{fill:#d4e3f0;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Harness Engineering · Module 3</p>
+        <p class="series-banner-title">Context Engineering Inside the Harness</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Module 3 of 5</p>
+        <div class="series-banner-nav">
+          <a href="harness-1-anatomy.html" class="done">01 Anatomy</a>
+          <a href="harness-2-tools.html" class="done">02 Tools</a>
+          <a href="harness-3-context.html" class="active">03 Context</a>
+          <a href="harness-4-durability.html">04 Durability</a>
+          <a href="harness-5-production.html">05 Production</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 4, 2026 · ml · 24 min read · 4800 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Context engineering inside the harness.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">agents</span>
+          <span class="tag">harness-engineering</span>
+          <span class="tag">context</span>
+          <span class="tag">module-3</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Every turn, your harness assembles the model's context from scratch — and the context window is a small, fixed budget that the growing conversation will blow through. Module 3 is about spending that budget well: deciding what goes in every turn and what gets evicted, <strong>compacting</strong> old history into summaries so a session survives hundreds of turns without losing the plot, layering <strong>memory</strong> (session state, persistent files, the CLAUDE.md pattern) so knowledge outlives a single window, and treating the <strong>system prompt as infrastructure</strong> rather than prose. You build compaction plus a persistent memory layer, so your harness survives a 200-turn session.</p>
+
+        <p>Modules 1–2 gave you a loop that acts. Run it on anything real and you hit a wall within twenty turns: the message array grows every iteration (Module 1), tool results are the bulk of it (Module 2), and the context window is finite. Eventually the conversation won't fit — and long before that, the model's reasoning degrades as the window fills with stale tool output and dead ends. Context is the harness's scarcest, most quality-critical resource. Managing it <em>is</em> managing agent quality.</p>
+
+        <p>Note the distinction from the loop's job. The loop decides <em>when</em> to call the model; the context engine decides <em>what the model sees</em> when it's called. This is the layer that turns a demo that works for ten turns into an agent that works for a thousand.</p>
+
+        <h2>Context budgets: what goes in every turn</h2>
+
+        <p>Think of the context window as a fixed budget of tokens you re-spend on every single turn. Each turn, your harness <em>reconstructs</em> the prompt from parts, and every part competes for the same space:</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">The context budget — every turn, re-assembled from competing parts</text>
+            <rect x="120" y="35" width="440" height="26" class="box" rx="4"/><text x="340" y="52" class="sm" text-anchor="middle">system prompt — identity, rules, tool docs (fixed cost, every turn)</text>
+            <rect x="120" y="64" width="440" height="26" class="boxg" rx="4"/><text x="340" y="81" class="sm" text-anchor="middle">memory injection — CLAUDE.md, retrieved facts (curated)</text>
+            <rect x="120" y="93" width="440" height="26" class="boxy" rx="4"/><text x="340" y="110" class="sm" text-anchor="middle">the goal + recent turns (high value — keep)</text>
+            <rect x="120" y="122" width="440" height="40" class="boxr" rx="4"/><text x="340" y="139" class="sm" text-anchor="middle">older turns + big tool outputs (low value, huge — EVICT / compact)</text><text x="340" y="153" class="sm" text-anchor="middle">← this is what blows the budget</text>
+            <rect x="120" y="165" width="440" height="20" class="box" rx="4" fill="#eee"/><text x="340" y="179" class="sm" text-anchor="middle">headroom for the model's reply + next tool results</text>
+            <text x="340" y="210" class="sm" text-anchor="middle">Budget = fixed window. The engine's job: keep the high-value rows, evict/summarize the rest.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Every turn re-spends the whole budget. System prompt and recent turns are high-value; old turns and giant tool dumps are what you evict or compact.</p>
+        </div>
+
+        <p>Two rules follow immediately. First, <strong>keep tool outputs small at the source</strong> (Module 2's paginated reads, surgical edits) — since tool results are ~two-thirds of tokens, controlling them is the cheapest win. Second, <strong>have an eviction policy</strong>: when the budget tightens, something must leave. The naive policy — drop the oldest messages — is dangerous, because the oldest message is often the <em>goal</em>. Better policies keep the system prompt, the goal, and the most recent turns, and compress the middle. That compression is the next section.</p>
+
+        <div class="bm-warn"><strong>Context rot is real and non-obvious.</strong> Even when everything <em>fits</em>, a window stuffed with stale tool output, abandoned approaches, and irrelevant file dumps degrades the model's reasoning — it attends to noise. An agent that was sharp at turn 5 can be confused at turn 50 not because the task got harder but because its own context became junk. So context management isn't only about fitting under the limit; it's about keeping the <em>signal-to-noise ratio</em> high. Evicting low-value content improves quality even when you have room to spare.</div>
+
+        <h2>Compaction and summarization</h2>
+
+        <p>The core technique for surviving long sessions is <strong>compaction</strong>: when the context approaches a threshold (a common trigger is ~<strong>80% of the window</strong>), summarize the older portion of the conversation into a compact form and continue from the summary. You trade lossy detail for room to keep going — and done well, the summary preserves the <em>decisions and state</em> that matter while dropping the verbose journey.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="smk" text-anchor="middle" style="font-weight:bold">Compaction at ~80%: summarize the old, keep the recent, continue</text>
+            <rect x="40" y="45" width="260" height="120" class="box" rx="6"/>
+            <text x="170" y="40" class="sm" text-anchor="middle">before (95% full)</text>
+            <rect x="52" y="55" width="236" height="14" class="boxr"/><rect x="52" y="72" width="236" height="14" class="boxr"/><rect x="52" y="89" width="236" height="14" class="boxr"/><rect x="52" y="106" width="236" height="14" class="boxr"/>
+            <rect x="52" y="128" width="236" height="14" class="boxy"/><rect x="52" y="145" width="236" height="14" class="boxy"/>
+            <text x="170" y="180" class="sm" text-anchor="middle">red = old turns · yellow = recent</text>
+            <path d="M310 105 L360 105" class="arr" marker-end="url(#a)"/>
+            <rect x="380" y="45" width="260" height="120" class="box" rx="6"/>
+            <text x="510" y="40" class="sm" text-anchor="middle">after (40% full)</text>
+            <rect x="392" y="55" width="236" height="26" class="boxg"/><text x="510" y="72" class="sm" text-anchor="middle">SUMMARY of old turns</text>
+            <rect x="392" y="128" width="236" height="14" class="boxy"/><rect x="392" y="145" width="236" height="14" class="boxy"/>
+            <text x="510" y="180" class="sm" text-anchor="middle">room to keep going</text>
+            <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#c96442"/></marker></defs>
+          </svg>
+          <p class="diagram-label">Fig 2 — Compaction replaces a long run of old turns with a dense summary, reclaiming budget while preserving what the agent needs to continue coherently.</p>
+        </div>
+
+        <p>The subtlety is <em>what</em> to preserve. A good compaction summary is not "here's a paragraph about the conversation" — it's a structured snapshot of the working state: the goal, decisions made and why, files changed, what's verified, what's still open, and any hard-won facts (that flaky test, that API quirk). The harness typically produces it by asking the model itself to summarize, against a template that forces those fields. Get the template right and a 200-turn session compacts two or three times without ever losing the thread; get it wrong and the agent "forgets" a decision and re-litigates it.</p>
+
+        <p>Hermes offers an elegant variant worth knowing: <strong>lineage-based compression</strong>. Instead of rewriting history in place, it closes the current session, spawns a <em>child</em> session seeded with the summary, rotates the session ID, and records the parent→child link. The compressed view is what the model sees; the full history is preserved on the parent for audit and replay. Compaction without losing the original — a nice property for durability (Module 4).</p>
+
+        <div class="bm-note"><strong>Compaction vs offloading vs isolation.</strong> Three complementary tactics, easy to conflate. <em>Compaction</em> summarizes old conversation to reclaim space. <em>Offloading</em> writes a big tool output to a file and keeps only a reference in context (the filesystem as extended memory). <em>Isolation</em> hands a big sub-task to a sub-agent with its own fresh window that returns only a short result (Module 4). All three fight the same enemy — a bloated window — from different angles. Real harnesses use all three.</div>
+
+        <h2>Memory systems: surviving beyond one window</h2>
+
+        <p>Compaction keeps a <em>single</em> session alive. Memory keeps knowledge alive <em>across</em> sessions and windows. There's a hierarchy, from most ephemeral to most durable:</p>
+
+        <table class="papers">
+          <thead><tr><th>Layer</th><th>Scope</th><th>Holds</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>Working context</td><td>this turn</td><td>the live message array</td><td>the loop's state (Module 1)</td></tr>
+            <tr><td>Session state</td><td>this session</td><td>run so far, survives compaction</td><td>Hermes SQLite session rows</td></tr>
+            <tr><td>Persistent memory files</td><td>across sessions</td><td>curated durable knowledge</td><td>CLAUDE.md / AGENTS.md</td></tr>
+            <tr><td>Retrieval (vector/search)</td><td>a large corpus</td><td>facts pulled in on demand</td><td>RAG over docs, code search</td></tr>
+          </tbody>
+        </table>
+
+        <h3>The CLAUDE.md pattern</h3>
+
+        <p>The most important memory idea for practical harnesses is deceptively low-tech: a <strong>human-curated memory file</strong> checked into the project (CLAUDE.md, AGENTS.md, and similar). It holds the durable facts an agent needs every session — how to build and test, project conventions, gotchas, "always run the linter before committing." The harness injects it into context at the start of every session.</p>
+
+        <p>Why it beats fancier auto-generated memory: <strong>a human vetted it.</strong> Auto-summarized memory drifts, hallucinates, and accretes noise; a hand-written file stays true because a person maintains it. It's semantic memory as <em>infrastructure</em> — versioned, reviewed, diffable, shared across the team. pi, Claude Code, and Hermes all support this pattern precisely because it's the highest-signal, lowest-cost memory a harness can have. When your agent keeps making the same mistake, the fix is usually a line in the memory file, not a cleverer prompt.</p>
+
+        <div class="bm-fix"><strong>Two memory writes, two purposes.</strong> Distinguish <em>reading</em> memory (inject the file every session) from <em>writing</em> it. The safest pattern: the agent may <em>propose</em> additions to the memory file ("I learned the DB migration needs <code>--no-verify</code>; add to CLAUDE.md?"), but a human approves the write. That keeps the durable memory human-curated — trustworthy — while still letting the agent accumulate lessons. Fully autonomous memory writes are where auto-memory rots; gated writes keep it clean.</div>
+
+        <h2>System prompts as infrastructure, not prose</h2>
+
+        <p>The last piece of context is the one that's there every turn: the <strong>system prompt</strong>. Beginners write it like an essay — a friendly paragraph about being a helpful assistant. In a real harness, the system prompt is <strong>infrastructure</strong>: a precise, structured specification of the agent's identity, its rules, its tools, and its operating procedure, engineered and version-controlled like any other critical component.</p>
+
+        <p>What belongs in it: the agent's role and hard constraints, how and when to use each tool (reinforcing the schemas from Module 2), the output/format contract, safety rules ("never run destructive commands without approval"), and the operating loop the agent should follow ("plan, then act, then verify"). What does <em>not</em> belong: verbose backstory, redundant politeness, anything the model already knows, or dynamic content that changes per turn (that's context injection, not the system prompt).</p>
+
+        <p>pi's discipline here is instructive: its system prompt is <strong>under 1,000 tokens</strong>. That's a deliberate constraint — every token in the system prompt is paid on <em>every turn</em> for the whole session, and a bloated system prompt is a permanent tax on your budget and a dilution of the signal. A tight, structured system prompt outperforms a long chatty one, and it's cheaper. Treat it as code: keep it minimal, review changes, measure their effect.</p>
+
+        <div class="bm-warn"><strong>The system prompt is a fixed cost multiplied by session length.</strong> A 4,000-token system prompt in a 100-turn session is re-sent 100 times — 400,000 tokens of pure overhead, before the agent does anything. This is why "prompt engineering" at the harness level means <em>trimming</em>, not embellishing. Every sentence must earn its permanent seat. When in doubt, move it to the memory file (loaded once, and only when relevant) rather than the system prompt (loaded always).</div>
+
+        <h2>You build — compaction + persistent memory</h2>
+
+        <div class="bm-build"><strong>You build:</strong> a token-budgeted compaction step and a persistent memory layer on top of the Module 2 harness. When context crosses ~80% of the window, the harness summarizes old turns into a state snapshot and continues; a CLAUDE.md-style file is injected every session. Your agent now survives a 200-turn session without losing the plot.</div>
+
+        <pre class="code">import pathlib
+
+WINDOW = 200_000                              # your model's context size (tokens)
+COMPACT_AT = 0.80                             # trigger threshold
+MEM_FILE = pathlib.Path("CLAUDE.md")
+
+def tokens(messages):                         # cheap estimate; use a real tokenizer in prod
+    return sum(len(str(m["content"])) for m in messages) // 4
+
+def load_memory():                            # inject persistent memory every session
+    return MEM_FILE.read_text() if MEM_FILE.exists() else ""
+
+def build_system_prompt():
+    base = "You are a coding agent. Plan, act with tools, verify. "
+    mem = load_memory()
+    return base + (f"\n\n# Project memory (CLAUDE.md)\n{mem}" if mem else "")
+
+def compact(client, messages):
+    """Summarize everything except the last few turns into a state snapshot."""
+    head, tail = messages[:-6], messages[-6:]          # keep recent turns verbatim
+    summary = client.messages.create(
+        model="claude-sonnet-5", max_tokens=1024,
+        messages=head + [{"role": "user", "content":
+            "Summarize the conversation so far as a STATE SNAPSHOT with sections: "
+            "GOAL, DECISIONS (+why), FILES CHANGED, VERIFIED, OPEN QUESTIONS, FACTS LEARNED. "
+            "Be dense; preserve anything needed to continue."}],
+    ).content[0].text
+    return [{"role": "user", "content": f"[COMPACTED STATE]\n{summary}"}] + tail
+
+def run(client, goal, max_turns=200):
+    system = build_system_prompt()
+    messages = [{"role": "user", "content": goal}]
+    for turn in range(max_turns):
+        if tokens(messages) > WINDOW * COMPACT_AT:      # budget check each turn
+            messages = compact(client, messages)         # reclaim space, keep the plot
+        resp = client.messages.create(model="claude-sonnet-5", max_tokens=2048,
+                                      system=system, tools=TOOLS, messages=messages)
+        messages.append({"role": "assistant", "content": resp.content})
+        calls = [b for b in resp.content if b.type == "tool_use"]
+        if not calls:
+            return resp
+        messages.append({"role": "user", "content":
+            [{"type": "tool_result", "tool_use_id": c.id, "content": str(run_tool(c.name, c.input))}
+             for c in calls]})</pre>
+
+        <p>Everything from this module is in that code. <code>build_system_prompt</code> treats the prompt as infrastructure and folds in the CLAUDE.md memory. <code>tokens</code> tracks the budget; <code>compact</code> fires at 80%, summarizing the head into a structured state snapshot while keeping recent turns verbatim (so the agent never loses immediate context). Run it on a long task — a multi-file refactor with a test loop — and watch it compact once or twice and keep going, coherent, past the point where the naive Module 2 harness would have overflowed and crashed.</p>
+
+        <div class="bm-fix"><strong>Extend it.</strong> (1) Let the agent append to CLAUDE.md via a gated <code>remember(fact)</code> tool (human-approved, per the earlier callout). (2) Swap the length estimate for a real tokenizer so the threshold is exact. (3) Add offloading: when a tool returns &gt;2,000 tokens, write it to a file and put only "wrote result to <code>tmp/out.txt</code> (N lines)" in context. (4) Log a diff of the message array before/after each compaction so you can verify no decision was dropped — your regression test for the summarizer.</div>
+
+        <h2>FAQ</h2>
+        <details class="faq"><summary>Why not just use a model with a huge context window and skip compaction?</summary><p>Bigger windows help but don't remove the problem: cost scales with context re-sent every turn, latency grows, and — most importantly — reasoning still degrades as the window fills with noise (context rot). Compaction keeps the signal-to-noise ratio high, which improves quality even when everything technically fits. A big window is a bigger budget, not an infinite one.</p></details>
+        <details class="faq"><summary>What makes a good compaction summary?</summary><p>Structure and state, not narrative. Force sections — goal, decisions and why, files changed, what's verified, open questions, facts learned — so the summary captures what's needed to <em>continue</em> rather than a readable recap. Test it: after compaction, can the agent proceed without re-asking something it already decided? If it re-litigates, your template is missing a field.</p></details>
+        <details class="faq"><summary>Where should durable knowledge live — the system prompt or a memory file?</summary><p>The system prompt for what's true <em>every</em> turn and rarely changes (role, hard rules, tool procedure). The memory file for project-specific, evolving knowledge (build commands, conventions, gotchas). The system prompt is paid on every turn regardless; the memory file can be injected selectively and is human-editable. When in doubt, prefer the memory file — it's cheaper and easier to maintain.</p></details>
+        <details class="faq"><summary>Isn't auto-generated memory better than a hand-written file?</summary><p>Usually not, in practice. Auto-memory drifts and accumulates noise because nothing prunes it; a human-curated file stays true because a person maintains and reviews it. The strongest pattern is hybrid: the agent proposes additions, a human approves them — accumulating lessons without letting the memory rot.</p></details>
+
+        <h2>Takeaways</h2>
+        <ul>
+          <li>The context window is a <strong>fixed budget re-spent every turn</strong>; the engine decides what stays and what's evicted.</li>
+          <li>Keep <strong>tool outputs small at the source</strong> (they're ~2/3 of tokens) and evict by value, never blindly by age (you'll drop the goal).</li>
+          <li><strong>Compaction</strong> at ~80% summarizes old turns into a structured state snapshot; Hermes's lineage compression preserves the original.</li>
+          <li>Memory is a hierarchy: working context → session state → <strong>persistent files (CLAUDE.md)</strong> → retrieval. Human-curated files beat auto-memory.</li>
+          <li>The <strong>system prompt is infrastructure</strong> — tight, structured, version-controlled; pi keeps it under 1k tokens because every token is paid every turn.</li>
+          <li>Compaction, offloading, and isolation are three tactics against the same enemy: a bloated, low-signal window.</li>
+        </ul>
+
+        <h2>References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" target="_blank">Anthropic — Effective context engineering for AI agents</a> <span>— budgets, compaction, note-taking, sub-agent isolation.</span></li>
+          <li><a href="https://arize.com/blog/how-hermes-implements-open-source-agent-harness-architecture/" target="_blank">Arize — Hermes harness architecture</a> <span>— lineage-based context compression and SQLite sessions.</span></li>
+          <li><a href="https://www.langchain.com/blog/the-anatomy-of-an-agent-harness" target="_blank">LangChain — Anatomy of an Agent Harness</a> <span>— compaction, tool-output offloading, memory injection (AGENTS.md).</span></li>
+          <li><a href="https://pi.dev/" target="_blank">pi (pi.dev)</a> <span>— the sub-1k-token system prompt discipline.</span></li>
+          <li><a href="../posts/deepseek-2-1-kv-cache.html">KV cache internals</a> <span>— the hardware reason long contexts cost so much per turn.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="harness-2-tools.html">← Module 2 — Tools</a>
+        <a href="harness-4-durability.html">Module 4 — Durability &amp; orchestration →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

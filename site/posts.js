@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "pagedattention-paper-juice",
+    title: "PagedAttention — What If Your GPU Memory Managed Itself Like an Operating System.",
+    date: "Jul 6, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml", "llm-inference", "kv-cache", "vllm"],
+    time: 20,
+    words: 3200,
+    excerpt: "Paper Juice: vLLM's PagedAttention (SOSP 2023), squeezed into plain language. Before it, every LLM serving system reserved KV cache memory for the worst-case sequence length, wasting 60-80% to fragmentation. PagedAttention steals virtual memory paging straight from operating systems -- fixed-size KV blocks, a block table, non-contiguous storage -- cutting waste to under 4% and enabling copy-on-write memory sharing for beam search and parallel sampling. Net result: 2-4x more throughput on the same GPUs."
+  },
+  {
     slug: "pagedattention",
     title: "PagedAttention — how vLLM stopped wasting 80% of your GPU memory.",
     date: "Jul 6, 2026",

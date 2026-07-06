@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PagedAttention — What If Your GPU Memory Managed Itself Like an Operating System? — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  details.math-optional {
+    border-left: 3px solid #141413;
+    padding: 12px 16px;
+    margin: 16px 0;
+    background: rgba(42,38,32,0.35);
+    border-radius: 0 6px 6px 0;
+  }
+  details.math-optional summary {
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-style: italic;
+    color: #262625;
+    font-size: 0.95rem;
+    list-style: none;
+    user-select: none;
+  }
+  details.math-optional summary::-webkit-details-marker { display: none; }
+  details.math-optional summary::before {
+    content: '▸ ';
+    font-style: normal;
+  }
+  details.math-optional[open] summary::before {
+    content: '▾ ';
+  }
+  details.math-optional .math-inner {
+    margin-top: 12px;
+  }
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]})"></script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-vocab">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Jul 6, 2026 · paperjuice · 20 min read · 3200 words</p>
+        <h1>PagedAttention — What If Your GPU Memory Managed Itself Like an Operating System.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">ml</span>
+          <span class="tag">llm-inference</span>
+          <span class="tag">kv-cache</span>
+          <span class="tag">vllm</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p>
+          You launch an LLM serving endpoint. Your GPU has 80GB of memory. The model weights
+          take maybe 26GB. You'd expect the rest — over 50GB — to go toward serving as many
+          concurrent users as possible. Instead, your throughput is terrible, half your
+          requests are queued, and a memory profiler shows something strange: most of that
+          "free" 50GB isn't actually holding any data. It's just <em>reserved</em>. Sitting
+          there. Empty. On purpose.
+        </p>
+        <p>
+          That's not a bug. That's how every LLM serving system worked before September 2023.
+          And the reason is almost comically simple once you see it — which is exactly the kind
+          of problem operating-systems researchers love, and exactly the kind of problem a group
+          at UC Berkeley decided to go solve by stealing an idea that's older than the GPU
+          itself.
+        </p>
+
+        <!-- PLACEHOLDER: hero image showing a GPU memory bar mostly empty/reserved (red) vs a paged version tightly packed (green) -->
+
+        <h2>The problem: memory reserved for a future that might not happen.</h2>
+        <p>
+          When a transformer generates text, it doesn't want to recompute attention over the
+          entire conversation at every single step — that would be quadratically expensive and
+          get slower with every token. So it caches the <strong>key</strong> and
+          <strong>value</strong> vectors it already computed, at every layer, at every attention
+          head, for every token so far. This is the <strong>KV cache</strong>, and for any
+          request that's more than a couple hundred tokens long, it is usually the single largest
+          thing sitting in GPU memory — bigger, per request, than you'd guess, and it keeps
+          growing for as long as the request keeps generating.
+        </p>
+        <details class="math-optional">
+          <summary>optional read — how big does a KV cache actually get?</summary>
+          <div class="math-inner">
+        <p>
+          Roughly:
+        </p>
+        <p style="text-align:center;margin:16px 0;">
+          $$\text{KV cache size} \approx 2 \times L \times H \times d_{\text{head}} \times T \times \text{bytes}$$
+        </p>
+        <p>
+          where $L$ is the number of layers, $H$ the number of attention heads, $d_{\text{head}}$
+          the per-head dimension, $T$ the sequence length so far, and the leading 2 accounts for
+          storing both K and V. Plug in a 13B model — 40 layers, 40 heads, head dim 128, fp16 (2
+          bytes) — at 2048 tokens, and you get roughly <strong>1.7GB for one single request</strong>.
+          Sixty-four concurrent requests at that length is over 100GB of KV cache alone — more
+          than the weights of the model that's supposedly doing the work.
+        </p>
+          </div>
+        </details>
+        <p>
+          Here's the part that turns this from "big" into "a systems crisis." Nobody knows in
+          advance how long any given request is going to run. Maybe it stops after 40 tokens.
+          Maybe it goes to 4,000. The old way of dealing with that uncertainty — used by
+          HuggingFace's default serving path, FasterTransformer, and Orca alike — was to just
+          <strong>reserve memory for the worst case</strong>: allocate one big contiguous slab of
+          memory sized for the model's maximum context length, for every request, the moment it
+          arrives. If the model supports 4096 tokens, you reserve 4096 tokens' worth of KV cache —
+          whether the request ends up using 40 tokens of it or all 4096.
+        </p>
+        <p>
+          Researchers at UC Berkeley, working with Stanford and ICSI, measured exactly how bad
+          this gets in production-style serving systems. The number is not subtle:
+          <strong>60% to 80% of allocated KV cache memory was never used.</strong> Reserved,
+          blocked off, unavailable to any other request — and empty.
+        </p>
+
+        <blockquote>
+          Imagine a hotel that, the moment any guest checks in, locks an entire wing of rooms in
+          case they decide to stay for a year — even if 90% of guests check out after two nights.
+          The hotel isn't full. It just <em>looks</em> full, because it reserved space for guests
+          who never show up.
+        </blockquote>
+
+        <h2>Two very specific kinds of waste.</h2>
+        <p>
+          The paper doesn't just say "wasted memory" and move on — it names the waste using the
+          same vocabulary operating-systems textbooks have used for fifty years, because it's
+          <em>the same problem</em>.
+        </p>
+        <p>
+          <strong>Internal fragmentation</strong> is memory allocated to a request that the
+          request itself never uses. Reserve 4096 tokens, generate 300, and 3796 tokens' worth of
+          memory sat locked to that one request for its entire life, unusable by anyone else, even
+          though it was always empty.
+        </p>
+        <p>
+          <strong>External fragmentation</strong> is the second, sneakier kind. Even memory that
+          legitimately gets freed — a request finishes, its slab is released — leaves behind an
+          irregularly-sized hole. A new request that needs a different amount of memory might not
+          fit cleanly into any existing hole, even though the total free memory across all the
+          holes combined would be more than enough. The problem isn't "not enough memory." It's
+          "the free memory is the wrong shape."
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .box { fill: #2a2620; stroke: #948a78; stroke-width: 1.5; rx: 4; }
+              .box-r { fill: #c96442; stroke: none; rx: 4; }
+              .box-g { fill: #6a8f5f; stroke: none; rx: 4; }
+              .label { font-family: monospace; font-size: 11px; fill: #ebe3cf; text-anchor: middle; }
+              .label-dark { font-family: monospace; font-size: 12px; fill: #2a2620; text-anchor: middle; }
+            </style>
+            <text x="350" y="18" class="label-dark" style="font-size:13px;font-weight:bold;">contiguous allocation — reserved for the worst case</text>
+
+            <text x="140" y="42" class="label-dark" style="font-size:11px;">request A — max 2048, actually uses 300</text>
+            <rect x="20" y="50" width="70" height="26" class="box-g"/><text x="55" y="67" class="label">used</text>
+            <rect x="90" y="50" width="470" height="26" class="box-r"/><text x="325" y="67" class="label">reserved, empty — internal fragmentation</text>
+
+            <text x="140" y="105" class="label-dark" style="font-size:11px;">request B — max 2048, actually uses 1800</text>
+            <rect x="20" y="113" width="420" height="26" class="box-g"/><text x="230" y="130" class="label">used</text>
+            <rect x="440" y="113" width="120" height="26" class="box-r"/><text x="500" y="130" class="label">reserved</text>
+
+            <text x="140" y="168" class="label-dark" style="font-size:11px;">request C finishes — freed, but an irregular hole</text>
+            <rect x="20" y="176" width="220" height="26" class="box" stroke-dasharray="4,3"/><text x="130" y="193" class="label">freed hole</text>
+            <rect x="240" y="176" width="320" height="26" class="box-r"/><text x="400" y="193" class="label">still reserved by others</text>
+
+            <text x="350" y="230" class="label-dark" style="font-size:12px;font-weight:bold;">Result: 60–80% of allocated memory never does a single unit of useful math.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Reserve-the-max allocation: most of what looks "used" is empty, and what's freed doesn't fit the next arrival cleanly.</p>
+        </div>
+
+        <p>
+          And this isn't a cosmetic inefficiency — it's the actual ceiling on how many users you
+          can serve. Concurrent request capacity is bounded by how many KV caches fit in GPU
+          memory at once. If 70% of that memory is empty reservation, you're serving less than
+          a third of the users you could be, on the exact same hardware.
+        </p>
+
+        <h2>The big idea: steal it from the operating system.</h2>
+        <p>
+          Here's where the paper gets its name, and where the insight becomes obvious in
+          hindsight — always the sign of a good one. <strong>Operating systems solved this exact
+          shape of problem decades ago.</strong> A process needs memory of an unpredictable,
+          growing size. You don't want to reserve a huge contiguous block up front (wasteful),
+          and you don't want processes to fight over irregular gaps in physical RAM
+          (fragmentation). The answer the OS world landed on, ages ago, is <strong>virtual memory
+          paging</strong>: chop memory into small, fixed-size pages, let a process believe its
+          memory is one tidy contiguous block, and quietly scatter the real, physical pages
+          anywhere in RAM — tracked by a page table that translates one view into the other.
+        </p>
+        <p>
+          <strong>PagedAttention</strong> does the identical thing to the KV cache:
+        </p>
+        <ul>
+          <li>Split the KV cache into fixed-size <strong>blocks</strong> — 16 tokens each, by
+          default.</li>
+          <li>Store those blocks <strong>anywhere</strong> in GPU memory — never require them to
+          sit next to each other.</li>
+          <li>Give each sequence a <strong>block table</strong> — the "page table" — mapping its
+          logical block order (block 0, block 1, block 2…) to wherever the actual physical block
+          lives.</li>
+          <li>Allocate a new block only when a sequence has actually generated enough tokens to
+          need one. Never allocate for a hypothetical future.</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 700 280" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .box { fill: #2a2620; stroke: #948a78; stroke-width: 1.5; rx: 5; }
+              .box-y { fill: #c96442; stroke: none; rx: 5; }
+              .box-b { fill: #4a7fb5; stroke: none; rx: 5; }
+              .lbl { font-family: monospace; font-size: 11px; fill: #ebe3cf; text-anchor: middle; }
+              .lblk { font-family: monospace; font-size: 11px; fill: #2a2620; text-anchor: middle; }
+              .arrow { stroke: #c96442; stroke-width: 1.5; fill: none; marker-end: url(#ah); }
+            </style>
+            <defs>
+              <marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#c96442"/>
+              </marker>
+            </defs>
+            <text x="350" y="18" class="lblk" style="font-size:13px;font-weight:bold;">logical view → block table → physical reality</text>
+
+            <text x="110" y="42" class="lblk" style="font-size:11px;">what the sequence "sees" (tidy, contiguous)</text>
+            <rect x="30" y="50" width="55" height="26" class="box-y"/><text x="57" y="67" class="lbl">L0</text>
+            <rect x="90" y="50" width="55" height="26" class="box-y"/><text x="117" y="67" class="lbl">L1</text>
+            <rect x="150" y="50" width="55" height="26" class="box-y"/><text x="177" y="67" class="lbl">L2</text>
+
+            <text x="340" y="118" class="lblk" style="font-size:11px;">block table (per sequence — the "page table")</text>
+            <rect x="200" y="126" width="280" height="70" class="box"/>
+            <text x="215" y="146" class="lbl">L0 → P7</text>
+            <text x="215" y="164" class="lbl">L1 → P2</text>
+            <text x="215" y="182" class="lbl">L2 → P11</text>
+            <path d="M57,76 C57,105 220,105 220,126" class="arrow"/>
+            <path d="M117,76 C117,110 220,124 220,144" class="arrow"/>
+            <path d="M177,76 C177,116 220,140 220,162" class="arrow"/>
+
+            <text x="340" y="222" class="lblk" style="font-size:11px;">physical GPU memory — blocks scattered, reused freely</text>
+            <rect x="30" y="230" width="55" height="26" class="box"/><text x="57" y="247" class="lbl" style="fill:#948a78">P0</text>
+            <rect x="90" y="230" width="55" height="26" class="box-b"/><text x="117" y="247" class="lblk" style="fill:#ebe3cf">P2</text>
+            <rect x="150" y="230" width="55" height="26" class="box"/><text x="177" y="247" class="lbl" style="fill:#948a78">P3</text>
+            <rect x="210" y="230" width="55" height="26" class="box"/><text x="237" y="247" class="lbl" style="fill:#948a78">P5</text>
+            <rect x="270" y="230" width="55" height="26" class="box-b"/><text x="297" y="247" class="lblk" style="fill:#ebe3cf">P7</text>
+            <rect x="330" y="230" width="55" height="26" class="box"/><text x="357" y="247" class="lbl" style="fill:#948a78">P9</text>
+            <rect x="390" y="230" width="55" height="26" class="box-b"/><text x="417" y="247" class="lblk" style="fill:#ebe3cf">P11</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — The sequence thinks its cache is tidy and contiguous. In physical memory it's scattered wherever there's room — the block table hides the difference.</p>
+        </div>
+
+        <p>
+          The effect on waste is immediate and almost embarrassingly clean. Internal
+          fragmentation is now capped at <strong>a single, partially-filled block</strong> — at
+          most 15 empty token-slots out of a 16-slot block, never thousands. Measured waste drops
+          from 60–80% down to <strong>under 4%</strong>. External fragmentation basically
+          vanishes too, because every block is the identical size — any free block, from any
+          previous request, can satisfy any new request's next allocation. There's no such thing
+          as "a hole the wrong shape" anymore, because every hole is the same shape.
+        </p>
+
+        <blockquote>
+          It's not a new idea. It's the <em>oldest</em> idea in memory management, applied to a
+          brand-new place nobody had pointed it at yet.
+        </blockquote>
+
+        <h2>The hard part: attention math over scattered memory.</h2>
+        <p>
+          Chopping storage into blocks is the easy half. The genuinely hard systems problem — the
+          part that makes this a real contribution and not just "use a hash map" — is that
+          <strong>attention itself</strong> now has to read from memory that refuses to sit still.
+          A normal attention kernel assumes it can point at one flat tensor and stream straight
+          through it. PagedAttention's kernel instead has to, for every single query, walk the
+          block table, chase down wherever each logical block's physical block actually lives,
+          fetch it, accumulate that block's contribution to the attention score — and repeat for
+          the next block, which could be anywhere else in memory entirely.
+        </p>
+        <details class="math-optional">
+          <summary>optional read — the kernel's inner loop, simplified</summary>
+          <div class="math-inner">
+        <p>
+          Conceptually (heavily simplified from vLLM's actual fused CUDA kernel):
+        </p>
+        <pre style="background:#2a2620;color:#ebe3cf;padding:12px 14px;border-radius:6px;overflow-x:auto;font-size:.8rem;line-height:1.6"><code>scores = []
+for logical_idx, physical_idx in enumerate(block_table):
+    k_block = kv_pool.K[physical_idx]      # fetch wherever it actually lives
+    scores.append(query @ k_block.T)       # partial attention scores
+
+scores = softmax(concat(scores))           # normalize over ALL positions, as usual
+
+output = 0
+for logical_idx, physical_idx in enumerate(block_table):
+    v_block = kv_pool.V[physical_idx]
+    output += scores[logical_idx] @ v_block</code></pre>
+        <p>
+          Mathematically this is <em>exactly</em> the same attention computation as a standard
+          contiguous kernel — same softmax, over the same keys, same weighted sum over the same
+          values. There's no approximation here, unlike sparse or windowed attention tricks. The
+          only cost is an extra pointer-chase through the block table before each block's data
+          can be read — the same trade a CPU makes on every page-table walk.
+        </p>
+          </div>
+        </details>
+        <p>
+          The trade is the same one operating systems have always made: pay a small, bounded
+          indirection cost per memory access, in exchange for eliminating a much larger structural
+          waste. vLLM's real kernel fuses the block-table lookup directly into the same pass that
+          does the score computation and the weighted sum, so in practice the overhead is small
+          relative to what you gain from fitting dramatically more concurrent sequences into the
+          same GPU.
+        </p>
+
+        <h2>The scheduler that makes blocks worth having.</h2>
+        <p>
+          A paged memory manager is only half the system. The other half is the
+          <strong>scheduler</strong>, and vLLM's is built specifically to exploit what paging just
+          made possible. Older serving systems used <strong>static batching</strong>: a batch of
+          requests starts together, and the whole batch runs until the <em>slowest</em> member
+          finishes — even if every other request in that batch finished five steps ago and its GPU
+          slot has just been sitting idle since.
+        </p>
+        <p>
+          vLLM instead does <strong>iteration-level scheduling</strong>: a fresh decision, every
+          single forward pass, about which sequences continue, which just finished (and free their
+          blocks <em>immediately</em>), and which brand-new requests get admitted into whatever
+          capacity just opened up. This only works cleanly because of paging — if memory were
+          still one big contiguous reservation, freeing a finished sequence and immediately handing
+          that space to a differently-sized new arrival would run straight back into the
+          fragmentation problem. Because every block is uniform, any freed block fits any new
+          request instantly. Paged memory and fine-grained scheduling are a matched pair; you need
+          both to actually cash in the throughput gain.
+        </p>
+
+        <h2>The part that surprised me: sharing memory for free.</h2>
+        <p>
+          Here's the detail that elevates this from "a good fix for waste" to "a genuinely clever
+          systems design." Because a block table is <em>just a mapping</em> — exactly like a page
+          table — nothing stops <strong>multiple sequences</strong> from pointing at the
+          <em>same</em> physical block.
+        </p>
+        <p>
+          The clean example: <strong>parallel sampling</strong> — one prompt, several independent
+          completions requested at once (generate 4 candidate answers, pick the best one). Every
+          completion shares the identical prompt, so their KV cache for those prompt tokens is
+          identical too. Instead of duplicating that memory once per completion, every completion's
+          block table can point at the <em>same</em> physical blocks for the shared prefix, with a
+          <strong>reference count</strong> tracking how many logical blocks currently point at each
+          physical block.
+        </p>
+        <p>
+          The catch: once generation starts, each completion diverges and appends its own new
+          tokens. If two completions shared a block and one just wrote a new token into it, it
+          would silently corrupt the other completion's cache. The fix, again lifted straight from
+          operating systems: <strong>copy-on-write.</strong> Reading a shared block is free — no
+          copy needed. The instant a sequence needs to <em>write</em> into a block that's currently
+          shared, the memory manager makes a private copy of just that one block for the writer,
+          decrements the original's reference count, and every other sequence sharing the original
+          block never even notices.
+        </p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 700 230" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .box { fill: #2a2620; stroke: #948a78; stroke-width: 1.5; rx: 5; }
+              .box-b { fill: #4a7fb5; stroke: none; rx: 5; }
+              .box-g { fill: #6a8f5f; stroke: none; rx: 5; }
+              .lbl { font-family: monospace; font-size: 11px; fill: #ebe3cf; text-anchor: middle; }
+              .lblk { font-family: monospace; font-size: 11px; fill: #2a2620; text-anchor: middle; }
+              .arrow { stroke: #c96442; stroke-width: 1.5; fill: none; marker-end: url(#ah2); }
+            </style>
+            <defs>
+              <marker id="ah2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#c96442"/>
+              </marker>
+            </defs>
+            <text x="350" y="18" class="lblk" style="font-size:13px;font-weight:bold;">copy-on-write: one shared prompt, three private completions</text>
+
+            <text x="350" y="42" class="lblk" style="font-size:11px;">shared prompt blocks (refcount = 3)</text>
+            <rect x="230" y="50" width="55" height="26" class="box-b"/><text x="257" y="67" class="lbl">P0</text>
+            <rect x="290" y="50" width="55" height="26" class="box-b"/><text x="317" y="67" class="lbl">P1</text>
+            <rect x="350" y="50" width="55" height="26" class="box-b"/><text x="377" y="67" class="lbl">P2</text>
+
+            <path d="M100,110 C160,90 220,70 250,76" class="arrow"/>
+            <path d="M340,140 C340,110 320,90 310,76" class="arrow"/>
+            <path d="M580,110 C520,90 460,70 400,76" class="arrow"/>
+
+            <text x="100" y="130" class="lblk" style="font-size:11px;">completion A</text>
+            <rect x="60" y="136" width="80" height="24" class="box-g"/><text x="100" y="152" class="lbl">own token</text>
+
+            <text x="340" y="160" class="lblk" style="font-size:11px;">completion B</text>
+            <rect x="300" y="166" width="80" height="24" class="box-g"/><text x="340" y="182" class="lbl">own token</text>
+
+            <text x="580" y="130" class="lblk" style="font-size:11px;">completion C</text>
+            <rect x="540" y="136" width="80" height="24" class="box-g"/><text x="580" y="152" class="lbl">own token</text>
+
+            <text x="350" y="210" class="lblk" style="font-size:11px;font-weight:bold;">A write to a shared block triggers a private copy — only for that block, only for the writer.</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — Three completions read the shared prompt for free; each gets its own private copy only where it starts writing new tokens.</p>
+        </div>
+
+        <p>
+          The same trick handles <strong>beam search</strong>, where candidate beams share a common
+          ancestor path and only diverge at branch points, and <strong>shared system prompts</strong>
+          across many different users — a long identical instruction can be computed once and its
+          blocks shared read-only across every request using it. The paper reports up to
+          <strong>55% memory savings</strong> and as much as <strong>2.2× throughput</strong> in
+          these sharing-heavy workloads, stacked on top of the baseline fragmentation fix.
+        </p>
+
+        <h2>What happens when memory runs out anyway.</h2>
+        <p>
+          Paging doesn't manufacture memory from nothing — it just stops wasting what's there.
+          Under heavy load, the scheduler sometimes has to reclaim a running sequence's memory to
+          make room. vLLM picks between two strategies:
+        </p>
+        <ul>
+          <li><strong>Swap</strong> — copy the sequence's blocks out to CPU RAM, and back in when
+          it resumes. Preserves everything computed so far (cheap to resume), costs PCIe
+          bandwidth.</li>
+          <li><strong>Recompute</strong> — drop the cache entirely, and when the sequence resumes,
+          just re-run the prefill from the prompt plus whatever had already been generated. Costs
+          GPU compute instead of transfer bandwidth — often the winning choice for short
+          sequences.</li>
+        </ul>
+        <p>
+          Which is faster depends on the ratio of KV cache size to prefill cost for that specific
+          sequence and hardware — not a one-size-fits-all rule, and still an active area of
+          production tuning.
+        </p>
+
+        <h2>The results: does the theory survive contact with real GPUs?</h2>
+        <p>
+          The headline number from the SOSP 2023 paper: vLLM delivers <strong>2–4× higher
+          throughput</strong> than FasterTransformer and Orca — the strongest serving systems of
+          the time — at the <em>same</em> latency target. And the gap gets <em>wider</em> for
+          longer sequences, bigger models, and fancier decoding (beam search, parallel sampling) —
+          exactly the cases where the old reserve-the-max strategy was bleeding the most memory.
+        </p>
+        <ul>
+          <li><strong>KV cache waste:</strong> 60–80% (old contiguous systems) → <strong>&lt;4%</strong> (PagedAttention).</li>
+          <li><strong>Throughput vs. FasterTransformer / Orca:</strong> <strong>2–4×</strong>, at equal latency.</li>
+          <li><strong>Memory savings from sharing (parallel sampling / beam search):</strong> up to <strong>55%</strong>, with up to <strong>2.2×</strong> additional throughput.</li>
+        </ul>
+        <p>
+          Community benchmarks against naive HuggingFace <code>generate()</code> (no batching
+          optimization at all) have reported gains well beyond that — but that's a much easier
+          baseline to clear than FasterTransformer/Orca, so treat those bigger numbers as
+          directional, not as a controlled comparison the way the paper's own figures are.
+        </p>
+
+        <h2>The honest tradeoffs — nothing here is free.</h2>
+        <p>
+          Every systems technique that adds a layer of indirection pays for it somewhere, and this
+          is no exception:
+        </p>
+        <ul>
+          <li><strong>Extra indirection on the hot path.</strong> Every attention call now resolves
+          a block table before it can fetch anything — small per call, but paid at every layer, for
+          every token, every time.</li>
+          <li><strong>Kernel lock-in.</strong> Because the KV cache is no longer a plain contiguous
+          tensor, you can't drop in an unmodified attention kernel from elsewhere — someone has to
+          teach it to understand block tables first. That slows how fast the serving framework can
+          adopt brand-new attention-kernel research.</li>
+          <li><strong>A real tuning knob.</strong> Smaller blocks tighten the fragmentation cap
+          but add bookkeeping; bigger blocks cut indirection but let waste creep back into a bigger
+          "last partial block." 16 tokens is a sane default, not a proof of optimality.</li>
+        </ul>
+        <p>
+          This exact critique is the pitch behind <strong>vAttention</strong> (Microsoft Research +
+          IISc), which argues PagedAttention buys its fragmentation fix at the cost of software
+          complexity and kernel portability — and proposes instead using the CUDA driver's own
+          virtual-memory APIs to keep each sequence's cache <em>virtually</em> contiguous (so
+          unmodified kernels keep working) while still allocating physical pages on demand
+          underneath. It's a nice case study in how systems research iterates: PagedAttention
+          proved software-level paging works here; vAttention asks whether the driver can just do
+          it for you, the way it always has for ordinary process memory.
+        </p>
+
+        <h2>Why should you care?</h2>
+        <ol>
+          <li>
+            <strong>If you serve LLMs, this is why vLLM exists.</strong> PagedAttention is the
+            core mechanism inside vLLM, one of the most widely deployed open-source LLM serving
+            frameworks — and the reason it can pack dramatically more concurrent requests onto the
+            same GPUs than naive serving.
+          </li>
+          <li>
+            <strong>The economics are direct, not abstract.</strong> More concurrent requests per
+            GPU at the same latency target means a lower cost per served token. That's the entire
+            reason "2–4× throughput" matters commercially, not just academically.
+          </li>
+          <li>
+            <strong>It's why "just pick a bigger GPU" isn't the whole story.</strong> Before
+            fixing the allocation strategy, more memory just meant more empty reservation. Fixing
+            <em>how</em> memory is used mattered more than how much of it you had.
+          </li>
+        </ol>
+
+        <h2>The one-paragraph version.</h2>
+        <blockquote>
+          Every LLM serving system pre-2023 reserved KV cache memory for the worst-case sequence
+          length, wasting 60–80% of it to fragmentation. PagedAttention borrows OS-style virtual
+          memory paging wholesale: fixed-size KV blocks stored non-contiguously in GPU memory, and
+          a per-sequence block table that maps logical order to physical location — the same trick
+          a CPU's page table has always played. Waste drops to under 4%. Because block tables are
+          just mappings, multiple sequences can share physical blocks via copy-on-write, making
+          beam search and parallel sampling almost free in memory terms. The net effect, measured
+          against the strongest serving systems of the time: 2–4× more throughput on the same
+          hardware — which is why nearly every serving stack shipped since has adopted some form
+          of paged or block-based KV cache management.
+        </blockquote>
+
+        <h2>The napkin takeaway.</h2>
+        <p>
+          If serving an LLM is running a hotel, then:
+        </p>
+        <ul>
+          <li><strong>Old serving systems</strong> = lock an entire wing the moment any guest
+          checks in, in case they stay a year</li>
+          <li><strong>PagedAttention</strong> = give every guest a room key that works on any
+          room, hand out rooms one night at a time as they're actually needed, and let guests
+          traveling together share a room's charge until they each want their own</li>
+        </ul>
+        <p>
+          Same hotel. Same number of rooms. One version turns away three guests it had space for.
+          The other doesn't.
+        </p>
+
+        <p style="margin-top:32px;font-style:italic;color:var(--faint)">
+          Paper: "Efficient Memory Management for Large Language Model Serving with PagedAttention"
+          — Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph
+          E. Gonzalez, Hao Zhang, Ion Stoica. UC Berkeley, with Stanford and ICSI. SOSP 2023.
+          arXiv:2309.06180, September 2023. Longer technical walkthrough on this site:
+          <a href="pagedattention.html">PagedAttention — how vLLM stopped wasting 80% of your GPU memory</a>.
+        </p>
+      </div>
+
+      <div class="post-nav">
+        <a href="../paperjuice.html">← back to Paper Juice</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+  </div>
+
+  <!-- vocab panel -->
+  <aside class="vocab-panel" id="vocab-panel">
+    <p class="vocab-panel-label">// vocab</p>
+
+    <div class="vocab-term" data-term="kv-cache">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">KV cache</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">The stored key and value vectors from every previous token, at every layer and head, that a transformer reuses instead of recomputing attention from scratch each step. Grows with sequence length and dominates serving-time memory.</div>
+    </div>
+
+    <div class="vocab-term" data-term="internal-fragmentation">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">internal fragmentation</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Memory reserved for a request that the request never actually uses — e.g. reserving 4096 tokens' worth of cache for a request that only generates 300.</div>
+    </div>
+
+    <div class="vocab-term" data-term="external-fragmentation">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">external fragmentation</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Free memory that exists but is scattered into irregularly-sized holes, none of which cleanly fits a new allocation request — even though the total free memory would be enough.</div>
+    </div>
+
+    <div class="vocab-term" data-term="virtual-memory-paging">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">virtual memory paging</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">The classic OS technique: split memory into fixed-size pages, let a process see a tidy contiguous address space, and scatter the real physical pages anywhere in RAM — tracked by a page table.</div>
+    </div>
+
+    <div class="vocab-term" data-term="block-table">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">block table</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">PagedAttention's per-sequence "page table" — maps each logical KV block index to wherever its physical block actually lives in the GPU memory pool.</div>
+    </div>
+
+    <div class="vocab-term" data-term="copy-on-write">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">copy-on-write</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Multiple sequences can read a shared physical block for free; the instant one needs to write to it, a private copy is made just for the writer, leaving every other sequence untouched.</div>
+    </div>
+
+    <div class="vocab-term" data-term="reference-counting">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">reference counting</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Tracking how many logical blocks (across however many sequences) currently point at a given physical block — used to know when a block can be freed or must be copied on write.</div>
+    </div>
+
+    <div class="vocab-term" data-term="iteration-level-scheduling">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">iteration-level scheduling</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Also called continuous batching: the scheduler decides which sequences run every single forward pass, instead of committing to a fixed batch for a request's whole lifetime — so finished sequences free their slot immediately.</div>
+    </div>
+
+    <div class="vocab-term" data-term="static-batching">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">static batching</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">Older batching approach where a batch of requests runs together until the slowest one finishes, leaving finished requests' GPU slots idle in the meantime.</div>
+    </div>
+
+    <div class="vocab-term" data-term="preemption">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">preemption (swap vs. recompute)</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">When memory runs out, the scheduler reclaims a running sequence's blocks — either swapping them to CPU RAM (cheap to resume, costs bandwidth) or dropping them and recomputing via prefill later (costs compute, no transfer).</div>
+    </div>
+
+    <div class="vocab-term" data-term="prefill">
+      <div class="vocab-term-header">
+        <span class="vocab-term-word">prefill</span>
+        <span class="vocab-term-arrow">▶</span>
+      </div>
+      <div class="vocab-term-def">The initial pass that processes an entire prompt in parallel to build its KV cache, before autoregressive token-by-token generation (decode) begins.</div>
+    </div>
+  </aside>
+
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script>
+    // vocab panel interactivity
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        const isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(t => t.classList.remove('open'));
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
+<script defer src="../settings.js?v=6"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

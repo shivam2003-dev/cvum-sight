@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PagedAttention — How vLLM Stopped Wasting 80% of Your GPU Memory — cvam.sight</title>
+<meta name="description" content="A deep, plain-language guide to PagedAttention: the OS-paging trick that eliminates KV-cache memory waste in LLM serving, how vLLM's block tables and scheduler work, copy-on-write memory sharing, and how it compares to FlashAttention, vAttention, and RadixAttention.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .boxb{fill:#d8e3ee;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.88rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Jul 6, 2026 · ml · 40 min read · 8100 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>PagedAttention — how vLLM stopped wasting 80% of your GPU memory.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">llm-inference</span>
+          <span class="tag">pagedattention</span>
+          <span class="tag">vllm</span>
+          <span class="tag">memory-management</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Serving an LLM means holding a growing <strong>KV cache</strong> per request in GPU memory — and until 2023, every serving system allocated that cache as one big contiguous slab sized for the <em>worst case</em> (the maximum sequence length), even though most requests never get that long. The result: 60–80% of expensive GPU memory sat reserved and unused. <strong>PagedAttention</strong> (vLLM, UC Berkeley, SOSP 2023) borrows the oldest trick in operating systems — virtual memory paging — and applies it to the KV cache: split it into small fixed-size blocks, store them non-contiguously, and track them with a block table, exactly like a CPU's page table. Waste drops to under 4%. Because blocks can now be shared between sequences via copy-on-write, vLLM also gets near-free memory savings for beam search, parallel sampling, and shared prompts. The net effect: 2–4× more throughput on the same GPUs, which is why nearly every serving system shipped since (TGI, TensorRT-LLM, SGLang, LMDeploy) adopted some form of paged or block-based KV cache. This is the whole idea, built from first principles.</p>
+
+        <h2 id="cache">The KV cache: the thing that's actually filling your GPU</h2>
+
+        <p>To understand what PagedAttention fixes, you first need to understand <em>why</em> LLM serving is a memory problem and not just a compute problem. When a transformer generates text autoregressively, it doesn't want to recompute attention over the whole prefix at every step — that would be quadratically wasteful. Instead, it caches the <strong>key (K)</strong> and <strong>value (V)</strong> vectors it computed for every previous token, at every layer and every attention head, and reuses them. This is the <strong>KV cache</strong>, and it is the single largest consumer of GPU memory during inference — often larger than the model's own weights once you have more than a handful of concurrent requests.</p>
+
+        <p>The size of the KV cache for one sequence is roughly:</p>
+
+        <div class="eq">KV cache size ≈ 2 × num_layers × num_heads × head_dim × seq_len × dtype_bytes</div>
+
+        <p>The leading <code>2</code> is for storing both K and V. Plug in real numbers for a 13B-parameter model (40 layers, 40 heads, head_dim 128, fp16 → 2 bytes) at a 2048-token sequence: that's roughly <strong>1.7 GB for a single request</strong>. Double the sequence length, double the cache. Serve 64 concurrent requests at that length and you need over 100 GB just for KV cache — more than the weights of the model itself. This is why LLM serving is dominated by a memory-management problem: <em>how do you fit as many concurrent sequences' caches into a fixed pool of GPU HBM as possible, without wasting any of it?</em></p>
+
+        <p>The catch is that KV cache is <strong>dynamic</strong>. Unlike model weights, which are a fixed size known before you start, a request's KV cache grows one token at a time as it generates, and nobody knows in advance exactly how long any given request will run. Before PagedAttention, every serving system had to solve this uncertainty the crude way: pre-allocate a contiguous block of memory sized for the model's <strong>maximum context length</strong> — say, 4096 or 32768 tokens — for every single request, whether that request ends up generating 12 tokens or 12,000.</p>
+
+        <h2 id="fragmentation">Two kinds of waste: internal and external fragmentation</h2>
+
+        <p>This "reserve the max, hope for the best" strategy causes exactly the same two failure modes operating-systems researchers identified for memory allocation fifty years ago.</p>
+
+        <p><strong>Internal fragmentation</strong> is memory that's allocated to a request but never used. If you reserve 4096 tokens' worth of KV cache and the request only ever generates 300 tokens before hitting a stop sequence, the other 3796 tokens' worth of memory sat there, fully reserved, fully wasted, for the entire lifetime of that request — unusable by any other request even though it's sitting empty. Across a whole fleet of concurrent requests with a wide, unpredictable spread of output lengths, this waste compounds badly. The original vLLM paper measured that existing systems (at the time: raw HuggingFace Transformers, FasterTransformer, Orca) wasted <strong>60% to 80%</strong> of allocated KV cache memory to fragmentation and over-reservation — meaning only a fifth to two-fifths of your expensive GPU HBM was ever doing useful work.</p>
+
+        <p><strong>External fragmentation</strong> is the second failure mode, familiar to anyone who has watched a long-running process fragment a heap. Even for memory that legitimately gets freed (a request finishes, its cache is released), that freed memory sits as a variable-size hole between other allocations. A new request with a different length requirement may not fit cleanly into any of the available holes, even though the *total* free memory would be more than enough — because contiguous allocation demands a single unbroken run of free bytes, and the holes are scattered and irregularly sized.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Contiguous KV cache allocation: reserved for the worst case</text>
+            <text x="20" y="46" class="sm">Request A (max 2048, uses 300)</text>
+            <rect x="20" y="52" width="60" height="26" class="boxg"/><text x="50" y="69" class="sm" text-anchor="middle">used</text>
+            <rect x="80" y="52" width="480" height="26" class="boxr"/><text x="320" y="69" class="sm" text-anchor="middle">reserved but never used (internal fragmentation)</text>
+            <text x="20" y="102" class="sm">Request B (max 2048, uses 1800)</text>
+            <rect x="20" y="108" width="400" height="26" class="boxg"/><text x="220" y="125" class="sm" text-anchor="middle">used</text>
+            <rect x="420" y="108" width="140" height="26" class="boxr"/><text x="490" y="125" class="sm" text-anchor="middle">reserved</text>
+            <text x="20" y="158" class="sm">Request C finishes early, memory freed as an irregular hole</text>
+            <rect x="20" y="164" width="220" height="26" class="box" stroke-dasharray="4 3"/><text x="130" y="181" class="sm" text-anchor="middle">freed hole (external fragmentation)</text>
+            <rect x="240" y="164" width="320" height="26" class="boxr"/><text x="400" y="181" class="sm" text-anchor="middle">still reserved by others</text>
+            <text x="20" y="212" class="ink" style="font-weight:bold" font-size="12">Result: 60–80% of allocated KV cache memory is never doing useful attention math.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Pre-PagedAttention: contiguous allocation forces reserving the worst case, so most memory sits idle.</p>
+        </div>
+
+        <div class="bm-warn"><strong>This isn't a niche inefficiency — it's the throughput ceiling.</strong> Because concurrent request capacity is bounded by how much KV cache memory you can fit, and 60–80% of that memory was wasted, serving systems were leaving the majority of their possible batch size on the table. Fixing the memory-allocation problem doesn't just save memory — it directly multiplies how many requests you can serve at once, which is the entire game in LLM serving economics.</div>
+
+        <h2 id="paging">The core idea: borrow paging from the operating system</h2>
+
+        <p>PagedAttention's insight is almost embarrassingly simple once you see it, which is the mark of a genuinely good systems idea: <strong>operating systems solved exactly this class of problem decades ago</strong>, for exactly the same reason — processes need memory of an unpredictable, growing size, and you don't want to either over-reserve or suffer fragmentation. The OS answer is <strong>virtual memory paging</strong>: split memory into small fixed-size pages, let a process's <em>logical</em> address space be contiguous while the underlying <em>physical</em> pages are scattered anywhere in RAM, and maintain a page table that translates one to the other. A process never needs to know or care that its "contiguous" memory is actually scattered fragments; the page table hides the indirection.</p>
+
+        <p>PagedAttention applies the identical idea to the KV cache. Instead of one giant contiguous tensor per sequence:</p>
+
+        <ul>
+          <li>The KV cache is divided into fixed-size <strong>KV blocks</strong> — vLLM's default is <strong>16 tokens per block</strong> (configurable).</li>
+          <li>Each block holds the K and V vectors for exactly that many consecutive token positions, across all layers and heads.</li>
+          <li>Physical blocks can live <strong>anywhere</strong> in GPU memory — there is no requirement that a sequence's blocks be contiguous with each other.</li>
+          <li>A per-sequence <strong>block table</strong> (the "page table") maps each <em>logical</em> block index (0, 1, 2, … in the order the sequence uses them) to a <em>physical</em> block address in the global memory pool.</li>
+          <li>Blocks are allocated <strong>on demand</strong>, one at a time, only as a sequence actually generates enough tokens to fill the next one — never all up front for a hypothetical maximum length.</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">PagedAttention: logical blocks → block table → physical blocks</text>
+            <text x="110" y="42" class="sm" text-anchor="middle" style="font-weight:bold">Sequence's logical view (contiguous)</text>
+            <rect x="30" y="50" width="55" height="26" class="boxy"/><text x="57" y="67" class="smk" text-anchor="middle">L0</text>
+            <rect x="90" y="50" width="55" height="26" class="boxy"/><text x="117" y="67" class="smk" text-anchor="middle">L1</text>
+            <rect x="150" y="50" width="55" height="26" class="boxy"/><text x="177" y="67" class="smk" text-anchor="middle">L2</text>
+            <rect x="210" y="50" width="55" height="26" class="box" stroke-dasharray="3 2"/><text x="237" y="67" class="sm" text-anchor="middle">L3…</text>
+            <text x="340" y="112" class="sm" text-anchor="middle" style="font-weight:bold">block table (per sequence)</text>
+            <rect x="200" y="120" width="280" height="70" class="box"/>
+            <text x="215" y="140" class="smk">L0 → P7</text>
+            <text x="215" y="158" class="smk">L1 → P2</text>
+            <text x="215" y="176" class="smk">L2 → P11</text>
+            <path d="M57,76 C57,100 220,100 220,120" class="arr"/>
+            <path d="M117,76 C117,105 220,118 220,138" class="arr"/>
+            <path d="M177,76 C177,110 220,132 220,156" class="arr"/>
+            <text x="340" y="214" class="sm" text-anchor="middle" style="font-weight:bold">Physical GPU memory pool (blocks scattered, reused freely)</text>
+            <rect x="30" y="222" width="55" height="26" class="box"/><text x="57" y="239" class="sm" text-anchor="middle">P0</text>
+            <rect x="90" y="222" width="55" height="26" class="boxb"/><text x="117" y="239" class="smk" text-anchor="middle">P2</text>
+            <rect x="150" y="222" width="55" height="26" class="box"/><text x="177" y="239" class="sm" text-anchor="middle">P3</text>
+            <rect x="210" y="222" width="55" height="26" class="box"/><text x="237" y="239" class="sm" text-anchor="middle">P5</text>
+            <rect x="270" y="222" width="55" height="26" class="boxb"/><text x="297" y="239" class="smk" text-anchor="middle">P7</text>
+            <rect x="330" y="222" width="55" height="26" class="box"/><text x="357" y="239" class="sm" text-anchor="middle">P9</text>
+            <rect x="390" y="222" width="55" height="26" class="boxb"/><text x="417" y="239" class="smk" text-anchor="middle">P11</text>
+            <rect x="450" y="222" width="55" height="26" class="box"/><text x="477" y="239" class="sm" text-anchor="middle">P13</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — The sequence "sees" contiguous logical blocks; the block table maps them to scattered physical blocks anywhere in the memory pool.</p>
+        </div>
+
+        <p>The effect on fragmentation is immediate. <strong>Internal fragmentation is capped at a single block.</strong> Because blocks are only allocated as they fill up, the worst case waste for any sequence is "the last, partially-filled block" — at most 15 unused token-slots out of a 16-token block, not thousands. Empirically this drops waste from 60–80% down to <strong>under 4%</strong>. <strong>External fragmentation effectively disappears</strong> too, because every block is the same fixed size — any free physical block can satisfy any sequence's next allocation request, so there's no such thing as "a hole too small to use." This is precisely why fixed-size paging beats variable-size heap allocation in operating systems, and the argument transfers over unchanged.</p>
+
+        <h2 id="kernel">The PagedAttention kernel: computing attention over scattered blocks</h2>
+
+        <p>Splitting storage into blocks is the easy half of the idea. The harder half — and the part that makes this a genuine systems contribution, not just "use a hash map" — is that the <strong>attention computation itself</strong> now has to read from memory that is no longer contiguous. A standard attention kernel assumes it can point at one flat tensor of shape <code>[seq_len, head_dim]</code> and stream through it. PagedAttention's kernel instead has to, for every query, walk the sequence's block table, and for each logical block, follow the pointer to wherever its physical block actually lives in the memory pool, fetch it, and accumulate the attention score contribution from it — before moving to the next logical block, which might be anywhere else in memory.</p>
+
+        <p>Conceptually, the modified inner loop looks like this (simplified from vLLM's actual CUDA kernel, which fuses this into a much more heavily optimized form):</p>
+
+        <pre class="code" data-lang="python">def paged_attention(query, block_table, kv_cache_pool, block_size=16):
+    """
+    query:          [head_dim]                 the current token's query vector
+    block_table:    [num_logical_blocks]       logical -> physical block id
+    kv_cache_pool:  [num_physical_blocks, block_size, head_dim]  (K, and separately V)
+    """
+    scores = []
+    for logical_idx, physical_idx in enumerate(block_table):
+        # Fetch this block's K vectors wherever they physically live —
+        # NOT assumed to be adjacent to the previous block.
+        k_block = kv_cache_pool.K[physical_idx]        # [block_size, head_dim]
+        scores.append(query @ k_block.T)               # partial attention scores
+
+    scores = softmax(concat(scores))                    # normalize across ALL positions
+
+    output = 0
+    for logical_idx, physical_idx in enumerate(block_table):
+        v_block = kv_cache_pool.V[physical_idx]         # [block_size, head_dim]
+        block_scores = scores[logical_idx * block_size : (logical_idx + 1) * block_size]
+        output += block_scores @ v_block                # weighted sum over this block
+
+    return output
+</pre>
+
+        <p>Mathematically, this computes <em>exactly</em> the same attention as a standard contiguous kernel — softmax over the same set of keys, weighted sum over the same values. There is no approximation here, unlike, say, sparse or windowed attention. The only difference is the extra indirection: an extra memory fetch through the block table before each block's K/V vectors can be read. This is the same trade operating systems make with virtual memory (a TLB miss costs you a page-table walk) — you pay a small, bounded overhead per access in exchange for eliminating a much larger structural waste. vLLM's actual kernel is heavily optimized (it fuses the block-table lookup into the same kernel that does the QK^T and softmax-weighted-V steps, and later versions integrate FlashAttention-style tiling — more on that below) so in practice the overhead is small relative to the throughput gained from fitting far more concurrent sequences in memory.</p>
+
+        <h2 id="scheduler">Continuous batching: the scheduler that makes blocks worth having</h2>
+
+        <p>PagedAttention's block-based memory manager is only half of vLLM; the other half is the <strong>scheduler</strong>, and the two are designed to work together. Older serving systems used <strong>static batching</strong>: a batch of requests starts together and the whole batch runs until the <em>longest</em> sequence in it finishes, even if every other sequence in the batch finished producing its answer many steps earlier and is just sitting there wasting a GPU slot. vLLM instead uses <strong>iteration-level (continuous) scheduling</strong>: the scheduler makes a fresh decision <em>every single forward pass</em> — which sequences continue, which finish and free their blocks immediately, and which brand-new requests get admitted into the now-freed capacity — rather than committing to a fixed batch membership for the whole request's lifetime.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Static batching vs. iteration-level (continuous) scheduling</text>
+            <text x="140" y="40" class="sm" text-anchor="middle" style="font-weight:bold">Static batch — wait for the slowest</text>
+            <rect x="30" y="48" width="220" height="18" class="boxg"/><text x="140" y="61" class="sm" text-anchor="middle">req A (done at t=3, GPU slot idle after)</text>
+            <rect x="30" y="70" width="220" height="18" class="boxg"/><text x="140" y="83" class="sm" text-anchor="middle">req B (done at t=5, idle after)</text>
+            <rect x="30" y="92" width="480" height="18" class="boxr"/><text x="270" y="105" class="sm" text-anchor="middle">req C runs to t=10 — whole batch blocked until this finishes</text>
+            <text x="480" y="130" class="sm" text-anchor="middle" style="font-weight:bold">Continuous scheduling — new req fills freed slot</text>
+            <rect x="360" y="140" width="220" height="18" class="boxg"/><text x="470" y="153" class="sm" text-anchor="middle">req A (t=0–3)</text>
+            <rect x="360" y="162" width="90" height="18" class="boxy"/><text x="405" y="175" class="smk" text-anchor="middle">req D admitted at t=3</text>
+            <rect x="30" y="140" width="220" height="18" class="boxg"/><text x="140" y="153" class="sm" text-anchor="middle">req B (t=0–5)</text>
+            <rect x="30" y="162" width="480" height="18" class="boxr"/><text x="270" y="175" class="sm" text-anchor="middle">req C (t=0–10)</text>
+            <text x="20" y="205" class="ink" font-size="12" style="font-weight:bold">Finished requests free their blocks immediately — new requests admitted the very next step, no idle GPU slots.</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — Continuous batching admits new requests the instant capacity frees up, instead of waiting for the whole batch to finish.</p>
+        </div>
+
+        <p>This only works efficiently <em>because</em> of PagedAttention. If memory were still allocated as big contiguous reservations, freeing one finished sequence's memory and immediately admitting a new, differently-sized request would run straight back into the fragmentation problem — the freed slab might not be the right shape for the new arrival. Because everything is uniform, fixed-size blocks, any freed block can immediately serve any new request's next allocation, with zero shape-matching problem. Paged memory and iteration-level scheduling are a matched pair: one makes fine-grained admission/eviction decisions possible, the other makes fine-grained memory reclamation possible, and you need both to get the throughput gains.</p>
+
+        <h2 id="sharing">Memory sharing: copy-on-write for parallel sampling and beam search</h2>
+
+        <p>Because PagedAttention's block table is just a mapping — like a page table — nothing stops <em>multiple</em> sequences' block tables from pointing at the <strong>same physical block</strong>. This is the second big win, and it's the one that has no equivalent in the fragmentation story: it lets vLLM share memory across requests that have overlapping content, cheaply and safely.</p>
+
+        <p>The clearest case is <strong>parallel sampling</strong> — a single prompt, multiple independent completions requested at once (common for "generate 4 candidate answers and pick the best"). Every one of those completions shares the exact same prompt, so their KV cache for the prompt tokens is <em>identical</em>. Instead of duplicating that memory once per completion, vLLM lets every completion's block table point at the same physical blocks for the shared prompt prefix, using a <strong>reference count</strong> per physical block to track how many logical blocks currently point at it.</p>
+
+        <p>The catch, and the reason this needs to be more than "just alias the pointer," is that once generation begins, each completion diverges — it appends its <em>own</em> new tokens after the shared prefix. If two sequences shared a block and one of them tried to write a new token into it, it would corrupt the other sequence's cache. vLLM solves this with <strong>copy-on-write (COW)</strong>, again lifted straight from OS memory management: as long as a block is only being <em>read</em>, sharing is free — no copy needed. The moment a sequence needs to <em>write</em> to a shared block (because its own new token lands inside what was previously a shared, read-only block boundary), the memory manager makes a private copy of just that one block for the writer, decrements the original block's reference count, and lets the writer proceed on its private copy. Every other sequence sharing the original block is completely unaffected.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Copy-on-write: shared prompt blocks, private completions</text>
+            <text x="340" y="42" class="sm" text-anchor="middle">shared prompt (3 blocks, refcount=3)</text>
+            <rect x="230" y="50" width="55" height="26" class="boxb"/><text x="257" y="67" class="smk" text-anchor="middle">P0</text>
+            <rect x="290" y="50" width="55" height="26" class="boxb"/><text x="317" y="67" class="smk" text-anchor="middle">P1</text>
+            <rect x="350" y="50" width="55" height="26" class="boxb"/><text x="377" y="67" class="smk" text-anchor="middle">P2</text>
+            <path d="M100,110 C150,90 220,70 250,76" class="arr"/>
+            <path d="M340,140 C340,110 320,90 310,76" class="arr"/>
+            <path d="M580,110 C530,90 460,70 400,76" class="arr"/>
+            <text x="100" y="130" class="sm" text-anchor="middle">completion A</text>
+            <rect x="60" y="136" width="80" height="24" class="boxg"/><text x="100" y="152" class="smk" text-anchor="middle">private new tok</text>
+            <text x="340" y="160" class="sm" text-anchor="middle">completion B</text>
+            <rect x="300" y="166" width="80" height="24" class="boxg"/><text x="340" y="182" class="smk" text-anchor="middle">private new tok</text>
+            <text x="580" y="130" class="sm" text-anchor="middle">completion C</text>
+            <rect x="540" y="136" width="80" height="24" class="boxg"/><text x="580" y="152" class="smk" text-anchor="middle">private new tok</text>
+            <text x="340" y="205" class="ink" font-size="12" text-anchor="middle" style="font-weight:bold">A write to a shared block triggers COW: one private copy made, only for the writer, only for that block.</text>
+          </svg>
+          <p class="diagram-label">Fig 4 — Three completions share the prompt's physical blocks read-only; each gets a private copy only for the block where it starts writing its own tokens.</p>
+        </div>
+
+        <p>The same mechanism applies to <strong>beam search</strong>, where multiple candidate beams share a common ancestor path and only diverge at branch points, and to <strong>shared system prompts</strong> across many different users' requests — a long, identical instruction prefix can be computed once and its blocks shared read-only across every request that uses it, which is functionally an early, block-granularity version of what later systems like SGLang's RadixAttention generalize much further (see below). The original paper reports up to <strong>55% memory savings</strong> and as much as <strong>2.2× throughput</strong> in parallel-sampling and beam-search workloads specifically, on top of the baseline fragmentation fix.</p>
+
+        <h2 id="preemption">Preemption: what happens when memory runs out anyway</h2>
+
+        <p>Paging doesn't create memory out of nothing — it just uses it efficiently. GPU HBM is still finite, and under heavy load vLLM's scheduler will sometimes need to reclaim memory from a running sequence to make room for others (or to avoid deadlock when several sequences are all waiting on more blocks). vLLM supports two preemption strategies, and picks between them based on the situation:</p>
+
+        <ul>
+          <li><strong>Swapping</strong> — copy the preempted sequence's KV cache blocks out to CPU RAM, and copy them back into freshly allocated GPU blocks when the sequence resumes. This preserves all the computed KV state, so resuming is cheap (no recomputation), but costs PCIe transfer bandwidth and a chunk of host memory.</li>
+          <li><strong>Recomputation</strong> — simply drop the preempted sequence's KV cache and, when it's resumed, recompute it from scratch by re-running the prefill over the original prompt plus whatever tokens had already been generated. This costs GPU compute time instead of transfer bandwidth, and tends to win when the preempted sequence is short (little to recompute) or when PCIe bandwidth is the tighter resource.</li>
+        </ul>
+
+        <p>Which strategy is faster depends on the ratio of KV cache size to prefill compute cost for the specific sequence and hardware — vLLM's scheduler picks a policy per situation rather than hardcoding one, and this remains an active area of tuning in production deployments.</p>
+
+        <h2 id="numbers">The numbers, and why they matter economically</h2>
+
+        <p>The SOSP 2023 paper's headline result: vLLM delivers <strong>2–4× higher throughput</strong> than FasterTransformer and Orca (the strongest serving systems at the time) at the <em>same</em> latency target, across a range of model sizes and workloads — and the gap widens for longer sequences, larger models, and more complex decoding algorithms (beam search, parallel sampling), because those are exactly the cases where the old contiguous-allocation waste was worst. Separately, community benchmarks comparing against naive HuggingFace <code>generate()</code> (no batching optimization at all) have reported gains as high as an order of magnitude or more under favorable conditions — a useful data point, but a much easier baseline to beat than FasterTransformer/Orca, so treat it as directional rather than a controlled comparison.</p>
+
+        <table class="papers">
+          <tr><th>System / approach</th><th>KV cache waste</th><th>Batching</th><th>Relative throughput</th></tr>
+          <tr><td>Naive HF <code>generate()</code></td><td>~0% waste, but no cross-request batching at all</td><td>none / static per-call</td><td>baseline (1×)</td></tr>
+          <tr><td>FasterTransformer / early Orca</td><td>60–80% (contiguous, max-length reservation)</td><td>static or coarse-grained</td><td>meaningfully faster than naive, still memory-bound</td></tr>
+          <tr><td>vLLM (PagedAttention)</td><td>&lt;4% (capped at last partial block)</td><td>iteration-level continuous</td><td><strong>2–4× vs. FasterTransformer/Orca</strong></td></tr>
+        </table>
+
+        <div class="bm-note">Numbers in LLM-serving papers are always workload- and hardware-specific — sequence length distribution, model size, batch size, and hardware generation all shift the exact multiplier. Treat the "2–4×" figure as a well-controlled, paper-reported result for the comparisons the authors actually ran, and always benchmark your own workload before trusting a specific number for capacity planning.</div>
+
+        <h2 id="limitations">The other side: what PagedAttention costs you</h2>
+
+        <p>No systems technique is free, and PagedAttention's tradeoffs are exactly the ones you'd expect from adding a layer of indirection. These became sharper once follow-up work went looking for them:</p>
+
+        <ul>
+          <li><strong>Non-contiguous kernel overhead.</strong> Every attention computation now has to resolve the block table before it can fetch K/V vectors, instead of streaming through one flat tensor. This is extra CPU-side bookkeeping and extra GPU-side indirection on the hot path of every single attention call — small per-call, but it's paid on every call, at every layer, for every token.</li>
+          <li><strong>Kernel rewriting and portability.</strong> Because the KV cache is no longer a plain contiguous tensor, you can't just plug in any off-the-shelf attention kernel (a new FlashAttention release, a new fused kernel from a hardware vendor) — someone has to rewrite it to understand block tables first. This couples the serving framework tightly to custom kernel code and slows how quickly it can adopt new attention-kernel research.</li>
+          <li><strong>Block-size tuning is a real knob.</strong> Smaller blocks (e.g. 16) cap internal fragmentation tightly but mean more block-table entries and more indirection per sequence; larger blocks reduce indirection overhead but let more waste creep back in via a bigger "last partial block." vLLM's default of 16 is a reasonable middle ground, not a universal optimum.</li>
+        </ul>
+
+        <p>This is precisely the critique made by <strong>vAttention</strong> (Microsoft Research + IISc, <a href="https://arxiv.org/abs/2405.04437" target="_blank">arXiv 2405.04437</a>), which argues that PagedAttention solves the fragmentation problem at the cost of software complexity and kernel-portability — and proposes an alternative: use the CUDA driver's actual virtual-memory APIs (which real GPUs and drivers already support) to keep each sequence's KV cache <em>virtually</em> contiguous — so unmodified, off-the-shelf attention kernels keep working unchanged — while still allocating the underlying <em>physical</em> pages on demand, achieving the same "don't reserve the max length up front" benefit without a custom paged kernel at all. It's a nice illustration of how systems research iterates: PagedAttention proved paging works for this problem in software; vAttention asks whether the OS/driver can just do the paging for you, the way it always has for regular process memory.</p>
+
+        <h2 id="landscape">Where PagedAttention sits in the wider inference-optimization landscape</h2>
+
+        <p>It's easy to conflate PagedAttention with other "make attention fast" ideas circulating at the same time, so it's worth being precise about the boundaries. <strong>FlashAttention</strong> (Dao et al., <a href="https://arxiv.org/abs/2205.14135" target="_blank">arXiv 2205.14135</a>) is a fast attention <em>compute kernel</em> — it restructures the QK^T-softmax-V computation with IO-aware tiling so it minimizes slow HBM↔SRAM traffic on the GPU. PagedAttention is a <em>memory management scheme</em> for where and how the KV cache is stored between calls. These solve genuinely different problems and are complementary, not competing — later vLLM versions integrate a FlashAttention-based backend that is <em>also</em> paging-aware, so you get both the fast tiled compute of FlashAttention and the fragmentation-free storage of PagedAttention in the same kernel.</p>
+
+        <table class="papers">
+          <tr><th>System / paper</th><th>What it actually optimizes</th><th>Relationship to PagedAttention</th></tr>
+          <tr><td>FlashAttention (2205.14135)</td><td>Attention compute — IO-aware tiling to cut HBM traffic</td><td>Complementary — different layer of the stack, later fused together</td></tr>
+          <tr><td>vAttention (2405.04437)</td><td>KV cache memory management via CUDA VMM APIs</td><td>Alternative — same goal, avoids custom kernel rewrites</td></tr>
+          <tr><td>SGLang / RadixAttention (2312.07104)</td><td>Prefix-sharing across requests via a radix tree, not just block refcounts</td><td>Generalization — much richer automatic prefix reuse</td></tr>
+          <tr><td>TokenAttention (LightLLM)</td><td>Token-granularity (not block-granularity) KV cache management</td><td>Alternative granularity — finer-grained, different tradeoffs</td></tr>
+          <tr><td>FlashInfer (2501.01005)</td><td>Unified, customizable attention kernel library across paged/sparse layouts</td><td>Infrastructure — used by vLLM, SGLang, MLC-Engine to implement paging efficiently</td></tr>
+        </table>
+
+        <p><strong>SGLang's RadixAttention</strong> (<a href="https://arxiv.org/abs/2312.07104" target="_blank">arXiv 2312.07104</a>) deserves a closer look because it takes the sharing idea in PagedAttention and generalizes it substantially. PagedAttention's copy-on-write sharing is opportunistic and mostly limited to cases the application explicitly sets up (parallel sampling from one prompt, beam search). RadixAttention instead maintains a <strong>radix tree</strong> over all KV cache blocks currently in memory, keyed by token sequence, so that <em>any</em> two requests that happen to share a prefix — even ones the scheduler didn't know in advance were related, like two different users hitting the same long system prompt or few-shot template — automatically discover and reuse each other's cached prefix, with LRU eviction over the tree when memory runs low. It's a more automatic, general-purpose version of the same underlying insight: don't recompute or re-store what's already identical.</p>
+
+        <p><strong>TokenAttention</strong>, used in the LightLLM serving framework, pushes granularity in the other direction — managing the KV cache at the <em>individual token</em> level rather than in fixed 16-token blocks, which can reduce waste even further at the cost of more bookkeeping entries to track. There's no single dedicated academic paper for it; it's documented primarily in the LightLLM project's own repository and design docs, which is itself a useful reminder that not every influential serving-systems idea gets a standalone arXiv paper — plenty of this field moves through open-source engineering first.</p>
+
+        <h2 id="worked-example">A small worked example: three requests, one memory pool</h2>
+
+        <p>To make the block-table mechanics concrete, walk through a tiny scenario. Suppose the block size is 4 tokens (smaller than vLLM's real default of 16, just to keep the example short), and the physical memory pool has 6 blocks total, numbered P0–P5, all initially free.</p>
+
+        <ol>
+          <li><strong>Request A arrives</strong>, prompt is 5 tokens. That needs 2 logical blocks (4 + 1 tokens). The manager allocates the first two free physical blocks, say P0 and P1. Block table for A: <code>{L0→P0, L1→P1}</code>. Note L1 (physical block P1) only has 1 of its 4 slots used — this is A's entire internal fragmentation, capped at 3 wasted slots.</li>
+          <li><strong>Request B arrives</strong>, a parallel-sampling request generating 2 independent completions from the same 4-token prompt. The prompt needs exactly 1 logical block, so both completions' block tables initially point at the <em>same</em> physical block, say P2, with a reference count of 2: <code>B1: {L0→P2}</code>, <code>B2: {L0→P2}</code>, refcount(P2)=2.</li>
+          <li><strong>Both B completions generate their first token.</strong> Since P2's single block is already full (4/4), both need a brand-new logical block L1 for their own new token — no COW copy is triggered yet, because they're not writing into the shared block, just adding new blocks after it. Manager allocates P3 for B1's L1 and P4 for B2's L1.</li>
+          <li><strong>Request A finishes</strong> (hits a stop token). Its blocks P0 and P1 are immediately freed back to the pool — available for the very next scheduling decision, per the continuous-batching model.</li>
+          <li><strong>Request C arrives</strong> needing 2 blocks. Because P0 and P1 are free (and any free block fits any request — no shape-matching problem), the manager allocates them straight to C without any fragmentation concern, even though C's memory requirement has nothing to do with A's.</li>
+        </ol>
+
+        <p>At every step, memory that isn't actively holding real token data is either a small, bounded partial-block remainder, or immediately-reusable free blocks — never a large reserved-but-empty reservation, and never an awkwardly-shaped unusable hole. That's the entire mechanism, scaled up to real workloads with thousands of concurrent blocks.</p>
+
+        <h2 id="playbook">A practical tuning playbook</h2>
+
+        <div class="bm-fix">
+          <ul>
+            <li><strong>Block size</strong> — vLLM defaults to 16 tokens/block. Smaller blocks tighten the internal-fragmentation cap but add per-block bookkeeping overhead; larger blocks reduce indirection cost but let waste creep back into the last partial block. Rarely worth changing from the default unless you've profiled a specific workload.</li>
+            <li><strong><code>gpu_memory_utilization</code></strong> — the fraction of GPU memory vLLM is allowed to claim for weights + KV cache pool. Setting this too conservatively under-utilizes the exact capacity PagedAttention just made efficient; setting it too aggressively risks OOM from other processes on a shared GPU. Tune per-deployment, not per-default.</li>
+            <li><strong>Watch for swap thrashing.</strong> If your scheduler is preempting and swapping frequently under load, that's a sign your concurrent-request target exceeds what the memory pool can sustain — either raise capacity, lower max concurrency, or shift some preemptions to recompute instead of swap if sequences are short.</li>
+            <li><strong>Exploit sharing deliberately.</strong> If your workload has a long, identical system prompt or few-shot template across many requests, structure the request pattern (or use a framework with automatic prefix caching, like SGLang's RadixAttention) so that shared prefix is actually detected and reused — don't assume it happens automatically unless you've checked your specific serving stack's prefix-caching behavior.</li>
+            <li><strong>Benchmark your own workload.</strong> The paper's 2–4× figure is for the comparisons it specifically ran; your sequence-length distribution, model size, and hardware generation change the real multiplier. Load-test before capacity planning off any published number, including this article's.</li>
+          </ul>
+        </div>
+
+        <h2 id="history">A short history</h2>
+
+        <table class="papers">
+          <tr><th>When</th><th>What</th></tr>
+          <tr><td class="d">Sep 2023</td><td>PagedAttention / vLLM paper posted to arXiv (2309.06180); SOSP 2023 publication.</td></tr>
+          <tr><td class="d">Dec 2023</td><td>SGLang / RadixAttention (2312.07104) generalizes KV-cache sharing via a radix tree.</td></tr>
+          <tr><td class="d">2023–2024</td><td>TensorRT-LLM, TGI (Text Generation Inference), and LMDeploy adopt paged or block-based KV cache management of their own.</td></tr>
+          <tr><td class="d">May 2024</td><td>vAttention (2405.04437) proposes CUDA-VMM-based KV cache management as an alternative to custom paged kernels.</td></tr>
+          <tr><td class="d">Jan 2025</td><td>FlashInfer (2501.01005) ships a unified, JIT-customizable kernel library spanning paged and block-sparse KV-cache formats, adopted across vLLM, SGLang, and MLC-Engine.</td></tr>
+        </table>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does PagedAttention change the model's outputs?</summary><p>No. It is purely a memory-management and storage-layout technique — the attention computation over the same set of keys and values produces mathematically identical results whether they're stored contiguously or in scattered blocks. Output quality and token probabilities are completely unaffected; only memory efficiency and achievable batch size change.</p></details>
+        <details class="faq"><summary>Is PagedAttention the same thing as vLLM?</summary><p>No — PagedAttention is the specific memory-management technique (the block table + paged KV cache + custom kernel); vLLM is the full serving system that was built around it, which also includes the continuous-batching scheduler, the preemption/swapping logic, and API-serving infrastructure. You'll sometimes see the two terms used loosely interchangeably, but the paper and the system are distinct contributions.</p></details>
+        <details class="faq"><summary>Why 16 tokens per block specifically?</summary><p>It's an empirically chosen default, not a theoretical optimum — small enough to keep the internal-fragmentation cap (the last partial block) tight, large enough to keep the number of block-table entries per sequence and the per-block bookkeeping overhead manageable. Different workloads with very different sequence-length distributions can benefit from tuning it, but 16 is a reasonable default for general use.</p></details>
+        <details class="faq"><summary>Does this help the prompt-processing (prefill) phase too?</summary><p>Prefill's memory pattern is different — the whole prompt's KV cache is computed in one parallel pass, so the main win there is compute efficiency (FlashAttention-style kernels), not avoiding gradual fragmentation. PagedAttention's biggest win is in the decode phase and in fitting many concurrent, variable-length sequences into memory at once — though a paged KV cache does also make the prefill-to-decode handoff and prefix sharing across requests possible, which does help prefill indirectly by letting shared prefixes skip recomputation entirely.</p></details>
+        <details class="faq"><summary>How does this relate to quantization?</summary><p>Orthogonal and composable. Quantizing the KV cache itself (storing K/V in int8 or fp8 instead of fp16) shrinks the per-token memory footprint directly, which is a different lever from PagedAttention's job of eliminating waste in how that memory is allocated. Serving stacks commonly combine both: a quantized, paged KV cache gets you the benefit of smaller per-token cost <em>and</em> near-zero allocation waste at the same time.</p></details>
+        <details class="faq"><summary>What happens if the memory pool genuinely fills up under real load?</summary><p>The scheduler preempts a running sequence — either swapping its blocks out to CPU RAM (cheap to resume, costs PCIe bandwidth) or dropping them and recomputing via prefill later (costs GPU compute, no transfer cost). Which is chosen depends on the sequence's length and the system's current PCIe-vs-compute bottleneck; it isn't a hardcoded, one-size-fits-all policy.</p></details>
+        <details class="faq"><summary>Do I need to change my model or retrain anything to use PagedAttention?</summary><p>No — it's entirely a serving-infrastructure change, invisible to the model itself. You point an existing pretrained model's weights at a serving framework that implements PagedAttention (vLLM being the reference implementation), and the memory management happens underneath the model with no retraining or architecture change required.</p></details>
+        <details class="faq"><summary>Is PagedAttention still relevant, or has it been superseded?</summary><p>It remains the reference technique and is still the mechanism inside vLLM, one of the most widely deployed open-source serving frameworks. Follow-on work (vAttention, RadixAttention, TokenAttention) explores different tradeoffs on the same core problem rather than making paging obsolete — think of it less as "replaced" and more as "the starting point the field is still iterating from."</p></details>
+        <details class="faq"><summary>Why doesn't every serving system just use OS-level virtual memory directly, like vAttention proposes, instead of a custom scheme?</summary><p>That's precisely vAttention's pitch — and it's a reasonable one. The tradeoff is that CUDA's virtual-memory-management APIs weren't originally designed with this exact workload in mind, so using them well for KV cache management is its own systems-engineering effort with its own rough edges; PagedAttention's custom, software-only approach was simpler to get working first and is battle-tested at scale in vLLM today. Both are valid points on the same design spectrum.</p></details>
+        <details class="faq"><summary>What's the single biggest practical benefit for someone running a serving stack?</summary><p>More concurrent requests per GPU at the same latency target, which directly lowers the cost per served token — this is the actual economic lever behind "2–4× throughput," and it's why essentially every serious open-source and commercial LLM serving stack now implements some form of paged or block-based KV cache management.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>The <strong>KV cache</strong>, not the model weights, is usually the dominant and most constrained memory consumer once you're serving more than a handful of concurrent requests.</li>
+          <li>Pre-PagedAttention systems reserved KV cache contiguously for the <strong>worst-case sequence length</strong>, wasting <strong>60–80%</strong> of allocated memory to internal and external fragmentation.</li>
+          <li>PagedAttention borrows <strong>OS virtual-memory paging</strong> wholesale: fixed-size KV blocks, non-contiguous physical storage, and a per-sequence <strong>block table</strong> — dropping waste to under 4%.</li>
+          <li>A modified <strong>attention kernel</strong> walks the block table to gather scattered K/V blocks, computing mathematically identical attention — this is a storage change, not an approximation.</li>
+          <li><strong>Continuous (iteration-level) scheduling</strong> and paged memory are a matched pair: fine-grained memory reclamation only pays off with fine-grained admission decisions, and vice versa.</li>
+          <li>Block tables enable <strong>copy-on-write memory sharing</strong> across requests with common prefixes — parallel sampling, beam search, shared system prompts — for up to 55% additional memory savings.</li>
+          <li>The net result reported in the original paper: <strong>2–4× throughput</strong> over FasterTransformer/Orca at equal latency, which is why nearly every serving framework since has adopted some form of paged or block-based KV cache.</li>
+          <li>It isn't free: extra kernel indirection, coupling to custom attention kernels, and a block-size tuning knob — tradeoffs that <strong>vAttention</strong> specifically argues can be avoided using native CUDA virtual-memory support instead.</li>
+          <li>PagedAttention (memory layout) is <strong>complementary to, not competing with, FlashAttention</strong> (compute kernel) — modern stacks use both together.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://arxiv.org/abs/2309.06180" target="_blank">Kwon et al. — <em>Efficient Memory Management for Large Language Model Serving with PagedAttention</em> (SOSP 2023)</a> <span>— the original paper; block tables, the paged kernel, and the 2–4× throughput results.</span></li>
+          <li><a href="https://docs.vllm.ai/en/stable/design/paged_attention/" target="_blank">vLLM documentation — PagedAttention design</a> <span>— the reference implementation's own explanation of the kernel and block manager.</span></li>
+          <li><a href="https://arxiv.org/abs/2405.04437" target="_blank">Prabhu et al. — <em>vAttention: Dynamic Memory Management for Serving LLMs without PagedAttention</em></a> <span>— the CUDA-VMM alternative, and the clearest published critique of PagedAttention's tradeoffs.</span></li>
+          <li><a href="https://arxiv.org/abs/2312.07104" target="_blank">Zheng et al. — <em>SGLang: Efficient Execution of Structured Language Model Programs</em></a> <span>— RadixAttention, generalizing PagedAttention-style sharing via a radix tree over prefixes.</span></li>
+          <li><a href="https://arxiv.org/abs/2205.14135" target="_blank">Dao et al. — <em>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</em></a> <span>— the complementary compute-kernel optimization, later fused with paged storage.</span></li>
+          <li><a href="https://arxiv.org/abs/2501.01005" target="_blank">Ye et al. — <em>FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving</em></a> <span>— unified kernel library spanning paged/block-sparse KV-cache formats, used by vLLM and SGLang.</span></li>
+          <li><a href="https://arxiv.org/abs/2404.14294" target="_blank">Zhou et al. — <em>A Survey on Efficient Inference for Large Language Models</em></a> <span>— survey paper; positions PagedAttention within data/model/system-level inference optimizations.</span></li>
+          <li><a href="https://arxiv.org/abs/2312.15234" target="_blank">Miao et al. — <em>Towards Efficient Generative Large Language Model Serving: A Survey from Algorithms to Systems</em></a> <span>— survey paper covering serving-system design broadly, including KV cache management.</span></li>
+          <li><a href="https://arxiv.org/abs/2504.19720" target="_blank"><em>Taming the Titans: A Survey of Efficient LLM Inference Serving</em></a> <span>— survey paper; instance-level and cluster-level serving strategies.</span></li>
+          <li><a href="https://arxiv.org/abs/2407.12391" target="_blank"><em>LLM Inference Serving: Survey of Recent Advances and Opportunities</em></a> <span>— survey paper covering recent serving-system advances.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="loop-engineering.html">← Loop engineering</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

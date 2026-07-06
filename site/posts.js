@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "pagedattention",
+    title: "PagedAttention — how vLLM stopped wasting 80% of your GPU memory.",
+    date: "Jul 6, 2026",
+    cat: "ml",
+    tags: ["ml", "llm-inference", "pagedattention", "vllm", "memory-management"],
+    time: 40,
+    words: 8100,
+    excerpt: "Before PagedAttention, every LLM serving system reserved KV cache memory for the worst-case sequence length, wasting 60-80% of it to fragmentation. vLLM's PagedAttention (SOSP 2023) borrows OS-style virtual memory paging — fixed-size KV blocks, a block table, non-contiguous physical storage — to cut that waste to under 4%, while copy-on-write block sharing gets beam search and parallel sampling near-free memory savings. The result: 2-4x more throughput on the same GPUs. Covers the KV cache math, the modified attention kernel, continuous batching, preemption (swap vs recompute), and how it compares to FlashAttention, vAttention, and SGLang's RadixAttention — with survey paper links."
+  },
+  {
     slug: "frontier-digest-002",
     title: "Frontier Digest #2 — the week verification became the whole game.",
     date: "Jul 5, 2026",

@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pgBackRest with S3 — The Complete Hands-On Guide to Backup &amp; Restore — cvam.sight</title>
+<meta name="description" content="A complete, hands-on guide to pgBackRest with S3: stanza setup, full/differential/incremental backups, PITR, delta restore, the hiccups everyone hits (archive_command failures, stanza mismatches, S3 TLS issues), hidden configs (block incremental, bundling, async archiving), and production best practices.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Jul 7, 2026 · postgres · 45 min read · 9000 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>pgBackRest with S3 — the complete hands-on guide to backup &amp; restore.</h1>
+        <div class="tag-row">
+          <span class="tag fill">postgres</span>
+          <span class="tag">pgbackrest</span>
+          <span class="tag">backup</span>
+          <span class="tag">s3</span>
+          <span class="tag">disaster-recovery</span>
+          <span class="tag">devops</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">pgBackRest is the de-facto standard for serious PostgreSQL backups: parallel, incremental, checksummed, encrypted, and S3-native. But between the docs and a working production setup lies a minefield of hiccups — <code>archive_command</code> silently failing, stanza mismatches after a restore, S3 TLS errors, incremental backups that mysteriously become fulls, WAL piling up until the disk fills, and restores that fail at 2 AM because nobody ever tested them. This guide walks the whole path hands-on: install, S3 repository config, stanza creation, full/differential/incremental backups, verification, PITR, delta restore — then a long troubleshooting section of the exact errors you'll hit and what they actually mean, the hidden configs almost nobody sets (block incremental, file bundling, async archiving, <code>expire-auto</code>), and the production practices that separate "we have backups" from "we can restore."</p>
+
+        <h2 id="why">Why pgBackRest (and why not pg_dump)</h2>
+
+        <p>First, clear the biggest conceptual confusion in PostgreSQL backups: <strong><code>pg_dump</code> is not a backup strategy.</strong> It's a logical export — a snapshot of your data as SQL statements or a custom archive. It's great for migrating a schema, copying one database, or seeding a dev environment. It is terrible as your production disaster-recovery plan, for three reasons: it can't do point-in-time recovery (you restore to exactly when the dump ran, losing everything after), it takes and restores slowly at scale (restoring a multi-TB dump means replaying every INSERT and rebuilding every index), and it puts a real load on the source while it runs.</p>
+
+        <p>Real PostgreSQL backup is <strong>physical backup + WAL archiving</strong>: copy the actual data directory files (fast, block-level), and continuously archive the <strong>write-ahead log (WAL)</strong> segments that record every change. With a base backup plus a continuous stream of WAL, you can restore to <em>any point in time</em> between the backup and now — down to the second, or to a specific transaction. This is what pgBackRest orchestrates, and it adds everything the raw approach lacks:</p>
+
+        <ul>
+          <li><strong>Parallelism</strong> — backup and restore with N processes (<code>process-max</code>), saturating your network/disk instead of single-threading like a bare <code>pg_basebackup</code>.</li>
+          <li><strong>Incremental &amp; differential backups</strong> — copy only changed files (or, with block incremental, only changed <em>parts</em> of files) instead of the whole cluster every time.</li>
+          <li><strong>Native object storage</strong> — S3, Azure Blob, and GCS support built in, no fuse mounts or gateway hacks.</li>
+          <li><strong>Checksums everywhere</strong> — every file checksummed at backup time and verified at restore; page-level checksum validation of the data itself during backup.</li>
+          <li><strong>Encryption at rest</strong> — AES-256-CBC of the repository, independent of whatever the storage provides.</li>
+          <li><strong>Retention management</strong> — automatic expiry of old backups and their WAL by count or time, so the repo doesn't grow forever.</li>
+          <li><strong>Delta restore</strong> — restore only the files that differ from what's already on disk, turning a multi-hour restore into minutes when most data is intact.</li>
+        </ul>
+
+        <table class="papers">
+          <tr><th>Tool</th><th>Type</th><th>PITR</th><th>Parallel</th><th>Incremental</th><th>S3 native</th><th>Best for</th></tr>
+          <tr><td>pg_dump</td><td>logical</td><td>no</td><td>partially (-j for directory format)</td><td>no</td><td>no</td><td>migrations, dev seeds, single-table recovery</td></tr>
+          <tr><td>pg_basebackup</td><td>physical</td><td>with manual WAL setup</td><td>no</td><td>PG17+ only, limited</td><td>no</td><td>quick replica seeding, tiny clusters</td></tr>
+          <tr><td>pgBackRest</td><td>physical</td><td>yes, first-class</td><td>yes</td><td>full/diff/incr + block-level</td><td>yes</td><td>production DR, anything that matters</td></tr>
+          <tr><td>Barman</td><td>physical</td><td>yes</td><td>yes (rsync/ssh modes)</td><td>yes</td><td>via barman-cloud</td><td>similar niche, different tradeoffs</td></tr>
+          <tr><td>WAL-G</td><td>physical</td><td>yes</td><td>yes</td><td>delta backups</td><td>yes</td><td>cloud-first setups, Go shops</td></tr>
+        </table>
+
+        <h2 id="concepts">The mental model: stanza, repository, WAL archiving</h2>
+
+        <p>pgBackRest has exactly three concepts you must internalize before touching config. Get these straight and everything else is plumbing.</p>
+
+        <p><strong>The stanza</strong> is pgBackRest's name for "one PostgreSQL cluster's backup configuration." Everything — backups, archived WAL, retention — is scoped to a stanza. A stanza is identified by name (e.g. <code>main</code>, <code>prod-db</code>) and remembers the cluster's identity: its system identifier (a unique number PostgreSQL generates at <code>initdb</code> time), its version, and its data directory path. This identity-pinning is a feature (it stops you from accidentally backing up the wrong cluster into the wrong repo) and the source of a classic hiccup (after re-initdb or restoring a different cluster into the same path, the stanza check fails — covered in troubleshooting).</p>
+
+        <p><strong>The repository</strong> is where backups and WAL live — a local path, an NFS mount, or (our case) an S3 bucket. pgBackRest supports up to four simultaneous repositories (<code>repo1</code> through <code>repo4</code>), which is how you do "local fast restore copy + offsite S3 copy" with a single tool. All repo options are prefixed: <code>repo1-type</code>, <code>repo1-path</code>, <code>repo1-s3-bucket</code>, and so on.</p>
+
+        <p><strong>WAL archiving</strong> is the continuous half. PostgreSQL, when <code>archive_mode=on</code>, calls your <code>archive_command</code> once per finished 16MB WAL segment. You set that command to <code>pgbackrest archive-push</code>, and pgBackRest ships each segment to the repository. This stream is what makes point-in-time recovery possible — and its failure mode (segments piling up in <code>pg_wal</code> because pushes fail) is the single most common way pgBackRest setups melt down in production.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">pgBackRest architecture: one cluster, one stanza, S3 repository</text>
+            <rect x="30" y="40" width="240" height="150" class="box"/>
+            <text x="150" y="60" class="smk" text-anchor="middle" style="font-weight:bold">PostgreSQL host</text>
+            <rect x="50" y="72" width="200" height="40" class="boxy"/>
+            <text x="150" y="89" class="smk" text-anchor="middle">postgres (data dir)</text>
+            <text x="150" y="104" class="sm" text-anchor="middle">archive_mode=on</text>
+            <rect x="50" y="124" width="200" height="52" class="boxg"/>
+            <text x="150" y="142" class="smk" text-anchor="middle">pgbackrest</text>
+            <text x="150" y="157" class="sm" text-anchor="middle">backup · archive-push</text>
+            <text x="150" y="170" class="sm" text-anchor="middle">restore · archive-get</text>
+            <path d="M270,100 C330,100 350,120 405,135" class="arr"/>
+            <text x="335" y="105" class="sm" text-anchor="middle">WAL segments</text>
+            <path d="M270,155 C320,155 350,155 405,155" class="arr"/>
+            <text x="337" y="175" class="sm" text-anchor="middle">backup files (parallel,</text>
+            <text x="337" y="188" class="sm" text-anchor="middle">compressed, encrypted)</text>
+            <rect x="405" y="55" width="245" height="200" class="box"/>
+            <text x="527" y="75" class="smk" text-anchor="middle" style="font-weight:bold">S3 bucket (repo1)</text>
+            <rect x="425" y="88" width="205" height="44" class="boxr"/>
+            <text x="527" y="105" class="smk" text-anchor="middle">archive/&lt;stanza&gt;/</text>
+            <text x="527" y="120" class="sm" text-anchor="middle">WAL, one object per segment</text>
+            <rect x="425" y="142" width="205" height="98" class="boxg"/>
+            <text x="527" y="160" class="smk" text-anchor="middle">backup/&lt;stanza&gt;/</text>
+            <text x="527" y="177" class="sm" text-anchor="middle">20260707-020000F/       (full)</text>
+            <text x="527" y="192" class="sm" text-anchor="middle">20260707-020000F_D/    (diff)</text>
+            <text x="527" y="207" class="sm" text-anchor="middle">20260707-020000F_I/    (incr)</text>
+            <text x="527" y="226" class="sm" text-anchor="middle">backup.info · manifests</text>
+            <text x="340" y="285" class="ink" text-anchor="middle" style="font-weight:bold" font-size="12">Base backups + continuous WAL stream = restore to any point in time.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — The two flows: continuous WAL archiving (top) and scheduled base backups (bottom), both landing in the same S3-backed stanza.</p>
+        </div>
+
+        <h2 id="install">Step 1 — Install and lay out permissions</h2>
+
+        <p>Install from PGDG repos (the versions in distro default repos are often ancient — you want ≥2.46 for block incremental, ideally latest):</p>
+
+        <pre class="code" data-lang="bash"># Debian/Ubuntu (with PGDG apt repo already configured)
+sudo apt-get update &amp;&amp; sudo apt-get install -y pgbackrest
+
+# RHEL/Rocky/Alma (with PGDG yum repo)
+sudo dnf install -y pgbackrest
+
+# verify — you want 2.50+ in 2026
+pgbackrest version</pre>
+
+        <p>Permissions are the first silent killer. pgBackRest runs <strong>as the postgres user</strong> (it must read the data directory), so every path it touches must be owned accordingly:</p>
+
+        <pre class="code" data-lang="bash"># config file — readable by postgres
+sudo mkdir -p /etc/pgbackrest
+sudo touch /etc/pgbackrest/pgbackrest.conf
+sudo chown postgres:postgres /etc/pgbackrest/pgbackrest.conf
+sudo chmod 640 /etc/pgbackrest/pgbackrest.conf
+
+# log and spool dirs
+sudo mkdir -p /var/log/pgbackrest /var/spool/pgbackrest
+sudo chown postgres:postgres /var/log/pgbackrest /var/spool/pgbackrest
+sudo chmod 750 /var/log/pgbackrest /var/spool/pgbackrest</pre>
+
+        <div class="bm-warn"><strong>Hiccup #0 — running commands as the wrong user.</strong> If you run <code>pgbackrest backup</code> as root "just to test," it may create lock files, spool files, or log files owned by root. Every subsequent run as postgres then fails with permission errors on its own lock directory (<code>unable to create path '/tmp/pgbackrest'</code> or lock acquisition failures). Always <code>sudo -u postgres pgbackrest ...</code>. If you already polluted things as root, <code>chown -R postgres:postgres /tmp/pgbackrest /var/log/pgbackrest /var/spool/pgbackrest</code> before anything else.</div>
+
+        <h2 id="s3config">Step 2 — Configure the S3 repository</h2>
+
+        <p>Here's a complete, production-shaped <code>/etc/pgbackrest/pgbackrest.conf</code> for a single cluster backing up to S3. Every line annotated below:</p>
+
+        <pre class="code" data-lang="ini">[global]
+# --- repository: S3 ---
+repo1-type=s3
+repo1-path=/pgbackrest/prod
+repo1-s3-bucket=acme-pg-backups
+repo1-s3-region=ap-south-1
+repo1-s3-endpoint=s3.ap-south-1.amazonaws.com
+repo1-s3-key=AKIAXXXXXXXXXXXXXXXX
+repo1-s3-key-secret=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# --- repo encryption (independent of S3 SSE) ---
+repo1-cipher-type=aes-256-cbc
+repo1-cipher-pass=LONG_RANDOM_PASSPHRASE_FROM_A_SECRET_MANAGER
+
+# --- retention ---
+repo1-retention-full=2
+repo1-retention-diff=6
+
+# --- performance ---
+process-max=4
+compress-type=zst
+compress-level=3
+
+# --- backup behavior ---
+start-fast=y
+checksum-page=y
+delta=y
+
+# --- logging ---
+log-level-console=info
+log-level-file=detail
+log-path=/var/log/pgbackrest
+
+# --- async archiving (see hidden-configs section) ---
+archive-async=y
+spool-path=/var/spool/pgbackrest
+
+[prod]
+pg1-path=/var/lib/postgresql/16/main
+pg1-port=5432
+pg1-user=postgres</pre>
+
+        <p>What each group actually does, and where people trip:</p>
+
+        <ul>
+          <li><strong><code>repo1-path</code></strong> is the prefix <em>inside the bucket</em>, not a filesystem path. Everything pgBackRest writes lands under <code>s3://acme-pg-backups/pgbackrest/prod/</code>. Use distinct paths per environment so a fat-fingered <code>--stanza</code> can't cross-contaminate.</li>
+          <li><strong><code>repo1-s3-endpoint</code></strong> — for AWS, the regional endpoint. For MinIO/Ceph/other S3-compatibles, your gateway host. Two extra options matter for non-AWS: <code>repo1-s3-uri-style=path</code> (MinIO usually needs path-style, i.e. <code>host/bucket/key</code> instead of <code>bucket.host/key</code>) and <code>repo1-storage-verify-tls=n</code> if you're on self-signed certs in a lab (never in prod — install the CA instead, via <code>repo1-storage-ca-file</code>).</li>
+          <li><strong>Credentials</strong> — static keys in the config work but are the worst option. On EC2/EKS, drop <code>repo1-s3-key</code>/<code>repo1-s3-key-secret</code> entirely and set <code>repo1-s3-key-type=auto</code> — pgBackRest fetches credentials from the instance metadata service / IRSA web identity automatically, no secrets on disk, automatic rotation. This is the single most under-used pgBackRest feature on AWS.</li>
+          <li><strong><code>repo1-cipher-type</code></strong> — client-side AES-256 encryption of everything before it leaves the host. Independent of (and stackable with) S3 server-side encryption. <em>Write the passphrase down somewhere that survives the death of this server</em> — a repo encrypted with a passphrase that only existed in <code>/etc</code> on the machine that just died is a perfectly encrypted pile of nothing.</li>
+          <li><strong><code>compress-type=zst</code></strong> — zstandard: much faster than gzip at similar or better ratios. Default is still <code>gz</code> for compatibility; there's no reason to keep it on a modern system.</li>
+          <li><strong><code>start-fast=y</code></strong> — makes the backup begin immediately by forcing a checkpoint, instead of waiting for the next natural checkpoint (which can be many minutes on a quiet system, leaving you staring at a "hung" backup — a classic confusion).</li>
+          <li><strong><code>checksum-page=y</code></strong> — validates PostgreSQL page checksums during backup, catching silent on-disk corruption <em>at backup time</em> instead of at restore time when it's far too late. Requires the cluster to have been initdb'd with checksums (default in recent Postgres; check with <code>pg_controldata | grep checksum</code>).</li>
+        </ul>
+
+        <p>The IAM policy the credentials need — least-privilege, per-bucket:</p>
+
+        <pre class="code" data-lang="json">{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::acme-pg-backups",
+      "Condition": {"StringLike": {"s3:prefix": ["pgbackrest/prod/*"]}}
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::acme-pg-backups/pgbackrest/prod/*"
+    }
+  ]
+}</pre>
+
+        <div class="bm-note"><strong>Yes, pgBackRest needs <code>s3:DeleteObject</code>.</strong> Retention expiry deletes old backups and WAL. Teams sometimes "harden" the policy by removing delete — then wonder months later why the bucket costs a fortune and <code>expire</code> logs errors. If you want delete-protection against ransomware, the right tool is S3 <strong>Object Lock / versioning with a separate lifecycle</strong>, or a second repo with different credentials — not breaking the tool's own expiry.</div>
+
+        <h2 id="postgres-side">Step 3 — Configure PostgreSQL for archiving</h2>
+
+        <pre class="code" data-lang="ini"># postgresql.conf
+archive_mode = on
+archive_command = 'pgbackrest --stanza=prod archive-push %p'
+max_wal_senders = 10          # if you also run replicas
+wal_level = replica           # minimum for archiving (logical if you need it)</pre>
+
+        <p>Then restart (not reload — <code>archive_mode</code> requires restart):</p>
+
+        <pre class="code" data-lang="bash">sudo systemctl restart postgresql</pre>
+
+        <p>Three things about <code>archive_command</code> that the docs undersell:</p>
+
+        <ul>
+          <li><strong>PostgreSQL only cares about the exit code.</strong> Exit 0 = segment archived, safe to recycle. Non-zero = PostgreSQL keeps the segment in <code>pg_wal</code> and retries <em>forever</em>. A misconfigured command doesn't crash anything — it just silently causes <code>pg_wal</code> to grow until the disk fills and the database PANICs. Monitor <code>pg_stat_archiver</code> (see best practices).</li>
+          <li><strong>It runs as the postmaster's user with a minimal environment.</strong> No login shell, no <code>~/.aws</code>, no environment variables you set in your shell profile. Everything pgBackRest needs must come from <code>/etc/pgbackrest/pgbackrest.conf</code>. "Works when I run it by hand, fails from PostgreSQL" is almost always an environment difference.</li>
+          <li><strong>One segment at a time, synchronously</strong> — unless you enable async archiving (below). On a busy write workload, S3's ~50–200ms per-request latency becomes the ceiling on your WAL generation rate. This is why <code>archive-async</code> exists and why you should basically always turn it on with object storage.</li>
+        </ul>
+
+        <h2 id="stanza">Step 4 — Create and verify the stanza</h2>
+
+        <pre class="code" data-lang="bash"># create the stanza (initializes repo structure in S3)
+sudo -u postgres pgbackrest --stanza=prod stanza-create
+
+# verify EVERYTHING: config, archiving round-trip, repo reachability
+sudo -u postgres pgbackrest --stanza=prod check</pre>
+
+        <p><code>check</code> is the command people skip and then pay for. It forces a WAL switch, waits for that segment to arrive in the repository via your real <code>archive_command</code>, and reads it back. If <code>check</code> passes, your entire pipeline — config file, S3 credentials, bucket policy, archive_command, encryption — is proven working end-to-end. If it fails, you get the actual error <em>now</em>, not during your first 2 AM restore. Run it after every config change and from cron daily.</p>
+
+        <div class="bm-warn"><strong>Hiccup — <code>check</code> hangs then fails with "WAL segment ... was not archived before the 60000ms timeout".</strong> Three causes in order of likelihood: (1) <code>archive_command</code> in postgresql.conf doesn't reference the same stanza name you passed to <code>check</code> — typo, or you renamed the stanza in the conf but not in postgresql.conf; (2) PostgreSQL wasn't restarted after enabling <code>archive_mode</code>, so archiving isn't actually active — check <code>SHOW archive_mode;</code>; (3) the push itself fails — look at <code>/var/log/pgbackrest/prod-archive-push-async.log</code> (or run <code>pgbackrest --stanza=prod archive-push /path/to/segment --log-level-console=detail</code> by hand as postgres) and you'll usually find an S3 auth/TLS/endpoint error hiding there.</div>
+
+        <h2 id="backups">Step 5 — Full, differential, incremental: how they actually work</h2>
+
+        <p>pgBackRest has three backup types, and the relationships between them determine both your storage bill and your restore time:</p>
+
+        <ul>
+          <li><strong>Full</strong> — copies the entire cluster. Self-contained: restoring needs only this backup (plus WAL from during/after it).</li>
+          <li><strong>Differential (diff)</strong> — copies everything changed since the <em>last full</em>. Restore needs: the full + this one diff. Diffs grow over time (each one contains everything since the full).</li>
+          <li><strong>Incremental (incr)</strong> — copies everything changed since the <em>last backup of any type</em>. Restore needs: the full + the last diff (if any) + every incr in the chain after it. Small and fast to take, longest dependency chain to restore.</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Backup dependency chains: what a restore actually needs</text>
+            <text x="60" y="48" class="smk" style="font-weight:bold">Sun</text>
+            <text x="150" y="48" class="smk" style="font-weight:bold">Mon</text>
+            <text x="240" y="48" class="smk" style="font-weight:bold">Tue</text>
+            <text x="330" y="48" class="smk" style="font-weight:bold">Wed</text>
+            <text x="420" y="48" class="smk" style="font-weight:bold">Thu</text>
+            <text x="510" y="48" class="smk" style="font-weight:bold">Fri</text>
+            <text x="600" y="48" class="smk" style="font-weight:bold">Sat</text>
+            <rect x="35" y="60" width="60" height="34" class="boxr"/><text x="65" y="81" class="smk" text-anchor="middle">FULL</text>
+            <rect x="125" y="60" width="60" height="34" class="boxg"/><text x="155" y="81" class="smk" text-anchor="middle">incr</text>
+            <rect x="215" y="60" width="60" height="34" class="boxg"/><text x="245" y="81" class="smk" text-anchor="middle">incr</text>
+            <rect x="305" y="60" width="60" height="34" class="boxy"/><text x="335" y="81" class="smk" text-anchor="middle">DIFF</text>
+            <rect x="395" y="60" width="60" height="34" class="boxg"/><text x="425" y="81" class="smk" text-anchor="middle">incr</text>
+            <rect x="485" y="60" width="60" height="34" class="boxg"/><text x="515" y="81" class="smk" text-anchor="middle">incr</text>
+            <rect x="575" y="60" width="60" height="34" class="boxg"/><text x="605" y="81" class="smk" text-anchor="middle">incr</text>
+            <path d="M155,94 C155,120 80,115 67,96" class="arr"/>
+            <path d="M245,94 C245,125 170,120 157,96" class="arr"/>
+            <path d="M335,94 C335,135 90,130 67,96" class="arr"/>
+            <path d="M425,94 C425,125 350,120 337,96" class="arr"/>
+            <path d="M515,94 C515,125 440,120 427,96" class="arr"/>
+            <path d="M605,94 C605,125 530,120 517,96" class="arr"/>
+            <text x="340" y="165" class="smk" text-anchor="middle" style="font-weight:bold">Restore on Saturday needs: FULL + Wed DIFF + Thu, Fri, Sat incr (5 backups)</text>
+            <text x="340" y="185" class="sm" text-anchor="middle">each incr depends on the previous backup; the diff resets the chain back to the full</text>
+            <text x="340" y="220" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">Longer incr chains = smaller backups, slower + more fragile restores. Diffs cap the chain length.</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — A typical weekly schedule and the dependency chain a Saturday restore has to walk.</p>
+        </div>
+
+        <pre class="code" data-lang="bash"># take each type explicitly
+sudo -u postgres pgbackrest --stanza=prod --type=full backup
+sudo -u postgres pgbackrest --stanza=prod --type=diff backup
+sudo -u postgres pgbackrest --stanza=prod --type=incr backup
+
+# see what you have
+sudo -u postgres pgbackrest --stanza=prod info</pre>
+
+        <p><code>info</code> output decodes like this — the label encodes the lineage:</p>
+
+        <pre class="code" data-lang="text">full backup: 20260705-020004F
+    timestamp start/stop: 2026-07-05 02:00:04+05:30 / 2026-07-05 02:41:33+05:30
+    wal start/stop: 000000010000004A00000038 / 000000010000004A0000004F
+    database size: 812.4GB, database backup size: 812.4GB
+    repo1: backup size: 214.7GB
+
+diff backup: 20260705-020004F_20260708-020003D
+    database size: 813.1GB, database backup size: 41.2GB
+    repo1: backup size: 9.8GB
+    backup reference total: 1 full
+
+incr backup: 20260705-020004F_20260709-020002I
+    database size: 813.6GB, database backup size: 6.3GB
+    repo1: backup size: 1.4GB
+    backup reference total: 1 full, 1 diff</pre>
+
+        <p>Read the sizes carefully — they answer real questions: <code>database size</code> is the cluster size, <code>database backup size</code> is how much this backup actually copied (41GB of the 813GB changed since the full, for the diff), and <code>repo1 backup size</code> is what it cost in S3 after compression. <code>backup reference total</code> tells you the restore dependency chain explicitly.</p>
+
+        <div class="bm-warn"><strong>Hiccup — "my incremental ran but took a full backup."</strong> pgBackRest silently upgrades <code>incr</code>/<code>diff</code> to <code>full</code> when there's no prior backup to base it on. That's obvious on day one, but it also happens later and surprises people: after a <code>stanza-upgrade</code> (major PG version upgrade — old backups can't be a base for the new version), after the last full was expired by retention while you weren't paying attention, or after switching repos. The log says it plainly (<code>no prior backup exists, incr backup has been changed to full</code>) but if your cron just fires and nobody reads logs, your "5-minute nightly incremental" suddenly takes 6 hours and blows through the maintenance window. Alert on backup duration, not just success.</div>
+
+        <div class="bm-warn"><strong>Hiccup — timestamps vs. checksums.</strong> By default pgBackRest decides "did this file change?" using timestamps + size (fast). If anything messes with file timestamps — a restore done with weird tooling, <code>cp</code> without preserving times, containers with clock drift — incremental backups can either miss changes (very bad) or recopy everything (slow). pgBackRest detects most time anomalies and falls back to checksum mode automatically for the next backup, but you can force it with <code>--delta</code> on the backup command: full checksum comparison of every file. If you ever suspect timestamp weirdness, run one <code>--delta</code> backup to re-baseline.</div>
+
+        <h2 id="schedule">Step 6 — Scheduling: cron vs. systemd timers</h2>
+
+        <pre class="code" data-lang="bash"># /etc/cron.d/pgbackrest  (runs as postgres, mind the user field)
+# full every Sunday 02:00, diff Wed 02:00, incr all other nights
+0 2 * * 0    postgres  pgbackrest --stanza=prod --type=full backup
+0 2 * * 3    postgres  pgbackrest --stanza=prod --type=diff backup
+0 2 * * 1,2,4,5,6  postgres  pgbackrest --stanza=prod --type=incr backup
+
+# verify pipeline daily at 08:00 — cheap, catches config drift
+0 8 * * *    postgres  pgbackrest --stanza=prod check</pre>
+
+        <p>Sizing the schedule: the tradeoff is <strong>restore complexity vs. backup cost</strong>. A common sane default for a database in the hundreds-of-GB range: weekly full, mid-week diff, nightly incr (as above). For multi-TB databases where a full takes most of a day, monthly full + weekly diff + nightly incr — and strongly consider block incremental (below) which changes this math entirely. For small databases (&lt;50GB), just do nightly fulls; the simplicity at restore time is worth more than the storage.</p>
+
+        <div class="bm-note"><strong>Retention interacts with the schedule.</strong> <code>repo1-retention-full=2</code> means "keep 2 fulls" — with weekly fulls that's ~2 weeks of restore window, and expiry of a full also expires every diff/incr and WAL that depended on it. If you cut a full backup's cron entry but leave retention alone, your window quietly shrinks. Prefer <code>repo1-retention-full-type=time</code> + <code>repo1-retention-full=30</code> (keep 30 <em>days</em>) if what you actually promise the business is a time window, not a count.</div>
+
+        <h2 id="restore">Step 7 — Restore: the part you're actually paid for</h2>
+
+        <p>Nobody cares about your backups. They care about your restores. The basic full restore, onto a fresh/empty data directory:</p>
+
+        <pre class="code" data-lang="bash"># stop postgres, clear the data dir (if it still exists)
+sudo systemctl stop postgresql
+sudo -u postgres rm -rf /var/lib/postgresql/16/main/*
+
+# restore the latest backup + configure recovery
+sudo -u postgres pgbackrest --stanza=prod restore
+
+# start — postgres enters recovery, replays WAL from the repo, promotes
+sudo systemctl start postgresql</pre>
+
+        <p>What <code>restore</code> actually does: picks the latest backup set, walks the dependency chain (full → diff → incrs), copies files back in parallel (<code>process-max</code> applies here too — restores parallelize beautifully), verifies checksums, and writes the recovery configuration into <code>postgresql.auto.conf</code> — including a <code>restore_command = 'pgbackrest --stanza=prod archive-get %f "%p"'</code> so PostgreSQL pulls the WAL it needs from S3 during recovery, and creates <code>recovery.signal</code>. On startup, PostgreSQL replays WAL to the end of the archive and promotes automatically.</p>
+
+        <h3 id="pitr">Point-in-time recovery</h3>
+
+        <p>The scenario that justifies the whole setup: someone ran <code>DELETE FROM orders</code> without a WHERE at 14:37. You want the database as it was at 14:36:</p>
+
+        <pre class="code" data-lang="bash">sudo systemctl stop postgresql
+
+sudo -u postgres pgbackrest --stanza=prod restore \
+  --delta \
+  --type=time \
+  --target="2026-07-07 14:36:00+05:30" \
+  --target-action=pause
+
+sudo systemctl start postgresql</pre>
+
+        <p>Details that matter and routinely bite:</p>
+
+        <ul>
+          <li><strong>Always include the timezone offset in <code>--target</code>.</strong> A bare timestamp is interpreted in the server's timezone, and "the DELETE was at 14:37" from a developer's Slack message is usually in <em>their</em> timezone. An hour's ambiguity in either direction defeats the whole exercise. Get the incident time in UTC, write the target in UTC (<code>+00:00</code>).</li>
+          <li><strong><code>--target-action=pause</code></strong> stops recovery at the target and holds the database read-only (recovery paused) instead of promoting immediately. You connect, check <code>SELECT count(*) FROM orders</code>, and only when satisfied run <code>SELECT pg_wal_replay_resume();</code> to promote. If you overshot or undershot, adjust the target and restore again — <em>promotion is the point of no return</em>: after promotion the cluster starts a new timeline, and replaying further into the old timeline's future requires starting the restore over.</li>
+          <li><strong>pgBackRest auto-selects which backup to restore from</strong> — the newest backup that <em>ends before</em> your target time. You don't (and shouldn't) pick manually with <code>--set</code> unless you have a specific reason; a backup that ends after the target can't be used, and picking wrongly by hand causes the confusing <code>recovery ended before configured recovery target was reached</code>.</li>
+          <li><strong><code>--type=immediate</code></strong> is the fastest restore: stop at the moment the backup's own consistency is reached, no further WAL replay. Right choice when you just need "a working database from around then" (e.g. seeding a test env), wrong choice for precise incident recovery.</li>
+          <li><strong><code>--type=xid</code></strong> restores to just-before a specific transaction ID — surgical, if you can find the offending xid from logs or <code>pg_waldump</code>.</li>
+        </ul>
+
+        <h3 id="delta">Delta restore: the underrated one</h3>
+
+        <p>The <code>--delta</code> flag above deserves its own section. Without it, restore requires an <em>empty</em> data directory — meaning a full re-copy of every byte from S3, which for a terabyte database over a 1Gbps link is 3+ hours of pure transfer before recovery even starts. With <code>--delta</code>, pgBackRest checksums what's already on disk and copies <strong>only the files that differ</strong> from the backup manifest. When you're restoring onto the same server that just had the incident — where 99% of the data files are perfectly fine — a delta restore finishes in minutes instead of hours. It's also the right way to re-sync a broken replica. The requirement: the data directory must actually be from the same cluster lineage (pgBackRest verifies identity before touching anything, and refuses if the directory looks foreign — a safety check, not a bug).</p>
+
+        <div class="bm-fix"><strong>Restore to a different machine (the DR drill):</strong> install pgBackRest + the same major PostgreSQL version on the target, copy <code>/etc/pgbackrest/pgbackrest.conf</code> (same stanza name, same S3 repo, same cipher passphrase — this is why the passphrase must live in a secret manager, not just on the original host), then <code>pgbackrest --stanza=prod restore</code> into the empty data dir and start. Nothing about the repo ties it to the original host. This — restoring to a blank machine from nothing but S3 + the config — is the drill to run quarterly, because it validates the only path that matters in a real disaster.</div>
+
+        <h2 id="troubleshooting">Troubleshooting: the errors you will actually see</h2>
+
+        <p>Collected from real-world setups — the exact messages, what they mean, and the fix.</p>
+
+        <h3>WAL / archiving failures</h3>
+
+        <table class="papers">
+          <tr><th>Symptom / error</th><th>Actual cause</th><th>Fix</th></tr>
+          <tr><td><code>pg_wal</code> filling the disk; <code>pg_stat_archiver</code> shows failed_count climbing</td><td><code>archive_command</code> failing on every segment — S3 creds expired, bucket policy changed, DNS, endpoint typo</td><td>Run the push manually as postgres with <code>--log-level-console=detail</code> to see the real S3 error. Fix, then archiving drains the backlog itself. If the disk is minutes from full: temporarily grow the volume or (in true emergency, understanding you're breaking PITR) set <code>archive-push --archive-push-queue-max</code> so pgBackRest drops WAL instead of blocking, then take a fresh full backup immediately after.</td></tr>
+          <tr><td><code>WAL segment ... already exists in the archive with a different checksum</code></td><td>Two clusters pushing to the same stanza (a restored clone still has the old archive_command!), or a re-initdb'd cluster reusing segment names</td><td>Find the second writer and stop it — the classic culprit is a database cloned from a snapshot for testing, which happily archives into the production repo. Always neuter <code>archive_command</code> (set to <code>/bin/true</code>) on clones before first start.</td></tr>
+          <tr><td>Archiving is "slow", WAL lag under write bursts</td><td>Synchronous, one-at-a-time pushes to S3 latency</td><td><code>archive-async=y</code> + <code>spool-path</code> — batches and parallelizes pushes (see hidden configs). Night-and-day difference on object storage.</td></tr>
+        </table>
+
+        <h3>Stanza and identity failures</h3>
+
+        <table class="papers">
+          <tr><th>Symptom / error</th><th>Actual cause</th><th>Fix</th></tr>
+          <tr><td><code>backup and archive info files exist but do not match the database</code></td><td>The cluster's system identifier changed — re-initdb, or a different cluster restored into the same path — while the stanza remembers the old identity</td><td>If the new cluster is legitimately the one to back up now: <code>stanza-delete</code> (with <code>--force</code> if needed) then <code>stanza-create</code> fresh — old backups for the old cluster are gone with it, so archive them elsewhere first if needed. If this is unexpected: <em>stop</em> — you may be pointing prod config at the wrong data directory.</td></tr>
+          <tr><td><code>stanza-upgrade</code> forgotten after a major version upgrade; backups fail with version mismatch</td><td>Stanza pins PG version; pg_upgrade changed it</td><td><code>pgbackrest --stanza=prod stanza-upgrade</code>, then immediately a fresh <code>--type=full</code> backup (old-version backups can't base new-version incrementals).</td></tr>
+          <tr><td><code>unable to acquire lock ... process ... already running</code></td><td>Another backup/expire genuinely running, or a stale lock from a killed process</td><td>Check <code>ps</code>; if genuinely stale, remove the lock file under the lock path (default <code>/tmp/pgbackrest</code>). Consider moving <code>lock-path</code> off <code>/tmp</code> if your distro aggressively cleans it mid-backup.</td></tr>
+        </table>
+
+        <h3>S3-specific failures</h3>
+
+        <table class="papers">
+          <tr><th>Symptom / error</th><th>Actual cause</th><th>Fix</th></tr>
+          <tr><td><code>HTTP error 403</code> on any operation</td><td>Wrong credentials, clock skew (S3 signatures are time-sensitive!), or bucket policy missing an action</td><td>Check NTP first — a host clock more than ~15 min off fails all SigV4 auth with 403, and this one genuinely mystifies people. Then verify the IAM policy has ListBucket + Get/Put/DeleteObject on the right prefix.</td></tr>
+          <tr><td><code>unable to verify TLS certificate</code></td><td>Self-signed or private-CA cert on MinIO/Ceph endpoint</td><td>Point <code>repo1-storage-ca-file</code> at your CA bundle. <code>repo1-storage-verify-tls=n</code> only for throwaway labs.</td></tr>
+          <tr><td>Connection succeeds but bucket operations 404 / NoSuchBucket on MinIO</td><td>Virtual-host-style URLs against a path-style-only gateway</td><td><code>repo1-s3-uri-style=path</code>.</td></tr>
+          <tr><td>Backups randomly fail mid-transfer on flaky networks</td><td>Long S3 transfers hitting transient resets</td><td>pgBackRest retries internally; if it still fails, raise <code>io-timeout</code>, and check for an overloaded NAT gateway — instance-level S3 VPC endpoints remove that whole failure class (and the NAT data-processing bill).</td></tr>
+        </table>
+
+        <h3>Restore failures</h3>
+
+        <table class="papers">
+          <tr><th>Symptom / error</th><th>Actual cause</th><th>Fix</th></tr>
+          <tr><td><code>unable to find ... in the archive</code> during recovery</td><td>Recovery needs a WAL segment that never got archived (archiving was broken during that window) or was expired</td><td>If the segment truly never made it, PITR through that gap is impossible — restore to just before the gap (<code>--type=time</code> with an earlier target) or from a later backup past it. This is why you alert on archiver failures: gaps are only discoverable at restore time otherwise. <code>pgbackrest verify</code> can audit the archive proactively.</td></tr>
+          <tr><td><code>recovery ended before configured recovery target was reached</code></td><td>Target time is after the end of available WAL, or you forced an unsuitable backup with <code>--set</code></td><td>Check <code>pgbackrest info</code> for the max archived WAL; let auto-selection pick the backup; confirm the target's timezone math.</td></tr>
+          <tr><td>Restore succeeds, postgres starts, but immediately promotes without honoring the target</td><td>Leftover <code>postgresql.auto.conf</code> recovery settings from a previous attempt, or missing <code>recovery.signal</code></td><td>Let pgBackRest write recovery config itself; don't hand-edit between attempts. Between retries, clear stale signal files and auto.conf recovery lines (a fresh <code>restore</code> does this for you).</td></tr>
+          <tr><td>Restore is slow despite big <code>process-max</code></td><td>Single-stream bottleneck elsewhere: compression, one giant table file, EBS throughput cap</td><td>zstd decompression is rarely the issue; check cloud volume throughput limits (a gp3 at default 125MB/s caps a 1TB restore at ~2.5h no matter the parallelism). Provision restore-time IOPS/throughput before the disaster, not during.</td></tr>
+        </table>
+
+        <h2 id="hidden">Hidden and under-used configs worth knowing</h2>
+
+        <p>Everything here is documented, but you'd never find it unless you read the release notes for years. These are the settings that most upgrade a default setup:</p>
+
+        <h3>1. Block incremental — <code>repo1-block=y</code> (2.46+)</h3>
+
+        <p>Standard incrementals work at <strong>file</strong> granularity: one row updated in a 1GB table file means the whole 1GB file is recopied. Block incremental splits files into (size-tuned) blocks and stores <em>only changed blocks</em>, using a block map to reconstruct at restore. For big, hot tables with scattered writes — the normal OLTP shape — this can cut incremental sizes by an order of magnitude. Combine with <code>repo1-bundle=y</code> (required pairing) and it's the single biggest storage/time win available in modern pgBackRest:</p>
+
+        <pre class="code" data-lang="ini">repo1-bundle=y
+repo1-block=y</pre>
+
+        <h3>2. File bundling — <code>repo1-bundle=y</code></h3>
+
+        <p>PostgreSQL clusters contain thousands of tiny files (small relations, forks, FSMs). Backing each up as its own S3 object means thousands of PUT requests (billed each!) and hideous small-object throughput. Bundling packs small files together into larger objects — fewer requests, faster backups, lower bill. Tunables: <code>repo1-bundle-size</code> (target bundle size, default 20MiB) and <code>repo1-bundle-limit</code> (files larger than this stay standalone, default 2MiB). There's no real downside on object storage; it's off by default only for backward compatibility.</p>
+
+        <h3>3. Async archiving — <code>archive-async=y</code> + <code>spool-path</code></h3>
+
+        <p>The default archive path is synchronous: PostgreSQL hands over one segment, pgBackRest pushes it to S3, returns. At ~100ms+ per S3 round trip, that's a hard ceiling of ~10 segments/sec — a busy cluster generates more. Async mode decouples: <code>archive-push</code> acknowledges segments quickly into a local spool, while a background process pushes batches to S3 in parallel (<code>process-max</code> applies). Also works on the restore side: <code>archive-get</code> prefetches upcoming WAL segments into the spool during recovery, dramatically speeding PITR WAL replay from S3. The spool directory needs to survive being lost (it's transient state), but put it on real disk, not tmpfs — after a crash, tmpfs contents vanish and archiving state resets unnecessarily.</p>
+
+        <h3>4. <code>expire-auto</code> and manual expiry control</h3>
+
+        <p>By default, expiry runs after each successful backup. <code>expire-auto=n</code> decouples it, so you can run <code>pgbackrest expire</code> on its own schedule — useful when expiry (which deletes potentially many S3 objects) is slow and you don't want it inside your backup window, or when you want a human/automation gate before anything is deleted.</p>
+
+        <h3>5. Backup from standby — <code>backup-standby=y</code></h3>
+
+        <p>With <code>pg2-*</code> options pointing at a standby, pgBackRest copies the data files from the <em>standby</em> (offloading all read I/O from the primary), while still coordinating the backup start/stop against the primary. The standby needs the same pgBackRest config and repo access. Caveat: the standby must be reasonably caught up, or the backup waits.</p>
+
+        <h3>6. Multi-repository — local + offsite in one config</h3>
+
+        <pre class="code" data-lang="ini"># repo1: local NFS for fast restores
+repo1-type=posix
+repo1-path=/backup/pgbackrest
+repo1-retention-full=2
+
+# repo2: S3 for disaster recovery
+repo2-type=s3
+repo2-s3-bucket=acme-pg-backups
+repo2-retention-full=4
+# ... s3 options ...</pre>
+
+        <p>Archiving pushes WAL to <em>both</em> automatically. Backups target one repo per run (<code>--repo=2</code>), so schedule them separately. Restores prefer repo1 by default (fast local path) with S3 as fallback via <code>--repo</code>. This is the textbook 3-2-1 layout with a single tool.</p>
+
+        <h3>7. Miscellaneous sharp tools</h3>
+
+        <ul>
+          <li><strong><code>archive-push-queue-max</code></strong> — hard cap on how much WAL may queue locally when the repo is unreachable; beyond it, pgBackRest <em>drops</em> WAL (accepting a broken PITR chain) rather than letting the disk fill and crash the database. A deliberate "lose recoverability, keep availability" tradeoff — set it only if that's genuinely your preference, and pair it with alerting so a dropped-WAL event triggers an immediate full backup.</li>
+          <li><strong><code>db-exclude</code></strong> — skip specific databases within the cluster during restore (restore is still cluster-level; excluded DBs come back as unusable shells to be dropped).</li>
+          <li><strong><code>--target-timeline</code></strong> — after multiple restore/promote cycles you get a timeline tree; this picks which branch to follow. If you've restored more than once during an incident, learn timelines before the third attempt, not after.</li>
+          <li><strong><code>tablespace-map</code></strong> — remap tablespace locations at restore time, essential when the target machine's mount layout differs from the source.</li>
+          <li><strong><code>log-level-file=detail</code></strong> — keep file logging at detail permanently; disk is cheap and the detailed log is what you'll want during any incident post-mortem.</li>
+          <li><strong><code>pgbackrest verify</code></strong> — audits repository integrity: re-checksums backup files and archived WAL in the repo, catching bit-rot or partial uploads <em>before</em> restore time. Run monthly via cron on a machine that isn't the primary.</li>
+        </ul>
+
+        <h2 id="best-practices">Production best practices</h2>
+
+        <div class="bm-fix">
+          <ul>
+            <li><strong>Test restores on a schedule, not on faith.</strong> A quarterly (minimum) drill: fresh VM, config + passphrase from the secret manager, full restore + PITR to an arbitrary time, run application smoke tests. The first time you do this you <em>will</em> find something broken — that's the point. Automate it if you can: a weekly pipeline that restores to a scratch instance and runs <code>pg_amcheck</code> is the gold standard.</li>
+            <li><strong>Monitor the archiver, not just the backups.</strong> <code>SELECT last_failed_wal, last_failed_time, failed_count FROM pg_stat_archiver;</code> — alert if <code>failed_count</code> grows or <code>last_archived_time</code> is stale &gt; a few minutes. Also alert on <code>pg_wal</code> directory size. Backup-succeeded alerts catch nightly failures; archiver alerts catch the continuous-stream failures that silently destroy PITR.</li>
+            <li><strong>Alert on backup duration and size deltas, not just exit codes.</strong> The incr-silently-became-full failure mode, a diff that's suddenly 10× larger (mass update? bloat?), a backup that took 3× longer — all invisible to success/failure monitoring, all early signals.</li>
+            <li><strong>Keep the cipher passphrase and the config in a secret manager.</strong> The DR scenario is "the whole server is gone." Every input to the restore — stanza name, repo config, S3 access, cipher passphrase — must exist somewhere that survives the server. If the passphrase only lives in <code>/etc</code> on the dead machine, the encrypted repo is cryptographically perfect garbage.</li>
+            <li><strong>Use IAM roles (<code>repo1-s3-key-type=auto</code>) instead of static keys</strong> anywhere you can. No secrets in config files, rotation handled by the platform, one less thing to leak in a config backup.</li>
+            <li><strong>Protect the bucket from the backup credentials.</strong> The credentials pgBackRest uses can delete objects (expiry needs it) — which means ransomware on the DB host can delete your backups. Mitigate with S3 versioning + a lifecycle that retains noncurrent versions for N days, or Object Lock in governance mode, or replicate the bucket to a second account the DB host has zero access to.</li>
+            <li><strong>Size <code>process-max</code> for the restore, and test at that setting.</strong> Backups run at whatever pace; restores run during an outage. If the box has 16 cores, <code>process-max=8</code>+ for restore is reasonable — but the real ceiling is usually cloud-volume throughput, so provision the target volume (gp3 throughput, io2, whatever) for restore day.</li>
+            <li><strong>One stanza per cluster, distinct <code>repo1-path</code> per environment, and never share a stanza between prod and its clones.</strong> Clone-with-live-archive_command is the classic repo-corruption story. Bake "disable archiving" into whatever creates clones/snapshots-restores.</li>
+            <li><strong>Run <code>check</code> daily and <code>verify</code> monthly.</strong> Cheap, catches config drift and repo bit-rot respectively — the two failure classes that otherwise only surface at restore time.</li>
+            <li><strong>Document the restore runbook where a stressed human at 2 AM can follow it.</strong> Exact commands with real values (stanza names, paths), the PITR timezone gotcha spelled out, the pause-verify-resume promotion flow, and who to call when the runbook fails. During an incident nobody has spare cognition for the manual.</li>
+          </ul>
+        </div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Can I back up to S3 without a dedicated backup server?</summary><p>Yes — the simplest production-legitimate topology is exactly what this guide builds: pgBackRest on the database host itself, repository in S3. A dedicated repository host (pgBackRest running remotely, connecting over TLS/SSH) adds value when you have many clusters to centralize, want backups to keep working while a DB host is compromised/degraded, or need to offload compression CPU — but it is not a requirement for a solid setup.</p></details>
+        <details class="faq"><summary>Does taking a backup slow down my database?</summary><p>Some — backup reads compete for disk I/O and compression uses CPU, bounded by <code>process-max</code>. Mitigations in order: run in the low-traffic window, lower <code>process-max</code>, use <code>backup-standby=y</code> to shift all read I/O to a replica. WAL archiving overhead, by contrast, is continuous but tiny (one small process per segment or an async batch).</p></details>
+        <details class="faq"><summary>Full weekly + daily incr, or full weekly + daily diff?</summary><p>Diffs make restores simpler (max chain: full + one diff) but each diff re-copies everything since the full, so by day 6 they're big. Incrs are minimal daily cost but the restore chain walks every one of them, and one corrupted/expired link breaks everything after it. The hybrid in this guide (weekly full, mid-week diff, nightly incr) caps the chain at ~4 while keeping nightly cost low. With <code>repo1-block=y</code>, incrementals get so cheap that many teams just do full + nightly block-incrementals and stop thinking about diffs entirely.</p></details>
+        <details class="faq"><summary>How do I restore just one database out of the cluster?</summary><p>Physical backups are cluster-level — you can't extract one database directly. The pattern: restore the cluster (or a PITR of it) onto a scratch machine with <code>--db-include</code> (which restores only the named database's files plus the system catalogs, much faster), then <code>pg_dump</code> the recovered database from the scratch instance into production. Keep a scratch-restore runbook for exactly this — "someone dropped one table" is far more common than full-cluster disasters.</p></details>
+        <details class="faq"><summary>Does pgBackRest encryption make S3 server-side encryption redundant?</summary><p>They protect against different threats. <code>repo1-cipher-type</code> (client-side) means AWS/the storage operator never sees plaintext and a leaked bucket is useless without your passphrase. SSE (server-side) protects disks in the provider's datacenter but anyone with bucket read access gets plaintext. Client-side is the one that matters for your threat model; enabling both costs nothing.</p></details>
+        <details class="faq"><summary>What happens to my backups when I upgrade PostgreSQL?</summary><p>After <code>pg_upgrade</code>, run <code>pgbackrest stanza-upgrade</code>, then take an immediate full backup. Old-version backups remain restorable (into the old version's binaries!) until retention expires them, but they cannot serve as a base for new-version incrementals — hence the mandatory fresh full. Forgetting stanza-upgrade is a top-5 post-upgrade ticket.</p></details>
+        <details class="faq"><summary>Can pgBackRest seed a streaming replica?</summary><p>Yes, and it's the best way: <code>pgbackrest restore</code> on the replica host with <code>--type=standby</code> writes <code>standby.signal</code> and the recovery settings; the replica replays WAL from the repo (fast, parallel, doesn't load the primary) and then connects to the primary for streaming. Re-syncing a diverged replica with <code>--delta</code> is similarly much cheaper than a fresh <code>pg_basebackup</code>.</p></details>
+        <details class="faq"><summary>How much S3 storage will I actually use?</summary><p>Rule of thumb with zstd: fulls land at ~25–40% of database size (very data-dependent), diffs/incrs proportional to churn, WAL at churn rate. With <code>repo1-retention-full=2</code>, weekly fulls, and modest churn, budget roughly the database size in S3. Block incremental + bundling can cut that substantially. Watch the request costs too, not just storage — that's what bundling fixes.</p></details>
+        <details class="faq"><summary>Is there a dry-run for expiry?</summary><p>Yes: <code>pgbackrest --stanza=prod --dry-run expire</code> shows exactly what would be deleted. Run it before changing any retention setting — retention mistakes are the one error category with no undo.</p></details>
+        <details class="faq"><summary>Glacier / cold storage for old backups?</summary><p>Not directly through pgBackRest — it needs read access to everything it manages, and Glacier retrieval latency breaks that. The workable patterns: S3 lifecycle rules transitioning objects to Infrequent Access (works transparently, cheaper, still instant reads), or a second repo whose bucket you archive by external means, accepting those backups are "break glass, hours to thaw." Never lifecycle-transition the archive/ (WAL) path of an active stanza to Glacier — recovery reads from it.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>pg_dump is an export, not disaster recovery.</strong> Production DR is physical backup + continuous WAL archiving, and pgBackRest is the strongest open-source orchestrator of that pattern.</li>
+          <li>Three concepts carry everything: the <strong>stanza</strong> (per-cluster identity), the <strong>repository</strong> (S3-native, up to 4 of them), and the <strong>WAL stream</strong> (whose silent failure is the #1 production incident).</li>
+          <li><strong>Full / diff / incr</strong> trade backup cost against restore-chain length — and incrementals silently upgrade to fulls when their base disappears, so alert on duration, not just success.</li>
+          <li><strong>The restore flags that matter:</strong> <code>--delta</code> (reuse intact files — hours to minutes), <code>--type=time --target-action=pause</code> (PITR with a verify-before-promote gate), timezone-explicit targets always.</li>
+          <li><strong>Enable the modern trio</strong> almost nobody defaults to: <code>repo1-bundle=y</code>, <code>repo1-block=y</code>, <code>archive-async=y</code> — fewer S3 requests, order-of-magnitude smaller incrementals, archiving that keeps up with write bursts.</li>
+          <li><strong>The cipher passphrase must outlive the server.</strong> Encrypted repo + passphrase only on the dead host = no backups at all.</li>
+          <li><strong>Monitor <code>pg_stat_archiver</code> and <code>pg_wal</code> size</strong> — the continuous failure modes that success/failure backup alerts never catch.</li>
+          <li><strong>A backup you haven't restored is a hypothesis.</strong> Quarterly blank-machine drills, monthly <code>verify</code>, daily <code>check</code>.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; extra reads</h2>
+        <ul class="reflist">
+          <li><a href="https://pgbackrest.org/user-guide.html" target="_blank">pgBackRest User Guide</a> <span>— the canonical walkthrough; genuinely good, read it end to end once.</span></li>
+          <li><a href="https://pgbackrest.org/configuration.html" target="_blank">pgBackRest Configuration Reference</a> <span>— every option, including the hidden ones covered here.</span></li>
+          <li><a href="https://pgbackrest.org/command.html" target="_blank">pgBackRest Command Reference</a> <span>— per-command flags: restore targets, expire dry-run, verify.</span></li>
+          <li><a href="https://www.postgresql.org/docs/current/continuous-archiving.html" target="_blank">PostgreSQL docs — Continuous Archiving and PITR</a> <span>— the underlying mechanism pgBackRest orchestrates; understand this and every pgBackRest behavior makes sense.</span></li>
+          <li><a href="https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ARCHIVER-VIEW" target="_blank">PostgreSQL docs — pg_stat_archiver</a> <span>— the view to alert on.</span></li>
+          <li><a href="https://github.com/pgbackrest/pgbackrest/releases" target="_blank">pgBackRest release notes</a> <span>— where features like block incremental and bundling first appear; worth skimming at every upgrade.</span></li>
+          <li><a href="https://pgstef.github.io/" target="_blank">pgstef's blog (Stefan Fercot)</a> <span>— pgBackRest maintainer-adjacent deep dives: multi-repo, standby backups, PITR walkthroughs.</span></li>
+          <li><a href="debug-database.html">cvam.sight — Debugging Database Issues</a> <span>— slow queries, locks, replication lag — the operational other half of running PostgreSQL.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="pagedattention.html">← PagedAttention</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "pgbackrest-s3-guide",
+    title: "pgBackRest with S3 — the complete hands-on guide to backup &amp; restore.",
+    date: "Jul 7, 2026",
+    cat: "postgres",
+    tags: ["postgres", "pgbackrest", "backup", "s3", "disaster-recovery", "devops"],
+    time: 45,
+    words: 9000,
+    excerpt: "The complete hands-on pgBackRest guide: S3 repository setup, stanza creation, full/differential/incremental backups and their dependency chains, PITR with pause-verify-promote, delta restore. Plus the hiccups everyone hits (archive_command silently filling pg_wal, stanza identity mismatches, S3 403s from clock skew, incrementals silently becoming fulls), the hidden configs almost nobody enables (block incremental, file bundling, async archiving, archive-push-queue-max), multi-repo 3-2-1 layouts, and the production practices that separate 'we have backups' from 'we can restore.'"
+  },
+  {
     slug: "pagedattention-paper-juice",
     title: "PagedAttention — What If Your GPU Memory Managed Itself Like an Operating System.",
     date: "Jul 6, 2026",

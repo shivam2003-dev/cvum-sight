@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-2-5-the-flp-impossibility-theorem",
+    title: "The FLP impossibility theorem.",
+    date: "Jul 9, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "flp", "series-consensus"],
+    time: 22,
+    words: 4600,
+    excerpt: "Consensus Algorithms series, 2.5 -- Phase 2 finale. Fischer, Lynch & Paterson (1985): no deterministic algorithm can guarantee consensus in bounded time in a fully asynchronous system, even with just one possible crash failure. The bivalence-preservation proof idea, what it does and doesn't rule out, and the three escape hatches (partial synchrony/timeouts, randomization, failure detectors) every practical algorithm since -- Paxos, Raft included -- actually uses.",
+    series: "consensus",
+    seriesNum: "9"
+  },
+  {
     slug: "consensus-2-4-failure-models-and-failure-detectors",
     title: "Failure models and failure detectors.",
     date: "Jul 9, 2026",

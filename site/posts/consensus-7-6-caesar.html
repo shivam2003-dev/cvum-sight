@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caesar — Consensus 7.6 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 7.6. Caesar's ordering-certificate approach to leaderless consensus -- reducing the frequency of EPaxos's expensive slow path by having replicas explicitly reason about a proposed order before committing, not just detect conflicts after the fact.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 7</p>
+        <p class="series-banner-title">The Modern Paxos Family</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 7.6 of 8</p>
+        <div class="series-banner-nav">
+          <a href="consensus-7-1-epaxos-leaderless-consensus.html" class="done">7.1 EPaxos</a>
+          <a href="consensus-7-2-flexible-paxos.html" class="done">7.2 Flexible Paxos</a>
+          <a href="consensus-7-3-generalized-and-fast-paxos.html" class="done">7.3 Generalized/Fast</a>
+          <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html" class="done">7.4 Cheap/Compart.</a>
+          <a href="consensus-7-5-atlas.html" class="done">7.5 Atlas</a>
+          <a href="consensus-7-6-caesar.html" class="active">7.6 Caesar</a>
+          <a href="consensus-7-7-omnipaxos.html">7.7 OmniPaxos</a>
+          <a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html">7.8 Survey</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 19, 2026 · devops · 17 min read · 3600 words <span class="difficulty expert">expert</span></p>
+        <h1>Caesar.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">caesar</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">EPaxos (7.1) and Atlas (7.5) both detect conflicts <em>reactively</em> — a command leader proposes a dependency set, and the fast quorum's replies either confirm it or reveal it was incomplete, triggering the slow path. Balegas, Duarte, and colleagues' <strong>Caesar</strong> (2017) asks whether ordering can be handled more <em>proactively</em> instead: rather than detecting after the fact that a proposed dependency set was wrong, have replicas explicitly reason about and agree on a proposed relative order <em>before</em> committing, reducing how often the expensive slow path actually triggers in practice, especially under higher contention (more commands genuinely conflicting with each other) than EPaxos's design was optimized for.</p>
+
+        <h2 id="ordering-certificates">Ordering certificates: agree on order, not just conflicts</h2>
+        <p>Caesar's mechanism centers on what the paper's lineage of ideas frames as an <strong>ordering certificate</strong> — when a command leader proposes a command, it also proposes a specific timestamp-like ordering value relative to recently-seen commands. Replicas, rather than simply confirming or expanding a dependency set (EPaxos's reactive approach), actively vote on whether that proposed ordering is acceptable given what they know, explicitly reasoning about relative order as a first-class part of the fast-path vote itself. This front-loads the ordering decision into the same round that would otherwise only be checking for missed conflicts, aiming to reduce how often a second round (the slow path) is genuinely needed.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 170" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Reactive (EPaxos) vs. proactive (Caesar) ordering</text>
+            <rect x="40" y="40" width="280" height="70" class="boxy"/>
+            <text x="180" y="62" class="smk" text-anchor="middle">EPaxos: propose deps</text>
+            <text x="180" y="80" class="sm" text-anchor="middle">replicas confirm/expand</text>
+            <text x="180" y="98" class="sm" text-anchor="middle">→ slow path if wrong</text>
+            <rect x="360" y="40" width="280" height="70" class="boxg"/>
+            <text x="500" y="62" class="smk" text-anchor="middle">Caesar: propose order</text>
+            <text x="500" y="80" class="sm" text-anchor="middle">replicas vote on order itself</text>
+            <text x="500" y="98" class="sm" text-anchor="middle">→ fewer slow-path triggers under contention</text>
+            <text x="340" y="140" class="sm" text-anchor="middle">Both still fall back to a second round when genuinely needed — the difference is HOW OFTEN.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Caesar front-loads ordering reasoning into the fast-path vote, aiming to shrink the slow-path trigger rate under contention.</p>
+        </div>
+
+        <div class="bm-note">Worth being precise about what "reduces slow-path frequency" actually buys, and what it costs. Under <strong>low contention</strong> (few genuinely conflicting commands, EPaxos's original sweet spot), Caesar's extra per-vote ordering reasoning is largely unnecessary overhead compared to EPaxos's simpler reactive check. Under <strong>higher contention</strong>, Caesar's proactive approach pays off by avoiding EPaxos's more frequent fallback to the slow path. This is, once again, a genuine workload-dependent trade-off — not a strict improvement — consistent with every variant this phase has covered.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does Caesar still need EPaxos's larger fast-quorum size?</summary><p>Caesar's quorum requirements are analyzed independently in its own paper rather than directly inheriting EPaxos's specific bound, but the underlying need — enough overlap to reliably vote on ordering — follows the same majority-overlap-derived logic (article 3.3) this entire phase traces back to, just computed for Caesar's specific certificate-voting mechanism rather than EPaxos's dependency-set mechanism.</p></details>
+        <details class="faq"><summary>Is Caesar strictly better than EPaxos under contention?</summary><p>Better on the specific metric of slow-path trigger frequency under contention, at the cost of more per-vote work on every fast-path attempt (even ones that wouldn't have needed the slow path anyway) — the same "it depends on your workload" caveat this phase has applied consistently to every variant since article 7.2.</p></details>
+        <details class="faq"><summary>How does Caesar relate to Atlas — are they solving the same problem?</summary><p>Related but distinct problems within EPaxos's design space: Atlas (7.5) shrinks the fast-quorum <em>size</em> (a Flexible-Paxos-style optimization); Caesar changes <em>what information</em> is exchanged and voted on within a quorum of whatever size, targeting the slow-path <em>trigger rate</em> specifically. In principle, the two ideas could be combined, though neither paper explicitly does so.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Caesar</strong> (Balegas, Duarte et al., 2017) makes ordering decisions <strong>proactive</strong> rather than EPaxos's reactive conflict-detection — replicas vote on a proposed ordering certificate directly within the fast-path round.</li>
+          <li>This targets a different metric than Atlas (7.5): not fast-quorum <em>size</em>, but slow-path <strong>trigger frequency</strong> under contention.</li>
+          <li>The trade-off is workload-dependent: <strong>helps under higher contention</strong> (fewer slow-path fallbacks), <strong>adds overhead under low contention</strong> where EPaxos's simpler reactive check would have sufficed.</li>
+          <li>Caesar and Atlas address related but distinct weaknesses in EPaxos's original design — a further illustration of this phase's composable, workload-specific optimization landscape.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.usenix.org/conference/nsdi17/technical-sessions/presentation/arun" target="_blank">Arun, Peluso, Palmieri, Losa &amp; Ravindran — Speeding Up Consensus by Chasing Fast Decisions (Caesar, 2017)</a> <span>— the primary Caesar reference.</span></li>
+          <li><a href="consensus-7-1-epaxos-leaderless-consensus.html">cvam.sight — Consensus 7.1: EPaxos, Leaderless Consensus</a> <span>— the reactive conflict-detection baseline Caesar makes proactive.</span></li>
+          <li><a href="consensus-7-5-atlas.html">cvam.sight — Consensus 7.5: Atlas</a> <span>— the related but distinct fast-quorum-size optimization.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-7-5-atlas.html">← 7.5 Atlas</a>
+        <a href="consensus-7-7-omnipaxos.html">next: 7.7 OmniPaxos →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

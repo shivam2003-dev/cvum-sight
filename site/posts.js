@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-7-6-caesar",
+    title: "Caesar.",
+    date: "Jul 19, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "caesar", "series-consensus"],
+    time: 17,
+    words: 3600,
+    excerpt: "Consensus Algorithms series, 7.6. Caesar makes ordering proactive rather than EPaxos's reactive conflict detection -- replicas vote on a proposed ordering certificate directly within the fast-path round, targeting slow-path trigger frequency under contention rather than fast-quorum size (Atlas's focus). Helps under higher contention, adds overhead under low contention where EPaxos's simpler check would have sufficed -- another workload-dependent trade-off in this phase's composable optimization landscape.",
+    series: "consensus",
+    seriesNum: "36"
+  },
+  {
     slug: "consensus-7-5-atlas",
     title: "Atlas.",
     date: "Jul 19, 2026",

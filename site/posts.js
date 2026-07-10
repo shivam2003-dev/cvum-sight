@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-4-1-safety-vs-liveness",
+    title: "Safety vs liveness.",
+    date: "Jul 11, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "safety-liveness", "series-consensus"],
+    time: 18,
+    words: 3800,
+    excerpt: "Consensus Algorithms series, 4.1. The two formal property classes (Lamport 1977, Alpern & Schneider 1985) every distributed algorithm is judged by: safety (nothing bad ever happens, violations are permanent and finitely detectable) vs liveness (something good eventually happens, violations are never provable from a finite observation). Why every algorithm in this series treats safety as unconditional and liveness as conditional on weaker assumptions -- rereading FLP and leases through this lens.",
+    series: "consensus",
+    seriesNum: "14"
+  },
+  {
     slug: "consensus-3-4-leases-and-linearizable-reads",
     title: "Leases and linearizable reads.",
     date: "Jul 10, 2026",

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apache ZooKeeper — Consensus 8.2 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 8.2. ZooKeeper's hierarchical znode namespace, ephemeral nodes and watches for coordination patterns (locks, leader election, service discovery), and why it predates and directly inspired etcd's own design.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 8</p>
+        <p class="series-banner-title">Consensus in Production</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 8.2 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-8-1-etcd.html" class="done">8.1 etcd</a>
+          <a href="consensus-8-2-apache-zookeeper.html" class="active">8.2 ZooKeeper</a>
+          <a href="consensus-8-3-consul.html">8.3 Consul</a>
+          <a href="consensus-8-4-kafka-kraft.html">8.4 Kafka KRaft</a>
+          <a href="consensus-8-5-kubernetes-and-etcd.html">8.5 Kubernetes</a>
+          <a href="consensus-8-6-jepsen.html">8.6 Jepsen</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 21, 2026 · devops · 20 min read · 4200 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Apache ZooKeeper.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">zookeeper</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Before etcd (8.1), before Consul (8.3), there was ZooKeeper — the system that established the entire "consensus-backed coordination service" product category most of Phase 8 covers, built on <strong>Zab</strong> (article 5.7's closing algorithm). This article covers ZooKeeper's data model (a filesystem-like hierarchical namespace, a genuinely different presentation from etcd's flat key-value store), ephemeral nodes as its own answer to article 8.1's lease concept, and the specific coordination patterns (locks, leader election, service discovery) it directly enabled — patterns so influential that etcd's own design (8.1) can be read, in significant part, as a deliberate response to ZooKeeper's strengths and rough edges.</p>
+
+        <h2 id="znodes">The znode namespace: a filesystem, not a flat key-value store</h2>
+        <p>ZooKeeper organizes data as <strong>znodes</strong> in a hierarchical namespace — genuinely path-structured, like a filesystem (<code>/services/payments/leader</code>), rather than etcd's conceptually flat keyspace (which happens to support prefix queries but isn't structurally hierarchical the way ZooKeeper's actually is). This isn't just an aesthetic difference: ZooKeeper's client API includes operations that specifically leverage the hierarchy — listing a znode's direct children, watching for changes anywhere within a subtree — that map naturally onto coordination patterns organized around logical groupings (all workers registered under <code>/workers/</code>, say), a structural fit that flat key-value stores need to simulate via naming conventions rather than getting for free from the data model itself.</p>
+
+        <h2 id="ephemeral">Ephemeral znodes: ZooKeeper's answer to article 8.1's leases</h2>
+        <p>Where etcd uses explicit leases (article 8.1) attached to arbitrary keys, ZooKeeper's equivalent mechanism is the <strong>ephemeral znode</strong> — a znode tied directly to the client session that created it, automatically deleted when that session ends (either a clean disconnect or a timeout-detected failure, echoing article 2.4's failure-detection machinery once again). The core coordination pattern this enables: a service registers its presence by creating an ephemeral znode under a well-known path; if the service crashes, its session times out, and ZooKeeper automatically removes the znode — any client watching that path (ZooKeeper's own watch mechanism, conceptually parallel to article 8.1's etcd watches, though with different specific semantics around one-shot vs. continuous notification) is notified immediately.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Ephemeral znodes: presence tied directly to session liveness</text>
+            <rect x="40" y="40" width="200" height="50" class="boxg"/>
+            <text x="140" y="62" class="smk" text-anchor="middle">Service registers</text>
+            <text x="140" y="78" class="sm" text-anchor="middle">/workers/worker-1 (ephemeral)</text>
+            <path d="M240,65 C280,65 300,65 300,65" class="arr"/>
+            <rect x="300" y="40" width="180" height="50" class="boxg"/>
+            <text x="390" y="62" class="smk" text-anchor="middle">Session alive</text>
+            <text x="390" y="78" class="sm" text-anchor="middle">znode persists</text>
+            <path d="M390,90 C390,105 390,105 390,120" class="arr"/>
+            <text x="390" y="115" class="sm" text-anchor="middle">session ends (crash/timeout)</text>
+            <rect x="300" y="120" width="180" height="50" class="boxr"/>
+            <text x="390" y="142" class="smk" text-anchor="middle">znode auto-deleted</text>
+            <text x="390" y="158" class="sm" text-anchor="middle">watchers notified instantly</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Ephemeral znodes make "is this service alive" a structural property of the namespace itself, not a separately-maintained TTL.</p>
+        </div>
+
+        <h2 id="patterns">The coordination pattern library ZooKeeper established</h2>
+        <p>ZooKeeper's design directly enabled, and its documentation explicitly codified, a small set of coordination "recipes" that became the de-facto reference patterns for the entire product category — worth knowing by name since they reappear, in spirit, across every system Phase 8 covers:</p>
+        <ul>
+          <li><strong>Distributed locks</strong> — clients create sequentially-numbered ephemeral znodes under a lock path; the client holding the lowest-numbered znode holds the lock; others watch the next-lowest znode and are notified when it's their turn — a clean, fair queuing mechanism built entirely from znode creation, sequencing, and watches.</li>
+          <li><strong>Leader election</strong> — the same sequential-ephemeral-znode pattern, just interpreted as "lowest number is leader" instead of "lowest number holds the lock" — directly implementing this series' article 4.2 leader-election concept on top of ZooKeeper's primitives.</li>
+          <li><strong>Service discovery</strong> — services register ephemeral znodes with their connection details under a well-known path; clients watch that path's children to maintain a live view of currently-available service instances.</li>
+        </ul>
+
+        <div class="bm-note">This pattern library is arguably ZooKeeper's most lasting influence on the field — even systems that don't use ZooKeeper directly (etcd, Consul, and others) implement conceptually identical recipes on top of their own primitives (leases instead of ephemeral znodes, but the same underlying "presence tied to a renewable liveness signal, watched by interested parties" shape). Reading etcd's lease-based leader-election pattern (article 8.1) after this article should feel like recognizing the same idea in different clothing, not learning something new.</div>
+
+        <h2 id="etcd-comparison">ZooKeeper vs. etcd: what actually differs</h2>
+        <table class="papers">
+          <tr><th>Property</th><th>ZooKeeper</th><th>etcd (8.1)</th></tr>
+          <tr><td>Consensus algorithm</td><td>Zab (5.7)</td><td>Raft (5.5-5.6)</td></tr>
+          <tr><td>Data model</td><td>Hierarchical znode namespace</td><td>Flat key-value (with prefix queries)</td></tr>
+          <tr><td>Liveness/TTL mechanism</td><td>Ephemeral znodes (tied to session)</td><td>Leases (explicit, attachable to any key)</td></tr>
+          <tr><td>Client API era/style</td><td>Older, Java-centric, callback-based watches</td><td>Newer, gRPC-based, streaming watches</td></tr>
+          <tr><td>Notable production users</td><td>Kafka (historically, pre-KRaft — see 8.4), Hadoop ecosystem</td><td>Kubernetes (8.5)</td></tr>
+        </table>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is ZooKeeper's Zab genuinely different from Raft in a way that matters for these coordination patterns?</summary><p>Not for the patterns themselves — the lock/election/discovery recipes rely on ordering and ephemeral-liveness guarantees that both Zab (5.7) and Raft (5.5-5.6) provide equivalently, per their shared majority-overlap safety foundation (article 3.3). The difference that matters more in practice is the surrounding data model and client API, covered above.</p></details>
+        <details class="faq"><summary>Why did Kafka move away from ZooKeeper (covered fully in article 8.4)?</summary><p>Briefly here, full treatment in 8.4: Kafka historically used ZooKeeper purely for cluster metadata and controller election, but running a separate ZooKeeper ensemble alongside a Kafka cluster was real operational overhead: two systems to deploy, monitor, and scale independently. KRaft replaces that external dependency with Raft consensus built directly into Kafka itself.</p></details>
+        <details class="faq"><summary>Does ZooKeeper support the same linearizable/serializable read distinction as etcd (8.1)?</summary><p>Conceptually yes — ZooKeeper distinguishes between a full linearizable read (via a <code>sync</code> call before reading, ensuring the client sees the latest committed state) and a plain local read (potentially stale, served directly from whichever server the client is connected to) — the same underlying trade-off article 3.4 built up theoretically, exposed through ZooKeeper's own specific API shape rather than etcd's.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>ZooKeeper</strong>, built on <strong>Zab</strong> (5.7), established the coordination-service product category that etcd (8.1) and Consul (8.3) both directly follow and respond to.</li>
+          <li>Its <strong>hierarchical znode namespace</strong> is a genuinely different data model from etcd's flat key-value store, with API operations (child listing, subtree watches) that leverage that structure directly.</li>
+          <li><strong>Ephemeral znodes</strong> (tied to client session liveness) are ZooKeeper's answer to article 8.1's leases — the same underlying "presence tied to a renewable liveness signal" idea, different implementation shape.</li>
+          <li>ZooKeeper's <strong>lock/leader-election/service-discovery recipe library</strong> is its most lasting influence — the same conceptual patterns reappear across every coordination service this phase covers, including systems that don't use ZooKeeper directly.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://zookeeper.apache.org/doc/current/recipes.html" target="_blank">Apache ZooKeeper — Recipes and Solutions</a> <span>— the canonical lock/election/discovery pattern documentation this article covers.</span></li>
+          <li><a href="https://www.usenix.org/legacy/event/atc10/tech/full_papers/Hunt.pdf" target="_blank">Hunt, Konar, Junqueira &amp; Reed — ZooKeeper: Wait-free Coordination for Internet-scale Systems (2010)</a> <span>— the original system paper.</span></li>
+          <li><a href="consensus-5-7-zab.html">cvam.sight — Consensus 5.7: Zab</a> <span>— the consensus algorithm underlying ZooKeeper.</span></li>
+          <li><a href="consensus-8-1-etcd.html">cvam.sight — Consensus 8.1: etcd</a> <span>— the newer system whose design directly responds to ZooKeeper's strengths and rough edges.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-8-1-etcd.html">← 8.1 etcd</a>
+        <a href="consensus-8-3-consul.html">next: 8.3 Consul →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

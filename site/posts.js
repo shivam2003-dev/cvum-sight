@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-8-2-apache-zookeeper",
+    title: "Apache ZooKeeper.",
+    date: "Jul 21, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "zookeeper", "series-consensus"],
+    time: 20,
+    words: 4200,
+    excerpt: "Consensus Algorithms series, 8.2. ZooKeeper, built on Zab, established the coordination-service product category etcd and Consul both directly respond to. Its hierarchical znode namespace is a genuinely different data model from etcd's flat key-value store; ephemeral znodes (tied to session liveness) are its answer to etcd's leases. The lock/leader-election/service-discovery recipe library is ZooKeeper's most lasting influence -- the same conceptual patterns reappear across every coordination service in this phase.",
+    series: "consensus",
+    seriesNum: "40"
+  },
+  {
     slug: "consensus-8-1-etcd",
     title: "etcd.",
     date: "Jul 21, 2026",

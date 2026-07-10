@@ -16,6 +16,54 @@
 
 const POSTS = [
   {
+    slug: "consensus-11-4-closing-synthesis",
+    title: "The consensus landscape map.",
+    date: "Aug 3, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "decision-framework", "series-consensus"],
+    time: 9,
+    words: 1150,
+    excerpt: "Consensus Algorithms series finale, 11.4. The entire 60-article landscape reduced to seven questions about membership, faults, ordering, time, quorums, finality, and recovery — plus a practical protocol decision sequence and the lessons that survive every change in terminology.",
+    series: "consensus",
+    seriesNum: "60"
+  },
+  {
+    slug: "consensus-11-3-build-your-own-consensus-algorithm",
+    title: "Build your own consensus algorithm.",
+    date: "Aug 2, 2026",
+    cat: "devops",
+    tags: ["devops", "raft", "state-machines", "series-consensus"],
+    time: 9,
+    words: 1100,
+    excerpt: "Consensus Algorithms series, 11.3. Build a deliberately small Raft-like replicated log from invariants outward: persistent terms and votes, leader election, prefix-checked replication, majority commitment, log repair, client deduplication, and adversarial deterministic testing.",
+    series: "consensus",
+    seriesNum: "59"
+  },
+  {
+    slug: "consensus-11-2-consensus-at-the-edge-and-iot",
+    title: "Consensus at the edge and in IoT.",
+    date: "Aug 1, 2026",
+    cat: "devops",
+    tags: ["devops", "edge", "iot", "series-consensus"],
+    time: 7,
+    words: 950,
+    excerpt: "Consensus Algorithms series, 11.2. Why thousands of sensors should not form one giant quorum: a layered edge architecture, choosing consensus versus convergence versus local safety logic, explicit offline policies, and reconciliation after long partitions.",
+    series: "consensus",
+    seriesNum: "58"
+  },
+  {
+    slug: "consensus-11-1-consensus-meets-blockchain",
+    title: "Consensus meets blockchain.",
+    date: "Jul 31, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "blockchain", "series-consensus"],
+    time: 8,
+    words: 1200,
+    excerpt: "Consensus Algorithms series, 11.1. Nakamoto consensus, proof of stake, Tendermint-style committees, slashing, and Solana explained through the classical quorum, Byzantine-fault, leader-election, ordering, and finality concepts built throughout the series.",
+    series: "consensus",
+    seriesNum: "57"
+  },
+  {
     slug: "sql-server-2025-always-on-aws-ec2",
     title: "SQL Server 2025 Always On across AWS subnets.",
     date: "Jul 10, 2026",

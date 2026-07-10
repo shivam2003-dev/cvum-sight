@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-5-6-raft-log-replication-and-safety",
+    title: "Raft — log replication and safety.",
+    date: "Jul 14, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "raft", "series-consensus"],
+    time: 23,
+    words: 4800,
+    excerpt: "Consensus Algorithms series, 5.6. AppendEntries RPCs and the log-matching property that makes conflict detection a single position check instead of a full log comparison. The genuinely subtle safety rule: a leader can only conclude an entry is committed by counting a majority for an entry from its own current term, never a prior term directly -- and exactly why. The full State Machine Safety proof assembled from five properties, each one built from mechanisms this series established well before reaching Raft.",
+    series: "consensus",
+    seriesNum: "24"
+  },
+  {
     slug: "consensus-5-5-raft-design-and-leader-election",
     title: "Raft — design and leader election.",
     date: "Jul 14, 2026",

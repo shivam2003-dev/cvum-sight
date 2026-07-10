@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-1-4-pacelc-and-beyond-cap",
+    title: "PACELC and beyond CAP.",
+    date: "Jul 8, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "pacelc", "series-consensus"],
+    time: 18,
+    words: 3800,
+    excerpt: "Consensus Algorithms series, 1.4 -- Phase 1 finale. CAP only talks about partitions, but most of the time your network is healthy and merely slow. PACELC (Abadi, 2010) fills the gap with a second axis: Latency vs Consistency during normal operation. The four PACELC classes, why strong consistency has a real physical latency floor, why Spanner's TrueTime exists, and the misconceptions PACELC clears up.",
+    series: "consensus",
+    seriesNum: "4"
+  },
+  {
     slug: "consensus-1-3-cap-theorem-properly",
     title: "CAP theorem, properly.",
     date: "Jul 8, 2026",

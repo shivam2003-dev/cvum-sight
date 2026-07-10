@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-9-6-dynamic-membership-and-reconfiguration",
+    title: "Dynamic membership and reconfiguration.",
+    date: "Jul 26, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "reconfiguration", "series-consensus"],
+    time: 22,
+    words: 4700,
+    excerpt: "Consensus Algorithms series, 9.6 -- Phase 9 finale. Why live membership changes can create two disjoint majorities, reintroducing split-brain from a reconfiguration alone. Raft's joint consensus two-phase fix (a double-majority transition, echoing 2PC but provably partition-safe), the simpler single-server-at-a-time alternative most production systems actually use, Matchmaker Paxos revisited with full context, and how adding/removing a region in a geo-distributed system is this exact problem at massive scale.",
+    series: "consensus",
+    seriesNum: "50"
+  },
+  {
     slug: "consensus-9-5-wan-consensus-and-read-optimization",
     title: "WAN consensus and read optimization.",
     date: "Jul 26, 2026",

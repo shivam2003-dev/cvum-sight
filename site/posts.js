@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-5-4-viewstamped-replication",
+    title: "Viewstamped replication.",
+    date: "Jul 13, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "viewstamped-replication", "series-consensus"],
+    time: 18,
+    words: 3800,
+    excerpt: "Consensus Algorithms series, 5.4. Oki and Liskov's independently-developed, often-forgotten algorithm (1988 thesis, 2012 revision) -- solving the same problem as Paxos from a systems-practice rather than theory-first lineage. Views/primary/backups map directly onto Multi-Paxos's terms and Raft's; view change rests on the identical majority-overlap safety mechanism as Paxos Phase 1/2 and Raft's election rule -- strong convergent evidence the mechanism is close to forced, not one lab's arbitrary choice.",
+    series: "consensus",
+    seriesNum: "22"
+  },
+  {
     slug: "consensus-5-3-multi-paxos",
     title: "Multi-Paxos.",
     date: "Jul 13, 2026",

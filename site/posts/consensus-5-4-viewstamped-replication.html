@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Viewstamped Replication — Consensus 5.4 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 5.4. Oki and Liskov's independently-developed, often-forgotten consensus algorithm from the same era as Paxos -- views, view changes, and why it's arguably closer in spirit to Raft than to Paxos, despite predating both.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 5</p>
+        <p class="series-banner-title">Classical Consensus — Paxos &amp; Raft</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 5.4 of 7</p>
+        <div class="series-banner-nav">
+          <a href="consensus-5-1-paxos-history-and-the-problem.html" class="done">5.1 Paxos History</a>
+          <a href="consensus-5-2-single-decree-paxos.html" class="done">5.2 Single-Decree</a>
+          <a href="consensus-5-3-multi-paxos.html" class="done">5.3 Multi-Paxos</a>
+          <a href="consensus-5-4-viewstamped-replication.html" class="active">5.4 VR</a>
+          <a href="consensus-5-5-raft-design-and-leader-election.html">5.5 Raft Election</a>
+          <a href="consensus-5-6-raft-log-replication-and-safety.html">5.6 Raft Safety</a>
+          <a href="consensus-5-7-zab.html">5.7 Zab</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 13, 2026 · devops · 18 min read · 3800 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Viewstamped replication.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">viewstamped-replication</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Article 5.1 mentioned it in passing: an algorithm solving essentially the same problem as Paxos, developed independently around the same time, by a different research lineage, using different terminology and a notably different presentation style — and, for decades, far less famous than it arguably deserved to be. <strong>Viewstamped Replication (VR)</strong>, from Brian Oki's 1988 MIT thesis (advised by Barbara Liskov) and later refined by Liskov and Cowling in 2012, was framed from the start as a practical replication protocol for building fault-tolerant services — not as an abstract consensus proof. Reading it now, after Multi-Paxos (5.3), is genuinely illuminating: VR's "views" are Multi-Paxos's leader terms wearing different clothes, and its structure is, in several concrete ways, closer to Raft's eventual design than Paxos's own presentation is — a reminder that convergent, independently-discovered solutions to the same hard problem is a real, recurring pattern in this field, not a coincidence limited to one case.</p>
+
+        <h2 id="origins">Origins: a different research lineage, the same underlying problem</h2>
+
+        <p>Where Lamport approached consensus from a theoretical, proof-first angle (article 5.1's allegorical paper, however unfortunate its packaging), Oki and Liskov approached the identical underlying problem from systems-building practice — they were specifically designing a practical, implementable replication mechanism for fault-tolerant distributed services, with the algorithm's presentation oriented toward "how do you actually build this" rather than "here is the abstract proof." This difference in origin and framing is exactly why VR reads, to a modern audience already familiar with Raft, as strikingly familiar — both were designed with implementability and operational clarity as a first-class goal, decades apart, arriving at structurally similar answers.</p>
+
+        <h2 id="views">Views: VR's answer to leadership epochs</h2>
+
+        <p>VR organizes execution into a sequence of <strong>views</strong>, each with a designated <strong>primary</strong> (VR's term for what this series has been calling the leader) and a fixed set of backup replicas. A view number increases every time the primary changes — this is, structurally, identical to Multi-Paxos's proposal numbers (article 5.3) and to Raft's terms (article 5.5, next), just under yet another name. Within a stable view, the primary receives client requests, assigns them an op-number (VR's term for article 3.2's log index), and replicates them to backups — a normal-case operation flow that maps directly onto Multi-Paxos's fast-path Phase 2 appends.</p>
+
+        <table class="papers">
+          <tr><th>Concept</th><th>Paxos / Multi-Paxos term</th><th>Raft term</th><th>VR term</th></tr>
+          <tr><td>Leadership epoch counter</td><td>proposal number</td><td>term</td><td>view number</td></tr>
+          <tr><td>Current leader</td><td>the winning proposer</td><td>leader</td><td>primary</td></tr>
+          <tr><td>Log position</td><td>log index</td><td>log index</td><td>op-number</td></tr>
+          <tr><td>Non-leader replicas</td><td>acceptors / learners</td><td>followers</td><td>backups</td></tr>
+        </table>
+
+        <h2 id="view-change">View change: VR's leader-election protocol</h2>
+
+        <p>When backups suspect the primary has failed (article 2.4's failure-detection machinery, applied identically here), they initiate a <strong>view change</strong> — VR's name for the leader-election process (article 4.2). The mechanics are worth walking through because the safety argument, once again, reduces to the same majority-overlap mechanism (article 3.3) this entire series keeps returning to: a replica seeking to become the new primary for view <code>v+1</code> must collect responses from a majority of replicas, each reporting their own most up-to-date log state; the new primary adopts the most complete log among those responses (directly analogous to Raft's log-up-to-dateness voting rule from article 4.2, and to the Phase 1 "adopt the highest-numbered already-accepted value" rule from article 5.2) before announcing the new view and resuming normal operation.</p>
+
+        <div class="bm-note"><strong>Notice how little is actually new here, and that's precisely the point of including this article.</strong> View change's safety rests on the exact same majority-overlap guarantee as Paxos's Phase 1/Phase 2 interaction and Raft's election voting rule — three independently-arrived-at algorithms, from three different research contexts (Lamport's theory-first approach, Oki/Liskov's systems-first approach, Ongaro/Ousterhout's understandability-first approach), all converging on the identical core safety mechanism. This convergence is strong, if informal, evidence that majority overlap isn't merely <em>a</em> good solution to this problem — it's close to the natural, essentially forced solution once you accept the problem's precise requirements (article 5.1's problem statement).</div>
+
+        <h2 id="why-forgotten">Why VR stayed comparatively obscure</h2>
+
+        <p>Despite predating Paxos's eventual publication and solving essentially the same problem with an arguably more immediately practical presentation, VR remained comparatively under-cited and under-implemented in industry for many years — a genuinely interesting case study alongside article 5.1's Paxos-publication story, though for different reasons. Contributing factors, per the field's own retrospective discussion: Lamport's eventual fame and Paxos's association with high-profile production deployments (Chubby, Spanner — Phase 9) gave the Paxos name much stronger mindshare once the field did start paying attention; VR's 1988 thesis format made it less accessible and less widely circulated than a published, citable conference paper; and the 2012 Liskov-Cowling revision, which modernized and clarified the protocol considerably, arrived well after Paxos had already become the default reference point most engineers reached for.</p>
+
+        <h2 id="modern-relevance">Where VR's ideas show up today</h2>
+
+        <p>VR's specific approach to <strong>state transfer</strong> (how a backup that's fallen behind catches up — directly analogous to article 3.2's snapshot-plus-log-tail mechanism) and its explicit, protocol-level handling of client request de-duplication (ensuring a retried client request isn't executed twice — a practical detail Paxos's original presentation left as an implementation exercise) are cited as direct influences on several modern systems' engineering, and the 2012 revision is regularly referenced in production consensus-system design discussions alongside Raft's paper, particularly for its clean treatment of these practical, "the algorithm looks simple on paper but real systems need this too" details.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is VR strictly older than Paxos?</summary><p>Oki's thesis (1988) predates Paxos's eventual 1998 publication, but Lamport's own account places his development of the Paxos algorithm at 1989 — meaning the two were developed within roughly a year of each other, independently, by different research groups unaware of each other's work at the time. Which came "first" is a close, somewhat academic question; the more interesting fact is the independent convergence itself.</p></details>
+        <details class="faq"><summary>Does VR handle the same failure model as Paxos — crash failures, with network partitions?</summary><p>Yes — VR is explicitly designed for the same realistic failure model this entire series has insisted on since article 1.1 (crash/omission/timing failures, asynchronous partition-prone networks, not Byzantine), and its majority-based view-change safety argument is exactly as robust to partitions as Paxos's Phase 1/2 mechanism, for the identical underlying reason (article 3.3's overlap proof).</p></details>
+        <details class="faq"><summary>Is VR used directly in any well-known production system?</summary><p>It's less commonly cited by name in production system descriptions than Paxos or Raft, but its influence is real and documented in the systems research literature, particularly around practical replication-protocol engineering details (state transfer, request de-duplication) that later systems adopted in spirit even when using Paxos- or Raft-branded terminology for the core consensus mechanism.</p></details>
+        <details class="faq"><summary>Should someone learning consensus today start with VR, Paxos, or Raft?</summary><p>Given this series' structure — and the genuinely useful convergence lesson VR provides — the recommended order is exactly the one this phase follows: Paxos first (5.1-5.3, the historically foundational proof), then VR (this article, as a "does this generalize, or was Paxos a fluke" check), then Raft (5.5-5.6, the most implementation-friendly modern presentation of the same underlying idea). Seeing the same core mechanism surface three times, independently, is far more convincing than reading any single presentation alone.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Viewstamped Replication (VR)</strong>, from Oki's 1988 thesis (advised by Liskov, revised with Cowling in 2012), solves the same core problem as Paxos, developed independently, from a systems-practice rather than theory-first research lineage.</li>
+          <li>VR's <strong>views</strong> (with a <strong>primary</strong> and <strong>backups</strong>) map directly onto Multi-Paxos's proposal numbers/leaders and Raft's terms/leaders — three independently-arrived-at names for the same underlying leadership-epoch concept.</li>
+          <li><strong>View change</strong> (VR's leader election) rests on the identical majority-overlap safety mechanism (article 3.3) as Paxos's Phase 1/2 and Raft's election voting rule — strong, convergent evidence that this mechanism is close to the natural, forced solution to the problem.</li>
+          <li>VR stayed comparatively obscure for reasons distinct from but echoing Paxos's own publication troubles (article 5.1) — thesis-format obscurity and Paxos's stronger eventual mindshare, not any deficiency in the algorithm itself.</li>
+          <li>VR's practical engineering details (state transfer, request de-duplication) remain directly influential and are worth knowing even independent of the core consensus mechanism.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="http://pmg.csail.mit.edu/papers/vr-revisited.pdf" target="_blank">Liskov &amp; Cowling — Viewstamped Replication Revisited (2012)</a> <span>— the modern, primary reference; clearer and more complete than the original 1988 thesis.</span></li>
+          <li><a href="https://dl.acm.org/doi/10.1145/62546.62549" target="_blank">Oki &amp; Liskov — Viewstamped Replication: A New Primary Copy Method to Support Highly-Available Distributed Systems (1988)</a> <span>— the original conference paper.</span></li>
+          <li><a href="consensus-5-3-multi-paxos.html">cvam.sight — Consensus 5.3: Multi-Paxos</a> <span>— the closely parallel mechanism VR's views mirror.</span></li>
+          <li><a href="consensus-3-3-quorums-and-majority-voting.html">cvam.sight — Consensus 3.3: Quorums and Majority Voting</a> <span>— the shared safety mechanism underlying VR's view change, Paxos's Phase 1/2, and Raft's election alike.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-5-3-multi-paxos.html">← 5.3 Multi-Paxos</a>
+        <a href="consensus-5-5-raft-design-and-leader-election.html">next: 5.5 Raft — Design and Leader Election →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

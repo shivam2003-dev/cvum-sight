@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-4-5-three-phase-commit",
+    title: "Three-phase commit (3PC).",
+    date: "Jul 12, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "3pc", "series-consensus"],
+    time: 19,
+    words: 3900,
+    excerpt: "Consensus Algorithms series, 4.5 -- Phase 4 finale. The pre-commit phase that genuinely fixes 2PC's blocking, but only under a crash-only failure model. Why real network partitions break the fix -- two disjoint groups can each follow 3PC's own recovery logic correctly and reach opposite decisions, a genuine safety violation worse than plain blocking -- because the recovery logic never checks for a majority. The precise, historical gap that finally motivates majority-quorum consensus, starting Phase 5.",
+    series: "consensus",
+    seriesNum: "18"
+  },
+  {
     slug: "consensus-4-4-two-phase-commit",
     title: "Two-phase commit (2PC).",
     date: "Jul 12, 2026",

@@ -21,8 +21,8 @@ const POSTS = [
     date: "Aug 3, 2026",
     cat: "devops",
     tags: ["devops", "distributed-systems", "decision-framework", "series-consensus"],
-    time: 9,
-    words: 1150,
+    time: 31,
+    words: 5005,
     excerpt: "Consensus Algorithms series finale, 11.4. The entire 60-article landscape reduced to seven questions about membership, faults, ordering, time, quorums, finality, and recovery — plus a practical protocol decision sequence and the lessons that survive every change in terminology.",
     series: "consensus",
     seriesNum: "60"
@@ -33,8 +33,8 @@ const POSTS = [
     date: "Aug 2, 2026",
     cat: "devops",
     tags: ["devops", "raft", "state-machines", "series-consensus"],
-    time: 9,
-    words: 1100,
+    time: 32,
+    words: 5011,
     excerpt: "Consensus Algorithms series, 11.3. Build a deliberately small Raft-like replicated log from invariants outward: persistent terms and votes, leader election, prefix-checked replication, majority commitment, log repair, client deduplication, and adversarial deterministic testing.",
     series: "consensus",
     seriesNum: "59"
@@ -45,8 +45,8 @@ const POSTS = [
     date: "Aug 1, 2026",
     cat: "devops",
     tags: ["devops", "edge", "iot", "series-consensus"],
-    time: 7,
-    words: 950,
+    time: 31,
+    words: 5006,
     excerpt: "Consensus Algorithms series, 11.2. Why thousands of sensors should not form one giant quorum: a layered edge architecture, choosing consensus versus convergence versus local safety logic, explicit offline policies, and reconciliation after long partitions.",
     series: "consensus",
     seriesNum: "58"
@@ -57,8 +57,8 @@ const POSTS = [
     date: "Jul 31, 2026",
     cat: "devops",
     tags: ["devops", "distributed-systems", "blockchain", "series-consensus"],
-    time: 8,
-    words: 1200,
+    time: 31,
+    words: 5019,
     excerpt: "Consensus Algorithms series, 11.1. Nakamoto consensus, proof of stake, Tendermint-style committees, slashing, and Solana explained through the classical quorum, Byzantine-fault, leader-election, ordering, and finality concepts built throughout the series.",
     series: "consensus",
     seriesNum: "57"

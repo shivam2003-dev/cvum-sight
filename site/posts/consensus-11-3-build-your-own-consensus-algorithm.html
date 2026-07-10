@@ -1,10 +1,108 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Build Your Own Consensus Algorithm — Consensus 11.3 — cvam.sight</title><meta name="description" content="Build an educational Raft-like replicated log from invariants outward: roles, terms, voting, replication, commitment, crash recovery, and adversarial testing."><link rel="stylesheet" href="../style.css?v=39"><script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);})()</script><link rel="icon" href="../assets/favicon.svg"><style>.plain{border-left:4px solid #f0c040;padding:8px 0 8px 16px;margin-bottom:24px;font-size:1.04rem}.box{border:1px solid var(--rule);border-radius:10px;padding:15px 17px;margin:18px 0}.label{display:block;font:700 .72rem var(--font-mono);letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px}.warn{border-left:4px solid #c96442;background:rgba(201,100,66,.09)}.tip{border-left:4px solid #6a8f5f;background:rgba(106,143,95,.08)}.idea{border-left:4px solid #527aa8;background:rgba(82,122,168,.07)}.diagram-container{border:1px solid var(--rule);border-radius:12px;padding:18px;margin:24px 0;overflow:auto}.diagram-container svg{width:100%;min-width:680px}.diagram-label{font:12px var(--font-mono);text-align:center;color:var(--ink-faint)}.tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{padding:10px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}.tbl th{font:700 .76rem var(--font-mono);text-transform:uppercase;background:rgba(82,122,168,.06)}h2{margin-top:36px}</style></head><body><div class="progress-bar"></div><div class="layout has-toc"><aside class="sidebar"><a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a><p class="sidebar-sub">blog from a devops + ml apprentice</p><nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../archive.html">Archive</a><a href="../about.html">About</a></nav></aside><div class="page"><article>
-<div class="series-banner"><p class="series-banner-label">Consensus Algorithms · Phase 11</p><p class="series-banner-title">Future Directions &amp; Capstone</p><div class="series-banner-progress"><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip current"></div><div class="series-pip"></div></div><p class="series-banner-meta">Article 11.3 of 4</p><div class="series-banner-nav"><a href="consensus-11-1-consensus-meets-blockchain.html" class="done">11.1 Blockchain</a><a href="consensus-11-2-consensus-at-the-edge-and-iot.html" class="done">11.2 Edge &amp; IoT</a><a class="active" href="consensus-11-3-build-your-own-consensus-algorithm.html">11.3 Build Your Own</a><a href="consensus-11-4-closing-synthesis.html">11.4 Synthesis</a></div></div>
-<div class="post-header"><p class="meta">Aug 2, 2026 · devops · 9 min read · 1100 words <span class="difficulty expert">expert</span></p><h1>Build your own consensus algorithm.</h1><div class="tag-row"><span class="tag fill">devops</span><span class="tag">raft</span><span class="tag">state-machines</span><span class="tag">series-consensus</span></div></div><div class="post-body">
-<p class="plain">This is not a recipe for production consensus. It is a learning exercise: build the smallest Raft-like replicated log that makes its safety assumptions visible. The goal is to discover why each rule exists by seeing which failure appears when you remove it.</p><div class="box warn"><strong class="label">Do not ship this</strong><p>Production implementations need durable storage, snapshots, membership changes, flow control, batching, security, observability, formal reasoning, and years of fault testing. Use a mature library. Build this model to learn and to test your understanding.</p></div>
-<h2 id="contract">Start with the contract, not the messages</h2><p>A consensus protocol is easier to reason about when written as invariants—statements that must remain true through every interleaving, timeout, duplication, and crash.</p><table class="tbl"><tr><th>Invariant</th><th>Plain meaning</th><th>Rule that protects it</th></tr><tr><td>Election safety</td><td>At most one leader exists in a term</td><td>Each node persists at most one vote per term</td></tr><tr><td>Log matching</td><td>If two logs share index and term, their prefixes agree</td><td>Append checks the preceding index and term</td></tr><tr><td>Leader completeness</td><td>A committed entry appears in later leaders</td><td>Voters reject candidates with less up-to-date logs</td></tr><tr><td>State-machine safety</td><td>No nodes apply different commands at one index</td><td>Apply only committed entries in index order</td></tr></table>
-<div class="box idea"><strong class="label">Key mental shift</strong><p>Messages are mechanisms. Invariants are the product. When debugging a protocol, ask which invariant a line of code preserves—not merely which message it sends.</p></div>
-<h2 id="state">The minimum state</h2><p>Every node has a volatile role—follower, candidate, or leader—and a monotonically increasing term. Three values must survive crashes: <code>currentTerm</code>, <code>votedFor</code>, and the log. If a node forgets its vote after reboot, it can vote twice in one term and create two leaders.</p><pre class="code" data-lang="python"><code>@dataclass
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Build Your Own Consensus Algorithm — Consensus 11.3 — cvam.sight</title>
+<meta name="description" content="Build an educational Raft-like replicated log from invariants outward: roles, terms, voting, replication, commitment, crash recovery, and adversarial testing.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);})()</script>
+<link rel="icon" href="../assets/favicon.svg">
+<style>.plain{border-left:4px solid #f0c040;padding:8px 0 8px 16px;margin-bottom:24px;font-size:1.04rem}.box{border:1px solid var(--rule);border-radius:10px;padding:15px 17px;margin:18px 0}.label{display:block;font:700 .72rem var(--font-mono);letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px}.warn{border-left:4px solid #c96442;background:rgba(201,100,66,.09)}.tip{border-left:4px solid #6a8f5f;background:rgba(106,143,95,.08)}.idea{border-left:4px solid #527aa8;background:rgba(82,122,168,.07)}.diagram-container{border:1px solid var(--rule);border-radius:12px;padding:18px;margin:24px 0;overflow:auto}.diagram-container svg{width:100%;min-width:680px}.diagram-label{font:12px var(--font-mono);text-align:center;color:var(--ink-faint)}.tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{padding:10px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}.tbl th{font:700 .76rem var(--font-mono);text-transform:uppercase;background:rgba(82,122,168,.06)}h2{margin-top:36px}</style>
+</head>
+<body>
+<div class="progress-bar">
+</div>
+<div class="layout has-toc">
+<aside class="sidebar">
+<a href="../index.html" class="logo">
+<span class="dot">
+</span> cvam.sight</a>
+<p class="sidebar-sub">blog from a devops + ml apprentice</p>
+<nav>
+<a href="../index.html">Home</a>
+<a href="../series.html">Series</a>
+<a href="../archive.html">Archive</a>
+<a href="../about.html">About</a>
+</nav>
+</aside>
+<div class="page">
+<article>
+<div class="series-banner">
+<p class="series-banner-label">Consensus Algorithms · Phase 11</p>
+<p class="series-banner-title">Future Directions &amp; Capstone</p>
+<div class="series-banner-progress">
+<div class="series-pip done">
+</div>
+<div class="series-pip done">
+</div>
+<div class="series-pip current">
+</div>
+<div class="series-pip">
+</div>
+</div>
+<p class="series-banner-meta">Article 11.3 of 4</p>
+<div class="series-banner-nav">
+<a href="consensus-11-1-consensus-meets-blockchain.html" class="done">11.1 Blockchain</a>
+<a href="consensus-11-2-consensus-at-the-edge-and-iot.html" class="done">11.2 Edge &amp; IoT</a>
+<a class="active" href="consensus-11-3-build-your-own-consensus-algorithm.html">11.3 Build Your Own</a>
+<a href="consensus-11-4-closing-synthesis.html">11.4 Synthesis</a>
+</div>
+</div>
+<div class="post-header">
+<p class="meta">Aug 2, 2026 · devops · 32 min read · 5011 words <span class="difficulty expert">expert</span>
+</p>
+<h1>Build your own consensus algorithm.</h1>
+<div class="tag-row">
+<span class="tag fill">devops</span>
+<span class="tag">raft</span>
+<span class="tag">state-machines</span>
+<span class="tag">series-consensus</span>
+</div>
+</div>
+<div class="post-body">
+<p class="plain">This is not a recipe for production consensus. It is a learning exercise: build the smallest Raft-like replicated log that makes its safety assumptions visible. The goal is to discover why each rule exists by seeing which failure appears when you remove it.</p>
+<div class="box warn">
+<strong class="label">Do not ship this</strong>
+<p>Production implementations need durable storage, snapshots, membership changes, flow control, batching, security, observability, formal reasoning, and years of fault testing. Use a mature library. Build this model to learn and to test your understanding.</p>
+</div>
+<h2 id="contract">Start with the contract, not the messages</h2>
+<p>A consensus protocol is easier to reason about when written as invariants—statements that must remain true through every interleaving, timeout, duplication, and crash.</p>
+<table class="tbl">
+<tr>
+<th>Invariant</th>
+<th>Plain meaning</th>
+<th>Rule that protects it</th>
+</tr>
+<tr>
+<td>Election safety</td>
+<td>At most one leader exists in a term</td>
+<td>Each node persists at most one vote per term</td>
+</tr>
+<tr>
+<td>Log matching</td>
+<td>If two logs share index and term, their prefixes agree</td>
+<td>Append checks the preceding index and term</td>
+</tr>
+<tr>
+<td>Leader completeness</td>
+<td>A committed entry appears in later leaders</td>
+<td>Voters reject candidates with less up-to-date logs</td>
+</tr>
+<tr>
+<td>State-machine safety</td>
+<td>No nodes apply different commands at one index</td>
+<td>Apply only committed entries in index order</td>
+</tr>
+</table>
+<div class="box idea">
+<strong class="label">Key mental shift</strong>
+<p>Messages are mechanisms. Invariants are the product. When debugging a protocol, ask which invariant a line of code preserves—not merely which message it sends.</p>
+</div>
+<h2 id="state">The minimum state</h2>
+<p>Every node has a volatile role—follower, candidate, or leader—and a monotonically increasing term. Three values must survive crashes: <code>currentTerm</code>, <code>votedFor</code>, and the log. If a node forgets its vote after reboot, it can vote twice in one term and create two leaders.</p>
+<pre class="code" data-lang="python">
+<code>@dataclass
 class Node:
     node_id: str
     role: str = "follower"
@@ -17,10 +115,50 @@ class Node:
 @dataclass(frozen=True)
 class Entry:
     term: int
-    command: str</code></pre>
-<h2 id="flow">One command, end to end</h2><div class="diagram-container"><svg viewBox="0 0 860 380" xmlns="http://www.w3.org/2000/svg"><defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0L9 4L0 8Z" fill="#527aa8"/></marker><style>.b{fill:#fffdf8;stroke:#867b69;stroke-width:1.4}.l{fill:#e8f1e4;stroke:#6a8f5f;stroke-width:1.5}.t{font-family:monospace;fill:#2a2620}.h{font-size:15px;font-weight:700}.s{font-size:12px}.a{stroke:#527aa8;stroke-width:2;marker-end:url(#a)}</style></defs><rect x="25" y="65" width="150" height="70" rx="8" class="b"/><text x="100" y="95" text-anchor="middle" class="t h">Client</text><text x="100" y="116" text-anchor="middle" class="t s">SET x=7</text><rect x="265" y="45" width="170" height="110" rx="8" class="l"/><text x="350" y="78" text-anchor="middle" class="t h">Leader A · term 8</text><text x="350" y="104" text-anchor="middle" class="t s">append at index 12</text><text x="350" y="125" text-anchor="middle" class="t s">not committed yet</text><rect x="565" y="35" width="170" height="80" rx="8" class="b"/><text x="650" y="66" text-anchor="middle" class="t h">Follower B</text><text x="650" y="89" text-anchor="middle" class="t s">persist + ACK</text><rect x="565" y="165" width="170" height="80" rx="8" class="b"/><text x="650" y="196" text-anchor="middle" class="t h">Follower C</text><text x="650" y="219" text-anchor="middle" class="t s">packet delayed</text><line x1="175" y1="100" x2="265" y2="100" class="a"/><line x1="435" y1="85" x2="565" y2="75" class="a"/><line x1="435" y1="115" x2="565" y2="205" class="a"/><rect x="265" y="255" width="470" height="75" rx="8" class="l"/><text x="500" y="282" text-anchor="middle" class="t h">A + B is a majority: index 12 commits</text><text x="500" y="307" text-anchor="middle" class="t s">leader applies SET x=7, replies, then announces commit to C</text></svg><p class="diagram-label">Figure 1 — Replication is not commitment. The leader replies only after a majority has durably stored the entry.</p></div>
-<ol><li>The client sends <code>SET x=7</code> to the leader.</li><li>The leader appends <code>(term=8, command=SET x=7)</code> locally.</li><li>It sends <code>AppendEntries</code> with the previous index and term.</li><li>Follower B verifies the prefix, persists the entry, and acknowledges. C is delayed.</li><li>A and B form a majority, so the leader advances <code>commitIndex</code>.</li><li>The leader applies the command and replies. Future heartbeats tell C the committed index.</li></ol>
-<h2 id="election">Election pseudocode</h2><pre class="code" data-lang="python"><code>def on_election_timeout(node):
+    command: str</code>
+</pre>
+<h2 id="flow">One command, end to end</h2>
+<div class="diagram-container">
+<svg viewBox="0 0 860 380" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto">
+<path d="M0 0L9 4L0 8Z" fill="#527aa8"/>
+</marker>
+<style>.b{fill:#fffdf8;stroke:#867b69;stroke-width:1.4}.l{fill:#e8f1e4;stroke:#6a8f5f;stroke-width:1.5}.t{font-family:monospace;fill:#2a2620}.h{font-size:15px;font-weight:700}.s{font-size:12px}.a{stroke:#527aa8;stroke-width:2;marker-end:url(#a)}</style>
+</defs>
+<rect x="25" y="65" width="150" height="70" rx="8" class="b"/>
+<text x="100" y="95" text-anchor="middle" class="t h">Client</text>
+<text x="100" y="116" text-anchor="middle" class="t s">SET x=7</text>
+<rect x="265" y="45" width="170" height="110" rx="8" class="l"/>
+<text x="350" y="78" text-anchor="middle" class="t h">Leader A · term 8</text>
+<text x="350" y="104" text-anchor="middle" class="t s">append at index 12</text>
+<text x="350" y="125" text-anchor="middle" class="t s">not committed yet</text>
+<rect x="565" y="35" width="170" height="80" rx="8" class="b"/>
+<text x="650" y="66" text-anchor="middle" class="t h">Follower B</text>
+<text x="650" y="89" text-anchor="middle" class="t s">persist + ACK</text>
+<rect x="565" y="165" width="170" height="80" rx="8" class="b"/>
+<text x="650" y="196" text-anchor="middle" class="t h">Follower C</text>
+<text x="650" y="219" text-anchor="middle" class="t s">packet delayed</text>
+<line x1="175" y1="100" x2="265" y2="100" class="a"/>
+<line x1="435" y1="85" x2="565" y2="75" class="a"/>
+<line x1="435" y1="115" x2="565" y2="205" class="a"/>
+<rect x="265" y="255" width="470" height="75" rx="8" class="l"/>
+<text x="500" y="282" text-anchor="middle" class="t h">A + B is a majority: index 12 commits</text>
+<text x="500" y="307" text-anchor="middle" class="t s">leader applies SET x=7, replies, then announces commit to C</text>
+</svg>
+<p class="diagram-label">Figure 1 — Replication is not commitment. The leader replies only after a majority has durably stored the entry.</p>
+</div>
+<ol>
+<li>The client sends <code>SET x=7</code> to the leader.</li>
+<li>The leader appends <code>(term=8, command=SET x=7)</code> locally.</li>
+<li>It sends <code>AppendEntries</code> with the previous index and term.</li>
+<li>Follower B verifies the prefix, persists the entry, and acknowledges. C is delayed.</li>
+<li>A and B form a majority, so the leader advances <code>commitIndex</code>.</li>
+<li>The leader applies the command and replies. Future heartbeats tell C the committed index.</li>
+</ol>
+<h2 id="election">Election pseudocode</h2>
+<pre class="code" data-lang="python">
+<code>def on_election_timeout(node):
     node.role = "candidate"
     node.current_term += 1
     persist(node.current_term)
@@ -37,8 +175,12 @@ class Entry:
 def may_vote(node, request):
     log_is_current = (request.last_term, request.last_index) >= last_log_id(node)
     vote_available = node.voted_for in (None, request.candidate)
-    return request.term >= node.current_term and vote_available and log_is_current</code></pre><p>The lexicographic last-log comparison is doing safety work: a candidate with a higher last term is newer; when terms tie, the longer log is newer. Without this check, a stale candidate can win and overwrite an entry a prior majority committed.</p>
-<h2 id="append">The prefix check is the repair mechanism</h2><pre class="code" data-lang="python"><code>def append_entries(node, req):
+    return request.term >= node.current_term and vote_available and log_is_current</code>
+</pre>
+<p>The lexicographic last-log comparison is doing safety work: a candidate with a higher last term is newer; when terms tie, the longer log is newer. Without this check, a stale candidate can win and overwrite an entry a prior majority committed.</p>
+<h2 id="append">The prefix check is the repair mechanism</h2>
+<pre class="code" data-lang="python">
+<code>def append_entries(node, req):
     if req.term < node.current_term:
         return Reject(node.current_term)
     if req.prev_index >= 0:
@@ -49,10 +191,272 @@ def may_vote(node, request):
     node.log = merge_from(node.log, req.prev_index + 1, req.entries)
     persist(node.log)
     node.commit_index = min(req.leader_commit, len(node.log) - 1)
-    return Accept(node.current_term)</code></pre><p>On rejection, the leader moves its <code>nextIndex</code> backward and retries until the follower finds a matching prefix. Then the leader overwrites only the divergent suffix. That is how a formerly isolated leader's uncommitted entries disappear without violating committed history.</p>
-<h2 id="failure">Failure walkthrough: the leader crashes after one ACK</h2><p>A stores entry 12, sends it to B, receives B's durable ACK, and commits. Before C receives it, A crashes. B's log is now the most up to date. Because any election majority overlaps the old commit majority, and because voters require an up-to-date candidate, a leader missing entry 12 cannot win. B becomes leader and repairs C.</p><p>Now change one fact: A sent the entry only to itself and crashed before any follower stored it. The entry was never committed. B or C may lead without it, and A must discard it when repaired. Client code therefore needs request IDs and retry semantics: a timeout does not tell the client whether a command committed just before the reply was lost.</p>
-<div class="box warn"><strong class="label">Classic client gotcha</strong><p>Consensus orders log entries; it does not automatically give exactly-once external effects. Use stable client request IDs and a replicated deduplication table before charging a card, provisioning a VM, or sending a message.</p></div>
-<h2 id="test">Test the model like an adversary</h2><table class="tbl"><tr><th>Fault</th><th>Assertion</th></tr><tr><td>Duplicate and reorder every RPC</td><td>No invariant depends on exactly-once delivery</td></tr><tr><td>Crash after every persistence boundary</td><td>Restart never creates two votes or loses an acknowledged entry</td></tr><tr><td>Partition old leader from majority</td><td>Minority leader cannot commit new entries</td></tr><tr><td>Heal divergent logs</td><td>Committed prefix remains; uncommitted suffix is repaired</td></tr><tr><td>Pause clocks and handlers</td><td>Timing changes liveness, never safety</td></tr><tr><td>Random history with reads/writes</td><td>Recorded behavior satisfies the claimed consistency model</td></tr></table><p>Use deterministic seeds so a failure can be replayed. Then add model checking or property-based state-machine tests. Jepsen's <a href="https://jepsen.io/consistency/models">consistency model map</a> is a useful reminder that “consistent” is incomplete unless the exact model is named.</p>
-<div class="box tip"><strong class="label">Definition of done for the exercise</strong><ul><li>You can explain every persistent field by naming the failure it prevents.</li><li>You can distinguish appended, replicated, committed, and applied.</li><li>You can show why quorum overlap plus the voting rule preserves committed entries.</li><li>Your simulator reproduces failures deterministically.</li><li>You have a counterexample for each intentionally removed safety rule.</li></ul></div>
-<h2 id="takeaways">Takeaways</h2><ul><li>Design from invariants outward.</li><li>Persist term, vote, and log before acknowledging the messages that depend on them.</li><li>A majority-stored entry and a client-visible committed result are related but not identical moments.</li><li>Timeouts choose when to try; they must never determine what is safe.</li><li>A teaching implementation is valuable precisely because it is small enough to break on purpose.</li></ul>
-<h2 id="refs">Further reading</h2><ul><li><a href="https://raft.github.io/raft.pdf">Ongaro and Ousterhout — In Search of an Understandable Consensus Algorithm</a></li><li><a href="https://raft.github.io/">Raft resources and visualizations</a></li><li><a href="https://jepsen.io/">Jepsen — distributed systems safety research</a></li></ul></div><div class="post-nav"><a href="consensus-11-2-consensus-at-the-edge-and-iot.html">← 11.2 Edge &amp; IoT</a><a href="consensus-11-4-closing-synthesis.html">next: 11.4 Closing Synthesis →</a></div></article><footer class="footer">© cvam — written in plaintext, served warm</footer></div><aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside></div><script src="../posts.js?v=2"></script><script src="../stats.js"></script><script src="../app.js?v=10"></script><script defer src="../settings.js?v=6"></script><script type="module" src="../highlighter.js"></script><script defer src="../reader.js"></script></body></html>
+    return Accept(node.current_term)</code>
+</pre>
+<p>On rejection, the leader moves its <code>nextIndex</code> backward and retries until the follower finds a matching prefix. Then the leader overwrites only the divergent suffix. That is how a formerly isolated leader's uncommitted entries disappear without violating committed history.</p>
+<h2 id="failure">Failure walkthrough: the leader crashes after one ACK</h2>
+<p>A stores entry 12, sends it to B, receives B's durable ACK, and commits. Before C receives it, A crashes. B's log is now the most up to date. Because any election majority overlaps the old commit majority, and because voters require an up-to-date candidate, a leader missing entry 12 cannot win. B becomes leader and repairs C.</p>
+<p>Now change one fact: A sent the entry only to itself and crashed before any follower stored it. The entry was never committed. B or C may lead without it, and A must discard it when repaired. Client code therefore needs request IDs and retry semantics: a timeout does not tell the client whether a command committed just before the reply was lost.</p>
+<div class="box warn">
+<strong class="label">Classic client gotcha</strong>
+<p>Consensus orders log entries; it does not automatically give exactly-once external effects. Use stable client request IDs and a replicated deduplication table before charging a card, provisioning a VM, or sending a message.</p>
+</div>
+<h2 id="model-boundary">Define the model boundary before writing code</h2>
+<p>Our teaching cluster has three fixed members, reliable local disks, authenticated point-to-point messages, and crash faults. Messages may be delayed, duplicated, reordered, or lost. Processes may stop and restart from persisted state. Nodes do not forge another node's identity or send intentionally contradictory messages. Timing eventually becomes favorable long enough to elect a leader and replicate entries, but no timeout proves that a peer failed.</p>
+<p>This paragraph is part of the algorithm. Change authenticated membership to open membership and Sybil resistance appears. Change crash faults to Byzantine faults and signatures, larger quorums, and equivocation handling appear. Let disks acknowledge before durable write and a majority no longer means durable majority. A protocol proof is conditional on its model; code inherits those conditions.</p>
+<div class="box idea"><strong class="label">Engineering habit</strong><p>Keep an ASSUMPTIONS.md beside the implementation. Every optimization should name the assumption it uses, and every test should identify which assumption it stresses without exceeding.</p></div>
+
+<h3 id="message-contracts">Message contracts and idempotency</h3>
+<p><code>RequestVote</code> carries candidate term, identity, last log index, and last log term. The response carries responder term and vote result. <code>AppendEntries</code> carries leader term, leader identity, preceding index and term, zero or more entries, and leader commit index. Its response carries current term and success, optionally a conflict hint for faster repair.</p>
+<p>Every handler first compares terms. A lower-term request is rejected. A higher term makes the receiver persist the new term, clear its vote, and become follower before other processing. This common prelude prevents an old leader from continuing after learning a newer election exists.</p>
+<p>Messages must be safe to repeat. A follower receiving the same append twice should not duplicate entries. A candidate receiving duplicate vote responses counts a voter once. Network libraries frequently retry after timeout, and a reply can be lost after the operation succeeded. Idempotency belongs in the protocol handler.</p>
+
+<h3 id="timers">Timers create opportunities, not truth</h3>
+<p>Followers reset an election timer when they receive valid leader communication or grant a vote. A timeout makes a node a candidate; it does not prove the leader dead. Randomizing timeouts reduces repeated split votes because candidates are unlikely to start simultaneously. Heartbeats are empty AppendEntries messages and therefore exercise the same term and prefix authority as replication.</p>
+<p>Choose timeouts from measured broadcast and storage latency, including tail behavior. The election timeout should comfortably exceed normal heartbeat processing. Too short produces needless elections during pauses; too long extends recovery. In production, stop-the-world runtime pauses, disk stalls, overloaded event loops, and virtual-machine suspension matter as much as network RTT.</p>
+<p>Safety must not depend on the numeric timeout. Freeze a node for an hour, deliver an old heartbeat, or fire every timer together: the cluster may stop making progress, but it must not commit conflicting entries.</p>
+
+<h2 id="persistence">Persistence order is protocol order</h2>
+<p>A node receiving a higher term persists it before responding. A voter persists <code>votedFor</code> before granting the vote. A follower persists appended log entries before acknowledging success. If response precedes persistence, the network can carry evidence of a fact that disappears after crash.</p>
+<p>Imagine B sends a successful append reply while data remains only in a write cache. Leader A counts A+B as a majority, commits, and replies to the client. Power loss removes B's entry, then A fails. C and rebooted B elect a leader without the supposedly committed command. The algorithm was correct; the storage contract was false.</p>
+<p>Real durability depends on filesystem, database, hardware cache, barriers, cloud volume semantics, and error handling. <code>write()</code> may not mean stable media. An educational simulator can model <code>persist()</code> as an atomic event, but production code must specify what that event means.</p>
+
+<h3 id="leader-state">Leader replication state</h3>
+<p>For every follower, a leader tracks <code>nextIndex</code>, the next log entry to send, and <code>matchIndex</code>, the highest known replicated index. On election, <code>nextIndex</code> starts after the leader's last entry. Rejections move it backward; successes move it forward. Conflict-term hints can skip entire incompatible terms instead of retrying one index at a time.</p>
+<p>The leader advances commit index when a majority's <code>matchIndex</code> reaches an entry from the leader's current term. That current-term restriction is subtle. Counting an older-term entry directly can produce unsafe reasoning under particular election histories. Once a current-term entry commits, all preceding entries become committed through log order.</p>
+<pre class="code" data-lang="python"><code>def maybe_advance_commit(leader):
+    for index in range(len(leader.log) - 1, leader.commit_index, -1):
+        replicated = 1 + sum(
+            peer.match_index >= index for peer in leader.followers
+        )
+        if replicated >= majority(leader.cluster_size):
+            if leader.log[index].term == leader.current_term:
+                leader.commit_index = index
+                apply_committed(leader)
+                return</code></pre>
+
+<h2 id="reads">Reads are not automatically linearizable</h2>
+<p>A leader can be partitioned from the majority without immediately noticing. If it serves a local read, the answer may be stale while another leader commits newer writes. Linearizable reads require proving current leadership relative to a quorum or using a safe lease with explicit timing assumptions.</p>
+<p>A read-index approach confirms leadership through quorum communication, then waits until the local state machine has applied through the confirmed commit index. A no-op entry committed in the current term can establish authority after election. Follower reads are stale unless routed through a protocol that establishes a safe read point.</p>
+<p>Expose semantics in the API: linearizable read, bounded-stale read, or local stale read. Calling them all GET hides meaningful cost and behavior.</p>
+
+<h3 id="snapshots">Snapshots and log compaction</h3>
+<p>An ever-growing log eventually exhausts disk and makes restart slow. A snapshot captures state machine state through an included index and term. After the snapshot is durable, earlier log entries can be discarded. The included term remains necessary for future prefix checks.</p>
+<p>A lagging follower may need the snapshot because the leader no longer retains its required prefix. Snapshot installation must be chunked, checksummed, resumable, and atomic. The follower cannot expose half-installed state. After installation it keeps any suffix that legitimately follows the snapshot boundary and resumes normal append.</p>
+<p>Application snapshot and consensus metadata must correspond to the same applied index. Taking a database backup while commands continue, then labeling it with a later index, creates state that never existed.</p>
+
+<h2 id="membership">Membership changes need overlapping authority</h2>
+<p>Changing directly from configuration {A,B,C} to {C,D,E} is unsafe because A+B can form an old majority while D+E forms a new majority; the groups do not overlap. Joint consensus commits an intermediate configuration requiring majorities of old and new sets, carrying authority across the transition.</p>
+<p>Simpler Raft variants add or remove one server at a time under constraints. Whichever mechanism is used, membership is a replicated state transition, not an edit to local configuration files. Learners or non-voting replicas can catch up before becoming voters.</p>
+<p>Operationally, remove a failed node only after understanding whether it may return with stale credentials and state. Identity and transport authorization must follow membership so a removed process cannot continue impersonating a voter.</p>
+
+<h2 id="client-semantics">Client retries and exactly-once effects</h2>
+<p>A client sends request 42, the cluster commits it, and the leader crashes before replying. The client cannot distinguish that history from a request lost before commit. It must retry. Without deduplication, the command may execute twice.</p>
+<p>Give each client a stable ID and monotonic request number. Replicate the latest processed number and cached result as state-machine data. A repeated request returns the prior result without re-executing. This provides exactly-once application of commands within the replicated state machine under the defined retention rules.</p>
+<p>External side effects remain harder. If applying an entry sends email or charges a card, crash can occur between the external effect and recording completion. Use an outbox committed in replicated state, and let an idempotent worker deliver effects by stable ID. Consensus cannot atomically control an arbitrary outside system.</p>
+
+<h3 id="implementation-architecture">Separate protocol, transport, storage, and state machine</h3>
+<p>The protocol core should consume events and emit actions: persist state, send message, reset timer, or apply command. Transport handles serialization and authentication. Storage implements atomic durable transitions. The state machine interprets committed commands. A deterministic core is easier to simulate than callbacks mixing sockets, clocks, and disk.</p>
+<p>Use a single-threaded logical event loop initially. Concurrency optimizations can come after invariants pass. Tag logs with node, term, role, index, peer, and message ID. Record state transitions rather than only errors.</p>
+<p>Backpressure is mandatory. Bound pending proposals, per-peer replication windows, message sizes, and snapshot concurrency. A correct protocol can still crash from memory exhaustion when a client submits faster than followers persist.</p>
+
+<h3 id="security">Security is outside the proof but inside the product</h3>
+<p>Mutual authentication prevents an outsider from voting as a member. Authorize peer identity against the committed membership. Protect private keys, rotate certificates without losing quorum, and bind messages to cluster identity to prevent cross-cluster replay.</p>
+<p>Raft does not tolerate a member lying. A compromised node can corrupt application requests or violate message rules, though a crash-fault majority may limit some damage accidentally. If malicious members are in scope, choose a BFT design rather than adding signatures and calling Raft Byzantine-safe.</p>
+<p>Administrative endpoints can bypass consensus if they mutate local state. Restrict them to diagnostics or route changes through replicated commands. Audit membership and snapshot installation.</p>
+
+<h3 id="observability">Observe the safety story</h3>
+<p>Expose current term, role, leader, commit index, applied index, last log index, per-follower match index, election count, proposal latency, append rejection reason, fsync latency, snapshot progress, and pending client requests. Alert on repeated elections, growing apply lag, a member unable to catch up, or quorum with no remaining redundancy.</p>
+<p>A dashboard should distinguish availability from fault tolerance. A three-node cluster with two healthy nodes is serving but cannot tolerate another failure. Show commit latency by storage and network phase. Preserve structured event traces around elections for postmortems.</p>
+
+<h3 id="counterexamples">Learn by removing one rule</h3>
+<table class="tbl"><tr><th>Remove</th><th>Counterexample</th></tr><tr><td>Persist vote before reply</td><td>Crash, forget, vote twice, elect two leaders in one term</td></tr><tr><td>Up-to-date log voting check</td><td>Stale candidate wins and overwrites committed entry</td></tr><tr><td>Previous index/term check</td><td>Follower accepts suffix on incompatible history</td></tr><tr><td>Majority before reply</td><td>Leader-only entry disappears after crash</td></tr><tr><td>Term comparison</td><td>Old leader continues influencing newer term</td></tr><tr><td>Request deduplication</td><td>Lost reply causes repeated business action</td></tr></table>
+<p>Encode each counterexample as a deterministic regression. The fastest way to understand a safety rule is to watch the smallest execution that fails without it.</p>
+
+<h3 id="formal">From tests to formal reasoning</h3>
+<p>Unit tests cover handlers; simulation explores schedules; property tests generate command histories; model checking explores state transitions exhaustively within bounds. TLA+ or another specification language forces state, actions, and invariants into precise form. A model is smaller than production code but can reveal conceptual errors before implementation detail hides them.</p>
+<p>Refinement is the next question: does code implement the modeled atomic actions despite threads, storage APIs, batching, and partial writes? Add assertions that connect runtime state to model concepts. Formal proof of an algorithm does not prove a particular implementation, and extensive tests do not prove all schedules. Use both.</p>
+
+<h3 id="benchmark">Benchmark without hiding correctness</h3>
+<p>Measure throughput, median and tail latency, fsync cost, replication bytes, election recovery, snapshot catch-up, and behavior with one slow follower. State batch size, payload, durability mode, node count, and topology. A benchmark acknowledging before fsync is not comparable to one promising durable commit.</p>
+<p>Load must include client retries and backpressure. Report steady state and failure intervals separately. A protocol sustaining high throughput while recovery queues grow without bound is borrowing from the future.</p>
+
+<h3 id="build-plan">A disciplined build sequence</h3>
+<ol><li>Write assumptions and four core invariants.</li><li>Build deterministic node state with no networking.</li><li>Implement term handling and persistent vote.</li><li>Add election with randomized logical timers.</li><li>Add append prefix checking and repair.</li><li>Add majority commit and ordered apply.</li><li>Add client IDs and deduplication.</li><li>Create a deterministic simulated network and crashable disk.</li><li>Add snapshots and membership only after core counterexamples pass.</li><li>Compare behavior against the Raft paper and a mature implementation.</li></ol>
+
+<h2 id="simulator">Build a deterministic simulator</h2>
+<p>A simulator replaces sockets, threads, real clocks, and disks with an event queue. Each event has a logical time, unique sequence, destination, and payload. The scheduler selects the next event deterministically from a seed. Network rules may drop, duplicate, delay, or reorder messages. Disk persistence becomes an explicit event that can complete or be interrupted by crash.</p>
+<p>Node code must not call the system clock or random generator directly. It asks an injected runtime to set timers or choose randomized durations. The simulator records every input and emitted action. When an invariant fails, print the seed and a minimized trace.</p>
+<pre class="code" data-lang="python"><code>class Sim:
+    def send(self, src, dst, message):
+        if self.partitioned(src, dst): return
+        delay = self.rng.randint(1, self.max_delay)
+        self.schedule(delay, Deliver(dst, clone(message)))
+
+    def crash(self, node_id):
+        self.nodes[node_id].volatile = FreshVolatileState()
+        self.nodes[node_id].running = False
+
+    def restart(self, node_id):
+        self.nodes[node_id] = Node.from_disk(self.disks[node_id])
+        self.nodes[node_id].running = True</code></pre>
+<p>Model network partitions as directional sets because real failures can be asymmetric. Model message duplication and old messages delivered after healing. A protocol that works only on clean bidirectional partitions has not faced the interesting schedules.</p>
+
+<h3 id="invariant-checker">Check invariants after every event</h3>
+<p>Do not wait until the end of a test. After every delivery, timeout, persistence completion, crash, and restart, run global assertions. Election safety scans leaders by term. State-machine safety compares applied commands at each index. Log matching compares any shared index/term and preceding prefixes. Committed entries must remain present in every later leader.</p>
+<pre class="code" data-lang="python"><code>def check_state_machine_safety(cluster):
+    decided = {}
+    for node in cluster.nodes:
+        for index, command in enumerate(node.applied):
+            if index in decided:
+                assert decided[index] == command, (
+                    "different commands applied", index,
+                    decided[index], command
+                )
+            decided[index] = command</code></pre>
+<p>Some properties require ghost state used only by the model, such as the set of entries ever acknowledged committed. Ghost state helps check claims without changing protocol behavior.</p>
+
+<h3 id="history-checking">Check client histories, not only internal state</h3>
+<p>Record invocation and completion of every client operation. A linearizability checker asks whether completed operations can be placed in a sequential order consistent with real-time precedence and the state-machine specification. Internal indexes may look consistent while the public API serves a stale read incorrectly.</p>
+<p>Include ambiguous operations whose client timed out. The checker may consider them either absent or taking effect at some legal point. Retries with the same request ID should return the same result. Use small key spaces to create conflicts and make exhaustive checking practical.</p>
+
+<h2 id="failure-lab">Failure lab: five traces to implement</h2>
+<h3>Split vote</h3><p>A and B become candidates in the same term; each receives one additional vote too late or messages divide so neither reaches majority. Randomized timers trigger a later term and one wins. Assert no two leaders in one term.</p>
+<h3>Old leader in minority</h3><p>A leads A+B+C, then becomes isolated with one follower in a five-node cluster. The majority elects D. A may accept a client request locally but cannot commit. When healed it sees a higher term, steps down, and removes divergent suffix.</p>
+<h3>Committed entry on only a majority</h3><p>A replicates entry x to B and commits, while C is offline. A crashes. Election rules must prevent C from defeating B with a stale log. B leads and repairs C.</p>
+<h3>Snapshot during catch-up</h3><p>C is far behind. A compacts its needed entries and sends a snapshot. Interrupt transfer, retry chunks, install atomically, then resume appends. Assert applied state matches.</p>
+<h3>Membership transition under failure</h3><p>Enter joint configuration, lose a member, and verify decisions require both old and new majorities. Complete transition only after the joint entry commits.</p>
+
+<h3 id="disk-model">Make the disk adversarial</h3>
+<p>A simple in-memory dictionary is too kind. Model a write batch that can be absent or fully present after crash, then deliberately test weaker behavior if the intended storage API allows it. Inject fsync delay, full disk, checksum failure, and read error. Decide whether the process stops, retries, or marks itself unhealthy.</p>
+<p>Never convert an I/O failure into a successful protocol response. If persistence cannot complete, the node cannot grant a vote or acknowledge an append that depends on it. Fail closed and expose health so orchestration does not keep routing leadership to broken storage.</p>
+
+<h3 id="network-model">Make the network realistic</h3>
+<p>TCP provides an ordered byte stream per connection, not exactly-once RPC. Connections reset, writes split, peers reconnect, and application messages repeat. Frame messages with length and limits. Authenticate peers. Reject oversized allocations before decoding.</p>
+<p>Backpressure replication per follower. One slow follower should not block the leader's event loop or consume unbounded memory. Snapshot traffic should not starve heartbeats. Separate connection liveness from protocol leadership.</p>
+
+<h3 id="api-design">Design an honest API</h3>
+<p>A proposal API returns only after commit and apply if it claims linearizable command completion. It should return leader redirection or retryable status when the node is not leader. Include request ID and deadline. Deadline cancellation does not cancel a command that may already commit.</p>
+<p>Expose read modes explicitly. Linearizable reads pay leadership confirmation. Stale reads expose applied index or age. Watch streams include revision so clients detect gaps and resume. Compaction errors tell clients to resnapshot rather than silently skipping events.</p>
+
+<h3 id="snapshot-design">Snapshot format and validation</h3>
+<p>Include format version, cluster ID, membership or configuration reference, last included index and term, application checksum, chunk checksums, and creation metadata. Sign or authenticate snapshots when transported across trust boundaries. Validate before replacing current state.</p>
+<p>Install to a temporary location, fsync data and directory metadata as required, then atomically switch. Preserve the old snapshot until new activation succeeds. Test upgrade and downgrade compatibility.</p>
+
+<h3 id="production-gap">What the toy still lacks</h3>
+<p>Production systems batch proposals, pipeline replication, manage multiple disks or databases, encrypt transport, rotate keys, expose membership APIs, compact logs, stream snapshots, enforce quotas, prioritize internal traffic, and survive version skew. They implement pre-vote or check-quorum mechanisms to reduce disruptive elections and leader leases or read-index paths for reads.</p>
+<p>They also need packaging, safe defaults, rolling upgrade matrices, backups, restore drills, metrics, tracing, alerting, capacity models, security response, and operator documentation. This gap is why writing a learning protocol should increase respect for mature libraries rather than confidence to replace them.</p>
+
+<h3 id="code-review">Protocol code review checklist</h3>
+<ol><li>Does every message handler process higher terms first?</li><li>Are term, vote, and entries durable before dependent replies?</li><li>Can duplicate messages change state twice?</li><li>Does voting compare log term before index?</li><li>Can an old leader serve a linearizable read?</li><li>Does commit advancement enforce the current-term rule?</li><li>Are apply operations ordered and crash recoverable?</li><li>Can queues or messages grow without bound?</li><li>Are cluster and peer identities authenticated?</li><li>Can snapshot installation expose partial state?</li><li>Do retries use stable client IDs?</li><li>Does membership transition preserve quorum overlap?</li></ol>
+
+<h3 id="debugging-guide">Debugging guide by symptom</h3>
+<p><strong>Election storms:</strong> inspect heartbeat handling, event-loop pauses, fsync tail latency, timer randomization, and term transitions. Do not begin by increasing timeouts. <strong>Follower never catches up:</strong> inspect nextIndex movement, conflict hints, snapshot boundary, and rejected prefix terms. <strong>Commit index stalls:</strong> inspect match indexes, quorum reachability, current-term rule, and persistence acknowledgements.</p>
+<p><strong>State machines differ:</strong> stop writes and preserve logs. Compare committed entries, apply order, snapshot index, and application determinism. Consensus agreement with different application outputs indicates nondeterministic state machine or snapshot corruption. <strong>Client sees duplicate action:</strong> trace request ID through commit, apply, result cache, and external outbox.</p>
+<p><strong>Two nodes claim leadership:</strong> terms may differ, which is normal during transition; two leaders in the same term violates election safety. Check durable votes, term persistence, identity duplication, and logs from every voter. A restored clone with the same node identity can appear as one voter in two places.</p>
+
+<h3 id="extension-exercises">Extensions after the core model works</h3>
+<p>Add pre-vote so an isolated follower cannot inflate term immediately after reconnection. Add check-quorum so a leader steps down when it cannot contact a majority. Implement conflict-term optimization and measure repair messages. Add read-index and compare its latency with a committed no-op. Add bounded batching and observe throughput versus tail latency.</p>
+<p>Add a non-voting learner, snapshot transfer, and single-node membership change. Add an outbox state machine with idempotent worker. Add metrics and render a timeline of terms, leaders, commit, and apply indexes. For each extension, write the invariant and counterexample before code.</p>
+<p>Finally run two implementations against the same simulator interface and differential-test observable behavior. They need not elect the same leader, but completed client histories must satisfy the same specification.</p>
+
+<h3 id="faq-build">Frequently asked implementation questions</h3>
+<p><strong>Can the leader commit an entry after one follower acknowledges in a three-node cluster?</strong> Yes: leader plus follower is a majority, assuming both acknowledgements represent durable storage. <strong>Can a follower apply an uncommitted entry?</strong> No. It may store speculative suffix entries but applies only through leader commit index. <strong>Can a candidate vote for itself?</strong> Yes, after persisting its vote. <strong>Can two leaders exist temporarily?</strong> In different terms, yes; only the current majority-backed term can commit. In one term, election safety forbids it.</p>
+<p><strong>Why not delete an entry immediately when leadership changes?</strong> The new leader determines compatible history through prefix repair; local guesses can remove valid data. <strong>Why is cluster size odd?</strong> Even sizes usually do not increase tolerated failures over the preceding odd size but add coordination cost. <strong>Should a follower redirect clients?</strong> It may return known leader information, but clients must tolerate stale hints.</p>
+
+<h3 id="worked-trace">Worked trace with terms and indexes</h3><p>Start with logs A=[(1,x),(1,y)], B=[(1,x),(1,y)], and C=[(1,x)]. A leads term 2 and appends z at index 2. Only A stores z before partition, so z is uncommitted. B and C form a majority, elect B in term 3, and append w at index 2. B replicates w to C and commits it.</p><p>When A returns, it sends an old term-2 heartbeat and is rejected with term 3. A steps down. B's append says previous index 1, term 1; A matches that prefix. At index 2 A has term-2 z while the leader has term-3 w, so merge deletes z and appends w. No committed entry was lost: z never had majority evidence, while w did.</p><p>Now change the first partition so A replicated z to B and committed before failing. B's log is more current and its vote rule prevents C from winning alone. Any election majority intersects A+B, and the up-to-date rule carries z forward. This pair of traces explains why local append is not commitment and why election compares log freshness.</p>
+<h3 id="faq-implementation">More implementation questions</h3><p><strong>Why persist vote and term together?</strong> A crash between inconsistent updates can recreate illegal voting state; use an atomic durable transition. <strong>Why apply after commit?</strong> Speculative state might escape through reads or external effects and later be overwritten. <strong>Why keep term on each entry?</strong> Prefix compatibility and conflict repair need the epoch that created each position.</p><p><strong>Can the leader delete its own suffix?</strong> After stepping down, the new legitimate leader may repair it. A node must not independently choose history. <strong>What if a majority has the entry but the leader does not know?</strong> The entry may become committed through a later leader; the client timeout remains ambiguous. <strong>Why are snapshots part of consensus?</strong> They replace log prefixes while preserving their included index, term, and state-machine result.</p>
+<p>Keep the final implementation small enough that one engineer can print a complete event trace and explain every transition. Educational value falls when frameworks hide ordering. Add performance only after counterexamples remain impossible under millions of randomized schedules. The objective is not a GitHub star count; it is the ability to defend every acknowledgement, vote, truncation, and client response with an invariant.</p>
+<p>Document every shortcut in the toy: fixed membership, in-memory transport, idealized atomic persistence, no Byzantine behavior, and simplified snapshots. A reader should never mistake omitted production machinery for unnecessary machinery. The model is successful when it clarifies why mature implementations contain features that first looked incidental.</p>
+<p>Before finishing, demo one safe failure live: partition the leader, commit on the new majority, heal, and watch the old suffix repair. Then replay the exact seed. Repeatability turns a compelling animation into engineering evidence.</p>
+<p>Keep the trace format stable enough to diff between versions; a protocol change should make its altered decisions visible rather than silently changing logs.</p>
+<h2 id="test">Test the model like an adversary</h2>
+<table class="tbl">
+<tr>
+<th>Fault</th>
+<th>Assertion</th>
+</tr>
+<tr>
+<td>Duplicate and reorder every RPC</td>
+<td>No invariant depends on exactly-once delivery</td>
+</tr>
+<tr>
+<td>Crash after every persistence boundary</td>
+<td>Restart never creates two votes or loses an acknowledged entry</td>
+</tr>
+<tr>
+<td>Partition old leader from majority</td>
+<td>Minority leader cannot commit new entries</td>
+</tr>
+<tr>
+<td>Heal divergent logs</td>
+<td>Committed prefix remains; uncommitted suffix is repaired</td>
+</tr>
+<tr>
+<td>Pause clocks and handlers</td>
+<td>Timing changes liveness, never safety</td>
+</tr>
+<tr>
+<td>Random history with reads/writes</td>
+<td>Recorded behavior satisfies the claimed consistency model</td>
+</tr>
+</table>
+<p>Use deterministic seeds so a failure can be replayed. Then add model checking or property-based state-machine tests. Jepsen's <a href="https://jepsen.io/consistency/models">consistency model map</a> is a useful reminder that “consistent” is incomplete unless the exact model is named.</p>
+<div class="box tip">
+<strong class="label">Definition of done for the exercise</strong>
+<ul>
+<li>You can explain every persistent field by naming the failure it prevents.</li>
+<li>You can distinguish appended, replicated, committed, and applied.</li>
+<li>You can show why quorum overlap plus the voting rule preserves committed entries.</li>
+<li>Your simulator reproduces failures deterministically.</li>
+<li>You have a counterexample for each intentionally removed safety rule.</li>
+</ul>
+</div>
+<h2 id="takeaways">Takeaways</h2>
+<ul>
+<li>Design from invariants outward.</li>
+<li>Persist term, vote, and log before acknowledging the messages that depend on them.</li>
+<li>A majority-stored entry and a client-visible committed result are related but not identical moments.</li>
+<li>Timeouts choose when to try; they must never determine what is safe.</li>
+<li>A teaching implementation is valuable precisely because it is small enough to break on purpose.</li>
+</ul>
+<h2 id="refs">Further reading</h2>
+<ul>
+<li>
+<a href="https://raft.github.io/raft.pdf">Ongaro and Ousterhout — In Search of an Understandable Consensus Algorithm</a>
+</li>
+<li>
+<a href="https://raft.github.io/">Raft resources and visualizations</a>
+</li>
+<li>
+<a href="https://jepsen.io/">Jepsen — distributed systems safety research</a>
+</li>
+</ul>
+</div>
+<div class="post-nav">
+<a href="consensus-11-2-consensus-at-the-edge-and-iot.html">← 11.2 Edge &amp; IoT</a>
+<a href="consensus-11-4-closing-synthesis.html">next: 11.4 Closing Synthesis →</a>
+</div>
+</article>
+<footer class="footer">© cvam — written in plaintext, served warm</footer>
+</div>
+<aside class="toc-panel">
+<p class="toc-panel-label">// on this page</p>
+<nav id="toc-nav">
+</nav>
+</aside>
+</div>
+<script src="../posts.js?v=2">
+</script>
+<script src="../stats.js">
+</script>
+<script src="../app.js?v=10">
+</script>
+<script defer src="../settings.js?v=6">
+</script>
+<script type="module" src="../highlighter.js">
+</script>
+<script defer src="../reader.js">
+</script>
+</body>
+</html>

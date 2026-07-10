@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vector Clocks — Consensus 2.3 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 2.3. One counter per process instead of one shared counter -- how vector clocks detect true concurrency exactly, the comparison rule, a worked conflict-detection example, and why Dynamo-style systems need this over plain Lamport clocks.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.88rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 2</p>
+        <p class="series-banner-title">Time and Failure</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 2.3 of 5</p>
+        <div class="series-banner-nav">
+          <a href="consensus-2-1-physical-clocks-and-why-they-lie.html" class="done">2.1 Physical Clocks</a>
+          <a href="consensus-2-2-lamport-clocks-and-logical-time.html" class="done">2.2 Lamport Clocks</a>
+          <a href="consensus-2-3-vector-clocks.html" class="active">2.3 Vector Clocks</a>
+          <a href="consensus-2-4-failure-models-and-failure-detectors.html">2.4 Failure Detectors</a>
+          <a href="consensus-2-5-the-flp-impossibility-theorem.html">2.5 FLP</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 9, 2026 · devops · 20 min read · 4100 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Vector clocks.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">vector-clocks</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">A Lamport clock (2.2) gives every event a single number that respects causal order — but that single number can't tell you whether two events were causally related or merely concurrent, and that distinction turns out to matter enormously for real systems (Dynamo-style databases need to know exactly when two writes genuinely conflict, versus when one simply came after the other). The fix, independently developed by Colin Fidge and Friedemann Mattern in 1988, is almost embarrassingly simple once you've internalized Lamport clocks: <strong>stop sharing one counter — give each process its own, and have every process track everyone else's too.</strong> The resulting vector of counters can detect concurrency exactly, with a clean mathematical rule, at the direct cost of one integer per process instead of one integer total.</p>
+
+        <h2 id="the-gap">Exactly what Lamport clocks were missing</h2>
+
+        <p>Recall the core limitation from article 2.2: <code>LC(a) &lt; LC(b)</code> does not imply <code>a → b</code>. Given two Lamport timestamps, you genuinely cannot tell — from the numbers alone — whether event <code>a</code> causally influenced event <code>b</code>, or whether they're concurrent and the numeric difference is just coincidental counter drift. For many purposes this doesn't matter (a total order via tie-breaking is enough). But for a specific and important class of problems, it matters a great deal: <strong>conflict detection in replicated data.</strong></p>
+
+        <p>Picture Dynamo-style leaderless replication (introduced in article 1.2): a client writes to replica A, another client writes to replica B, both writes target the same key, and neither client saw the other's write before making theirs. These two writes are, causally, concurrent — neither happened-before the other. A correct system needs to <em>recognize this</em> and either merge the writes or flag a conflict for resolution. If it instead just picked "whichever has the higher Lamport timestamp" and silently discarded the other, it could be silently discarding a write that was, causally, entirely independent and equally valid — exactly the kind of silent data loss article 1.2 warned about with async replication, just via a different mechanism.</p>
+
+        <h2 id="mechanism">The mechanism: one counter per process, tracked by everyone</h2>
+
+        <p>A vector clock replaces the single shared-style Lamport counter with a <strong>vector</strong> — an array with one entry per process in the system. Process <code>i</code>'s vector clock <code>V</code> has <code>V[i]</code> as "my own counter" and <code>V[j]</code> for every other process <code>j</code> as "the most recent count I've learned about from j, directly or transitively." The update rules mirror Lamport's, just applied per-component:</p>
+
+        <pre class="code" data-lang="python">class VectorClock:
+    def __init__(self, process_id, all_process_ids):
+        self.pid = process_id
+        self.vector = {p: 0 for p in all_process_ids}
+
+    def local_event(self):
+        # Rule 1: increment only MY OWN entry before a local event
+        self.vector[self.pid] += 1
+        return dict(self.vector)
+
+    def send_message(self):
+        self.vector[self.pid] += 1
+        return dict(self.vector)  # attach the FULL vector to the message
+
+    def receive_message(self, msg_vector):
+        # Rule 2: element-wise max with the incoming vector, then bump my own entry
+        for p, count in msg_vector.items():
+            self.vector[p] = max(self.vector[p], count)
+        self.vector[self.pid] += 1
+        return dict(self.vector)</pre>
+
+        <p>The only real change from a Lamport clock: instead of one <code>max(local, received) + 1</code>, you take the <strong>element-wise maximum</strong> across the entire vector, then increment only your own slot. This means a vector clock carries, at every point, a complete summary of "the most recent event from every process that I know, directly or transitively, could have influenced me" — which is exactly the information needed to reconstruct happens-before precisely, not just approximately.</p>
+
+        <h2 id="comparison-rule">The comparison rule that makes concurrency detectable</h2>
+
+        <p>Given two vector clocks <code>V_a</code> and <code>V_b</code>, define:</p>
+
+        <div class="eq">V_a ≤ V_b   iff   V_a[p] ≤ V_b[p] for every process p
+V_a < V_b   iff   V_a ≤ V_b AND V_a ≠ V_b  (strictly smaller in at least one component)
+
+Then:
+  a → b        iff  V_a < V_b
+  b → a        iff  V_b < V_a
+  a || b (concurrent)  iff  NEITHER V_a < V_b NOR V_b < V_a</div>
+
+        <p>This is the payoff, stated precisely: <strong>the vector clock comparison exactly reconstructs the happens-before relation</strong> — not an approximation, an exact correspondence. If neither vector is component-wise less-than-or-equal to the other (each has at least one component strictly greater than the other's corresponding component), the two events are provably concurrent, with certainty, from the vectors alone. This is the guarantee Lamport clocks could never give you.</p>
+
+        <h2 id="worked-example">A worked example: detecting a real conflict</h2>
+
+        <p>Three replicas, A, B, C, each tracking a vector <code>[a, b, c]</code>, all starting at <code>[0,0,0]</code>:</p>
+
+        <table class="papers">
+          <tr><th>Step</th><th>Replica</th><th>Event</th><th>Resulting vector</th></tr>
+          <tr><td class="d">1</td><td>A</td><td>writes key K = "red"</td><td>A: [1,0,0]</td></tr>
+          <tr><td class="d">2</td><td>A</td><td>replicates to B (message carries [1,0,0])</td><td>B receives, merges: [1,1,0]</td></tr>
+          <tr><td class="d">3</td><td>C</td><td>writes key K = "blue" (independently, hasn't seen A's write)</td><td>C: [0,0,1]</td></tr>
+          <tr><td class="d">4</td><td>B</td><td>local read of K (no write)</td><td>B: [1,2,0]</td></tr>
+        </table>
+
+        <p>Compare A's write-vector <code>[1,0,0]</code> against C's write-vector <code>[0,0,1]</code>: is <code>[1,0,0] ≤ [0,0,1]</code>? No — A's first component (1) exceeds C's (0). Is <code>[0,0,1] ≤ [1,0,0]</code>? No — C's third component (1) exceeds A's (0). <strong>Neither holds, so the comparison rule says these two writes are concurrent</strong> — exactly matching the story: C wrote "blue" without any knowledge of A's "red" write. A correctly-designed system reading both vectors would recognize this as a genuine conflict (both "red" and "blue" are causally valid candidates for K) rather than picking one arbitrarily, and would either merge them (application-specific logic) or surface the conflict to the client — this is precisely what Dynamo's read-repair and "sibling" mechanism does with real vector clocks in production.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Vector clocks detect the conflict a Lamport clock would hide</text>
+            <rect x="40" y="40" width="200" height="50" class="boxr"/>
+            <text x="140" y="60" class="smk" text-anchor="middle">A writes K="red"</text>
+            <text x="140" y="78" class="smk" text-anchor="middle">vector [1,0,0]</text>
+            <rect x="440" y="40" width="200" height="50" class="boxr"/>
+            <text x="540" y="60" class="smk" text-anchor="middle">C writes K="blue"</text>
+            <text x="540" y="78" class="smk" text-anchor="middle">vector [0,0,1]</text>
+            <text x="340" y="70" class="sm" text-anchor="middle">no message between them</text>
+            <rect x="180" y="120" width="320" height="70" class="boxy"/>
+            <text x="340" y="145" class="smk" text-anchor="middle">Neither [1,0,0] ≤ [0,0,1] nor the reverse holds</text>
+            <text x="340" y="165" class="ink" text-anchor="middle" style="font-weight:bold">→ provably CONCURRENT: real conflict, not "one happened later"</text>
+            <text x="340" y="210" class="sm" text-anchor="middle">A Lamport clock alone would just show two numbers — no way to prove there's no causal link.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — The exact scenario Lamport clocks can't safely resolve: two genuinely independent writes to the same key.</p>
+        </div>
+
+        <h2 id="cost">The real cost: O(n) space per timestamp</h2>
+
+        <p>Nothing in distributed systems is free, and vector clocks are a textbook example of a direct, quantifiable trade-off: a Lamport timestamp is one integer; a vector clock timestamp is <strong>one integer per process in the system</strong>. For a system with 3 replicas this is trivial. For a system with thousands of clients or nodes — which describes a lot of real leaderless systems at scale — a full vector clock attached to every single piece of data becomes a genuinely significant storage and bandwidth cost, and this is not a theoretical concern: it's a documented, named problem.</p>
+
+        <div class="bm-warn"><strong>Vector clock growth was a real, painful production issue at Amazon's actual Dynamo deployment</strong> — client-side vector clocks could grow unboundedly as many different clients wrote to the same key over time, since every distinct client identity that ever contributed a write potentially needed its own vector slot. Basho (Riak's maintainer) and others documented this "vector clock explosion" as a genuine operational hazard requiring active pruning strategies (bounding vector size, evicting old/stale entries, or switching to server-side, replica-count-bounded vectors rather than unbounded client-identity-bounded ones) rather than a purely academic footnote. This is a good early example of a pattern that recurs throughout this series: an elegant algorithm's practical deployment often needs a second layer of engineering (pruning, bounding, approximating) to handle scale the original design didn't fully anticipate.</div>
+
+        <h2 id="alternatives">What replaced or supplemented vector clocks in practice</h2>
+
+        <ul>
+          <li><strong>Dotted Version Vectors</strong> — a refinement (used in Riak 2.0+) that more precisely tracks which specific write produced which specific vector entry, closing some correctness gaps in naive vector clock implementations around replica removal and re-addition.</li>
+          <li><strong>Bounded/pruned vector clocks</strong> — simply cap the vector size and evict the oldest entries, accepting a small chance of misclassifying an old concurrent write as causally ordered, in exchange for bounded storage — a pragmatic, explicitly-accepted trade-off.</li>
+          <li><strong>CRDTs (Conflict-free Replicated Data Types)</strong> — for specific data shapes (counters, sets, certain map types), CRDTs sidestep the conflict-<em>detection</em> problem entirely by making merges mathematically well-defined and commutative regardless of order — a genuinely different strategy from "detect and flag conflicts," worth knowing exists even though it's outside this series' consensus-specific scope.</li>
+        </ul>
+
+        <h2 id="not-in-consensus">Why vector clocks aren't the main tool in the rest of this series</h2>
+
+        <p>Worth being explicit about scope here: vector clocks solve the causality-tracking problem beautifully, but they solve a <em>different</em> problem than what most of Phases 4 through 7 need. Consensus algorithms (Paxos, Raft, and the rest) generally want a single, agreed-upon <strong>total</strong> order of operations across all replicas — not a way to detect and merge concurrent conflicts, but a way to <em>prevent</em> concurrent conflicting writes from being separately accepted in the first place, via the leader-election and majority-quorum machinery previewed in article 1.2. That's why you'll see Raft's simpler monotonic "term" numbers (closer in spirit to a Lamport clock) rather than full vector clocks — the leaderless, conflict-embracing replication style (article 1.2's third row) is exactly where vector clocks earn their keep, and it's a structurally different design point from the consensus-backed single-leader systems this series spends most of its time on.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Do I need vector clocks if my system uses a consensus-elected leader?</summary><p>Generally no — a consensus-backed single-leader system (the pattern this series focuses on) prevents concurrent conflicting writes from being accepted in the first place via majority quorums, so there's no after-the-fact conflict to detect. Vector clocks earn their keep specifically in leaderless or multi-leader systems that deliberately accept concurrent writes and need to reconcile them later.</p></details>
+        <details class="faq"><summary>Can vector clocks tell you the real-world time an event happened?</summary><p>No, same as Lamport clocks — vector clocks are purely about causal relationships, with zero connection to wall-clock time. If you need both causal ordering and a rough physical timestamp, some systems attach both a vector clock and a wall-clock timestamp to each event, using the vector clock for correctness-critical conflict detection and the physical timestamp only for human-facing display or tie-breaking heuristics.</p></details>
+        <details class="faq"><summary>What happens if a new process joins the system after it's already running?</summary><p>The vector needs to grow to accommodate the new process's slot, and every existing vector clock effectively treats the newcomer's implicit prior count as zero. Real implementations handle this via explicit process-membership tracking — this is one of several practical wrinkles (along with removal/re-addition, addressed by dotted version vectors) that make production vector clock implementations more involved than the clean textbook version shown here.</p></details>
+        <details class="faq"><summary>Is the "vector clock explosion" problem specific to Dynamo, or does it apply broadly?</summary><p>It applies broadly, to any design where the vector's dimension is tied to something that grows without bound — client identities being the classic case (many different, possibly short-lived clients writing over a long period). Systems that instead size the vector to a small, fixed, bounded number of long-lived replicas (rather than one entry per ever-seen client) avoid the worst of this problem, which is exactly the direction later Dynamo-family designs moved.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Lamport clocks can order causally-related events correctly but <strong>cannot prove two events are concurrent</strong> — vector clocks fix exactly this gap.</li>
+          <li>A <strong>vector clock</strong> is one counter per process, updated by: increment your own slot locally; on receive, take the <strong>element-wise max</strong> with the incoming vector, then increment your own slot.</li>
+          <li>The comparison rule <strong>exactly reconstructs happens-before</strong>: <code>a → b</code> iff <code>V_a &lt; V_b</code> component-wise; if neither vector dominates the other, the events are <strong>provably concurrent</strong>.</li>
+          <li>This exactness matters concretely for Dynamo-style leaderless systems that need to detect genuine write conflicts rather than arbitrarily picking a "winner."</li>
+          <li>The real cost is <strong>O(n) space per timestamp</strong> (one integer per process) — a documented, production-real problem ("vector clock explosion") at Amazon's actual Dynamo, addressed via dotted version vectors, pruning, or bounding.</li>
+          <li>Vector clocks are the right tool for <strong>leaderless/multi-leader</strong> systems embracing concurrent writes; consensus-backed single-leader systems (this series' main focus from Phase 4 on) generally use simpler mechanisms (like Raft's term counters) because they prevent the conflict rather than detect it after the fact.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.cs.rice.edu/~alc/comp520/papers/Fidge1988.pdf" target="_blank">Fidge — Timestamps in Message-Passing Systems That Preserve the Partial Ordering (1988)</a> <span>— one of the two independent original vector clock papers.</span></li>
+          <li><a href="https://www.researchgate.net/publication/221656372_Virtual_Time_and_Global_States_of_Distributed_Systems" target="_blank">Mattern — Virtual Time and Global States of Distributed Systems (1989)</a> <span>— the other independent origin of the vector clock idea.</span></li>
+          <li><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf" target="_blank">DeCandia et al. — Dynamo: Amazon's Highly Available Key-value Store (SOSP 2007)</a> <span>— vector clocks in real production use, including the growth problem discussed above.</span></li>
+          <li><a href="consensus-2-2-lamport-clocks-and-logical-time.html">cvam.sight — Consensus 2.2: Lamport Clocks and Logical Time</a> <span>— the mechanism this article's vector generalizes.</span></li>
+          <li><a href="consensus-1-2-the-replication-problem.html">cvam.sight — Consensus 1.2: The Replication Problem</a> <span>— the leaderless replication context vector clocks were built for.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-2-2-lamport-clocks-and-logical-time.html">← 2.2 Lamport Clocks and Logical Time</a>
+        <a href="consensus-2-4-failure-models-and-failure-detectors.html">next: 2.4 Failure Models and Failure Detectors →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

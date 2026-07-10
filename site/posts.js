@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-2-3-vector-clocks",
+    title: "Vector clocks.",
+    date: "Jul 9, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "vector-clocks", "series-consensus"],
+    time: 20,
+    words: 4100,
+    excerpt: "Consensus Algorithms series, 2.3. Lamport clocks can order causally-related events but can't prove two events are concurrent -- vector clocks fix exactly this gap with one counter per process. The element-wise-max update rule, the comparison rule that exactly reconstructs happens-before, a worked write-conflict example, the real O(n)-space cost, and the documented 'vector clock explosion' problem from Amazon's actual Dynamo deployment.",
+    series: "consensus",
+    seriesNum: "7"
+  },
+  {
     slug: "consensus-2-2-lamport-clocks-and-logical-time",
     title: "Lamport clocks and logical time.",
     date: "Jul 9, 2026",

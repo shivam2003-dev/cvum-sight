@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia",
+    title: "Matchmaker Paxos, PigPaxos, BPaxos &amp; Rabia.",
+    date: "Jul 20, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "modern-paxos-survey", "series-consensus"],
+    time: 23,
+    words: 4900,
+    excerpt: "Consensus Algorithms series, 7.8 -- Phase 7 finale. Four specialized variants: Matchmaker Paxos formalizes a subtle reconfiguration safety hazard; PigPaxos fixes the leader fan-out bottleneck via gossip relay; BPaxos ports Narwhal/Bullshark's data/ordering separation to the crash-fault setting; Rabia simplifies via randomization instead of adding mechanism. Closes Phase 7 with the compression that matters: every variant since 7.1 relaxes one of Multi-Paxos's four bundled assumptions while the majority-overlap safety core never changes.",
+    series: "consensus",
+    seriesNum: "38"
+  },
+  {
     slug: "consensus-7-7-omnipaxos",
     title: "OmniPaxos.",
     date: "Jul 20, 2026",

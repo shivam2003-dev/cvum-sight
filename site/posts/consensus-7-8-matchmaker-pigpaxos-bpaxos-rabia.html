@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matchmaker Paxos, PigPaxos, BPaxos &amp; Rabia — Consensus 7.8 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 7.8 -- Phase 7 finale. A survey of four narrower, specialized modern Paxos variants: Matchmaker Paxos's reconfiguration-focused role, PigPaxos's gossip-relay fan-in, BPaxos's Narwhal-adjacent ordering/data separation, and Rabia's randomization-based simplification. Closes Phase 7 with a full comparison across all eight articles.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 7</p>
+        <p class="series-banner-title">The Modern Paxos Family</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Article 7.8 of 8 — Phase 7 complete after this</p>
+        <div class="series-banner-nav">
+          <a href="consensus-7-1-epaxos-leaderless-consensus.html" class="done">7.1 EPaxos</a>
+          <a href="consensus-7-2-flexible-paxos.html" class="done">7.2 Flexible Paxos</a>
+          <a href="consensus-7-3-generalized-and-fast-paxos.html" class="done">7.3 Generalized/Fast</a>
+          <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html" class="done">7.4 Cheap/Compart.</a>
+          <a href="consensus-7-5-atlas.html" class="done">7.5 Atlas</a>
+          <a href="consensus-7-6-caesar.html" class="done">7.6 Caesar</a>
+          <a href="consensus-7-7-omnipaxos.html" class="done">7.7 OmniPaxos</a>
+          <a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html" class="active">7.8 Survey</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 20, 2026 · devops · 23 min read · 4900 words <span class="difficulty expert">expert</span></p>
+        <h1>Matchmaker Paxos, PigPaxos, BPaxos &amp; Rabia.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">modern-paxos-survey</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Closing Phase 7 with four narrower, more specialized variants that each address one specific weakness this phase has surfaced along the way, plus a full comparison across every algorithm covered since 7.1. <strong>Matchmaker Paxos</strong> tackles reconfiguration's specific safety subtleties head-on. <strong>PigPaxos</strong> attacks Multi-Paxos's own leader-fan-out bottleneck (the same class of problem article 6.5 solved for BFT) using a gossip-relay pattern. <strong>BPaxos</strong> applies Narwhal's data/ordering separation (article 6.5) back to the crash-fault setting. <strong>Rabia</strong> takes the opposite approach from nearly everything else in this phase — simplifying via randomization instead of adding mechanism. Together, these round out the picture before this series turns to production systems in Phase 8.</p>
+
+        <h2 id="matchmaker">Matchmaker Paxos: reconfiguration's subtle safety trap</h2>
+
+        <p>OmniPaxos (7.7) treated reconfiguration as important enough to design in from the start; Matchmaker Paxos (Whittaker, Ailijiang, and colleagues) goes further and specifically formalizes a subtle safety hazard in reconfiguration that's easy to get wrong: when cluster membership changes while a Phase 1 (leader election, article 5.2) is in flight, a naive implementation can end up with acceptors from the <em>old</em> configuration and acceptors from the <em>new</em> configuration disagreeing about which quorum is authoritative — a scenario that can silently reintroduce article 1.2's split-brain risk specifically at the moment of membership change, even in an otherwise-correct implementation. Matchmaker Paxos introduces a dedicated "matchmaker" role that mediates configuration changes explicitly, ensuring the old and new configurations' quorums are properly reconciled before a reconfiguration is considered complete — a precise, formal treatment of exactly the hazard OmniPaxos's "first-class reconfiguration" design goal (7.7) was informally motivated by.</p>
+
+        <h2 id="pigpaxos">PigPaxos: fixing the leader's fan-out bottleneck</h2>
+
+        <p>Recall article 6.5's Narwhal/Bullshark motivation, restated for the crash-fault setting: even in Multi-Paxos's efficient fast path (article 5.3), the leader still personally sends every AppendEntries-equivalent message to every follower directly — a fan-out cost that scales linearly with cluster size and can become a real bottleneck at larger deployments, structurally the same shape of problem article 6.5 named for BFT protocols, just in the crash-fault-tolerant setting. PigPaxos's fix borrows a pattern from peer-to-peer gossip protocols: instead of the leader sending directly to every follower, it sends to a small, random relay subset, which then re-broadcasts to the rest — reducing the leader's own direct fan-out load while still propagating updates to the full cluster, trading a small amount of added latency (one extra relay hop) for meaningfully reduced leader-side bandwidth pressure at scale.</p>
+
+        <h2 id="bpaxos">BPaxos: separating ordering from broadcast, for crash faults</h2>
+
+        <p>BPaxos applies a structurally similar idea to article 6.5's Narwhal/Bullshark separation, but for the crash-fault-tolerant setting this whole phase has otherwise stayed within (rather than 6.5's Byzantine setting): decouple the mechanism that disseminates command data across replicas from the separate mechanism that decides their final order, letting each be optimized and scaled independently — directly mirroring the architectural lesson article 6.5 introduced, demonstrating that "separate data movement from ordering" is a genuinely reusable systems pattern that transfers across the crash-fault/Byzantine boundary, not a Byzantine-specific trick.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 170" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Two throughput fixes, same underlying idea, different fault models</text>
+            <rect x="40" y="40" width="280" height="80" class="boxg"/>
+            <text x="180" y="62" class="smk" text-anchor="middle" style="font-weight:bold">Narwhal/Bullshark (6.5)</text>
+            <text x="180" y="82" class="sm" text-anchor="middle">Byzantine setting</text>
+            <text x="180" y="100" class="sm" text-anchor="middle">DAG mempool + lightweight ordering</text>
+            <rect x="360" y="40" width="280" height="80" class="boxg"/>
+            <text x="500" y="62" class="smk" text-anchor="middle" style="font-weight:bold">BPaxos (7.8)</text>
+            <text x="500" y="82" class="sm" text-anchor="middle">crash-fault setting</text>
+            <text x="500" y="100" class="sm" text-anchor="middle">same data/order separation, ported over</text>
+            <text x="340" y="145" class="sm" text-anchor="middle">"Separate dissemination from ordering" is a reusable pattern, not a Byzantine-only trick.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — BPaxos is direct evidence that architectural lessons transfer across the crash-fault/Byzantine boundary this series has otherwise kept separate.</p>
+        </div>
+
+        <h2 id="rabia">Rabia: simplifying via randomization</h2>
+
+        <p>Rabia (Pan, Ren, and colleagues) takes a genuinely different direction from every other variant in this phase — instead of adding mechanism to optimize a specific metric (latency, throughput, cost), it uses <strong>randomization</strong> to <em>remove</em> mechanism, aiming for a simpler protocol overall. Building on article 2.5's randomization escape hatch (originally introduced there as one of FLP's ways around the impossibility result), Rabia uses a randomized consensus core to avoid some of the more intricate corner-case handling that deterministic protocols like Multi-Paxos and Raft need (particularly around the dueling-proposer/split-vote liveness edge cases discussed in articles 4.2 and 5.2) — trading a small amount of expected-case overhead (randomized protocols typically need a few rounds in expectation, rather than a deterministic worst-case bound) for meaningfully simpler implementation and easier-to-reason-about correctness.</p>
+
+        <div class="bm-note"><strong>Rabia is worth sitting with as a genuine outlier in this phase's pattern.</strong> Every other variant since 7.1 relaxed a specific Multi-Paxos convenience assumption (leader, total order, quorum symmetry, cost distribution) while keeping or extending mechanism complexity. Rabia instead asks whether some of that accumulated mechanism complexity was avoidable in the first place, by leaning harder into randomization — the same escape hatch article 2.5 introduced as a theoretical possibility, now used as a genuine simplification strategy in a real, practical protocol.</div>
+
+        <h2 id="phase7-close">Phase 7 closing comparison</h2>
+
+        <table class="papers">
+          <tr><th>Variant</th><th>Assumption relaxed / mechanism used</th><th>Primary benefit</th></tr>
+          <tr><td>EPaxos (7.1)</td><td>Fixed leader, total order</td><td>Locality, per-command parallelism</td></tr>
+          <tr><td>Flexible Paxos (7.2)</td><td>Symmetric majority quorums</td><td>Tunable election/replication cost trade-off</td></tr>
+          <tr><td>Fast/Generalized Paxos (7.3)</td><td>Leader routing / total order (Lamport's own precursors)</td><td>Latency; direct ancestors of EPaxos</td></tr>
+          <tr><td>Cheap/Compartmentalized Paxos (7.4)</td><td>Uniform node cost / monolithic leader role</td><td>Steady-state cost; independent scaling</td></tr>
+          <tr><td>Atlas (7.5)</td><td>EPaxos's conservative fast-quorum size</td><td>Fast-quorum availability at scale</td></tr>
+          <tr><td>Caesar (7.6)</td><td>EPaxos's reactive-only conflict detection</td><td>Lower slow-path frequency under contention</td></tr>
+          <tr><td>OmniPaxos (7.7)</td><td>Monolithic election / bolted-on reconfiguration</td><td>Production engineering, operational safety</td></tr>
+          <tr><td>Matchmaker / PigPaxos / BPaxos / Rabia (7.8)</td><td>Naive reconfiguration / leader fan-out / bundled ordering / deterministic complexity</td><td>Targeted fixes for specific, narrow weaknesses</td></tr>
+        </table>
+
+        <div class="bm-fix"><strong>Phase 7, in one sentence:</strong> Multi-Paxos (5.3) bundled four convenience assumptions — a fixed leader, a total order, symmetric majority quorums, and uniform node cost — and every single variant covered in this phase is best understood as relaxing exactly one or two of those four, while the underlying majority-overlap safety core (article 3.3) never changes across any of them. This is the single most useful compression of the entire phase, and it directly explains why the field produced so many seemingly-different papers addressing what is, underneath, a remarkably small and well-understood design space.</div>
+
+        <h2 id="phase7-close-text">Closing Phase 7, opening Phase 8</h2>
+
+        <p>Phase 7 has been the most research-dense phase in this series — eight papers, each addressing a specific, well-motivated gap in Multi-Paxos's original bundled design. Phase 8 now shifts entirely from algorithms to <strong>systems</strong>: how etcd, Apache ZooKeeper, Consul, Kafka's KRaft, and Kubernetes actually deploy the Raft and Zab mechanisms this series built in Phase 5, the real operational trade-offs those systems make, and how Jepsen's testing methodology catches the gap between "the algorithm is proven correct" and "this specific implementation is actually correct" — the same gap OmniPaxos's engineering-first philosophy (7.7) was implicitly responding to.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Which of the Phase 7 variants would you actually pick for a new production system today?</summary><p>Genuinely depends on your specific constraints, consistent with this whole phase's honest-trade-off framing — most new systems in practice reach for well-engineered Multi-Paxos or Raft implementations (Phase 8's subject) rather than any of the more specialized research variants, precisely because the specialized variants each trade general-purpose simplicity for a narrow, specific benefit that only matters if you actually have that specific bottleneck.</p></details>
+        <details class="faq"><summary>Is Rabia's randomization approach compatible with any of the other Phase 7 ideas?</summary><p>In principle, randomization (Rabia's core idea) and quorum-shape flexibility (Flexible Paxos, 7.2) or leaderless ordering (EPaxos, 7.1) address different axes and could in theory be combined, though none of the papers covered in this phase explicitly do so — a plausible direction for future research building on this phase's material.</p></details>
+        <details class="faq"><summary>Does BPaxos being crash-fault-tolerant mean it's automatically less capable than Narwhal/Bullshark?</summary><p>Not automatically less capable — it operates under a genuinely different, weaker threat model (crash-only, article 1.1) that most non-blockchain production systems actually have, meaning BPaxos doesn't need the extra safety machinery (3f+1, cryptographic signatures, article 6.1-6.2) that Narwhal/Bullshark's Byzantine setting requires, which can make it a lighter-weight, more efficient choice specifically for deployments that don't need Byzantine tolerance in the first place.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Matchmaker Paxos</strong> formalizes and fixes a subtle reconfiguration safety hazard — old/new configuration quorums disagreeing during a live membership change.</li>
+          <li><strong>PigPaxos</strong> fixes Multi-Paxos's leader fan-out bottleneck with a gossip-relay pattern, the crash-fault analog of article 6.5's BFT bottleneck.</li>
+          <li><strong>BPaxos</strong> ports Narwhal/Bullshark's data/ordering separation (6.5) to the crash-fault setting — proof the architectural pattern transfers across fault models.</li>
+          <li><strong>Rabia</strong> is this phase's outlier: simplifies via randomization (article 2.5's escape hatch) rather than adding mechanism to optimize a metric.</li>
+          <li>The whole phase compresses to one insight: every variant relaxes one or two of Multi-Paxos's four bundled assumptions (<strong>fixed leader, total order, symmetric quorums, uniform cost</strong>) while the majority-overlap safety core (article 3.3) never changes.</li>
+          <li>Phase 7 is now complete — Phase 8 shifts from algorithms to real production systems (etcd, ZooKeeper, Consul, Kafka, Kubernetes, Jepsen).</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.usenix.org/conference/nsdi20/presentation/whittaker" target="_blank">Whittaker et al. — Matchmaker Paxos: A Reconfigurable Consensus Protocol (2020)</a> <span>— the primary Matchmaker Paxos reference.</span></li>
+          <li><a href="https://www.usenix.org/conference/atc21/presentation/kim" target="_blank">Charapko, Ailijiang &amp; Demirbas — PigPaxos: Devouring the Communication Bottlenecks in Distributed Consensus (2021)</a> <span>— the primary PigPaxos reference.</span></li>
+          <li><a href="https://mwhittaker.github.io/publications/bpaxos.pdf" target="_blank">Whittaker et al. — Bipartisan Paxos (BPaxos)</a> <span>— the primary BPaxos reference.</span></li>
+          <li><a href="https://www.usenix.org/conference/atc21/presentation/pan" target="_blank">Pan, Wang, Ren et al. — Rabia: Simplifying State-Machine Replication Through Randomization (2021)</a> <span>— the primary Rabia reference.</span></li>
+          <li><a href="../series-consensus.html">cvam.sight — Consensus Algorithms series hub</a> <span>— Phase 8 (Consensus in Production) picks up next.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-7-7-omnipaxos.html">← 7.7 OmniPaxos</a>
+        <a href="../series-consensus.html">Phase 7 complete — back to series hub →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

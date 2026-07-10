@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-10-1-how-to-read-a-consensus-paper",
+    title: "How to read a consensus paper.",
+    date: "Jul 27, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "research-methodology", "series-consensus"],
+    time: 19,
+    words: 4000,
+    excerpt: "Consensus Algorithms series, 10.1 -- Phase 10 opener. A repeatable eight-part framework for reading any consensus paper efficiently: problem, why existing algorithms fail, core idea, architecture, failure handling, performance, trade-offs, production applicability. Worked examples applying it retroactively to HotStuff and Raft, common reading pitfalls this series has flagged throughout, and why this doubles directly as distributed-systems interview preparation.",
+    series: "consensus",
+    seriesNum: "51"
+  },
+  {
     slug: "consensus-9-6-dynamic-membership-and-reconfiguration",
     title: "Dynamic membership and reconfiguration.",
     date: "Jul 26, 2026",

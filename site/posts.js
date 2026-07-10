@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-5-2-single-decree-paxos",
+    title: "Single-decree Paxos.",
+    date: "Jul 13, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "paxos", "series-consensus"],
+    time: 24,
+    words: 5000,
+    excerpt: "Consensus Algorithms series, 5.2. The full two-phase Paxos protocol: Prepare/Promise and Accept/Accepted, with proposal numbers as the ordering mechanism. A worked example with two competing proposers showing exactly why the second is forced onto the first's already-accepted value -- the shared acceptor from majority overlap doing real, traceable safety work. The general safety proof by induction, and why liveness (not safety) can still stall under dueling proposers.",
+    series: "consensus",
+    seriesNum: "20"
+  },
+  {
     slug: "consensus-5-1-paxos-history-and-the-problem",
     title: "Paxos — history and the problem.",
     date: "Jul 12, 2026",

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EPaxos — Leaderless Consensus — Consensus 7.1 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 7.1 -- Phase 7 opener. Egalitarian Paxos: any replica can commit any command in one round-trip via dependency-graph ordering instead of a stable leader, the fast path vs slow path, and the conflict-detection cost that makes leaderless consensus a genuine trade-off, not a free lunch.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 7</p>
+        <p class="series-banner-title">The Modern Paxos Family</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 7.1 of 8</p>
+        <div class="series-banner-nav">
+          <a href="consensus-7-1-epaxos-leaderless-consensus.html" class="active">7.1 EPaxos</a>
+          <a href="consensus-7-2-flexible-paxos.html">7.2 Flexible Paxos</a>
+          <a href="consensus-7-3-generalized-and-fast-paxos.html">7.3 Generalized/Fast</a>
+          <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html">7.4 Cheap/Compart.</a>
+          <a href="consensus-7-5-atlas.html">7.5 Atlas</a>
+          <a href="consensus-7-6-caesar.html">7.6 Caesar</a>
+          <a href="consensus-7-7-omnipaxos.html">7.7 OmniPaxos</a>
+          <a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html">7.8 Survey</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 17, 2026 · devops · 22 min read · 4600 words <span class="difficulty expert">expert</span></p>
+        <h1>EPaxos — leaderless consensus.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">epaxos</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Phase 5's entire classical lineage (Paxos, VR, Raft, Zab) shares one structural assumption this phase starts questioning: a <strong>single stable leader</strong> handles every write. That leader is both a throughput ceiling (every write funnels through one node's CPU and bandwidth, the exact bottleneck article 6.5 named for BFT protocols) and a latency tax for clients far from it (a client near Singapore writing through a leader in Virginia pays the full round-trip, every time, regardless of how close other replicas might be). Moraru, Andersen, and Kaminsky's 2013 <strong>EPaxos (Egalitarian Paxos)</strong> asks: what if <em>any</em> replica could commit a command directly, in the common case with a single round-trip to a nearby quorum, with no leader at all? The answer requires replacing "one global order" with something subtler — a dependency graph — and this article covers exactly how, and exactly what it costs.</p>
+
+        <h2 id="why-leaderless">Why remove the leader at all</h2>
+
+        <p>Revisit the two costs a fixed leader imposes, now precisely, building on article 5.3's Multi-Paxos analysis: <strong>throughput</strong> — every single write must pass through one node, capping total system throughput at that one node's capacity no matter how many replicas exist (directly parallel to article 6.5's leader-bandwidth bottleneck, just for the crash-fault setting rather than Byzantine); and <strong>latency</strong> — a client's write latency is dominated by its round-trip to the leader specifically, which for geographically distributed deployments (Phase 9's subject) can be much worse than the round-trip to the client's <em>nearest</em> replica. EPaxos's leaderless design directly targets both: any replica can act as the "command leader" for any individual command, letting a client always talk to its nearest replica, and (in the common, no-conflict case) commit that command with a single round-trip to a nearby quorum, no different from Multi-Paxos's fast path (article 5.3) — just without requiring that fast path to always route through the same one node.</p>
+
+        <h2 id="the-catch">The catch: what happens without one global order</h2>
+
+        <p>Here's the problem this convenience creates, and it's the whole reason EPaxos needs genuinely new machinery, not just a relabeling of Multi-Paxos's roles. Every algorithm since Phase 3 has relied on a single, globally agreed <em>order</em> of operations (article 3.2's log index, article 4.3's total-order-broadcast property) — and that single order is precisely what a fixed leader was providing for free, just by being the one party deciding what goes where in its own sequential log. Remove the fixed leader, and different replicas concurrently committing different commands (each acting as its own command leader) no longer have an obvious shared way to agree on a total order across commands that never went through the same coordinating party.</p>
+
+        <div class="bm-note"><strong>EPaxos's resolution: don't require a total order at all — only order commands that actually conflict.</strong> Two commands that touch entirely disjoint pieces of state (writing to different keys in a key-value store, say) don't need any agreed relative order between them; a state machine can safely apply them in either order and reach the same result, because they don't interact. Only commands whose effects <em>would</em> differ depending on execution order — typically, commands touching overlapping data — need to be ordered relative to each other. This is a genuinely different, weaker requirement than article 4.3's total order, and it's the structural key that makes leaderless consensus achievable at all.</div>
+
+        <h2 id="dependencies">Dependency graphs instead of a log</h2>
+
+        <p>When a replica proposes a command as its command leader, it attaches a <strong>dependency set</strong> — the set of other, potentially-conflicting commands it knows about that must be ordered before it. It sends this proposal to a fast quorum (a specific, slightly larger quorum than Phase 5's simple majority — more below); each replica in that quorum checks its own local knowledge of recent commands and, if it knows of any additional conflicting commands the proposer's dependency set missed, adds them to the reply. If every replica in the fast quorum agrees on the exact same dependency set (no additions needed), the command commits immediately, in a <strong>single round-trip</strong> — the fast path, structurally identical in cost to Multi-Paxos's single-round-trip append (article 5.3), just without a fixed leader deciding the order globally.</p>
+
+        <p>If replies disagree (different replicas knew about different conflicting commands, because information about recent activity hasn't fully propagated yet — article 1.1's "Lie #1" in concrete form), the command leader takes the <strong>union</strong> of all reported dependencies and runs a second round (the slow path — structurally similar to a full Paxos Phase 1/2, article 5.2) to get that expanded dependency set agreed upon. Either way, once a command's dependencies are settled, replicas execute commands by traversing the resulting dependency graph — using a deterministic tie-breaking rule (an ordering criterion applied consistently by every replica, echoing article 5.2's proposal-number tie-breaking pattern) to linearize any commands that turn out to be mutually dependent, so every replica executes conflicting commands in the identical relative order even though no single global sequence number was ever agreed for the whole log.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">EPaxos: order only what conflicts, execute via dependency graph</text>
+            <circle cx="100" cy="80" r="28" class="boxg"/><text x="100" y="76" class="smk" text-anchor="middle">SET x</text><text x="100" y="92" class="sm" text-anchor="middle">cmd A</text>
+            <circle cx="280" cy="80" r="28" class="boxr"/><text x="280" y="76" class="smk" text-anchor="middle">SET x</text><text x="280" y="92" class="sm" text-anchor="middle">cmd B</text>
+            <path d="M252,80 L128,80" class="arr"/>
+            <text x="190" y="70" class="sm" text-anchor="middle">conflict — must order</text>
+            <circle cx="480" cy="80" r="28" class="boxg"/><text x="480" y="76" class="smk" text-anchor="middle">SET y</text><text x="480" y="92" class="sm" text-anchor="middle">cmd C</text>
+            <text x="380" y="65" class="sm" text-anchor="middle">no shared key</text>
+            <text x="380" y="105" class="sm" text-anchor="middle">— no ordering needed</text>
+            <text x="340" y="150" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">A and B (same key) get a deterministic relative order.</text>
+            <text x="340" y="170" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">C (different key) can execute independently, any time, any order relative to A/B.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Only genuinely conflicting commands need agreed ordering; disjoint commands commit and execute fully independently.</p>
+        </div>
+
+        <h2 id="quorum-size">Fast quorums: a genuine trade-off, not a free upgrade</h2>
+
+        <p>The single-round-trip fast path requires a larger quorum than a simple crash-fault majority — specifically, for <code>N</code> replicas tolerating <code>f</code> failures, EPaxos's fast quorum needs <code>⌊N/2⌋ + ⌊(f+1)/2⌋</code> replicas (larger than the plain majority <code>⌊N/2⌋+1</code> that Phase 5's algorithms used) to guarantee that any two fast-path attempts still see enough overlap to detect conflicts reliably. This is EPaxos's central, honest trade-off: leaderless operation and per-replica locality gains come at the cost of a larger quorum requirement for the fast path, and — the part that's easy to underestimate reading only the happy-path description — genuinely more complex conflict-tracking bookkeeping (every replica must track recent command history to compute accurate dependency sets) compared to Multi-Paxos's comparatively simple sequential log.</p>
+
+        <table class="papers">
+          <tr><th>Property</th><th>Multi-Paxos (5.3) / Raft (5.5-5.6)</th><th>EPaxos</th></tr>
+          <tr><td>Who can propose</td><td>Only the current leader</td><td>Any replica, per command</td></tr>
+          <tr><td>Ordering mechanism</td><td>Single global log (total order)</td><td>Dependency graph (partial order, only conflicts ordered)</td></tr>
+          <tr><td>Fast-path quorum size</td><td>Simple majority</td><td>Larger — ⌊N/2⌋ + ⌊(f+1)/2⌋</td></tr>
+          <tr><td>Client latency</td><td>Round-trip to leader, wherever it is</td><td>Round-trip to nearest quorum — better for geo-distributed clients</td></tr>
+          <tr><td>Bookkeeping complexity</td><td>Simple sequential log</td><td>Per-command conflict detection, dependency tracking</td></tr>
+        </table>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does EPaxos still need the same crash-fault node counts as Phase 5's algorithms?</summary><p>Yes — EPaxos operates under the same crash-fault (not Byzantine) model as Phase 5, with the standard 2f+1 total node count for tolerating f crash failures. The larger <em>fast quorum size</em> discussed above is a different concept from the total cluster size — it's how many replicas must respond on the fast path, not how many total nodes are needed to survive failures.</p></details>
+        <details class="faq"><summary>How does a replica know which commands conflict without a central coordinator tracking everything?</summary><p>Each replica maintains its own local record of recently proposed/committed commands and applies an application-defined conflict predicate (for a key-value store, typically "do these commands touch overlapping keys") to determine dependencies — this is inherently approximate in real time (a replica might not yet know about a very recent command elsewhere), which is exactly why the fast-quorum reply step exists: to catch and reconcile any gaps before commit.</p></details>
+        <details class="faq"><summary>Is EPaxos used in production systems today?</summary><p>EPaxos itself is more prominent as a research reference point than a widely-deployed off-the-shelf system, but its core ideas (leaderless proposing, dependency-based ordering) directly influenced later work, including some of the later articles in this phase (Atlas, Caesar) that refine and address specific EPaxos limitations discovered in practice and follow-up research.</p></details>
+        <details class="faq"><summary>Does leaderless mean there's no election mechanism at all?</summary><p>Not entirely — EPaxos still needs a recovery mechanism for when a command leader fails mid-proposal (a replica must be able to safely take over and complete or abort that specific command), which reuses much of the same majority-overlap-based safety reasoning from article 3.3, just scoped to individual commands rather than a single persistent leader role covering the whole log.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Opens Phase 7: the modern Paxos family relaxes assumptions Phase 5's classical algorithms all shared — starting here with the <strong>fixed leader</strong> assumption.</li>
+          <li>A fixed leader is both a <strong>throughput ceiling</strong> and a <strong>latency tax</strong> for distant clients — EPaxos targets both by letting any replica propose commands directly.</li>
+          <li>Without a fixed leader, there's no free global order — EPaxos's key structural move is ordering <strong>only genuinely conflicting commands</strong> via a per-command <strong>dependency graph</strong>, not a total-order log.</li>
+          <li>The <strong>fast path</strong> commits in one round-trip when a fast quorum agrees on dependencies; the <strong>slow path</strong> (a second round) resolves disagreements — structurally similar to Multi-Paxos's fast/full-Paxos distinction, just per-command rather than per-leader-term.</li>
+          <li>The trade-off is real and explicit: a <strong>larger fast-quorum size</strong> than plain majority, and genuinely more complex per-replica conflict-tracking bookkeeping — leaderless consensus is not a strictly-better free upgrade over Phase 5's algorithms.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.cs.cmu.edu/~dga/papers/epaxos-sosp2013.pdf" target="_blank">Moraru, Andersen &amp; Kaminsky — There Is More Consensus in Egalitarian Parliaments (SOSP 2013)</a> <span>— the primary EPaxos reference.</span></li>
+          <li><a href="consensus-5-3-multi-paxos.html">cvam.sight — Consensus 5.3: Multi-Paxos</a> <span>— the fixed-leader fast path this article contrasts EPaxos against.</span></li>
+          <li><a href="consensus-6-5-narwhal-and-bullshark.html">cvam.sight — Consensus 6.5: Narwhal and Bullshark</a> <span>— the parallel leader-bandwidth-bottleneck motivation in the Byzantine setting.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../series-consensus.html">← Consensus series hub</a>
+        <a href="consensus-7-2-flexible-paxos.html">next: 7.2 Flexible Paxos →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

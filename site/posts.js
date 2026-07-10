@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-7-1-epaxos-leaderless-consensus",
+    title: "EPaxos — leaderless consensus.",
+    date: "Jul 17, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "epaxos", "series-consensus"],
+    time: 22,
+    words: 4600,
+    excerpt: "Consensus Algorithms series, 7.1 -- Phase 7 opener. Removes Phase 5's fixed-leader assumption: any replica can commit a command directly via a single round-trip to a nearby quorum. Without a fixed leader there's no free global order, so EPaxos orders only genuinely conflicting commands via a per-command dependency graph, executing via deterministic graph traversal. The fast path vs slow path, and the honest trade-off -- a larger fast-quorum size and real per-replica conflict-tracking cost.",
+    series: "consensus",
+    seriesNum: "31"
+  },
+  {
     slug: "consensus-6-5-narwhal-and-bullshark",
     title: "Narwhal and Bullshark.",
     date: "Jul 16, 2026",

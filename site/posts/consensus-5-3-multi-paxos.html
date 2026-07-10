@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Paxos — Consensus 5.3 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 5.3. How a stable elected leader skips Phase 1 for every log slot after the first, turning single-decree Paxos into a practical, efficient replicated log -- and why this is exactly atomic broadcast (4.3) built from a sequence of consensus instances.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 5</p>
+        <p class="series-banner-title">Classical Consensus — Paxos &amp; Raft</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 5.3 of 7</p>
+        <div class="series-banner-nav">
+          <a href="consensus-5-1-paxos-history-and-the-problem.html" class="done">5.1 Paxos History</a>
+          <a href="consensus-5-2-single-decree-paxos.html" class="done">5.2 Single-Decree</a>
+          <a href="consensus-5-3-multi-paxos.html" class="active">5.3 Multi-Paxos</a>
+          <a href="consensus-5-4-viewstamped-replication.html">5.4 VR</a>
+          <a href="consensus-5-5-raft-design-and-leader-election.html">5.5 Raft Election</a>
+          <a href="consensus-5-6-raft-log-replication-and-safety.html">5.6 Raft Safety</a>
+          <a href="consensus-5-7-zab.html">5.7 Zab</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 13, 2026 · devops · 20 min read · 4200 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Multi-Paxos.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">multi-paxos</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Single-decree Paxos (5.2) decides one value. A real replicated log (article 3.2) needs to decide a whole sequence — the entire point of article 4.3's SMR/log/atomic-broadcast equivalence. The naive approach — run a completely independent instance of single-decree Paxos for every log position — works correctly but pays Phase 1's full round-trip cost <em>for every single entry</em>, an unacceptable tax at any real throughput. <strong>Multi-Paxos</strong> is the practical optimization: elect a stable leader once, let it skip Phase 1 for every subsequent entry, and only fall back to a full Phase 1 when leadership actually changes. This single optimization is what turns Paxos from an elegant proof into the algorithm that actually powers production systems (Chubby, Spanner, and others covered in Phase 9).</p>
+
+        <h2 id="naive-cost">The naive cost: full Paxos per log entry</h2>
+
+        <p>Running independent single-decree Paxos instances for every log index works — article 4.3 already showed this reduction is formally valid — but look at the cost per entry: Phase 1 (Prepare/Promise) round-trip, <em>then</em> Phase 2 (Accept/Accepted) round-trip, for every single value. That's two full network round-trips to a majority for every write, when — as the worked example in article 5.2 showed — Phase 1's entire purpose is discovering whether some <em>other</em> proposer might have already gotten a conflicting value accepted. If the same proposer keeps winning every round, asking that question over and over is pure, wasted overhead.</p>
+
+        <h2 id="key-insight">The key insight: Phase 1 can cover a whole range at once</h2>
+
+        <p>Here's the optimization, stated precisely: a proposer's Phase 1 <code>Prepare(n)</code> doesn't have to reference a specific log index at all — it can ask, in effect, "promise to ignore any proposal numbered below n, <strong>for every log index from here forward</strong>." If a majority of acceptors grant this broader promise, the proposer has effectively "reserved" the right to skip Phase 1 for every future index, as long as it keeps using the same proposal number <code>n</code> — it only needs to run Phase 2 (Accept/Accepted) for each new value, which is a single round-trip instead of two.</p>
+
+        <p>This proposer that's "reserved" the leadership role is, of course, exactly what article 4.2 called the elected leader — Multi-Paxos formalizes leader election as a specific, first-class use of Phase 1, rather than treating election and log-appending as separate mechanisms. A stable leader, once it has completed one Phase 1 covering "all future indices," can accept new client writes with just one round-trip (Phase 2 only) for as long as it remains leader.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Multi-Paxos: one Phase 1 covers every future log index</text>
+            <rect x="30" y="40" width="180" height="50" class="boxy"/>
+            <text x="120" y="60" class="smk" text-anchor="middle">Phase 1 (once)</text>
+            <text x="120" y="78" class="sm" text-anchor="middle">"reserve" all future slots</text>
+            <path d="M210,65 C240,65 260,65 260,65" class="arr"/>
+            <rect x="260" y="40" width="120" height="50" class="boxg"/>
+            <text x="320" y="60" class="smk" text-anchor="middle">Phase 2</text>
+            <text x="320" y="78" class="sm" text-anchor="middle">index 47</text>
+            <path d="M380,65 C400,65 410,65 410,65" class="arr"/>
+            <rect x="410" y="40" width="120" height="50" class="boxg"/>
+            <text x="470" y="60" class="smk" text-anchor="middle">Phase 2</text>
+            <text x="470" y="78" class="sm" text-anchor="middle">index 48</text>
+            <path d="M530,65 C550,65 560,65 560,65" class="arr"/>
+            <rect x="560" y="40" width="100" height="50" class="boxg"/>
+            <text x="610" y="60" class="smk" text-anchor="middle">Phase 2</text>
+            <text x="610" y="78" class="sm" text-anchor="middle">index 49</text>
+            <text x="340" y="130" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">One expensive two-round-trip setup, then a stream of cheap one-round-trip appends —</text>
+            <text x="340" y="150" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">exactly the same shape as Raft's stable-leader log replication (5.5-5.6).</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Amortizing Phase 1's cost across an entire stream of writes is Multi-Paxos's single defining optimization.</p>
+        </div>
+
+        <h2 id="when-phase1-needed">When the full Phase 1 is still required</h2>
+
+        <p>The optimization only holds as long as the same proposer keeps winning — the moment leadership changes (the old leader is suspected dead, per article 2.4/4.2's election machinery, and a new proposer takes over), the new leader must run a genuine Phase 1 before it can safely append anything, for exactly the reason article 5.2's safety proof requires: it needs to discover whether any prior leader might have already gotten a value accepted at some log index it doesn't yet know about (mirroring article 3.2's log-divergence-and-repair discussion directly). This is precisely why leadership changes in Multi-Paxos-family systems have a brief, real cost — one Phase 1 round-trip to re-establish the new leader's "reservation" — before normal fast-path appends resume.</p>
+
+        <div class="bm-note"><strong>This is exactly the same shape as Raft's approach, previewed here before article 5.5 covers it directly.</strong> Raft's leader election (using terms, exactly Multi-Paxos's proposal numbers under a different name) and its subsequent fast-path log appends are, structurally, the same optimization Multi-Paxos makes — elect once, append cheaply many times, pay the expensive re-election cost only when leadership actually changes. Recognizing this shared structure in advance is exactly why article 5.1 called Raft a reaction to Paxos's presentation, not its substance — the underlying algorithmic idea is close to identical.</div>
+
+        <h2 id="gaps">Handling gaps: out-of-order acceptance</h2>
+
+        <p>A real-world wrinkle worth naming: because Phase 2 messages for different log indices can be sent and acknowledged somewhat independently (especially with network reordering, article 1.1's "Lie #1"), an acceptor might receive and accept index 49 before index 48 arrives — creating a temporary <strong>gap</strong> in its local log. Multi-Paxos implementations handle this with an explicit "no-op" filling mechanism: if a leader change occurs and the new leader's Phase 1 discovers a gap (some index below the highest known accepted index that nobody reports an accepted value for), it's safe to fill that gap with an explicit no-op entry — because if no acceptor in the responding majority has an accepted value there, article 5.2's Phase 2 rule confirms nothing could have been chosen at that index, so filling it with a placeholder that changes nothing is provably safe.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does Multi-Paxos require a completely different safety proof from single-decree Paxos?</summary><p>No — this is one of the cleanest illustrations of article 4.3's equivalence in practice. Multi-Paxos's safety rests entirely on running (an optimized version of) single-decree Paxos independently at each log index; the per-index safety guarantee from article 5.2's proof applies unchanged. The optimization only touches the message-count/latency cost, never the safety argument.</p></details>
+        <details class="faq"><summary>Can multiple leaders coexist temporarily in Multi-Paxos, and is that unsafe?</summary><p>It can happen briefly (e.g., a network hiccup causes a majority to elect a new leader while the old one hasn't yet realized it's been replaced — directly echoing article 3.4's stale-leader discussion) but it's never unsafe, only potentially wasteful — competing proposers can, at worst, cause the liveness stall discussed in article 5.2, never a safety violation, because the underlying single-decree safety proof holds regardless of how many proposers are active.</p></details>
+        <details class="faq"><summary>Why don't acceptors need to durably store a separate promise per log index if Phase 1 is unified?</summary><p>They typically store one "highest promised proposal number" that applies across all indices (since a unified Phase 1 covers all of them at once), plus per-index accepted values as entries actually get appended — a modest, practical simplification of the bookkeeping compared to running fully independent per-index state.</p></details>
+        <details class="faq"><summary>Is Multi-Paxos a different algorithm from Paxos, or an optimization of it?</summary><p>It's best understood as an optimization/practical-deployment-pattern layered on top of the same core single-decree algorithm, not a separate algorithm with its own independent safety proof — which is exactly why this article's safety-argument FAQ above reduces cleanly back to article 5.2. Some later algorithms in Phase 7 (Flexible Paxos, in particular) optimize Multi-Paxos further in ways that do require new, extended safety arguments — a genuine, more substantial departure covered when that article arrives.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Running fully independent single-decree Paxos per log index is <strong>correct but expensive</strong> — two round-trips (Phase 1 + Phase 2) per entry.</li>
+          <li><strong>Multi-Paxos's optimization:</strong> one Phase 1 can "reserve" a proposal number across all future log indices at once, letting a stable leader append new entries with just Phase 2 — a single round-trip — for as long as it remains leader.</li>
+          <li>This makes leader election (article 4.2) a first-class, built-in part of the protocol rather than a separate mechanism — the leader <em>is</em> whichever proposer's Phase 1 reservation is currently valid.</li>
+          <li>A leadership change requires paying Phase 1's cost again <strong>once</strong>, to safely discover any values a prior leader might have already gotten accepted — directly mirroring article 3.2's log-repair discussion.</li>
+          <li>Out-of-order acceptance can create log gaps, safely filled with no-op entries once a new leader's Phase 1 confirms nothing was actually chosen there.</li>
+          <li>This "elect once, append cheaply many times" structure is <strong>identical in shape</strong> to Raft's design (5.5-5.6, next) — Multi-Paxos and Raft solve the practical replicated-log problem the same way, differing mainly in presentation and some mechanism details.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://lamport.azurewebsites.net/pubs/paxos-simple.pdf" target="_blank">Lamport — Paxos Made Simple (2001)</a> <span>— Section 3 covers the Multi-Paxos extension directly.</span></li>
+          <li><a href="https://static.googleusercontent.com/media/research.google.com/en//archive/paxos_made_live.pdf" target="_blank">Chandra, Griesemer &amp; Redstone — Paxos Made Live: An Engineering Perspective (2007)</a> <span>— Google's Chubby team on the real-world engineering gap between the algorithm and a production Multi-Paxos system.</span></li>
+          <li><a href="consensus-5-2-single-decree-paxos.html">cvam.sight — Consensus 5.2: Single-Decree Paxos</a> <span>— the per-index safety proof Multi-Paxos relies on unchanged.</span></li>
+          <li><a href="consensus-4-3-atomic-broadcast.html">cvam.sight — Consensus 4.3: Atomic Broadcast</a> <span>— the equivalence this article's "correct but expensive" framing depends on.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-5-2-single-decree-paxos.html">← 5.2 Single-Decree Paxos</a>
+        <a href="consensus-5-4-viewstamped-replication.html">next: 5.4 Viewstamped Replication →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

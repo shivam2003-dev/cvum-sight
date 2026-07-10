@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-5-3-multi-paxos",
+    title: "Multi-Paxos.",
+    date: "Jul 13, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "multi-paxos", "series-consensus"],
+    time: 20,
+    words: 4200,
+    excerpt: "Consensus Algorithms series, 5.3. Running independent single-decree Paxos per log index is correct but expensive -- two round-trips per entry. Multi-Paxos's optimization: one Phase 1 reserves a proposal number across all future indices, letting a stable leader append with just Phase 2 (one round-trip) for as long as it holds leadership. Why this makes leader election first-class, what a leadership change costs, handling out-of-order acceptance gaps, and why this is structurally identical to Raft's design.",
+    series: "consensus",
+    seriesNum: "21"
+  },
+  {
     slug: "consensus-5-2-single-decree-paxos",
     title: "Single-decree Paxos.",
     date: "Jul 13, 2026",

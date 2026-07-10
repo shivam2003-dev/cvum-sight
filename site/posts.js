@@ -21,8 +21,8 @@ const POSTS = [
     date: "Jul 10, 2026",
     cat: "devops",
     tags: ["devops", "aws", "sql-server", "high-availability"],
-    time: 16,
-    words: 2500,
+    time: 22,
+    words: 3550,
     excerpt: "An end-to-end build of SQL Server 2025 Always On Availability Groups on EC2 across two Availability Zones: ENI secondary IP reservations, WSFC and listener DNS, security groups, Windows Firewall, multi-subnet client behavior, verification, failover, and the AWS networking traps that break otherwise-correct on-premises designs."
   },
   {

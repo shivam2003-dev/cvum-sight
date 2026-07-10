@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-9-3-foundationdb",
+    title: "FoundationDB.",
+    date: "Jul 25, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "foundationdb", "series-consensus"],
+    time: 24,
+    words: 5000,
+    excerpt: "Consensus Algorithms series, 9.3. FoundationDB's radical layered architecture: a minimal, strictly-serializable ordered key-value store as the foundation, with everything else (document stores, SQL, CloudKit) built as a translation layer inheriting correctness for free. How a transaction actually flows through the sequencer/proxy/resolver pipeline, why optimistic concurrency beats locking for its workload, and its deterministic simulation testing framework (including Buggify) -- a genuinely different, complementary answer to Jepsen's algorithm-vs-implementation gap.",
+    series: "consensus",
+    seriesNum: "47"
+  },
+  {
     slug: "consensus-9-2-cockroachdb-and-multi-raft",
     title: "CockroachDB and Multi-Raft.",
     date: "Jul 24, 2026",

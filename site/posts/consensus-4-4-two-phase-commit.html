@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Two-Phase Commit (2PC) — Consensus 4.4 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 4.4. The prepare/commit protocol for atomic distributed transactions, the fatal blocking problem when the coordinator dies after prepare, and precisely why 2PC is not consensus despite looking similar.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 4</p>
+        <p class="series-banner-title">Consensus Basics</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 4.4 of 5</p>
+        <div class="series-banner-nav">
+          <a href="consensus-4-1-safety-vs-liveness.html" class="done">4.1 Safety/Liveness</a>
+          <a href="consensus-4-2-leader-election.html" class="done">4.2 Leader Election</a>
+          <a href="consensus-4-3-atomic-broadcast.html" class="done">4.3 Atomic Broadcast</a>
+          <a href="consensus-4-4-two-phase-commit.html" class="active">4.4 2PC</a>
+          <a href="consensus-4-5-three-phase-commit.html">4.5 3PC</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 12, 2026 · devops · 20 min read · 4200 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Two-phase commit (2PC).</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">2pc</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Two-Phase Commit (2PC), formalized in the 1970s, is the historical protocol that directly motivated much of the consensus research this series has been building toward — and it's the protocol every distributed-transactions system (spanning multiple independent databases, services, or shards) reaches for first, because the problem it solves is genuinely different from the SMR/atomic-broadcast problem of the last three articles. This article covers the protocol precisely: prepare and commit phases, the participant vote, and — the reason this article exists in a consensus series at all — the specific, well-known failure scenario where 2PC provably <strong>blocks</strong> (the whole system freezes, indefinitely, waiting for one crashed process) even though every other participant is alive and willing to proceed. Understanding exactly why 2PC blocks, and exactly what "consensus" adds that 2PC lacks, is the cleanest possible motivation for why the classical algorithms in Phase 5 exist at all.</p>
+
+        <h2 id="the-problem">The problem 2PC solves: atomic distributed transactions</h2>
+
+        <p>2PC solves a different problem from the SMR/replication machinery of Phase 3 — worth being precise about the distinction upfront. SMR and atomic broadcast (articles 3.1, 4.3) are about getting <em>multiple replicas holding the same data</em> to agree on a sequence of operations. 2PC is about getting <em>multiple different, independent systems</em> (which might hold entirely different data — a payments database, an inventory service, a shipping system) to all agree on whether a single <strong>transaction spanning all of them</strong> should be committed or aborted, <em>atomically</em> — either every participant applies its part of the transaction, or none do. The canonical example: transferring money between accounts held in two different bank databases — debit account A in database 1, credit account B in database 2, and both must happen, or neither.</p>
+
+        <h2 id="protocol">The protocol, phase by phase</h2>
+
+        <p>2PC involves one <strong>coordinator</strong> (orchestrating the transaction) and multiple <strong>participants</strong> (each responsible for one piece of the transaction):</p>
+
+        <h3>Phase 1: Prepare (voting phase)</h3>
+        <p>The coordinator sends a <code>PREPARE</code> message to every participant, describing the transaction. Each participant does whatever local work is needed to be <em>certain</em> it can commit if asked — validating constraints, acquiring locks, writing the change to its own durable log (but <strong>not yet actually applying/committing it</strong>) — then replies either <code>VOTE-COMMIT</code> (I can definitely do this) or <code>VOTE-ABORT</code> (I can't — a constraint failed, or I hit an error).</p>
+
+        <h3>Phase 2: Commit or Abort (decision phase)</h3>
+        <p>If the coordinator receives <code>VOTE-COMMIT</code> from <strong>every</strong> participant, it durably records the decision "commit" and sends a <code>COMMIT</code> message to everyone, who then actually apply the change and release any locks. If <strong>any</strong> participant voted <code>VOTE-ABORT</code> (or failed to respond within a timeout), the coordinator sends <code>ABORT</code> to everyone, and all participants discard their prepared changes and release locks.</p>
+
+        <pre class="code" data-lang="text">Coordinator                Participant A          Participant B
+     |-------- PREPARE --------->|                      |
+     |-------- PREPARE ------------------------------->  |
+     |<------- VOTE-COMMIT ------|                      |
+     |<------- VOTE-COMMIT ------------------------------|
+     |  (all voted commit -- durably record "COMMIT")    |
+     |-------- COMMIT ---------->|                      |
+     |-------- COMMIT ----------------------------------->|
+     |<------- ACK ---------------|                      |
+     |<------- ACK ----------------------------------------|</pre>
+
+        <p>Notice the crucial detail in Phase 1: a participant that votes <code>VOTE-COMMIT</code> has made a binding promise — it must be able to commit later, no matter what, if the coordinator says so. This is exactly why the participant must durably persist its prepared state <em>before</em> voting commit: it might crash and restart, and upon restart, must still be able to honor a commit decision that arrives for a transaction it already voted commit on. This durability requirement is the direct seed of the blocking problem.</p>
+
+        <h2 id="blocking">The blocking problem: 2PC's fatal flaw</h2>
+
+        <p>Here's the exact scenario, and it's worth walking through slowly because it's the single most important thing to understand about 2PC: <strong>the coordinator collects all votes, every participant voted commit, the coordinator durably decides "commit" — and then the coordinator crashes, before sending the COMMIT message to anyone.</strong></p>
+
+        <p>Every participant is now stuck in a genuinely unresolvable state, called <strong>uncertain</strong> or <strong>in-doubt</strong>: it voted commit (a binding promise), it's holding locks and prepared changes, and it has no way to know whether the coordinator's actual final decision (which it never received) was commit or abort. Critically — and this is the crux of the whole problem — <strong>the participants cannot resolve this among themselves.</strong> They can talk to each other, but none of them knows what the coordinator decided, because only the coordinator ever durably recorded the final decision. The participant must simply <strong>wait</strong> — holding its locks, unable to proceed, unable to safely guess — until the coordinator recovers and tells it the real answer.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">2PC's blocking problem: coordinator crashes after deciding, before announcing</text>
+            <rect x="270" y="40" width="140" height="50" class="boxr"/>
+            <text x="340" y="60" class="smk" text-anchor="middle">Coordinator</text>
+            <text x="340" y="78" class="smk" text-anchor="middle">decided COMMIT, then CRASHED</text>
+            <rect x="60" y="130" width="220" height="60" class="boxy"/>
+            <text x="170" y="152" class="smk" text-anchor="middle">Participant A</text>
+            <text x="170" y="170" class="ink" text-anchor="middle" style="font-weight:bold">STUCK: voted commit,</text>
+            <text x="170" y="185" class="ink" text-anchor="middle" style="font-weight:bold">holding locks, must wait</text>
+            <rect x="400" y="130" width="220" height="60" class="boxy"/>
+            <text x="510" y="152" class="smk" text-anchor="middle">Participant B</text>
+            <text x="510" y="170" class="ink" text-anchor="middle" style="font-weight:bold">STUCK: voted commit,</text>
+            <text x="510" y="185" class="ink" text-anchor="middle" style="font-weight:bold">holding locks, must wait</text>
+            <text x="340" y="215" class="sm" text-anchor="middle">A and B are both alive, both willing — but CANNOT proceed without the coordinator. This is blocking.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Every participant is alive and cooperative, yet the entire transaction is frozen until the single crashed coordinator recovers.</p>
+        </div>
+
+        <div class="bm-warn"><strong>This is exactly the FLP-adjacent, safety-vs-liveness distinction this phase has been building — and it's worth being precise about which one 2PC's blocking actually is.</strong> Blocking is a <strong>liveness</strong> failure (article 4.1), not a safety one — 2PC never commits a transaction on some participants while aborting it on others; it just sometimes gets stuck, unable to make progress at all, for an unbounded amount of time. That's genuinely bad — a stuck transaction holds locks, which can cascade into blocking <em>other</em>, unrelated transactions waiting on those same locks — but it's a fundamentally different, more contained failure mode than a safety violation would be.</div>
+
+        <h2 id="why-not-consensus">Precisely why 2PC is not consensus</h2>
+
+        <p>This is the question this article exists to answer clearly, and now the machinery from Phases 1-4 makes the answer precise rather than hand-wavy: <strong>2PC has no majority-quorum mechanism at all.</strong> The commit-or-abort decision depends on <em>every single participant</em> agreeing, and — critically — the <em>coordinator's own durability</em> is a single point of failure with no redundancy. Compare directly against article 3.3's core proof: consensus algorithms achieve liveness despite individual node failures precisely because they only need a <em>majority</em>, and any majority overlaps with any other, so no single node's failure can ever leave the system unable to determine the right answer. 2PC has nothing resembling this — its "coordinator" is a single point of failure for the <em>decision itself</em>, not merely for availability, which is a fundamentally weaker design than anything from Phase 3 onward.</p>
+
+        <table class="papers">
+          <tr><th>Property</th><th>2PC</th><th>Consensus (Paxos/Raft, Phase 5)</th></tr>
+          <tr><td>Agreement requirement</td><td>ALL participants</td><td>MAJORITY of nodes</td></tr>
+          <tr><td>Coordinator/leader failure</td><td>Can permanently block the whole transaction</td><td>Triggers a new election (article 4.2); system continues</td></tr>
+          <tr><td>Decision durability</td><td>Only on the coordinator (single point of failure)</td><td>Replicated across a majority (article 3.2/3.3)</td></tr>
+          <tr><td>Liveness guarantee</td><td>None under coordinator failure — can block indefinitely</td><td>Guaranteed under partial synchrony (article 2.5's escape hatch)</td></tr>
+        </table>
+
+        <p>Put simply: <strong>2PC solves a related but easier-sounding, and in an important sense actually harder-in-practice, problem</strong> — atomic cross-system transactions — using a mechanism (a single coordinator, unanimous agreement) that has none of the fault-tolerance machinery Phase 3 spent so much effort building. This is precisely why 2PC is still widely used for genuinely cross-system distributed transactions (where you can't avoid coordinating truly independent systems) while being entirely unsuitable as the replication mechanism for a single fault-tolerant service — that job belongs to the majority-quorum-based algorithms in Phase 5, which is exactly the historical motivation: 2PC's well-documented blocking problem is a direct part of what pushed distributed-systems research toward majority-based consensus in the first place.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Can 2PC's blocking problem be mitigated with timeouts?</summary><p>Only partially, and with real risk — a participant could, after a long timeout, decide to unilaterally abort rather than wait forever. But this is unsafe in general: if the coordinator's actual (lost) decision was commit, a participant that unilaterally aborts has now created exactly the safety violation 2PC was designed to prevent (some participants committed, others aborted, for the same transaction). This is precisely the gap Three-Phase Commit (article 4.5, next) is specifically designed to close.</p></details>
+        <details class="faq"><summary>Is 2PC ever combined with consensus in practice?</summary><p>Yes, commonly — a well-engineered production system often makes the "coordinator" itself a consensus-backed, replicated role (rather than a single physical machine), so that if the coordinator process dies, a majority-elected replacement can take over and recover the in-doubt decision from a replicated log, rather than the whole transaction blocking on one dead machine. This hybrid pattern — 2PC's cross-participant protocol layered on top of a consensus-backed coordinator — shows up in several production systems covered in Phase 9.</p></details>
+        <details class="faq"><summary>What happens to the locks held by an in-doubt participant, practically?</summary><p>They're held for as long as the participant remains uncertain — which, in the worst case demonstrated above, is unbounded. This is a real, serious operational concern in production 2PC deployments: a stuck coordinator doesn't just block one transaction, it can cascade into blocking every other transaction competing for the same locked resources, which is why 2PC coordinators are typically given aggressive monitoring and fast recovery/failover procedures in practice.</p></details>
+        <details class="faq"><summary>Does 2PC guarantee atomicity even when it blocks?</summary><p>Yes — this is the precise, important distinction this article has been building toward. Blocking is 2PC failing at <em>liveness</em> (it can't make progress), but it never fails at <em>safety</em> (atomicity) — a blocked transaction is never partially committed; it's simply stuck, undecided, for both possible outcomes, until the coordinator's actual decision becomes known.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>2PC solves atomic distributed transactions</strong> across independent systems — a different problem from Phase 3's replicated-log/SMR machinery, even though both involve "agreement."</li>
+          <li>The protocol: <strong>Prepare</strong> (coordinator collects binding votes) then <strong>Commit/Abort</strong> (coordinator's durable decision, propagated to all participants).</li>
+          <li>The fatal <strong>blocking problem</strong>: if the coordinator crashes after deciding but before announcing, every participant is stuck indefinitely — unable to resolve the uncertainty among themselves, no matter how many of them are alive and willing.</li>
+          <li>Blocking is a <strong>liveness</strong> failure, not a safety one (article 4.1) — 2PC never partially commits a transaction, it just sometimes can't make progress.</li>
+          <li>The root cause, made precise by everything Phases 1-4 built: 2PC requires <strong>unanimous</strong> agreement and has a <strong>single point of failure</strong> for the decision itself — it has none of the majority-quorum fault tolerance (article 3.3) that makes consensus algorithms resilient to individual node failures.</li>
+          <li>This well-documented failure mode is a direct, historical part of what motivated majority-based consensus research — the subject of Phase 5, starting next article with 3PC's partial (but ultimately incomplete) fix.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://web.stanford.edu/class/cs347/reading/gray78.pdf" target="_blank">Gray — Notes on Data Base Operating Systems (1978)</a> <span>— one of the foundational formalizations of 2PC.</span></li>
+          <li><a href="https://dsf.berkeley.edu/cs262/2PC.html" target="_blank">Skeen — Nonblocking Commit Protocols (1981)</a> <span>— formalizes the blocking problem precisely and motivates 3PC, covered next.</span></li>
+          <li><a href="consensus-3-3-quorums-and-majority-voting.html">cvam.sight — Consensus 3.3: Quorums and Majority Voting</a> <span>— exactly what 2PC lacks and consensus algorithms have.</span></li>
+          <li><a href="consensus-4-1-safety-vs-liveness.html">cvam.sight — Consensus 4.1: Safety vs Liveness</a> <span>— the framework this article's "blocking is liveness, not safety" argument depends on.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-4-3-atomic-broadcast.html">← 4.3 Atomic Broadcast</a>
+        <a href="consensus-4-5-three-phase-commit.html">next: 4.5 Three-Phase Commit (3PC) →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

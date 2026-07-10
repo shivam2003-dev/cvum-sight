@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-4-4-two-phase-commit",
+    title: "Two-phase commit (2PC).",
+    date: "Jul 12, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "2pc", "series-consensus"],
+    time: 20,
+    words: 4200,
+    excerpt: "Consensus Algorithms series, 4.4. Prepare and commit phases for atomic distributed transactions across independent systems, and the fatal blocking problem: if the coordinator crashes after deciding but before announcing, every participant is stuck indefinitely, unable to resolve the uncertainty even though all are alive and willing. Precisely why 2PC is not consensus -- unanimous agreement, single point of failure for the decision, none of Phase 3's majority-quorum fault tolerance -- and why this well-documented failure directly motivated consensus research.",
+    series: "consensus",
+    seriesNum: "17"
+  },
+  {
     slug: "consensus-4-3-atomic-broadcast",
     title: "Atomic broadcast.",
     date: "Jul 11, 2026",

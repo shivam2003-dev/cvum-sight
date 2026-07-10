@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-2-4-failure-models-and-failure-detectors",
+    title: "Failure models and failure detectors.",
+    date: "Jul 9, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "failure-detectors", "series-consensus"],
+    time: 19,
+    words: 4000,
+    excerpt: "Consensus Algorithms series, 2.4. Chandra & Toueg's 1996 unreliable failure detectors: completeness vs accuracy, why you can't have both perfectly in an asynchronous network, the eight detector classes, and why the weakest sufficient class (eventually strong) is exactly enough to make consensus solvable despite crash failures. Plus how real systems approximate this with heartbeats, timeouts, and phi-accrual detectors (Cassandra, Akka).",
+    series: "consensus",
+    seriesNum: "8"
+  },
+  {
     slug: "consensus-2-3-vector-clocks",
     title: "Vector clocks.",
     date: "Jul 9, 2026",

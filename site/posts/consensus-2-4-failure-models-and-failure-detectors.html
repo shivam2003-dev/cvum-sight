@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Failure Models and Failure Detectors — Consensus 2.4 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 2.4. Chandra & Toueg's unreliable failure detectors, completeness vs accuracy, the eight detector classes, why timeouts are a heuristic not a proof, and phi-accrual detectors as the practical modern answer.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 2</p>
+        <p class="series-banner-title">Time and Failure</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 2.4 of 5</p>
+        <div class="series-banner-nav">
+          <a href="consensus-2-1-physical-clocks-and-why-they-lie.html" class="done">2.1 Physical Clocks</a>
+          <a href="consensus-2-2-lamport-clocks-and-logical-time.html" class="done">2.2 Lamport Clocks</a>
+          <a href="consensus-2-3-vector-clocks.html" class="done">2.3 Vector Clocks</a>
+          <a href="consensus-2-4-failure-models-and-failure-detectors.html" class="active">2.4 Failure Detectors</a>
+          <a href="consensus-2-5-the-flp-impossibility-theorem.html">2.5 FLP</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 9, 2026 · devops · 19 min read · 4000 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Failure models and failure detectors.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">failure-detectors</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Article 1.1 named the failure spectrum informally — crash, omission, timing, Byzantine. This article makes "is that node down?" formally precise, because every consensus algorithm in this series has to answer that exact question constantly, and answering it wrong in either direction (declaring a live node dead, or a dead node live) breaks correctness or availability. Chandra &amp; Toueg's 1996 "unreliable failure detectors" paper is the foundational treatment: it names exactly two properties a detector can offer — completeness and accuracy — proves you can't have both perfectly in an asynchronous network, and classifies eight useful detector strengths along that trade-off. This is the formal scaffolding that timeouts, heartbeats, and every leader-election protocol in Phase 4 onward are quietly built on top of.</p>
+
+        <h2 id="why-formalize">Why "just check if it responds" needs a formal treatment at all</h2>
+
+        <p>The naive approach to failure detection sounds trivial: ping a node, if it doesn't respond within some timeout, mark it dead. Article 1.1 already flagged the core problem with this — you cannot distinguish "the node crashed" from "the node (or the network between you) is just slow," because in an asynchronous network (article 1.1's "Lie #1," no bound on message delay), <em>any</em> timeout you pick could, in principle, be too short for a message that's simply taking longer than usual. This isn't a tuning problem you solve by picking a bigger number — no finite timeout can be proven correct in a truly asynchronous system, because there's always some slower-but-still-alive scenario your timeout would misclassify.</p>
+
+        <p>Chandra and Toueg's contribution was to stop trying to build a perfect detector (provably impossible, as you'll see) and instead formally characterize <em>which imperfections</em> a detector can offer, precisely enough that you can reason about which imperfections a given consensus algorithm can tolerate and still remain correct.</p>
+
+        <h2 id="two-properties">The two properties: completeness and accuracy</h2>
+
+        <p>Every failure detector is evaluated along two independent axes:</p>
+
+        <ul>
+          <li><strong>Completeness</strong> — does the detector eventually suspect every node that actually crashes? A detector with <strong>strong completeness</strong> guarantees every crashed process is eventually permanently suspected by every correct process. <strong>Weak completeness</strong> only guarantees every crashed process is eventually suspected by <em>some</em> correct process — a much weaker, less useful guarantee on its own.</li>
+          <li><strong>Accuracy</strong> — does the detector avoid falsely suspecting nodes that are actually alive? <strong>Strong accuracy</strong> means no correct process is ever suspected by anyone, ever. <strong>Weak accuracy</strong> means at least one correct process is never suspected by anyone. <strong>Eventual</strong> variants of both (eventually strong, eventually weak) relax this to "after some unknown point in time" rather than "always from the start" — a crucial, practical relaxation, because it accepts that a detector might be temporarily wrong (suspect a slow-but-alive node) as long as it eventually stabilizes and stops.</li>
+        </ul>
+
+        <div class="bm-warn"><strong>You cannot have perfect completeness and perfect accuracy simultaneously in an asynchronous network — this is essentially unavoidable, for the same reason article 1.1's "Lie #1" is unavoidable.</strong> Any detector that never falsely suspects a live node (perfect accuracy) must be willing to wait arbitrarily long before suspecting anything, since it can never rule out "still in flight" for a pending message — but waiting arbitrarily long means it can never guarantee <em>eventually</em> suspecting an actually-crashed node in bounded time either, undermining completeness in practice. Every real, useful failure detector picks a specific, named point on this trade-off rather than attempting the impossible "always right" combination.</div>
+
+        <h2 id="eight-classes">The eight detector classes</h2>
+
+        <p>Combining the two completeness levels (strong, weak) with the four accuracy levels (strong, weak, eventually strong, eventually weak) gives eight named classes, denoted with letters — <code>P</code> (perfect), <code>S</code> (strong), <code>◇P</code> (eventually perfect), <code>◇S</code> (eventually strong), and weaker variants of each. The two that matter most in practice, and that you'll see referenced again when Paxos and Raft are introduced in Phase 5, are:</p>
+
+        <table class="papers">
+          <tr><th>Class</th><th>Completeness</th><th>Accuracy</th><th>Practical meaning</th></tr>
+          <tr><td><code>P</code> (Perfect)</td><td>strong</td><td>strong</td><td>Never wrong, ever catches every crash — theoretically clean, practically unachievable in a real asynchronous network without extra assumptions.</td></tr>
+          <tr><td><code>S</code> (Strong)</td><td>strong</td><td>weak</td><td>Catches every crash, but may permanently, falsely suspect some live nodes while never suspecting at least one — an odd, rarely-used middle ground.</td></tr>
+          <tr><td><code>◇P</code> (Eventually Perfect)</td><td>strong</td><td>eventually strong</td><td>May make mistakes for a while (a live node briefly suspected), but eventually stabilizes to perfect accuracy and full completeness.</td></tr>
+          <tr><td><code>◇S</code> (Eventually Strong)</td><td>strong</td><td>eventually weak</td><td>The class that matters most: catches every real crash eventually, and eventually at least one live node is never (again) falsely suspected. This is the <em>weakest</em> detector class proven sufficient to solve consensus in an otherwise-asynchronous system with crash failures — the famous Chandra-Toueg result.</td></tr>
+        </table>
+
+        <div class="bm-note"><strong>The headline result of the whole paper, stated plainly:</strong> a failure detector of class <code>◇S</code> — one that's allowed to be wrong for an unknown but finite amount of time, as long as it eventually settles down — is exactly enough extra information to make consensus solvable in an asynchronous system with crash failures, something FLP (next article) proves is otherwise <strong>impossible</strong> with no failure-detection help at all. This is the direct bridge between this article and FLP: Chandra-Toueg essentially answers "how much oracle-like extra power do you need to get around FLP's impossibility," and the answer is surprisingly modest — not a perfect oracle, just one that's eventually right.</div>
+
+        <h2 id="heartbeats">How real systems implement this: heartbeats and timeouts</h2>
+
+        <p>The formal <code>◇S</code>-class guarantee is achieved in practice by mechanisms far simpler than the theory might suggest — this is a recurring, comforting pattern in distributed systems: elegant impossibility results are often circumvented by unglamorous engineering that happens to satisfy exactly the weaker guarantee that's actually sufficient.</p>
+
+        <pre class="code" data-lang="python">class SimpleFailureDetector:
+    def __init__(self, timeout_ms=150):
+        self.timeout_ms = timeout_ms
+        self.last_heartbeat = {}   # peer_id -> last_seen_timestamp
+        self.suspected = set()
+
+    def on_heartbeat_received(self, peer_id, now):
+        self.last_heartbeat[peer_id] = now
+        self.suspected.discard(peer_id)   # un-suspect on any sign of life
+
+    def check_timeouts(self, now):
+        for peer_id, last_seen in self.last_heartbeat.items():
+            if now - last_seen > self.timeout_ms:
+                self.suspected.add(peer_id)   # suspect, NOT "confirmed dead"
+                # a heartbeat arriving late will un-suspect via on_heartbeat_received
+                # this "suspect, then un-suspect on recovery" pattern is what
+                # gives eventual accuracy despite occasional false positives</pre>
+
+        <p>Two details in that sketch matter more than they look: <strong>(1)</strong> a "suspected" node is never marked permanently, irrevocably dead by this mechanism alone — the moment a heartbeat arrives, suspicion is lifted, which is precisely the "eventually" in eventually-accurate. <strong>(2)</strong> the timeout value is a tuning knob with a genuine trade-off, not a correctness parameter: too short, and you get frequent false suspicions (a node under a GC pause gets marked suspect, then un-suspects a moment later — wasted leader-election churn, covered in article 4.2); too long, and real crashes take longer to detect and react to. There is no value that's "correct" in an absolute sense — only a value tuned to your network's actual latency distribution and your tolerance for false positives versus detection speed.</p>
+
+        <h2 id="phi-accrual">The modern practical answer: phi-accrual failure detectors</h2>
+
+        <p>A fixed timeout is a blunt instrument — it treats "150ms of silence on a network that's usually silent for 20ms" identically to "150ms of silence on a network that's usually silent for 140ms," even though the first is a much stronger signal of trouble than the second. The <strong>phi-accrual failure detector</strong> (Hayashibara et al., 2004) is the widely-adopted practical refinement, used in Cassandra and Akka among others: instead of a binary suspect/not-suspect flag, it outputs a continuous <strong>suspicion level</strong> (phi, φ) computed from the statistical distribution of recently observed heartbeat intervals.</p>
+
+        <p>Concretely: the detector tracks the historical distribution of inter-arrival times between heartbeats from a given peer, and computes, at any moment, how statistically unlikely the current silence duration is <em>given that history</em> — a peer whose heartbeats normally arrive every 100ms ± 10ms triggers rapidly rising suspicion after 200ms of silence, while a peer with historically noisy, irregular 50-500ms intervals is granted more patience before the same suspicion level is reached. This lets applications set a suspicion <em>threshold</em> appropriate to their tolerance for false positives versus detection latency, rather than guessing a single fixed millisecond value that has to somehow be right for every peer's actual network behavior.</p>
+
+        <div class="bm-fix"><strong>Why this matters practically:</strong> a fixed-timeout detector forces one global number to be right for every node pair, every network condition, all the time — which is exactly the kind of one-size-fits-all assumption that breaks under real, heterogeneous production conditions (some links genuinely noisier than others, some nodes under heavier load). Phi-accrual detectors adapt per-peer automatically from observed history, which is a large part of why they're the practical standard in widely-deployed systems rather than a niche academic refinement.</div>
+
+        <h2 id="failure-vs-partition">One more distinction worth being precise about: detecting failure vs. detecting partition</h2>
+
+        <p>A failure detector, as formalized here, cannot distinguish "the peer crashed" from "we're partitioned from the peer" — and by design, it doesn't try to. Both produce identical observable behavior (silence past the timeout), which is exactly the ambiguity article 1.1 named as fundamental. What a failure detector <em>does</em> give you is a consistent, systematic way to <em>act</em> despite that ambiguity — suspect, and let the rest of the system (the consensus algorithm's majority-quorum logic, from article 1.2) handle the consequences safely regardless of which underlying cause is true. This is exactly why majority quorums matter so much: they make the system's behavior <em>correct</em> even when the failure detector's suspicion is wrong (a "crash" that was really just a slow node), because the majority mechanism, not the failure detector, is what's actually load-bearing for safety.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Can a failure detector ever be 100% certain a node has crashed?</summary><p>Not in a genuinely asynchronous network — this is the direct consequence of "Lie #1" from article 1.1. Even after an extremely long silence, there's a nonzero (if vanishingly small in practice) chance the node is merely catastrophically slow rather than crashed. Real systems accept this and design for "eventually correct enough," which is exactly what the ◇S class formalizes.</p></details>
+        <details class="faq"><summary>Why not just use a very long timeout to be safe?</summary><p>Because detection latency has a real cost — every second a genuinely crashed leader isn't detected is a second the system can't make progress (no new leader elected, no writes accepted in leader-based designs). The timeout is a direct trade-off between false-positive rate and how quickly the system reacts to real failures; there's no free lunch, only a tuning point matched to your specific network and availability requirements.</p></details>
+        <details class="faq"><summary>Do Raft and Paxos use the formal Chandra-Toueg detector classes directly?</summary><p>Not by name in most implementations — but the guarantees they rely on for liveness (eventually electing a stable leader and making progress) correspond closely to assuming something at least as strong as ◇S is available in practice. This is exactly why Raft's leader-election timeouts are randomized (covered in Phase 5) — it's a practical technique for approximating the "eventually stable, eventually accurate enough" behavior the theory calls for, without implementing the formal detector machinery explicitly.</p></details>
+        <details class="faq"><summary>Is phi-accrual strictly better than a fixed timeout?</summary><p>Better along the specific dimension of adapting to variable, heterogeneous network conditions without manual per-link tuning — but it's also more complex to implement and reason about, and for small, homogeneous, low-latency-variance clusters (a single well-provisioned datacenter rack), a well-tuned fixed timeout can perform comparably with far less mechanism. As with most trade-offs in this series, "better" depends on your actual deployment's network characteristics.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Every failure detector is characterized by two independent properties: <strong>completeness</strong> (does it eventually suspect every real crash?) and <strong>accuracy</strong> (does it avoid falsely suspecting live nodes?).</li>
+          <li><strong>Perfect completeness and perfect accuracy together are unachievable</strong> in an asynchronous network — the same underlying ambiguity as article 1.1's "Lie #1."</li>
+          <li>Chandra &amp; Toueg (1996) classify eight useful detector strengths; the class <strong>◇S (eventually strong)</strong> is the headline result — the weakest detector class proven sufficient to make consensus solvable despite crash failures.</li>
+          <li>Real systems implement this with <strong>heartbeats and timeouts</strong> — suspicion that's lifted the moment a heartbeat arrives, giving practical "eventual accuracy" without any formal detector machinery.</li>
+          <li><strong>Phi-accrual failure detectors</strong> (Cassandra, Akka) replace a fixed timeout with a continuous, per-peer-adaptive suspicion level derived from historical heartbeat-interval statistics — the practical modern standard.</li>
+          <li>A failure detector <strong>cannot and does not try to</strong> distinguish "crashed" from "partitioned" — it exists to let the system act consistently despite that ambiguity, with majority quorums (article 1.2) providing the actual safety guarantee even when suspicion is wrong.</li>
+          <li>This article is the direct bridge to <strong>FLP</strong> (next): Chandra-Toueg shows exactly how much "extra help" (a ◇S-class detector) is needed to get around the impossibility FLP proves for a fully leaderless, detector-free asynchronous system.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.microsoft.com/en-us/research/uploads/prod/2016/12/UnreliableFailureDetectors-1.pdf" target="_blank">Chandra &amp; Toueg — Unreliable Failure Detectors for Reliable Distributed Systems (1996)</a> <span>— the primary source; completeness/accuracy formalization and the eight detector classes.</span></li>
+          <li><a href="https://www.computer.org/csdl/proceedings-article/srds/2004/22390066/12OmNvT2phv" target="_blank">Hayashibara et al. — The φ Accrual Failure Detector (2004)</a> <span>— the practical, widely-deployed refinement used in Cassandra and Akka.</span></li>
+          <li><a href="consensus-1-1-why-distributed-systems-are-hard.html">cvam.sight — Consensus 1.1: Why Distributed Systems Are Hard</a> <span>— the informal failure spectrum this article formalizes.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-2-3-vector-clocks.html">← 2.3 Vector Clocks</a>
+        <a href="consensus-2-5-the-flp-impossibility-theorem.html">next: 2.5 The FLP Impossibility Theorem →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

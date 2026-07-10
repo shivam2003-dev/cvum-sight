@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-8-6-jepsen",
+    title: "Jepsen — testing consensus in the wild.",
+    date: "Jul 23, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "jepsen", "series-consensus"],
+    time: 22,
+    words: 4600,
+    excerpt: "Consensus Algorithms series, 8.6 -- Phase 8 finale. A proof is about the algorithm; Jepsen is about the code. Kyle Kingsbury's framework injects real network partitions, clock skew, process pauses and kills into production databases, then runs linearizability checkers (Knossos, Elle) that automate article 1.3's formal definition to algorithmically find violations. Genuine, confirmed bugs found across a long list of well-known systems -- evidence that implementing a proven-correct algorithm is itself nontrivial, not that the algorithms are flawed.",
+    series: "consensus",
+    seriesNum: "44"
+  },
+  {
     slug: "consensus-8-5-kubernetes-and-etcd",
     title: "Kubernetes and etcd.",
     date: "Jul 23, 2026",

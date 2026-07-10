@@ -16,6 +16,54 @@
 
 const POSTS = [
   {
+    slug: "consensus-6-5-narwhal-and-bullshark",
+    title: "Narwhal and Bullshark.",
+    date: "Jul 16, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "narwhal-bullshark", "series-consensus"],
+    time: 21,
+    words: 4400,
+    excerpt: "Consensus Algorithms series, 6.5 -- Phase 6 finale. Every prior BFT protocol bundles data dissemination and ordering into one leader role, capping throughput at that leader's bandwidth. Narwhal separates them with a DAG-based mempool where every validator disseminates continuously in parallel; Bullshark then orders the already-certified DAG with near-zero marginal overhead. An architectural innovation, not just a communication-complexity or finality trade-off. Closes Phase 6 with a comparison across PBFT/HotStuff/Tendermint/Narwhal-Bullshark.",
+    series: "consensus",
+    seriesNum: "30"
+  },
+  {
+    slug: "consensus-6-4-tendermint",
+    title: "Tendermint.",
+    date: "Jul 16, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "tendermint", "series-consensus"],
+    time: 20,
+    words: 4100,
+    excerpt: "Consensus Algorithms series, 6.4. Tendermint's central design commitment is immediate, deterministic finality -- a direct contrast with probabilistic-finality proof-of-work chains. Round-based propose/prevote/precommit with a Polka at >2/3 then a >2/3 precommit for instant commitment, connected directly to the 3f+1 bound. Slashing as an economic accountability layer on top of the algorithmic safety guarantee, and the Cosmos SDK/CometBFT ecosystem it underlies.",
+    series: "consensus",
+    seriesNum: "29"
+  },
+  {
+    slug: "consensus-6-3-hotstuff",
+    title: "HotStuff.",
+    date: "Jul 15, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "hotstuff", "series-consensus"],
+    time: 21,
+    words: 4400,
+    excerpt: "Consensus Algorithms series, 6.3. Fixes PBFT's O(n^2) bottleneck: route votes through the leader and aggregate into a single threshold signature, O(n) communication instead of O(n^2). The three-chain commit rule pipelines what PBFT does in two explicit phases, and leader rotation is built into the same normal-case pipeline with no separate view-change sub-protocol. Powers Meta's Diem/LibraBFT and Aptos -- still needs the same 3f+1 node bound, the innovation is entirely in communication efficiency.",
+    series: "consensus",
+    seriesNum: "28"
+  },
+  {
+    slug: "consensus-6-2-pbft",
+    title: "PBFT.",
+    date: "Jul 15, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "pbft", "series-consensus"],
+    time: 22,
+    words: 4700,
+    excerpt: "Consensus Algorithms series, 6.2. Castro and Liskov's 1999 Practical Byzantine Fault Tolerance -- the first BFT protocol efficient enough for real systems: pre-prepare/prepare/commit, all-to-all broadcast that lets replicas cross-verify without trusting the primary, and view changes with cryptographically verifiable prepared certificates. Why digital signatures are load-bearing, not optional, letting PBFT hit the theoretical 3f+1 minimum. Why blockchains adopted it, and its O(n^2) scalability limit that motivates HotStuff next.",
+    series: "consensus",
+    seriesNum: "27"
+  },
+  {
     slug: "consensus-6-1-the-byzantine-generals-problem",
     title: "The Byzantine generals problem.",
     date: "Jul 15, 2026",

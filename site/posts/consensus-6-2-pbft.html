@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PBFT — Consensus 6.2 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 6.2. Castro and Liskov's Practical Byzantine Fault Tolerance -- the first BFT protocol efficient enough for real systems. Normal-case operation (pre-prepare, prepare, commit), view changes, digital signatures replacing majority overlap's trust assumption, and why blockchains adopted it.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 6</p>
+        <p class="series-banner-title">Byzantine Consensus</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 6.2 of 5</p>
+        <div class="series-banner-nav">
+          <a href="consensus-6-1-the-byzantine-generals-problem.html" class="done">6.1 Byzantine Generals</a>
+          <a href="consensus-6-2-pbft.html" class="active">6.2 PBFT</a>
+          <a href="consensus-6-3-hotstuff.html">6.3 HotStuff</a>
+          <a href="consensus-6-4-tendermint.html">6.4 Tendermint</a>
+          <a href="consensus-6-5-narwhal-and-bullshark.html">6.5 Narwhal/Bullshark</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 15, 2026 · devops · 22 min read · 4700 words <span class="difficulty advanced">advanced</span></p>
+        <h1>PBFT.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">pbft</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">For sixteen years after the Byzantine Generals paper (6.1), practical Byzantine fault tolerance remained mostly a theoretical curiosity — the known protocols were too slow for real systems. Miguel Castro and Barbara Liskov's 1999 PBFT (Practical Byzantine Fault Tolerance) changed that, delivering the first BFT protocol with performance close enough to non-Byzantine systems to be genuinely usable in practice. This article covers PBFT's three-phase normal-case protocol (pre-prepare, prepare, commit), its view-change mechanism, and — the piece that makes everything work — how digital signatures and message authentication codes replace the "trust the overlap node" assumption that article 6.1 showed Byzantine failures break.</p>
+
+        <h2 id="why-slow">Why earlier BFT protocols were impractical</h2>
+
+        <p>The original Byzantine Generals protocols (article 6.1) required a number of message rounds proportional to <code>f</code> — meaning to tolerate a modest number of simultaneous faults, the protocol needed many sequential rounds of communication, each adding real latency. For anything beyond toy fault-tolerance levels, this made the protocols too slow for practical, latency-sensitive production use. PBFT's core engineering achievement was reducing this to a small, <strong>constant</strong> number of message phases regardless of <code>f</code> — the same qualitative leap Multi-Paxos (article 5.3) made over naive per-entry Paxos, but for the much harder Byzantine setting.</p>
+
+        <h2 id="normal-case">The normal-case protocol: three phases</h2>
+
+        <p>PBFT operates in a sequence of <strong>views</strong> (yes, the same term VR used in article 5.4 — PBFT's authors were working in the same MIT lab lineage as Liskov's earlier VR work, and the terminology directly carries over), each with a designated <strong>primary</strong>. A client sends a request to the primary, which then drives three phases among all replicas:</p>
+
+        <h3>Phase 1: Pre-Prepare</h3>
+        <p>The primary assigns the request a sequence number and broadcasts a <code>PRE-PREPARE(view, seq, digest)</code> message, digitally signed, to all backups. This is the primary's proposal — directly analogous to article 5.2's Paxos Phase 2 Accept, or article 5.6's Raft AppendEntries.</p>
+
+        <h3>Phase 2: Prepare</h3>
+        <p>Each backup, upon accepting a valid pre-prepare, broadcasts a signed <code>PREPARE(view, seq, digest, replica_id)</code> to <em>every other replica</em> (not just back to the primary — this all-to-all broadcast is a key structural difference from Phase 5's leader-centric message flow, and it's the direct mechanism that lets replicas verify agreement without needing to fully trust the primary). A replica considers a request <strong>prepared</strong> once it has collected <code>2f</code> matching Prepare messages from distinct replicas (plus its own), for a total of <code>2f+1</code> — chosen specifically because, per article 6.1's 3f+1 threshold, <code>2f+1</code> is guaranteed to include a majority of honest nodes even if all <code>f</code> faulty nodes participate.</p>
+
+        <h3>Phase 3: Commit</h3>
+        <p>Once prepared, each replica broadcasts a signed <code>COMMIT(view, seq, digest, replica_id)</code> to all others. A replica considers the request <strong>committed</strong> (and executes it, replying to the client) once it has collected <code>2f+1</code> matching Commit messages — a second round of cross-verification, ensuring that a sufficient number of replicas have independently confirmed they each saw the same prepared certificate, closing off a specific attack where a faulty primary might show different "prepared" sets to different subsets of replicas.</p>
+
+        <pre class="code" data-lang="text">Client -> Primary:                REQUEST
+
+Primary -> all Backups:           PRE-PREPARE(view, seq, digest)   [signed]
+
+Each replica (incl. primary)
+  -> all other replicas:          PREPARE(view, seq, digest, id)   [signed]
+  (once 2f matching PREPAREs + own pre-prepare/prepare = 2f+1: request is PREPARED)
+
+Each replica -> all others:       COMMIT(view, seq, digest, id)    [signed]
+  (once 2f+1 matching COMMITs: request is COMMITTED -> execute, reply to client)</pre>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">PBFT's three phases: why all-to-all broadcast matters</text>
+            <text x="120" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Pre-Prepare</text>
+            <text x="120" y="58" class="sm" text-anchor="middle">primary → all (star)</text>
+            <text x="350" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Prepare</text>
+            <text x="350" y="58" class="sm" text-anchor="middle">all → all (mesh)</text>
+            <text x="580" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Commit</text>
+            <text x="580" y="58" class="sm" text-anchor="middle">all → all (mesh)</text>
+            <circle cx="120" cy="100" r="8" class="boxr"/>
+            <circle cx="70" cy="140" r="8" class="boxg"/><circle cx="120" cy="150" r="8" class="boxg"/><circle cx="170" cy="140" r="8" class="boxg"/>
+            <path d="M120,108 L70,132" class="arr"/><path d="M120,108 L120,142" class="arr"/><path d="M120,108 L170,132" class="arr"/>
+            <circle cx="300" cy="100" r="8" class="boxg"/><circle cx="350" cy="100" r="8" class="boxg"/><circle cx="400" cy="100" r="8" class="boxg"/>
+            <circle cx="300" cy="150" r="8" class="boxg"/><circle cx="400" cy="150" r="8" class="boxg"/>
+            <path d="M300,108 L300,142" class="arr"/><path d="M300,108 L400,142" class="arr"/><path d="M350,108 L300,142" class="arr"/><path d="M350,108 L400,142" class="arr"/><path d="M400,108 L300,142" class="arr"/><path d="M400,108 L400,142" class="arr"/>
+            <circle cx="530" cy="100" r="8" class="boxy"/><circle cx="580" cy="100" r="8" class="boxy"/><circle cx="630" cy="100" r="8" class="boxy"/>
+            <circle cx="530" cy="150" r="8" class="boxy"/><circle cx="630" cy="150" r="8" class="boxy"/>
+            <path d="M530,108 L530,142" class="arr"/><path d="M530,108 L630,142" class="arr"/><path d="M580,108 L530,142" class="arr"/><path d="M580,108 L630,142" class="arr"/><path d="M630,108 L530,142" class="arr"/><path d="M630,108 L630,142" class="arr"/>
+            <text x="340" y="195" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">All-to-all broadcast in Prepare/Commit lets replicas verify agreement</text>
+            <text x="340" y="212" class="sm" text-anchor="middle">WITHOUT relying on trusting the primary alone — exactly what a Byzantine primary can't be trusted for.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Pre-Prepare fans out from the primary (star); Prepare and Commit are all-to-all (mesh), the structural feature that lets replicas cross-verify without trusting the primary.</p>
+        </div>
+
+        <h2 id="why-signatures">Why digital signatures are load-bearing, not optional</h2>
+
+        <p>This is the direct payoff for article 6.1's oral-vs-signed message discussion. Every message in PBFT is <strong>digitally signed</strong> (or, in performance-optimized variants, authenticated with message authentication codes). This closes off exactly the attack article 6.1's Fig 1 illustrated — a Byzantine node cannot forge a message claiming to be from another replica, and cannot alter a message in transit without detection, because any tampering invalidates the signature. This is precisely why PBFT can operate with the theoretical minimum <code>3f+1</code> nodes: the cryptography does real, load-bearing work that the original unsigned oral-message protocols couldn't rely on, letting PBFT hit the tightest bound article 6.1 proved achievable.</p>
+
+        <h2 id="view-change">View changes: Byzantine-tolerant leader election</h2>
+
+        <p>When backups suspect the primary is faulty (either genuinely crashed, or — the new wrinkle this phase introduces — actively misbehaving, such as sending inconsistent pre-prepares to different replicas), they trigger a <strong>view change</strong>, PBFT's Byzantine-hardened analog of article 4.2/5.5's leader election. Replicas broadcast signed <code>VIEW-CHANGE</code> messages containing proof of their prepared certificates (the <code>2f+1</code> matching Prepare messages, individually signed and therefore independently verifiable by any recipient — not just trusted on the replica's word alone). The new primary collects <code>2f+1</code> such view-change messages, and — cryptographically verifiable, unlike Phase 5's simple "trust the reported log" comparisons — can prove to every replica exactly which requests were already prepared, ensuring no committed work is lost across the leadership change, the same safety guarantee article 5.6 proved for Raft, now re-derived under a strictly harder adversarial model with cryptographic backing instead of simple trust.</p>
+
+        <h2 id="production-use">Why blockchains adopted PBFT-family protocols</h2>
+
+        <p>PBFT's practical efficiency, combined with its explicit design for a threat model where participants might be actively adversarial (exactly the situation in any open, permissionless or semi-permissionless network where you can't assume every validator is honestly operated), made it and its direct descendants the foundation for a large fraction of blockchain consensus design — a connection this series will trace explicitly through HotStuff (6.3) and Tendermint (6.4), both of which build directly on PBFT's core ideas while addressing specific scalability limitations PBFT's original design has at very large validator-set sizes (the all-to-all <code>O(n²)</code> message complexity in Prepare/Commit becomes a real bottleneck as <code>n</code> grows into the hundreds or thousands — precisely the scale many blockchain networks operate at).</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is PBFT's O(n²) message complexity a fundamental limit, or an artifact of this specific protocol?</summary><p>It's specific to PBFT's design (the all-to-all Prepare/Commit broadcast), not a fundamental Byzantine-agreement limit — this is exactly the scalability gap HotStuff (article 6.3) is built to close, using a linear, leader-centric communication pattern instead, while preserving BFT safety.</p></details>
+        <details class="faq"><summary>Does PBFT tolerate network partitions the same way crash-fault algorithms do?</summary><p>Yes, in spirit — PBFT remains safe (never commits conflicting requests) under any network conditions, and remains live (continues committing new requests) as long as at least 2f+1 replicas can communicate with reasonably bounded delay, directly paralleling article 2.5's partial-synchrony escape hatch, just requiring a larger surviving quorum (2f+1 out of 3f+1, rather than a simple crash-fault majority) due to the Byzantine threat model.</p></details>
+        <details class="faq"><summary>Can a client be tricked by a faulty primary into thinking a request committed when it didn't?</summary><p>No — a client only accepts a request as complete once it receives <code>f+1</code> matching, individually signed replies from distinct replicas, guaranteeing at least one honest replica genuinely executed and confirmed the request (since at most f replicas can be faulty). This client-side verification is a deliberate, necessary part of the protocol, not an afterthought.</p></details>
+        <details class="faq"><summary>Is PBFT still used directly in production today, or mostly its descendants?</summary><p>Both — PBFT and close variants remain in use in permissioned blockchain and consortium settings (notably early Hyperledger Fabric configurations), while HotStuff and Tendermint-family protocols (6.3, 6.4) have become more common for larger-scale, more performance-sensitive deployments, precisely because of the O(n²) scalability gap noted above.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>PBFT</strong> (Castro &amp; Liskov, 1999) was the first Byzantine fault-tolerant protocol efficient enough for practical, real-world use — a constant number of phases instead of the O(f) rounds earlier protocols needed.</li>
+          <li>The normal-case protocol: <strong>Pre-Prepare</strong> (primary proposes), <strong>Prepare</strong> (all-to-all broadcast, 2f+1 needed), <strong>Commit</strong> (all-to-all broadcast, 2f+1 needed) — the all-to-all pattern lets replicas cross-verify without trusting the primary alone.</li>
+          <li><strong>Digital signatures are load-bearing</strong>, not optional — they close off the message-forgery attack article 6.1 identified, letting PBFT operate at the theoretical minimum 3f+1 node count.</li>
+          <li><strong>View changes</strong> are Byzantine-hardened leader election, using cryptographically verifiable prepared certificates instead of simple trust in a reported log.</li>
+          <li>PBFT's all-to-all Prepare/Commit gives it <strong>O(n²) message complexity</strong> — fine for small clusters, a real bottleneck at blockchain-scale validator counts, motivating HotStuff's linear-communication redesign next.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="http://pmg.csail.mit.edu/papers/osdi99.pdf" target="_blank">Castro &amp; Liskov — Practical Byzantine Fault Tolerance (OSDI 1999)</a> <span>— the primary source.</span></li>
+          <li><a href="consensus-6-1-the-byzantine-generals-problem.html">cvam.sight — Consensus 6.1: The Byzantine Generals Problem</a> <span>— the 3f+1 threshold and signed-message insight this article builds on directly.</span></li>
+          <li><a href="consensus-5-4-viewstamped-replication.html">cvam.sight — Consensus 5.4: Viewstamped Replication</a> <span>— the shared MIT research lineage and "view" terminology PBFT carries forward.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-6-1-the-byzantine-generals-problem.html">← 6.1 The Byzantine Generals Problem</a>
+        <a href="consensus-6-3-hotstuff.html">next: 6.3 HotStuff →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

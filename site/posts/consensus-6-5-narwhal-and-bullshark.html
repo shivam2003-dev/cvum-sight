@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Narwhal and Bullshark — Consensus 6.5 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 6.5 -- Phase 6 finale. Separating data dissemination (Narwhal's DAG mempool) from ordering (Bullshark's near-zero-overhead consensus) to break the leader-bandwidth bottleneck every prior BFT protocol shared, plus a closing Phase 6 comparison.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 6</p>
+        <p class="series-banner-title">Byzantine Consensus</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Article 6.5 of 5 — Phase 6 complete after this</p>
+        <div class="series-banner-nav">
+          <a href="consensus-6-1-the-byzantine-generals-problem.html" class="done">6.1 Byzantine Generals</a>
+          <a href="consensus-6-2-pbft.html" class="done">6.2 PBFT</a>
+          <a href="consensus-6-3-hotstuff.html" class="done">6.3 HotStuff</a>
+          <a href="consensus-6-4-tendermint.html" class="done">6.4 Tendermint</a>
+          <a href="consensus-6-5-narwhal-and-bullshark.html" class="active">6.5 Narwhal/Bullshark</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 16, 2026 · devops · 21 min read · 4400 words <span class="difficulty expert">expert</span></p>
+        <h1>Narwhal and Bullshark.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">narwhal-bullshark</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Every BFT protocol this phase has covered — PBFT, HotStuff, Tendermint — shares one structural bottleneck this article names explicitly for the first time: <strong>the leader (or round proposer) must personally handle the full bandwidth of every transaction</strong>, because data dissemination and consensus ordering are bundled into the same role and the same protocol. Danezis, Kokoris-Kogias, Sonnino, and Spiegelman's 2021 <strong>Narwhal</strong> paper makes a structural separation that turns out to unlock dramatically higher throughput: split data dissemination (getting transaction data to everyone) from consensus (deciding the order) into two independent components. <strong>Bullshark</strong>, the companion consensus protocol built on top of Narwhal's output, then achieves near-zero marginal ordering overhead. This closes Phase 6 with the throughput-focused frontier of BFT research — and sets up a direct thematic bridge to Phase 7's leaderless and flexible-quorum modern Paxos variants.</p>
+
+        <h2 id="the-bottleneck">The shared bottleneck every prior protocol has</h2>
+
+        <p>Look back across PBFT (6.2), HotStuff (6.3), and Tendermint (6.4): in every one of them, the leader/proposer role does double duty — it's both the party responsible for disseminating the actual transaction data to the rest of the network <em>and</em> the party whose proposal drives the ordering/agreement protocol. This bundling means the leader's available bandwidth becomes a hard ceiling on the whole system's throughput — no matter how efficient the voting/signature-aggregation machinery is (HotStuff's whole contribution, article 6.3), the leader still has to personally push every transaction's raw data out to the network before the protocol can even begin ordering it.</p>
+
+        <h2 id="narwhal">Narwhal: separating dissemination from ordering</h2>
+
+        <p>Narwhal's structural fix: transaction data flows through a <strong>DAG (directed acyclic graph) based mempool</strong> that is entirely separate from, and doesn't wait for, the consensus ordering protocol. Every validator continuously proposes its own batch of transactions into the DAG structure, referencing prior batches from other validators; validators certify (with signatures, echoing article 6.2's cryptographic-authentication theme) that they've received and stored each batch, and once a batch has certificates from a quorum, it's durably, redundantly available across the network — <strong>completely independent of whatever the current consensus leader happens to be doing.</strong> Every validator participates in disseminating data continuously and in parallel, rather than funneling everything through one leader's bandwidth, directly removing the shared bottleneck named above.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Bundled (PBFT/HotStuff/Tendermint) vs. separated (Narwhal/Bullshark)</text>
+            <rect x="40" y="40" width="280" height="70" class="boxr"/>
+            <text x="180" y="65" class="smk" text-anchor="middle" style="font-weight:bold">Bundled: one leader role</text>
+            <text x="180" y="85" class="sm" text-anchor="middle">disseminates data AND drives ordering</text>
+            <text x="180" y="100" class="sm" text-anchor="middle">— leader bandwidth = system ceiling</text>
+            <rect x="360" y="40" width="130" height="70" class="boxg"/>
+            <text x="425" y="65" class="smk" text-anchor="middle">Narwhal</text>
+            <text x="425" y="85" class="sm" text-anchor="middle">DAG mempool,</text>
+            <text x="425" y="100" class="sm" text-anchor="middle">ALL validators disseminate</text>
+            <rect x="510" y="40" width="130" height="70" class="boxy"/>
+            <text x="575" y="65" class="smk" text-anchor="middle">Bullshark</text>
+            <text x="575" y="85" class="sm" text-anchor="middle">orders the DAG,</text>
+            <text x="575" y="100" class="sm" text-anchor="middle">~zero extra overhead</text>
+            <text x="340" y="150" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">Separation means ordering doesn't wait on any single party's bandwidth —</text>
+            <text x="340" y="168" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">the direct fix for the shared bottleneck every earlier protocol in this phase has.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Separating "get the data everywhere" from "agree on the order" removes the single-leader bandwidth ceiling.</p>
+        </div>
+
+        <h2 id="bullshark">Bullshark: ordering the DAG with near-zero overhead</h2>
+
+        <p>With Narwhal handling data availability, <strong>Bullshark</strong> solves the remaining, now much lighter-weight problem: deciding a total order over the certified batches already sitting in the DAG. Because every batch is already certified and durably available (Narwhal's job, already done), Bullshark's ordering protocol doesn't need to move any transaction data at all — it only needs to agree on a traversal order over the DAG structure, using the DAG's own structure (which batch references which) as an implicit source of ordering information, requiring only a small amount of additional metadata exchange (not full transaction data) on top of Narwhal's continuous operation. This is why Bullshark's marginal overhead is characterized as near-zero: the expensive part (data dissemination, which every protocol in this phase needed to do somehow) is already amortized across Narwhal's continuous, parallel operation, leaving Bullshark to do comparatively cheap, metadata-only ordering work.</p>
+
+        <div class="bm-note"><strong>This separation is a genuinely different kind of innovation than anything else in Phase 6.</strong> PBFT→HotStuff (6.2→6.3) improved communication complexity within a bundled leader-centric design. HotStuff→Tendermint (6.3→6.4) traded communication efficiency for a different finality philosophy. Narwhal/Bullshark instead <strong>changes the architecture</strong> — splitting one bundled role into two specialized, independently-scalable components — the same kind of structural move article 4.3's SMR/log/broadcast equivalence made visible for Phase 5's algorithms, just applied as a genuinely new engineering decomposition rather than a reframing of an existing mechanism.</div>
+
+        <h2 id="phase6-close">Phase 6 closing comparison</h2>
+
+        <table class="papers">
+          <tr><th>Protocol</th><th>Core innovation</th><th>Communication pattern</th><th>Best fit</th></tr>
+          <tr><td>PBFT (6.2)</td><td>First practical BFT — 3-phase protocol at the 3f+1 minimum</td><td>All-to-all, O(n²)</td><td>Small permissioned clusters</td></tr>
+          <tr><td>HotStuff (6.3)</td><td>Linear communication via threshold-signature aggregation</td><td>Leader-routed, O(n)</td><td>Large validator sets, blockchain-scale</td></tr>
+          <tr><td>Tendermint (6.4)</td><td>Immediate deterministic finality + economic slashing</td><td>Round-based, gossip</td><td>Proof-of-stake chains needing instant finality</td></tr>
+          <tr><td>Narwhal/Bullshark (6.5)</td><td>Separating data dissemination from ordering</td><td>DAG mempool + lightweight ordering</td><td>Maximum throughput, high transaction volume</td></tr>
+        </table>
+
+        <h2 id="phase6-close-text">Closing Phase 6</h2>
+
+        <p>Phase 6 introduced a genuinely harder failure model — Byzantine, not just crash — and showed that the majority-overlap mechanism this series built across Phases 3-5 needed real reinforcement (the 3f+1 bound, cryptographic signatures) rather than a simple bigger-cluster fix, to survive actively adversarial participants. From that foundation, four protocols showed four different, defensible engineering priorities: PBFT's foundational practicality, HotStuff's communication-complexity focus, Tendermint's finality-and-accountability focus, and Narwhal/Bullshark's throughput-through-architectural-separation focus — a real spread of design trade-offs, unlike Phase 5's closing comparison (article 5.7) which showed largely convergent presentations of the same underlying mechanism.</p>
+
+        <p>Phase 7 now returns to the crash-fault-tolerant world (Paxos's own extended family, not Byzantine), covering the <strong>modern Paxos family</strong> — EPaxos's leaderless design, Flexible Paxos's quorum relaxation, and the research lineage (Atlas, Caesar, OmniPaxos, Matchmaker Paxos, PigPaxos, BPaxos, Rabia) that leads directly to this series' eventual destination: QuePaxa and Meerkat in Phase 10.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does Narwhal/Bullshark still need 3f+1 nodes?</summary><p>Yes — the fundamental Byzantine-agreement bound from article 6.1 is unaffected by this architectural separation; Narwhal/Bullshark operates within the same 3f+1 constraint as every other protocol in this phase, since the separation addresses throughput and communication patterns, not the underlying fault-tolerance mathematics.</p></details>
+        <details class="faq"><summary>Is the DAG mempool itself vulnerable to a Byzantine validator withholding data?</summary><p>The certification requirement (a quorum of validators must sign off that they've received a batch before it's usable) prevents a single Byzantine validator from making data unavailable — this directly mirrors article 3.3's overlap-based safety logic, just applied to data availability rather than value agreement.</p></details>
+        <details class="faq"><summary>Which production systems use Narwhal/Bullshark?</summary><p>The Sui and Aptos blockchain ecosystems (both emerging from the former Diem/Meta blockchain engineering lineage mentioned in article 6.3) have adopted Narwhal/Bullshark-family architectures specifically for their high-throughput design goals, a direct, concrete continuation of the HotStuff-adjacent research lineage this phase has traced.</p></details>
+        <details class="faq"><summary>Is separating dissemination from ordering an idea that could apply to Phase 5's crash-fault algorithms too?</summary><p>In principle yes, and it's an active area of systems research — the core insight (don't bottleneck data movement on whichever single node is currently "the leader") isn't inherently Byzantine-specific. Some of Phase 7's modern Paxos family variants (particularly the throughput-focused ones like PigPaxos and BPaxos, covered in article 7.8) explore related decoupling ideas within the crash-fault-tolerant setting.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Every prior Phase 6 protocol shares a structural bottleneck: the leader/proposer's bandwidth caps system throughput because <strong>data dissemination and ordering are bundled</strong> into one role.</li>
+          <li><strong>Narwhal</strong> fixes this by moving transaction data through a <strong>DAG-based mempool</strong> where every validator disseminates continuously and in parallel, independent of whatever consensus is currently doing.</li>
+          <li><strong>Bullshark</strong> then orders the already-certified DAG with near-zero marginal overhead, since the expensive data-movement work is already amortized by Narwhal.</li>
+          <li>This is an <strong>architectural</strong> innovation — splitting one bundled role into two specialized components — genuinely different in kind from the communication-complexity and finality-philosophy trade-offs of PBFT/HotStuff/Tendermint.</li>
+          <li>Phase 6 closes having shown Byzantine fault tolerance demands real mechanism reinforcement (3f+1, signatures) over crash-fault tolerance, with four protocols spanning a real spread of design priorities — setting up Phase 7's return to crash-fault-tolerant modern Paxos variants, building toward QuePaxa and Meerkat in Phase 10.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://arxiv.org/abs/2105.11827" target="_blank">Danezis, Kokoris-Kogias, Sonnino &amp; Spiegelman — Narwhal and Tusk: A DAG-based Mempool and Efficient BFT Consensus (2021)</a> <span>— the primary Narwhal reference.</span></li>
+          <li><a href="https://arxiv.org/abs/2201.05677" target="_blank">Spiegelman, Giridharan, Sonnino &amp; Kokoris-Kogias — Bullshark: DAG BFT Protocols Made Practical (2022)</a> <span>— the Bullshark ordering protocol.</span></li>
+          <li><a href="consensus-6-3-hotstuff.html">cvam.sight — Consensus 6.3: HotStuff</a> <span>— the leader-centric communication pattern this article's separation directly addresses.</span></li>
+          <li><a href="../series-consensus.html">cvam.sight — Consensus Algorithms series hub</a> <span>— Phase 7 (the Modern Paxos Family) picks up next.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-6-4-tendermint.html">← 6.4 Tendermint</a>
+        <a href="../series-consensus.html">Phase 6 complete — back to series hub →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

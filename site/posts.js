@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-10-2-quepaxa",
+    title: "QuePaxa — escaping the tyranny of timeouts.",
+    date: "Jul 27, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "quepaxa", "series-consensus"],
+    time: 24,
+    words: 5100,
+    excerpt: "Consensus Algorithms series, 10.2. Tennage, Basescu, Kokoris-Kogias, Syta, Jovanovic, Estrada-Galinanes & Ford's SOSP 2023 paper targets timeout-based liveness -- either too trigger-happy or too sluggish, and a built-in DoS vector. A familiar one-round-trip fast path matches Multi-Paxos throughput normally; a randomized asynchronous core with hedging delays and multi-armed-bandit leader selection replaces timeout-triggered elections. Reported: ~10x throughput under adversarial conditions, WAN median latency under 380ms.",
+    series: "consensus",
+    seriesNum: "52"
+  },
+  {
     slug: "consensus-10-1-how-to-read-a-consensus-paper",
     title: "How to read a consensus paper.",
     date: "Jul 27, 2026",

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuePaxa — Escaping the Tyranny of Timeouts — Consensus 10.2 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 10.2. Tennage, Basescu, Kokoris-Kogias, Syta, Jovanovic, Estrada-Galinanes & Ford's SOSP 2023 paper: a randomized asynchronous consensus core with a one-round-trip fast path, hedging delays instead of timeouts, and multi-armed-bandit leader selection -- matching Multi-Paxos's throughput while staying robust under adversarial WAN conditions.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 10</p>
+        <p class="series-banner-title">Research Papers</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 10.2 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-10-1-how-to-read-a-consensus-paper.html" class="done">10.1 How to Read</a>
+          <a href="consensus-10-2-quepaxa.html" class="active">10.2 QuePaxa</a>
+          <a href="consensus-10-3-meerkat.html">10.3 Meerkat</a>
+          <a href="consensus-10-4-comparing-the-paxos-family.html">10.4 Master Table</a>
+          <a href="consensus-10-5-benchmarking-consensus-algorithms.html">10.5 Benchmarking</a>
+          <a href="consensus-10-6-open-problems-in-consensus.html">10.6 Open Problems</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 27, 2026 · devops · 24 min read · 5100 words <span class="difficulty expert">expert</span></p>
+        <h1>QuePaxa — escaping the tyranny of timeouts.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">quepaxa</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Applying article 10.1's eight-part framework to the paper this entire series was designed to build toward. QuePaxa — Tennage, Basescu, Kokoris-Kogias, Syta, Jovanovic, Estrada-Galiñanes, and Ford, published at SOSP 2023 — targets a specific weakness every classical algorithm since Phase 5 has quietly carried: <strong>leader-based consensus depends on timeouts for liveness, and timeouts are a genuinely bad way to detect failure</strong> (article 2.4's whole point, revisited here at the level of an actual production-motivated fix rather than a theoretical caveat). QuePaxa's answer is a randomized asynchronous consensus core wrapped around a familiar one-round-trip fast path — matching Multi-Paxos's throughput when conditions are good, and staying live and fast under exactly the adversarial conditions (DoS attacks, WAN jitter, a slow-but-not-dead leader) that make fixed timeouts either too trigger-happy or too sluggish.</p>
+
+        <h2 id="problem">1-2. Problem, and why existing algorithms fail</h2>
+
+        <p>Recall article 4.2's split-vote discussion and article 2.4's phi-accrual detection material: every algorithm since Phase 5 detects a dead leader using a <strong>timeout</strong> — if no heartbeat arrives within some fixed or randomized window, assume the leader is gone and start an election. QuePaxa's paper names precisely why this is a structural weakness, not just an implementation detail: pick the timeout too short, and ordinary WAN jitter or a momentarily-slow-but-alive leader triggers unnecessary elections, each one costing a full round of coordination and briefly interrupting availability (article 4.1's liveness cost, made concrete and recurring). Pick the timeout too long, and a genuinely failed leader isn't detected — and therefore isn't replaced — for that entire duration, directly hurting availability in the failure case the timeout exists to handle. Worse, an adversary who can selectively delay messages (a realistic threat model for anything reachable over the public internet, and directly relevant to Cloudflare's own motivation for Meerkat, article 10.3 next) can deliberately induce exactly the timing conditions that cause repeated, wasteful re-elections — a denial-of-service vector built directly into the liveness mechanism of Raft and Multi-Paxos as this series has presented them.</p>
+
+        <h2 id="core-idea">3. Core idea: a randomized asynchronous core under a familiar fast path</h2>
+
+        <p>QuePaxa's structural answer, and the part worth sitting with carefully: it doesn't discard the fast, familiar leader-based path this series has built since article 5.3 — it keeps a <strong>one-round-trip fast path</strong> that, under normal conditions, performs identically to Multi-Paxos or Raft. What's new sits underneath, as a fallback core: a <strong>randomized asynchronous consensus core</strong>, directly in the lineage of article 2.5's randomization escape hatch and article 7.8's Rabia (the other randomization-based simplification this series has covered), that allows <strong>simultaneous proposers without destructive interference</strong> — competing proposals don't have to eliminate each other the way article 5.2's dueling-proposers scenario described; the core's design lets progress continue even when more than one node is actively trying to lead at once.</p>
+
+        <h2 id="hedging">Hedging delays instead of timeouts, and the multi-armed-bandit angle</h2>
+
+        <p>The specific mechanism that replaces the timeout: rather than waiting a fixed or randomized-but-blind duration before assuming a leader is dead, QuePaxa uses <strong>short hedging delays</strong> — a much smaller, adaptively-tuned wait before a backup attempt is launched, sized to limit redundant work rather than to declare failure. Because simultaneous proposers don't destructively interfere (the core idea above), a hedging attempt that turns out to be unnecessary (the original leader was fine) doesn't cost the same disruption a false-positive timeout-triggered election would in Raft. QuePaxa's paper further frames leader selection and hedging-delay tuning as a <strong>multi-armed-bandit optimization problem</strong> — the system continuously, adaptively learns which node tends to be the fastest, most reliable leader under current conditions and which hedging delay minimizes wasted effort, rather than relying on a single fixed configuration value chosen once at deployment time and never revisited. This lets QuePaxa select a better leader even when the current one hasn't technically failed, purely because conditions have shifted — a genuinely different liveness philosophy from anything in Phase 5 through Phase 7's leader-election material.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">QuePaxa: familiar fast path, novel fallback core</text>
+            <rect x="60" y="40" width="560" height="50" class="boxg"/>
+            <text x="340" y="70" class="smk" text-anchor="middle">Fast path — one round trip, Multi-Paxos/Raft-equivalent throughput under good conditions</text>
+            <text x="340" y="105" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">↓ under adverse conditions, hedging delays trigger backup attempts</text>
+            <rect x="60" y="120" width="560" height="60" class="boxy"/>
+            <text x="340" y="145" class="smk" text-anchor="middle">Randomized asynchronous core</text>
+            <text x="340" y="165" class="sm" text-anchor="middle">simultaneous proposers, no destructive interference, multi-armed-bandit tuning</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Normal conditions never touch the fallback core at all; it only activates when the fast path's assumptions are actually violated.</p>
+        </div>
+
+        <h2 id="performance">4-6. Architecture, failure handling, and performance, together</h2>
+
+        <p>QuePaxa's evaluation reports normal-case throughput of roughly 584,000 commands per second in a LAN setting and roughly 250,000 commands per second over WAN — figures the paper positions as comparable to Multi-Paxos, directly supporting the claim that the fast path genuinely doesn't sacrifice normal-case performance for its adversarial robustness. The more interesting numbers are under adverse conditions specifically: the paper reports roughly a <strong>10x throughput improvement over Raft and Multi-Paxos</strong> under adversarial network conditions designed to trigger exactly the false-timeout pathology described above, with WAN median latency staying under 380 milliseconds even during simulated DoS attacks, misconfigurations, and deliberately slow-but-alive leaders — conditions under which timeout-based algorithms this series covered in Phase 5 are shown, in the paper's own experiments, to degrade far more sharply.</p>
+
+        <table class="papers">
+          <tr><th>Condition</th><th>Raft/Multi-Paxos (Phase 5)</th><th>QuePaxa</th></tr>
+          <tr><td>Normal LAN/WAN operation</td><td>Baseline, fast</td><td>Comparable (~584k/250k cmd/s) — no normal-case penalty</td></tr>
+          <tr><td>Adversarial conditions (DoS, jitter, slow leader)</td><td>Sharp degradation — repeated false-timeout elections</td><td>~10x higher throughput; WAN median latency under 380ms</td></tr>
+          <tr><td>Liveness mechanism</td><td>Fixed/randomized timeout</td><td>Hedging delays + randomized async core, no timeout-triggered elections</td></tr>
+        </table>
+
+        <h2 id="tradeoffs">7. Trade-offs, stated honestly</h2>
+
+        <p>Consistent with this series' insistence, since Phase 7, on never presenting a variant as a free upgrade: QuePaxa's fallback core, and the multi-armed-bandit tuning layered on top of it, are genuinely more complex than Raft's comparatively simple timeout-and-reelect logic — exactly the kind of added mechanism complexity article 8.6's Jepsen coverage flagged as fertile ground for subtle implementation bugs, a risk that applies with particular force to a mechanism this new and this recently published. The benefit is concentrated specifically in adversarial or high-jitter WAN conditions; for a small, stable, low-jitter, single-datacenter deployment where timeouts rarely misfire in practice, Raft's simpler mechanism may remain the more pragmatic choice, precisely the same "match the tool to the actual conditions" argument article 9.5's WAN-optimization material made for read techniques.</p>
+
+        <h2 id="lineage">Project history: from QSCOD and Raxos to QuePaxa</h2>
+
+        <p>Worth knowing for anyone tracing this work further: the project's public GitHub repository notes the codebase was previously developed under the names Raxos and QSCOD before settling on QuePaxa for the SOSP 2023 publication — a reminder, consistent with this whole series' repeated observation about naming and presentation mattering (article 5.1's Paxos allegory story, article 5.7's Zab/epoch naming), that a research project's public name is often the last thing to stabilize, well after its core technical contribution has been worked out. The authors are affiliated with EPFL's DEDIS lab (Decentralized and Distributed Systems), a research group whose broader body of work spans several adjacent areas this series has touched — Byzantine fault tolerance, randomized consensus, and decentralized systems more generally — placing QuePaxa within a specific, traceable research lineage rather than as an isolated one-off contribution.</p>
+
+        <h2 id="why-multi-armed-bandit">Why multi-armed bandits specifically, not just "adaptive tuning"</h2>
+
+        <p>It's worth being precise about why the paper frames leader and hedging-delay selection using multi-armed-bandit terminology specifically, rather than simply saying "adaptive." A multi-armed bandit is the classical formalization of a decision-maker repeatedly choosing among several options ("arms") with unknown, potentially-changing payoffs, needing to balance <strong>exploration</strong> (trying options that might be better but are currently uncertain) against <strong>exploitation</strong> (sticking with the option currently believed best). Applied to QuePaxa's leader selection: each candidate node is an "arm," its recent latency and success rate are its observed "payoff," and the system needs to continuously balance sticking with a currently-good leader against occasionally testing whether a different node has become faster or more reliable as conditions shift — exactly the exploration/exploitation trade-off multi-armed bandit algorithms are designed to formalize and solve well. This is a genuinely more principled foundation than an ad-hoc heuristic (like "switch leaders if latency exceeds some fixed threshold N times in a row"), because it comes with its own established theoretical guarantees about how quickly and how reliably the system converges on a good choice.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does QuePaxa still rely on the same majority-overlap safety mechanism as Phase 5's algorithms?</summary><p>Yes — QuePaxa's safety guarantee still rests on majority quorums and the overlap argument article 3.3 built from first principles; what QuePaxa changes is exclusively the liveness mechanism (how a leader is chosen and replaced), not the underlying safety proof, consistent with this entire series' repeated finding that safety and liveness (article 4.1) are addressed by largely separable mechanisms.</p></details>
+        <details class="faq"><summary>Is QuePaxa a leaderless algorithm like EPaxos (7.1)?</summary><p>Not quite the same shape — QuePaxa retains a fast path that behaves like a conventional single-leader protocol under good conditions, unlike EPaxos's fully leaderless, dependency-graph-based design. QuePaxa's novelty is in how it handles the <em>transition away from</em> a leader when conditions are adverse, not in removing the leader concept from the normal-case path entirely.</p></details>
+        <details class="faq"><summary>Why does the 10x throughput improvement only show up under adversarial conditions?</summary><p>Because that's precisely the condition QuePaxa targets — under good conditions, both QuePaxa and Raft/Multi-Paxos operate near their shared fast-path ceiling, so there's little room for one to meaningfully outperform the other. The 10x gap appears specifically because Raft/Multi-Paxos's timeout-based liveness mechanism degrades sharply under adversarial jitter, while QuePaxa's hedging-delay-based mechanism was purpose-built not to.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>QuePaxa</strong> (Tennage, Basescu, Kokoris-Kogias, Syta, Jovanovic, Estrada-Galiñanes &amp; Ford, SOSP 2023) targets the structural weakness every Phase 5 algorithm carries: <strong>timeout-based liveness</strong> is either too trigger-happy or too sluggish, and is a built-in denial-of-service vector.</li>
+          <li>A familiar <strong>one-round-trip fast path</strong> matches Multi-Paxos/Raft throughput under normal conditions — the innovation is entirely in the fallback mechanism.</li>
+          <li>A <strong>randomized asynchronous core</strong> allows simultaneous proposers without destructive interference, replacing timeout-triggered elections with adaptive <strong>hedging delays</strong>.</li>
+          <li>Leader and hedging-delay selection is framed as a <strong>multi-armed-bandit optimization</strong>, letting the system adapt continuously rather than relying on one fixed configuration.</li>
+          <li>Reported results: comparable normal-case throughput to Multi-Paxos, roughly <strong>10x higher throughput under adversarial conditions</strong>, WAN median latency under 380ms during simulated DoS/jitter/slow-leader scenarios.</li>
+          <li>The honest cost: genuinely more implementation complexity than Raft's simpler mechanism, a benefit concentrated specifically in adversarial or high-jitter WAN deployments.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://bford.info/pub/os/quepaxa/quepaxa.pdf" target="_blank">Tennage, Basescu, Kokoris-Kogias, Syta, Jovanovic, Estrada-Galiñanes &amp; Ford — QuePaxa: Escaping the Tyranny of Timeouts in Consensus (SOSP 2023)</a> <span>— the primary source.</span></li>
+          <li><a href="https://dl.acm.org/doi/10.1145/3600006.3613150" target="_blank">ACM Digital Library — QuePaxa (SOSP 2023 proceedings)</a> <span>— the official publication record.</span></li>
+          <li><a href="https://github.com/dedis/quepaxa" target="_blank">DEDIS Lab — QuePaxa reference implementation</a> <span>— the project's own code repository (formerly named Raxos/QSCOD).</span></li>
+          <li><a href="consensus-2-4-failure-models-and-failure-detectors.html">cvam.sight — Consensus 2.4: Failure Models and Failure Detectors</a> <span>— the timeout-based detection foundation QuePaxa moves beyond.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-10-1-how-to-read-a-consensus-paper.html">← 10.1 How to Read a Consensus Paper</a>
+        <a href="consensus-10-3-meerkat.html">next: 10.3 Meerkat →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

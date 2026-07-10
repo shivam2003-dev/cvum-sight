@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-9-2-cockroachdb-and-multi-raft",
+    title: "CockroachDB and Multi-Raft.",
+    date: "Jul 24, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "cockroachdb", "series-consensus"],
+    time: 20,
+    words: 4200,
+    excerpt: "Consensus Algorithms series, 9.2. CockroachDB's substitute for TrueTime's specialized hardware: Hybrid Logical Clocks combining physical time with Lamport-clock causality tracking, and uncertainty intervals derived from ordinary NTP clock-skew bounds -- wider than Spanner's, costing more conflict-resolution overhead under contention. Multi-Raft shards the keyspace into potentially millions of independent Raft groups, directly motivating Phase 7's fan-out optimizations at scale.",
+    series: "consensus",
+    seriesNum: "46"
+  },
+  {
     slug: "consensus-9-1-spanner-and-truetime",
     title: "Spanner and TrueTime.",
     date: "Jul 24, 2026",

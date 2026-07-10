@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CockroachDB and Multi-Raft — Consensus 9.2 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 9.2. CockroachDB's alternative to TrueTime's specialized hardware: hybrid logical clocks combining wall-clock time with Lamport-clock-style causality tracking, plus range-per-Raft-group sharding at massive scale (Multi-Raft) and how uncertainty intervals substitute for atomic clocks.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 9</p>
+        <p class="series-banner-title">Cloud-Native &amp; Geo-Distributed Consensus</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 9.2 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-9-1-spanner-and-truetime.html" class="done">9.1 Spanner</a>
+          <a href="consensus-9-2-cockroachdb-and-multi-raft.html" class="active">9.2 CockroachDB</a>
+          <a href="consensus-9-3-foundationdb.html">9.3 FoundationDB</a>
+          <a href="consensus-9-4-tidb-and-yugabytedb.html">9.4 TiDB/Yugabyte</a>
+          <a href="consensus-9-5-wan-consensus-and-read-optimization.html">9.5 WAN Consensus</a>
+          <a href="consensus-9-6-dynamic-membership-and-reconfiguration.html">9.6 Reconfiguration</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 24, 2026 · devops · 20 min read · 4200 words <span class="difficulty advanced">advanced</span></p>
+        <h1>CockroachDB and Multi-Raft.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">cockroachdb</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">CockroachDB was explicitly designed, per its own creators' stated goal, as an open-source system inspired by Spanner (9.1) — but without Google's atomic-clock/GPS hardware. This article covers exactly how it gets a workable substitute: <strong>hybrid logical clocks</strong>, combining article 2.1's physical time with article 2.2's Lamport-clock causality tracking, and <strong>uncertainty intervals</strong> derived from ordinary NTP-synchronized clocks rather than specialized hardware. It also covers <strong>Multi-Raft</strong> — Raft (5.5-5.6), one instance per data range, run at a scale of potentially millions of ranges across a cluster — the sharding pattern this series flagged in article 9.1 as the genuinely hard multi-shard problem, now shown concretely with Raft instead of Spanner's Multi-Paxos.</p>
+
+        <h2 id="hlc">Hybrid logical clocks: physical time plus causality</h2>
+        <p>Recall article 2.2's Lamport clocks: a purely logical counter that captures causal ("happened-before") order perfectly, but carries no relationship to real wall-clock time at all — useless for a human or a client wanting to know roughly when something happened. Recall article 2.1's physical clocks: real wall-clock time, but unreliable for ordering because of drift and synchronization limits. A <strong>Hybrid Logical Clock (HLC)</strong> combines both: each timestamp carries a physical-time component (kept close to real wall-clock time, periodically corrected) <em>and</em> a logical counter component (incremented, Lamport-clock-style, whenever causality demands it — e.g., when a received message's timestamp is ahead of the local physical clock). This gives CockroachDB timestamps that are simultaneously close to real time (useful, human-interpretable) and guaranteed to respect causal order (correct, per article 2.2's core guarantee) — a genuinely elegant synthesis of two mechanisms this series covered four phases apart.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 160" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">HLC: physical time's usefulness + Lamport clocks' causal correctness</text>
+            <rect x="60" y="45" width="220" height="50" class="boxg"/>
+            <text x="170" y="65" class="smk" text-anchor="middle">Physical clock (2.1)</text>
+            <text x="170" y="83" class="sm" text-anchor="middle">human-useful, but drifts</text>
+            <rect x="400" y="45" width="220" height="50" class="boxg"/>
+            <text x="510" y="65" class="smk" text-anchor="middle">Lamport clock (2.2)</text>
+            <text x="510" y="83" class="sm" text-anchor="middle">causally correct, no real-time meaning</text>
+            <path d="M170,95 C240,120 400,120 460,95" class="arr"/>
+            <path d="M510,95 C440,120 280,120 220,95" class="arr"/>
+            <rect x="230" y="120" width="220" height="35" class="boxy"/>
+            <text x="340" y="142" class="smk" text-anchor="middle">HLC: (physical, logical) pair</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — HLC timestamps carry both a real-time-anchored component and a Lamport-style causality-preserving counter.</p>
+        </div>
+
+        <h2 id="uncertainty">Uncertainty intervals without atomic clocks</h2>
+        <p>Without TrueTime's specialized hardware, CockroachDB can't get article 9.1's tight, hardware-backed bound on clock uncertainty — instead it derives a looser bound from configured maximum clock skew (a conservative estimate of how far apart any two nodes' NTP-synchronized clocks might legitimately be), and uses a mechanism directly analogous to Spanner's commit-wait, just with a wider window because the uncertainty itself is wider. When a transaction's timestamp falls within another transaction's uncertainty window, CockroachDB has to do extra work (a restart or an uncertainty-interval read-refresh) to resolve the ambiguity safely — the direct, real-world cost of not having TrueTime's tightly-bounded hardware guarantee, made concrete rather than abstract.</p>
+
+        <div class="bm-note">This is the honest trade article 9.1's FAQ previewed: CockroachDB gets externally-consistent-style transactions without Google's infrastructure budget, at the cost of a wider uncertainty window and therefore more frequent conflict-resolution overhead under contention. Neither choice is simply "better" — Spanner pays a fixed infrastructure cost for a tight bound; CockroachDB pays a variable, workload-dependent cost for a looser one. This is precisely the kind of honest, non-free trade-off this entire series has repeatedly insisted on surfacing rather than glossing over.</div>
+
+        <h2 id="multi-raft">Multi-Raft: one Raft group per range, at massive scale</h2>
+        <p>CockroachDB splits its keyspace into <strong>ranges</strong> (contiguous chunks of sorted key space, roughly analogous to Spanner's shards), each independently replicated by its own Raft group (5.5-5.6). A large production cluster can have <strong>millions</strong> of ranges, meaning millions of concurrent Raft groups — a scale that directly motivates several of Phase 7's specialized optimizations (PigPaxos's gossip-relay fan-out fix, article 7.8, is directly relevant here: naively running millions of independent Raft groups each doing full leader-to-follower fan-out would be a genuine bottleneck at this scale). CockroachDB's specific engineering response includes batching heartbeats and other coordination traffic across co-located ranges sharing the same physical nodes, rather than treating each Raft group as fully independent for network-efficiency purposes — a practical, systems-engineering answer to exactly the fan-out cost article 7.8 named abstractly.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does CockroachDB provide the exact same consistency guarantee as Spanner?</summary><p>Very close, by design intent — CockroachDB targets serializable isolation with strong consistency guarantees comparable to Spanner's, though the specific external-consistency guarantee (ordered with true wall-clock time, not just internally-agreed order) is more tightly and more cheaply achieved by Spanner's TrueTime than by CockroachDB's NTP-derived bounds, exactly per this article's core trade-off.</p></details>
+        <details class="faq"><summary>Why does having millions of Raft groups matter more than having one giant one?</summary><p>Sharding this way lets different ranges have independent leaders spread across the cluster, distributing both the coordination load and the ability to serve geographically-local reads/writes per range — a direct, practical instance of this series' repeated point that a single, monolithic consensus group doesn't scale to the throughput and geographic-distribution demands of a planet-scale database.</p></details>
+        <details class="faq"><summary>Is HLC unique to CockroachDB?</summary><p>No — Hybrid Logical Clocks are a general technique used across several distributed systems needing both causal correctness and human/real-time-useful timestamps; CockroachDB is simply one of the most prominent, well-documented production users of the technique, making it a good concrete reference point for this series.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Hybrid Logical Clocks</strong> combine article 2.1's physical time (human-useful, but drifts) with article 2.2's Lamport-clock causality tracking (correct, but not real-time-meaningful) into one timestamp format.</li>
+          <li>Without TrueTime's hardware, CockroachDB derives <strong>uncertainty intervals from configured NTP clock-skew bounds</strong> — wider than Spanner's, costing more frequent conflict-resolution overhead under contention.</li>
+          <li><strong>Multi-Raft</strong> shards the keyspace into potentially millions of independently-replicated ranges, each its own Raft group (5.5-5.6) — directly motivating Phase 7's fan-out optimizations (PigPaxos, 7.8) at this scale.</li>
+          <li>Spanner and CockroachDB make genuinely different, honest infrastructure-cost-vs-uncertainty-window trade-offs — neither is simply superior, echoing this series' consistent refusal to present any variant as a free upgrade.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.cockroachlabs.com/docs/stable/architecture/overview" target="_blank">CockroachDB documentation — Architecture Overview</a> <span>— Multi-Raft, ranges, and the HLC-based transaction model described directly.</span></li>
+          <li><a href="https://cse.buffalo.edu/tech-reports/2014-04.pdf" target="_blank">Kulkarni et al. — Logical Physical Clocks (HLC, 2014)</a> <span>— the primary Hybrid Logical Clock reference.</span></li>
+          <li><a href="consensus-9-1-spanner-and-truetime.html">cvam.sight — Consensus 9.1: Spanner and TrueTime</a> <span>— the hardware-backed alternative this article's uncertainty-interval approach substitutes for.</span></li>
+          <li><a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html">cvam.sight — Consensus 7.8: Matchmaker Paxos, PigPaxos, BPaxos &amp; Rabia</a> <span>— the fan-out cost Multi-Raft's scale directly motivates addressing.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-9-1-spanner-and-truetime.html">← 9.1 Spanner and TrueTime</a>
+        <a href="consensus-9-3-foundationdb.html">next: 9.3 FoundationDB →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

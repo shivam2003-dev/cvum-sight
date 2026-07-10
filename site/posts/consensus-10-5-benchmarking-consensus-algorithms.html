@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Benchmarking Consensus Algorithms — Consensus 10.5 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 10.5. Why consensus benchmark numbers are so easy to misread: the variables that dominate results (batch size, payload size, network topology, replica count), the metrics that matter beyond raw throughput, and a checklist for evaluating any paper's or vendor's performance claims honestly.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 10</p>
+        <p class="series-banner-title">Research Papers</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 10.5 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-10-1-how-to-read-a-consensus-paper.html" class="done">10.1 How to Read</a>
+          <a href="consensus-10-2-quepaxa.html" class="done">10.2 QuePaxa</a>
+          <a href="consensus-10-3-meerkat.html" class="done">10.3 Meerkat</a>
+          <a href="consensus-10-4-comparing-the-paxos-family.html" class="done">10.4 Master Table</a>
+          <a href="consensus-10-5-benchmarking-consensus-algorithms.html" class="active">10.5 Benchmarking</a>
+          <a href="consensus-10-6-open-problems-in-consensus.html">10.6 Open Problems</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 29, 2026 · devops · 21 min read · 4400 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Benchmarking consensus algorithms.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">benchmarking</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Article 10.1's second pitfall — treating a paper's evaluation as a neutral, universal benchmark — deserves its own full treatment, because nearly every performance number this series has cited since Phase 6 (HotStuff's O(n), QuePaxa's 10x, article 6.5's Narwhal throughput claims) was measured under specific, chosen conditions that determine the result at least as much as the algorithm itself does. This article names the specific variables that dominate consensus benchmarks, the metrics beyond raw throughput that actually matter for a real decision, and a concrete checklist for reading any vendor's or paper's performance claim without being misled by it — the practical, hands-on companion to article 10.1's more abstract reading framework.</p>
+
+        <h2 id="dominant-variables">The variables that dominate the result, more than the algorithm does</h2>
+
+        <p><strong>Batch size</strong> is the single most consequential, least-often-highlighted variable in any consensus throughput number. Every algorithm this series has covered benefits enormously from batching multiple client requests into a single consensus round (article 5.3's Multi-Paxos fast path, article 9.3's FoundationDB proxy batching, Meerkat's own batching strategy from article 10.3) — a benchmark run with aggressive batching and one run with none can show a 10x or greater throughput difference for the identical underlying algorithm, entirely independent of which specific consensus protocol is being tested. Any throughput number reported without stating the batch size used is, functionally, an incomplete number.</p>
+
+        <p><strong>Payload size</strong> matters similarly: a benchmark using tiny, few-byte commands (common in academic papers, because it isolates the consensus protocol's own overhead from application-level serialization cost) will report very different numbers than one using realistic, kilobyte-scale application payloads — and the gap between the two isn't fixed across algorithms, so a comparison run at one payload size doesn't necessarily hold at another.</p>
+
+        <p><strong>Network topology and replica placement</strong> — single-datacenter versus WAN-spanning, article 9.5's physical latency floor — dominates any comparison involving geo-distributed systems specifically. A benchmark run entirely within one datacenter tells you almost nothing about how an algorithm behaves under the WAN conditions QuePaxa (10.2) and Meerkat (10.3) were specifically built to handle, and vice versa: a benchmark run under artificial WAN latency tells you little about same-datacenter performance where most Phase 8 deployments actually operate.</p>
+
+        <p><strong>Replica count</strong> interacts directly with the communication-complexity differences this series traced from article 6.2 through 6.3 — PBFT's O(n²) versus HotStuff's O(n) only diverges meaningfully at larger replica counts; a 4-node benchmark comparison between the two will show a far smaller gap than a 100-node one, because the quadratic term simply hasn't grown large enough yet to dominate.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Four variables that can each swing a benchmark 5-10x, independent of the algorithm</text>
+            <rect x="20" y="40" width="150" height="60" class="boxy"/><text x="95" y="65" class="smk" text-anchor="middle">Batch size</text><text x="95" y="85" class="sm" text-anchor="middle">aggressive vs none</text>
+            <rect x="185" y="40" width="150" height="60" class="boxy"/><text x="260" y="65" class="smk" text-anchor="middle">Payload size</text><text x="260" y="85" class="sm" text-anchor="middle">bytes vs kilobytes</text>
+            <rect x="350" y="40" width="150" height="60" class="boxy"/><text x="425" y="65" class="smk" text-anchor="middle">Topology</text><text x="425" y="85" class="sm" text-anchor="middle">single-DC vs WAN</text>
+            <rect x="515" y="40" width="145" height="60" class="boxy"/><text x="587" y="65" class="smk" text-anchor="middle">Replica count</text><text x="587" y="85" class="sm" text-anchor="middle">4 nodes vs 100</text>
+            <text x="340" y="135" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">A number reported without all four is not directly comparable to any other number.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Before comparing two throughput numbers across papers, confirm all four variables actually match.</p>
+        </div>
+
+        <h2 id="beyond-throughput">Metrics beyond raw throughput that actually matter</h2>
+
+        <p><strong>Tail latency</strong> (p99, p99.9) is often more operationally important than throughput or even median latency, and it's exactly where the mechanisms this series has covered diverge most sharply from their median-case behavior — article 4.2's split-vote livelock, article 5.6's occasional log-repair round, article 6.2's view-change cost all show up specifically in the tail, not the median, and a benchmark reporting only average or median numbers can hide exactly the pathological cases article 10.2's QuePaxa paper was built to address. <strong>Recovery time after a failure</strong> — how long a cluster is degraded or unavailable following a leader crash, a partition, or (article 9.6's subject) a reconfiguration — is a metric most raw-throughput benchmarks simply don't report at all, despite being the metric that most directly determines a real system's actual availability guarantees during the failures article 1.1 opened this entire series by insisting are not rare, exceptional events but a routine, expected part of distributed systems operation.</p>
+
+        <table class="papers">
+          <tr><th>Metric</th><th>What it hides if omitted</th><th>Where this series covered why it matters</th></tr>
+          <tr><td>Throughput alone</td><td>Batching, payload size, replica count sensitivity</td><td>Article 5.3 (Multi-Paxos batching)</td></tr>
+          <tr><td>Median latency alone</td><td>Tail behavior during elections, view changes, repairs</td><td>Article 4.2, 6.2, 5.6</td></tr>
+          <tr><td>Steady-state performance alone</td><td>Recovery time after failure or reconfiguration</td><td>Article 9.6 (reconfiguration), 10.2 (QuePaxa's whole point)</td></tr>
+          <tr><td>Best-case network conditions</td><td>Behavior under adversarial jitter, partition, DoS</td><td>Article 1.1, 10.2, 10.3</td></tr>
+        </table>
+
+        <h2 id="checklist">A checklist for reading any performance claim</h2>
+
+        <div class="bm-fix">
+          <ul>
+            <li><strong>Batch size and payload size stated?</strong> If not, treat the throughput number as incomplete, not comparable to any other paper's number.</li>
+            <li><strong>Network topology matches your deployment?</strong> A same-datacenter benchmark says little about WAN behavior and vice versa (article 9.5).</li>
+            <li><strong>Replica count matches your target scale?</strong> Communication-complexity gaps (article 6.2 vs 6.3) only show up at scale.</li>
+            <li><strong>Tail latency reported, not just median or average?</strong> Tail behavior is where most of this series' subtle failure-handling mechanisms actually get exercised.</li>
+            <li><strong>Failure/recovery scenarios included, or only steady-state?</strong> A number measured only under perfect conditions tells you nothing about article 1.1's routine failure reality.</li>
+            <li><strong>Is the comparison baseline the current best-in-class, or an easy target?</strong> Beating naive HuggingFace-style unoptimized baselines (a pattern this series flagged even outside the consensus domain, in the PagedAttention article) is a much lower bar than beating a well-tuned Multi-Paxos or Raft.</li>
+          </ul>
+        </div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is it ever reasonable to trust a single benchmark number without re-verifying it yourself?</summary><p>For directional confidence (this algorithm is generally in the right performance tier for my use case), yes; for capacity planning or a specific production commitment, no — this series has consistently recommended benchmarking your own actual workload (echoing the pgBackRest guide's identical advice for a completely different domain) rather than trusting any single external number for a decision with real stakes.</p></details>
+        <details class="faq"><summary>Why do so many papers report only favorable conditions?</summary><p>Not necessarily bad faith — a paper's evaluation section exists specifically to demonstrate its stated contribution works, and authors reasonably focus experiments on the conditions that contribution targets (QuePaxa's adversarial-condition focus, article 10.2, is itself an example of a paper choosing evaluation conditions deliberately aligned with its actual contribution). The reader's job, per this article's checklist, is recognizing what conditions weren't tested, not assuming bad intent.</p></details>
+        <details class="faq"><summary>Do open-source benchmarking suites exist for comparing these algorithms directly?</summary><p>Yes, in various forms — several of the systems covered in Phase 8-9 (etcd, TiKV, YugabyteDB) publish their own benchmark suites and results, and academic papers throughout Phase 7's coverage typically include comparison code; the checklist in this article applies equally to reading and trusting (or not) any of these existing suites' results.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Batch size, payload size, network topology, and replica count</strong> each independently swing consensus benchmark numbers 5-10x — a number reported without all four isn't directly comparable to any other.</li>
+          <li><strong>Tail latency and recovery time after failure</strong> are frequently more operationally important than throughput or median latency, and are exactly where this series' failure-handling mechanisms (elections, view changes, log repair) actually get exercised.</li>
+          <li>A concrete <strong>six-point checklist</strong> — batch/payload size, topology match, replica-count match, tail latency, failure scenarios, honest baseline — turns article 10.1's abstract "read trade-offs honestly" advice into an actionable review process.</li>
+          <li>The right response to any single performance number is benchmarking your own actual workload, not trusting any external number for a decision with real production stakes.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="consensus-10-1-how-to-read-a-consensus-paper.html">cvam.sight — Consensus 10.1: How to Read a Consensus Paper</a> <span>— the abstract reading framework this article's checklist makes concrete and actionable.</span></li>
+          <li><a href="pgbackrest-s3-guide.html">cvam.sight — pgBackRest with S3</a> <span>— the same "benchmark your own workload" discipline, applied in a completely different domain.</span></li>
+          <li><a href="consensus-9-5-wan-consensus-and-read-optimization.html">cvam.sight — Consensus 9.5: WAN Consensus and Read Optimization</a> <span>— the topology sensitivity this article's checklist directly builds on.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-10-4-comparing-the-paxos-family.html">← 10.4 Comparing the Paxos Family</a>
+        <a href="consensus-10-6-open-problems-in-consensus.html">next: 10.6 The Open Problems in Consensus →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

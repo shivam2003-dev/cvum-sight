@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQL Server 2025 Always On across AWS subnets — cvam.sight</title>
+<meta name="description" content="Deploy SQL Server 2025 Always On Availability Groups on AWS EC2 across two subnets, including ENI secondary IPs, WSFC, security groups, Windows Firewall, DNS, listener configuration, verification, and failover testing.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .ag-note,.ag-warn{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:18px 0;background:rgba(106,143,95,.08)}
+  .ag-warn{border-left:3px solid #c96442;background:rgba(201,100,66,.09)}
+  .ag-why{border-left:3px solid #f0c040;padding:8px 0 8px 14px;margin:15px 0 26px;color:var(--ink-faint)}
+  .ag-table{width:100%;border-collapse:collapse;margin:18px 0;font-size:.92rem}
+  .ag-table th,.ag-table td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.45}
+  .ag-table th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;color:var(--ink-faint)}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.8rem;line-height:1.55;margin:16px 0}
+  h2{scroll-margin-top:20px;margin-top:36px} h3{margin-top:28px}
+  .reflist li{margin:8px 0}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../tags.html">Tags</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+    <div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p><a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a><a href="mailto:shivam.sk2003@gmail.com">Email</a></div>
+  </aside>
+  <div class="page">
+  <article>
+    <div class="post-header">
+      <p class="meta">Jul 10, 2026 · devops · 16 min read · 2500 words <span class="difficulty advanced">advanced</span></p>
+      <h1>SQL Server 2025 Always On across AWS subnets.</h1>
+      <div class="tag-row"><span class="tag fill">devops</span><span class="tag">aws</span><span class="tag">sql-server</span><span class="tag">high-availability</span></div>
+    </div>
+    <div class="post-body">
+      <p>A SQL Server Availability Group that works on an on-premises VLAN can fail in subtle ways on EC2: cluster IPs refuse to come online, the listener registers unreachable addresses, failover succeeds but applications remain disconnected, or a brief UDP interruption evicts a healthy node. WSFC was designed around movable virtual addresses and normal Layer 2 behavior; Amazon VPC networking uses ENI ownership and routing semantics instead.</p>
+      <p>This guide builds a two-node SQL Server 2025 Enterprise Availability Group across two Availability Zones. It assumes Windows Server 2025, an existing Active Directory domain named <code>corp.example.com</code>, AD-integrated DNS, default SQL instances, a file-share witness in a third failure domain, and one listener address in each subnet. SQL Server 2025 Standard is limited to a two-replica, one-database Basic Availability Group; verify edition-specific features in Microsoft's <a href="https://learn.microsoft.com/en-us/sql/sql-server/editions-and-components-of-sql-server-2025?view=sql-server-ver17">SQL Server 2025 edition matrix</a>.</p>
+
+      <h2 id="architecture">Architecture: WSFC, AG, and FCI are different layers</h2>
+      <p>Windows Server Failover Clustering is the coordination layer. It tracks membership, quorum, health, dependencies, ownership, and failover decisions; it does not replicate SQL data. An Availability Group is the SQL database-replication layer built on WSFC. Each replica is an independent SQL instance with its own system databases and EBS storage. User-database changes travel through database-mirroring endpoints, normally TCP 5022.</p>
+      <p>An FCI protects an entire SQL instance and requires storage accessible by every possible owner. Only one node runs that instance. An AG keeps separate database copies and can provide readable secondaries and database-level failover. The AG listener is a virtual network name that lets applications find the current primary.</p>
+      <p>Use VPC <code>10.2.0.0/16</code>, subnet A <code>10.2.8.0/24</code> in AZ A, and subnet B <code>10.2.9.0/24</code> in AZ B. SQLNODE1 uses primary address <code>10.2.8.10</code>, WSFC address <code>10.2.8.20</code>, and listener address <code>10.2.8.30</code>. SQLNODE2 uses <code>10.2.9.10</code>, <code>10.2.9.20</code>, and <code>10.2.9.30</code>. The logical names are <code>SQLCLUSTER.corp.example.com</code> and <code>APPAG-LST.corp.example.com</code>.</p>
+      <div class="ag-note">Each node has one ENI with three AWS private IPv4 addresses. Windows keeps the normal NIC on DHCP. WSFC brings the cluster and listener addresses online only as clustered resources. AWS recommends this one-ENI, three-address model and a unique subnet per node in its <a href="https://docs.aws.amazon.com/sql-server-ec2/latest/userguide/aws-sql-ec2-clustering.html">SQL Server clustering guidance</a>.</div>
+
+      <h2 id="prerequisites">Prerequisites</h2>
+      <p>Patch both nodes to the same Windows and SQL Server cumulative-update level. Use comparable, EBS-optimized instances sized to carry the entire production workload alone. Keep data, log, tempdb, and backup paths consistent across nodes. Join both hosts to the same AD domain, run SQL Server under a domain identity such as <code>CORP\svc_sql</code>, and ensure the nodes resolve each other, the domain controllers, cluster name, listener, and witness through AD DNS.</p>
+      <p>The cluster-creation identity needs local Administrator access on both nodes and permission to create the cluster computer object. The WSFC cluster name object, or CNO, must then create or control the listener virtual computer object, or VCO. Microsoft documents the identities and delegation model in its <a href="https://learn.microsoft.com/en-us/windows-server/failover-clustering/failover-cluster-accounts-overview">failover-cluster accounts overview</a>. Use a witness outside both SQL nodes; a two-node cluster without a witness cannot tolerate many single-failure combinations while retaining quorum.</p>
+
+      <h2 id="reserve-ips">1. Reserve cluster and listener addresses on the ENIs</h2>
+      <p>The secondary addresses are AWS control-plane reservations. They tell the VPC fabric which ENI owns each address. Replace all angle-bracket placeholders before running these AWS CLI v2 commands.</p>
+<pre class="code"><code>aws ec2 assign-private-ip-addresses `
+  --network-interface-id &lt;NODE1_ENI&gt; `
+  --private-ip-addresses 10.2.8.20 10.2.8.30
+
+aws ec2 assign-private-ip-addresses `
+  --network-interface-id &lt;NODE2_ENI&gt; `
+  --private-ip-addresses 10.2.9.20 10.2.9.30
+
+aws ec2 describe-network-interfaces `
+  --network-interface-ids &lt;NODE1_ENI&gt; &lt;NODE2_ENI&gt; `
+  --query "NetworkInterfaces[].{ENI:NetworkInterfaceId,Subnet:SubnetId,IPs:PrivateIpAddresses[].PrivateIpAddress}" `
+  --output table</code></pre>
+      <p>Do not add these four addresses persistently under Windows IPv4 Advanced Settings. AWS warns that guest-level assignment of cluster-managed secondary addresses can produce network interruptions during failover. The control-plane operation is documented under <a href="https://docs.aws.amazon.com/cli/latest/reference/ec2/assign-private-ip-addresses.html"><code>assign-private-ip-addresses</code></a>.</p>
+      <p class="ag-why"><strong>Why this matters:</strong> EC2 does not let a guest claim an arbitrary IP merely by sending gratuitous ARP. An address can look valid inside Windows yet remain unreachable unless EC2 has assigned it to the correct ENI.</p>
+
+      <h2 id="dhcp-dns">2. Keep Windows on DHCP and verify DNS</h2>
+<pre class="code"><code>Get-NetIPConfiguration
+Get-NetIPInterface -AddressFamily IPv4 |
+  Format-Table InterfaceAlias,Dhcp,ConnectionState
+Get-DnsClientServerAddress -AddressFamily IPv4
+
+Resolve-DnsName corp.example.com -Type SOA
+Resolve-DnsName SQLNODE1.corp.example.com
+Resolve-DnsName SQLNODE2.corp.example.com</code></pre>
+      <p>The production adapter should use DHCP. The VPC DHCP option set must provide DNS servers capable of resolving the AD zone. Do not point domain members only at public DNS or a VPC resolver that lacks conditional forwarding for the domain.</p>
+      <p class="ag-why"><strong>Why this matters:</strong> keeping only the primary address under normal adapter configuration gives WSFC exclusive control over the virtual addresses and avoids duplicate ownership.</p>
+
+      <h2 id="security-groups">3. Configure security groups and NACLs</h2>
+      <table class="ag-table"><tr><th>Purpose</th><th>Protocol/port</th><th>Source</th></tr><tr><td>WSFC heartbeat</td><td>UDP 3343</td><td>SQL node SG</td></tr><tr><td>WSFC join/control</td><td>TCP 3343</td><td>SQL node SG</td></tr><tr><td>RPC mapper/dynamic</td><td>TCP 135, 49152-65535</td><td>SQL node SG</td></tr><tr><td>SMB and validation</td><td>TCP 445, ICMPv4</td><td>SQL node SG</td></tr><tr><td>AG endpoint</td><td>TCP 5022</td><td>SQL node SG</td></tr><tr><td>SQL listener</td><td>TCP 1433</td><td>Application SG</td></tr><tr><td>RDP</td><td>TCP 3389</td><td>Management SG only</td></tr></table>
+<pre class="code"><code>$SqlAgSg = aws ec2 create-security-group `
+  --group-name sql2025-ag-nodes `
+  --description "SQL Server 2025 AG and WSFC nodes" `
+  --vpc-id &lt;VPC_ID&gt; --query GroupId --output text
+
+aws ec2 authorize-security-group-ingress --group-id $SqlAgSg --protocol udp --port 3343 --source-group $SqlAgSg
+aws ec2 authorize-security-group-ingress --group-id $SqlAgSg --protocol tcp --port 3343 --source-group $SqlAgSg
+aws ec2 authorize-security-group-ingress --group-id $SqlAgSg --protocol tcp --port 135 --source-group $SqlAgSg
+aws ec2 authorize-security-group-ingress --group-id $SqlAgSg --protocol tcp --port 445 --source-group $SqlAgSg
+aws ec2 authorize-security-group-ingress --group-id $SqlAgSg --protocol tcp --port 49152-65535 --source-group $SqlAgSg
+aws ec2 authorize-security-group-ingress --group-id $SqlAgSg --protocol icmp --port -1 --source-group $SqlAgSg
+aws ec2 authorize-security-group-ingress --group-id $SqlAgSg --protocol tcp --port 5022 --source-group $SqlAgSg
+aws ec2 authorize-security-group-ingress --group-id $SqlAgSg --protocol tcp --port 1433 --source-group &lt;APPLICATION_SG_ID&gt;</code></pre>
+      <p>Domain-controller security groups must accept node-initiated DNS TCP/UDP 53, Kerberos TCP/UDP 88, NTP UDP 123, RPC TCP 135 and 49152-65535, LDAP TCP/UDP 389, SMB TCP 445, Kerberos password-change TCP/UDP 464, and Global Catalog TCP 3268. Add 636/3269 for LDAP/GC over TLS and TCP 9389 where Active Directory Web Services is used. Security groups are stateful; custom NACLs are stateless and must allow both directions and return traffic.</p>
+
+      <h2 id="windows-firewall">4. Configure Windows Firewall</h2>
+<pre class="code"><code>$ClusterSubnets = @("10.2.8.0/24","10.2.9.0/24")
+
+New-NetFirewallRule -DisplayName "WSFC UDP 3343" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 3343 -RemoteAddress $ClusterSubnets -Profile Domain
+New-NetFirewallRule -DisplayName "WSFC TCP 3343" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3343 -RemoteAddress $ClusterSubnets -Profile Domain
+New-NetFirewallRule -DisplayName "WSFC RPC Mapper" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 135 -RemoteAddress $ClusterSubnets -Profile Domain
+New-NetFirewallRule -DisplayName "WSFC RPC Dynamic" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 49152-65535 -RemoteAddress $ClusterSubnets -Profile Domain
+New-NetFirewallRule -DisplayName "WSFC SMB" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 445 -RemoteAddress $ClusterSubnets -Profile Domain
+New-NetFirewallRule -DisplayName "WSFC ICMPv4" -Direction Inbound -Action Allow -Protocol ICMPv4 -IcmpType 8 -RemoteAddress $ClusterSubnets -Profile Domain
+New-NetFirewallRule -DisplayName "SQL AG Endpoint" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5022 -RemoteAddress $ClusterSubnets -Profile Domain
+New-NetFirewallRule -DisplayName "SQL Listener" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 1433 -RemoteAddress &lt;APPLICATION_CIDR&gt; -Profile Domain
+
+Get-NetConnectionProfile
+Get-NetFirewallProfile</code></pre>
+      <p>Microsoft lists UDP 3343 for cluster communication, TCP 3343 for node join, TCP 445, RPC and ICMP in its <a href="https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/service-overview-and-network-port-requirements">Windows port requirements</a>.</p>
+      <p class="ag-why"><strong>Why this matters:</strong> opening TCP 1433 proves only client access. It says nothing about heartbeat, cluster membership, endpoint transport, AD authentication, or DNS registration.</p>
+
+      <h2 id="ad-dns">5. Prepare AD and DNS permissions</h2>
+      <p>The account running <code>New-Cluster</code> needs Create Computer Objects and Read All Properties on the target AD container. The resulting <code>SQLCLUSTER$</code> CNO needs Create Computer Objects there as well, or the listener VCO must be prestaged and controlled by the CNO.</p>
+<pre class="code"><code>Import-Module ActiveDirectory
+Get-ADComputer -Filter "Name -eq 'SQLCLUSTER' -or Name -eq 'APPAG-LST'" `
+  -Properties Enabled,DistinguishedName
+
+New-ADComputer -Name "SQLCLUSTER" -SamAccountName "SQLCLUSTER$" `
+  -Path "OU=Clusters,DC=corp,DC=example,DC=com" -Enabled $false
+
+New-ADComputer -Name "APPAG-LST" -SamAccountName "APPAG-LST$" `
+  -Path "OU=Clusters,DC=corp,DC=example,DC=com" -Enabled $false</code></pre>
+      <p>Only run the creation commands when your AD team requires prestaging. In Active Directory Users and Computers with Advanced Features enabled, grant the cluster-creation identity Full Control of the disabled CNO and grant <code>SQLCLUSTER$</code> Full Control of the disabled listener VCO. Let WSFC enable and manage the objects. Use secure dynamic updates and normally let WSFC create the A records rather than maintaining them manually.</p>
+
+      <h2 id="create-wsfc">6. Install, validate, and create WSFC</h2>
+<pre class="code"><code>Install-WindowsFeature -Name Failover-Clustering,RSAT-Clustering-PowerShell,RSAT-Clustering-Mgmt -IncludeManagementTools
+
+Import-Module FailoverClusters
+Test-Cluster -Node SQLNODE1.corp.example.com,SQLNODE2.corp.example.com -Include Inventory,Network,"System Configuration"
+
+New-Cluster -Name SQLCLUSTER `
+  -Node SQLNODE1.corp.example.com,SQLNODE2.corp.example.com `
+  -StaticAddress 10.2.8.20,10.2.9.20 -NoStorage
+
+Set-ClusterQuorum -Cluster SQLCLUSTER `
+  -FileShareWitness "\\&lt;WITNESS_FQDN&gt;\&lt;WITNESS_SHARE&gt;"
+
+Get-ClusterNode
+Get-ClusterResource
+Get-ClusterResourceDependency -Resource "Cluster Name"
+Get-ClusterQuorum</code></pre>
+      <p>The cluster name should depend on the two IP resources with OR semantics. Each node brings online only the address in its subnet. Microsoft's <a href="https://learn.microsoft.com/en-us/powershell/module/failoverclusters/new-cluster"><code>New-Cluster</code> reference</a> documents multiple static addresses.</p>
+
+      <h2 id="enable-ag">7. Enable Always On and create endpoints</h2>
+<pre class="code"><code>Import-Module SqlServer
+Enable-SqlAlwaysOn -ServerInstance $env:COMPUTERNAME -Force</code></pre>
+      <p>Run that elevated on both nodes. <code>-Force</code> permits the required SQL service restart. Then create the endpoint on both instances:</p>
+<pre class="code"><code>USE master;
+GO
+CREATE ENDPOINT [Hadr_endpoint]
+  STATE = STARTED
+  AS TCP (LISTENER_PORT = 5022, LISTENER_IP = ALL)
+  FOR DATABASE_MIRRORING
+  (
+    ROLE = ALL,
+    AUTHENTICATION = WINDOWS NEGOTIATE,
+    ENCRYPTION = REQUIRED ALGORITHM AES
+  );
+GO
+IF SUSER_ID(N'CORP\svc_sql') IS NULL
+  CREATE LOGIN [CORP\svc_sql] FROM WINDOWS;
+GO
+GRANT CONNECT ON ENDPOINT::[Hadr_endpoint] TO [CORP\svc_sql];
+GO</code></pre>
+      <p>If the nodes use different service accounts, grant the other replica's account access to the local endpoint. Built-in or non-domain identities require certificate authentication. See Microsoft's <a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/create-an-availability-group-transact-sql?view=sql-server-ver17">T-SQL AG procedure</a>.</p>
+
+      <h2 id="create-ag">8. Create and seed the Availability Group</h2>
+      <p>On SQLNODE1, create or select a database in Full recovery model and take a full backup. Then create the AG:</p>
+<pre class="code"><code>ALTER DATABASE [AppDb] SET RECOVERY FULL;
+GO
+BACKUP DATABASE [AppDb] TO DISK=N'E:\SQLBackup\AppDb_initial.bak'
+  WITH INIT,CHECKSUM,COMPRESSION,STATS=10;
+GO
+
+CREATE AVAILABILITY GROUP [AppAG]
+WITH (AUTOMATED_BACKUP_PREFERENCE=PRIMARY, DB_FAILOVER=ON, DTC_SUPPORT=NONE)
+FOR DATABASE [AppDb]
+REPLICA ON
+N'SQLNODE1' WITH
+(
+  ENDPOINT_URL=N'TCP://SQLNODE1.corp.example.com:5022',
+  AVAILABILITY_MODE=SYNCHRONOUS_COMMIT,
+  FAILOVER_MODE=AUTOMATIC,
+  SEEDING_MODE=AUTOMATIC,
+  SESSION_TIMEOUT=10,
+  PRIMARY_ROLE (ALLOW_CONNECTIONS=ALL),
+  SECONDARY_ROLE (ALLOW_CONNECTIONS=READ_ONLY)
+),
+N'SQLNODE2' WITH
+(
+  ENDPOINT_URL=N'TCP://SQLNODE2.corp.example.com:5022',
+  AVAILABILITY_MODE=SYNCHRONOUS_COMMIT,
+  FAILOVER_MODE=AUTOMATIC,
+  SEEDING_MODE=AUTOMATIC,
+  SESSION_TIMEOUT=10,
+  PRIMARY_ROLE (ALLOW_CONNECTIONS=ALL),
+  SECONDARY_ROLE (ALLOW_CONNECTIONS=READ_ONLY)
+);
+GO</code></pre>
+      <p>Use the exact values returned by <code>SERVERPROPERTY('ServerName')</code> as replica names. On SQLNODE2:</p>
+<pre class="code"><code>ALTER AVAILABILITY GROUP [AppAG] JOIN;
+GO
+ALTER AVAILABILITY GROUP [AppAG] GRANT CREATE ANY DATABASE;
+GO</code></pre>
+      <p>The secondary-side grant is required for automatic seeding. Microsoft documents this behavior in <a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/automatic-seeding-secondary-replicas?view=sql-server-ver17">Automatic seeding for secondary replicas</a>. For very large databases, manual full/log restore with <code>NORECOVERY</code> is often more controllable.</p>
+
+      <h2 id="listener">9. Create the multi-subnet listener</h2>
+      <p>Run on the current primary:</p>
+<pre class="code"><code>ALTER AVAILABILITY GROUP [AppAG]
+ADD LISTENER N'APPAG-LST'
+(
+  WITH IP
+  (
+    (N'10.2.8.30',N'255.255.255.0'),
+    (N'10.2.9.30',N'255.255.255.0')
+  ),
+  PORT=1433
+);
+GO</code></pre>
+      <p>Microsoft recommends one static address per participating subnet in a multi-subnet listener. See <a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/create-or-configure-an-availability-group-listener-sql-server?view=sql-server-ver17">Configure an availability-group listener</a>. If creation fails, inspect CNO/VCO permissions, DNS dynamic updates, the ENI reservations, and FailoverClustering events before creating manual DNS records.</p>
+
+      <h2 id="client-dns">10. Align DNS behavior with client drivers</h2>
+      <p>Listeners created through SQL normally use <code>RegisterAllProvidersIP=1</code>, registering both A records. Modern clients should use <code>MultiSubnetFailover=True</code> so the driver attempts them in parallel:</p>
+<pre class="code"><code>Server=tcp:APPAG-LST.corp.example.com,1433;
+Database=AppDb;
+Integrated Security=true;
+MultiSubnetFailover=True;
+Connect Timeout=30;</code></pre>
+      <p>For legacy clients that cannot handle multiple addresses, deliberately switch to active-address-only registration and a five-minute TTL:</p>
+<pre class="code"><code>$Listener = Get-ClusterResource -Name "APPAG-LST"
+$Listener | Set-ClusterParameter -Name RegisterAllProvidersIP -Value 0
+$Listener | Set-ClusterParameter -Name HostRecordTTL -Value 300
+Stop-ClusterResource -Name "APPAG-LST"
+Start-ClusterResource -Name "APPAG-LST"</code></pre>
+      <div class="ag-warn"><strong>Trade-off:</strong> <code>RegisterAllProvidersIP=1</code> plus a capable driver gives fast failover. Setting it to 0 avoids sequential-address timeouts in old drivers but makes recovery depend on DNS update, replication, and cache expiration. Do not change the server setting without testing the actual application driver and connection pool.</div>
+
+      <h2 id="aws-pitfalls">AWS-specific pitfalls</h2>
+      <h3>Gratuitous ARP is not an ownership mechanism</h3><p>Every WSFC and listener IP must exist as an ENI secondary address. Multi-subnet WSFC uses separate addresses joined by OR dependencies; it does not move one address across subnets.</p>
+      <h3>Do not persist virtual addresses on the guest NIC</h3><p>EC2 holds three addresses per ENI, but normal Windows NIC configuration remains on DHCP. WSFC adds and removes its addresses as resources.</p>
+      <h3>A second heartbeat ENI is not physical isolation</h3><p>A second ENI still shares underlying EC2 infrastructure and bandwidth. AWS therefore notes that it does not reproduce a dedicated physical heartbeat network.</p>
+      <h3>UDP 3343 must be reliable</h3><p><code>Test-NetConnection -Port 3343</code> validates TCP join traffic, not ongoing UDP heartbeat health. Event 1135 or an <code>Unreachable</code> node warrants checking the Domain firewall profile, UDP rules, NACLs, packet loss, CPU stalls, and ENI saturation. Microsoft documents a firewall reload failure mode in <a href="https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/windows-fireware-rule-block-udp-communication">its WSFC UDP troubleshooting article</a>.</p>
+      <h3>Cross-AZ synchronous commit has a latency cost</h3><p>Transaction completion waits for the secondary to harden and acknowledge the log. Measure <code>HADR_SYNC_COMMIT</code> waits, application tail latency, and cross-AZ data-transfer cost under realistic load.</p>
+
+      <h2 id="verification">Verification and failover testing</h2>
+<pre class="code"><code>Get-ClusterNode
+Get-ClusterGroup
+Get-ClusterResource | Format-Table Name,State,OwnerGroup,OwnerNode,ResourceType
+Get-ClusterQuorum
+Resolve-DnsName APPAG-LST.corp.example.com -Type A</code></pre>
+      <p>With <code>RegisterAllProvidersIP=1</code>, DNS should return both listener addresses while only the address in the primary's subnet is online. Check database synchronization:</p>
+<pre class="code"><code>SELECT DB_NAME(drs.database_id) AS database_name,
+       ar.replica_server_name,
+       drs.synchronization_state_desc,
+       drs.synchronization_health_desc,
+       drs.log_send_queue_size,
+       drs.redo_queue_size
+FROM sys.dm_hadr_database_replica_states AS drs
+JOIN sys.availability_replicas AS ar ON drs.replica_id=ar.replica_id;
+GO</code></pre>
+      <p>Connect through the listener using a multi-subnet-aware <code>sqlcmd</code>:</p>
+<pre class="code"><code>sqlcmd -S "tcp:APPAG-LST.corp.example.com,1433" -E -M `
+  -Q "SELECT @@SERVERNAME AS ConnectedReplica,SYSDATETIMEOFFSET() AS CheckedAt;"</code></pre>
+      <p>Require <code>SYNCHRONIZED</code> state and synchronous commit before a planned failover. Connect directly to the target secondary and execute:</p>
+<pre class="code"><code>sqlcmd -S "SQLNODE2.corp.example.com" -E `
+  -Q "ALTER AVAILABILITY GROUP [AppAG] FAILOVER;"
+
+sqlcmd -S "tcp:APPAG-LST.corp.example.com,1433" -E -M `
+  -Q "SELECT @@SERVERNAME AS ConnectedReplica,SYSDATETIMEOFFSET() AS CheckedAt;"</code></pre>
+      <p>Confirm node 2 is primary, <code>10.2.9.30</code> is online, <code>10.2.8.30</code> is offline, the listener remains online, databases return to synchronized state, and the application reconnects without a new connection string. Fail back and repeat; a one-direction test misses asymmetric rules.</p>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <table class="ag-table"><tr><th>Symptom</th><th>Cause and fix</th></tr><tr><td>IP online in Windows but unreachable</td><td>Verify it is assigned to the correct ENI and subnet. Windows configuration alone cannot make it routable.</td></tr><tr><td><code>New-Cluster</code> cannot create the name</td><td>Check CNO permissions, stale AD objects, DNS, TCP 135/445, dynamic RPC, and FailoverClustering events.</td></tr><tr><td>Listener creation error 19471</td><td>Grant the CNO permission to create/control the VCO and verify both listener addresses are ENI secondary IPs.</td></tr><tr><td>Half of client connections time out</td><td>DNS returns both addresses but the driver tries sequentially. Use <code>MultiSubnetFailover=True</code> or intentionally choose active-only DNS registration.</td></tr><tr><td>Replica is disconnected</td><td>Test TCP 5022, endpoint state, DNS, SQL service identities, and endpoint CONNECT grants.</td></tr><tr><td>Automatic seeding fails</td><td>Check <code>GRANT CREATE ANY DATABASE</code>, disk space, file paths, endpoint traffic, and <code>sys.dm_hadr_automatic_seeding</code>.</td></tr><tr><td>Event 1135</td><td>Investigate UDP 3343, firewall profile changes, NACLs, packet loss, CPU pauses, and network saturation before relaxing thresholds.</td></tr><tr><td>Duplicate-address warning</td><td>Remove cluster/listener addresses from persistent Windows NIC configuration while leaving them assigned to EC2 ENIs.</td></tr></table>
+<pre class="code"><code>Get-ClusterLog -Cluster SQLCLUSTER -UseLocalTime -TimeSpan 30 -Destination C:\ClusterLogs</code></pre>
+
+      <h2 id="conclusion">Conclusion</h2>
+      <p>A reliable SQL Server 2025 AG on EC2 is not an on-premises cluster copied into two AWS subnets. Its virtual addresses must exist in both control planes: reserved as ENI secondary addresses in EC2 and managed as clustered IP resources in Windows. Once IP ownership, DHCP, AD permissions, firewall paths, DNS registration, and client behavior align, the SQL layer becomes conventional: endpoints, synchronous replicas, seeding, one listener IP per subnet, and repeatable failover testing through the listener.</p>
+
+      <h2 id="further-reading">Further reading</h2>
+      <ul class="reflist"><li><a href="https://docs.aws.amazon.com/sql-server-ec2/latest/userguide/aws-sql-ec2-clustering.html">AWS — SQL Server clustering best practices on EC2</a></li><li><a href="https://docs.aws.amazon.com/sql-server-ec2/latest/userguide/create-sql-server-on-ec2-instance.html">AWS — manually deploy SQL Server Always On on EC2</a></li><li><a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-secondary-ip-addresses.html">AWS — secondary private IPv4 addresses</a></li><li><a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/prereqs-restrictions-recommendations-always-on-availability?view=sql-server-ver17">Microsoft — AG prerequisites and recommendations</a></li><li><a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/create-or-configure-an-availability-group-listener-sql-server?view=sql-server-ver17">Microsoft — configure an AG listener</a></li><li><a href="https://learn.microsoft.com/en-us/troubleshoot/windows-server/high-availability/troubleshoot-cluster-event-id-1135">Microsoft — troubleshoot WSFC Event ID 1135</a></li></ul>
+    </div>
+    <div class="post-nav"><a href="../archive.html">← browse the archive</a><a href="../index.html">home →</a></div>
+  </article>
+  <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer>
+  </div>
+  <aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside>
+</div>
+<script src="../posts.js?v=2"></script><script src="../stats.js"></script><script src="../app.js?v=10"></script><script defer src="../settings.js?v=6"></script><script type="module" src="../highlighter.js"></script><script defer src="../reader.js"></script>
+</body>
+</html>

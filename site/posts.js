@@ -16,6 +16,40 @@
 
 const POSTS = [
   {
+    slug: "sql-server-2025-always-on-aws-ec2",
+    title: "SQL Server 2025 Always On across AWS subnets.",
+    date: "Jul 10, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "sql-server", "high-availability"],
+    time: 16,
+    words: 2500,
+    excerpt: "An end-to-end build of SQL Server 2025 Always On Availability Groups on EC2 across two Availability Zones: ENI secondary IP reservations, WSFC and listener DNS, security groups, Windows Firewall, multi-subnet client behavior, verification, failover, and the AWS networking traps that break otherwise-correct on-premises designs."
+  },
+  {
+    slug: "consensus-10-6-open-problems-in-consensus",
+    title: "The open problems in consensus.",
+    date: "Jul 30, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "research", "series-consensus"],
+    time: 19,
+    words: 3900,
+    excerpt: "Consensus Algorithms series, 10.6. Phase 10 closes with what the field has not yet settled: post-quantum Byzantine consensus, AI training coordination's mismatch with log-agreement consensus, verifiable consensus without trusted hardware, and the decentralization-versus-latency tension no algorithm across sixty articles has actually eliminated -- only chosen a cheaper point on.",
+    series: "consensus",
+    seriesNum: "56"
+  },
+  {
+    slug: "consensus-10-5-benchmarking-consensus-algorithms",
+    title: "Benchmarking consensus algorithms.",
+    date: "Jul 29, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "benchmarking", "series-consensus"],
+    time: 21,
+    words: 4400,
+    excerpt: "Consensus Algorithms series, 10.5. Batch size, payload size, network topology, and replica count each swing consensus benchmark numbers 5-10x independent of the algorithm being tested. Why tail latency and post-failure recovery time usually matter more than raw throughput, and a six-point checklist for reading any paper's or vendor's performance claim honestly.",
+    series: "consensus",
+    seriesNum: "55"
+  },
+  {
     slug: "consensus-10-4-comparing-the-paxos-family",
     title: "Comparing the Paxos family — a master table.",
     date: "Jul 28, 2026",

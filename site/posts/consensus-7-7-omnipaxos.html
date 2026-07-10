@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OmniPaxos — Consensus 7.7 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 7.7. OmniPaxos's decoupled leader election (built on the Raft-adjacent Ω/heartbeat pattern) and reconfiguration-as-a-first-class-operation, packaged as a usable, well-engineered Rust library rather than a pure research result.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 7</p>
+        <p class="series-banner-title">The Modern Paxos Family</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 7.7 of 8</p>
+        <div class="series-banner-nav">
+          <a href="consensus-7-1-epaxos-leaderless-consensus.html" class="done">7.1 EPaxos</a>
+          <a href="consensus-7-2-flexible-paxos.html" class="done">7.2 Flexible Paxos</a>
+          <a href="consensus-7-3-generalized-and-fast-paxos.html" class="done">7.3 Generalized/Fast</a>
+          <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html" class="done">7.4 Cheap/Compart.</a>
+          <a href="consensus-7-5-atlas.html" class="done">7.5 Atlas</a>
+          <a href="consensus-7-6-caesar.html" class="done">7.6 Caesar</a>
+          <a href="consensus-7-7-omnipaxos.html" class="active">7.7 OmniPaxos</a>
+          <a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html">7.8 Survey</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 20, 2026 · devops · 18 min read · 3800 words <span class="difficulty advanced">advanced</span></p>
+        <h1>OmniPaxos.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">omnipaxos</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Articles 7.1-7.6 covered research results — real, working, but mostly evaluated in academic settings. OmniPaxos (KTH Royal Institute of Technology, ongoing) takes a different stance: it's explicitly built as a production-grade, well-engineered <strong>library</strong> (in Rust), prioritizing two things research papers often treat as afterthoughts — <strong>decoupled leader election</strong> that's genuinely pluggable, and <strong>reconfiguration</strong> (safely changing cluster membership on a live system) as a fully first-class, carefully-designed operation rather than a bolted-on extension. This article closes out the "still recognizably Multi-Paxos, with real engineering polish" thread of Phase 7, right before article 7.8 surveys several narrower, more specialized research variants.</p>
+
+        <h2 id="decoupled-election">Decoupled leader election</h2>
+        <p>Most of Phase 5's algorithms (Raft especially, article 5.5) bundle leader election tightly into the core protocol's own message types and state machine. OmniPaxos instead treats leader election as a genuinely separable module — implementable and swappable somewhat independently of the log-replication core, echoing article 7.4's Compartmentalized Paxos theme of decomposing a traditionally-monolithic role, just applied specifically to the election sub-problem rather than the full leader role. This is a deliberate engineering choice: different deployment environments have different failure-detection characteristics (article 2.4's tunable phi-accrual discussion is directly relevant here), and a pluggable election module lets operators tune or replace the failure-detection strategy without touching the safety-critical replication core at all.</p>
+
+        <h2 id="reconfiguration">Reconfiguration as a first-class operation</h2>
+        <p>Recall the reconfiguration problem previewed as far back as article 3.3's FAQ and mentioned again in article 5.6's FAQ: safely changing cluster membership (adding or removing nodes) on a <em>live</em>, running system is genuinely tricky, because the old and new membership sets might briefly disagree about what constitutes a majority if the change isn't handled carefully — a scenario that can reintroduce exactly the split-brain risk article 1.2 opened this entire series with, if mishandled. Many classical presentations (including Raft's original paper) treat reconfiguration as an important but somewhat separate extension, addressed after the core protocol. OmniPaxos instead designs reconfiguration support in from the start, as a core capability alongside normal log replication, reflecting real operational experience that cluster membership changes aren't a rare edge case in production — they're a routine, expected operation (scaling a cluster up, replacing failed hardware, rebalancing across availability zones) that needs to be exactly as well-engineered and well-tested as the normal-case write path.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 160" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">OmniPaxos's two engineering priorities</text>
+            <rect x="60" y="40" width="260" height="80" class="boxg"/>
+            <text x="190" y="62" class="smk" text-anchor="middle" style="font-weight:bold">Decoupled election</text>
+            <text x="190" y="85" class="sm" text-anchor="middle">pluggable failure-detection strategy,</text>
+            <text x="190" y="100" class="sm" text-anchor="middle">separate from the replication core</text>
+            <rect x="360" y="40" width="260" height="80" class="boxg"/>
+            <text x="490" y="62" class="smk" text-anchor="middle" style="font-weight:bold">First-class reconfiguration</text>
+            <text x="490" y="85" class="sm" text-anchor="middle">live membership changes as a core</text>
+            <text x="490" y="100" class="sm" text-anchor="middle">capability, not a bolted-on extension</text>
+            <text x="340" y="145" class="sm" text-anchor="middle">Both target operational reality, not a new theoretical result — a library-engineering contribution.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — OmniPaxos's contribution is production-engineering discipline applied to well-understood algorithmic foundations.</p>
+        </div>
+
+        <div class="bm-note">OmniPaxos is a useful reminder that not every entry in "the modern Paxos family" is a new theoretical result — some of the most practically valuable work in this space is <strong>engineering discipline</strong> applied to already-solid algorithmic foundations (Multi-Paxos's core, article 5.3, remains recognizably present underneath). This is worth keeping in mind heading into Phase 8's production-systems coverage: the gap between "an algorithm is proven correct on paper" and "a system built on it is genuinely pleasant and safe to operate" is real, and closing that gap is its own substantial body of work.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is OmniPaxos a new consensus algorithm, or an implementation of an existing one?</summary><p>Closer to the latter, with real engineering extensions — its core replication logic is recognizably Multi-Paxos-family (article 5.3), and its contributions (decoupled election, first-class reconfiguration) are architectural/engineering improvements rather than a fundamentally new safety mechanism, distinguishing it from the research-result variants (EPaxos, Atlas, Caesar) covered earlier in this phase.</p></details>
+        <details class="faq"><summary>Why does reconfiguration matter enough to be "first-class" rather than an add-on?</summary><p>Because production clusters change membership routinely — scaling, hardware replacement, availability-zone rebalancing — and every one of those routine operations carries the split-brain risk article 1.2 described if handled carelessly. Treating it as a core, well-tested capability rather than a rarely-exercised extension directly reduces real operational risk, which is exactly the practical concern academic papers (focused on proving the core algorithm correct) often deprioritize.</p></details>
+        <details class="faq"><summary>Does OmniPaxos's pluggable election module change the underlying safety guarantees?</summary><p>No — consistent with this entire phase's pattern, the election mechanism affects liveness (how quickly and reliably a new leader is chosen, article 4.1's conditional-liveness category) while the safety-critical replication core (the actual majority-overlap argument, article 3.3) remains independent of which specific election strategy is plugged in.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>OmniPaxos</strong> (KTH) is a production-grade library contribution rather than a new theoretical algorithm — Multi-Paxos's core (5.3) remains recognizably present underneath.</li>
+          <li><strong>Decoupled leader election</strong> treats the election sub-problem as genuinely pluggable, separate from the safety-critical replication core — echoing Compartmentalized Paxos's (7.4) decomposition theme, applied specifically to election.</li>
+          <li><strong>Reconfiguration is designed in as a first-class capability</strong> from the start, not a bolted-on extension — reflecting the operational reality that live membership changes are routine, not rare, and carry real split-brain risk (article 1.2) if mishandled.</li>
+          <li>A useful reminder that valuable modern-Paxos-family work spans both new <strong>theoretical results</strong> (EPaxos, Atlas, Caesar) and <strong>engineering discipline</strong> applied to already-solid foundations — both matter for the field this series is building toward.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://arxiv.org/abs/2308.15536" target="_blank">Kim, Sartori, Balmau &amp; Vlassov — OmniPaxos: Breathing Life into Replicated State Machines (2023)</a> <span>— the primary OmniPaxos reference.</span></li>
+          <li><a href="https://omnipaxos.com/" target="_blank">OmniPaxos project documentation</a> <span>— the library's own docs and design rationale.</span></li>
+          <li><a href="consensus-7-4-cheap-and-compartmentalized-paxos.html">cvam.sight — Consensus 7.4: Cheap Paxos and Compartmentalized Paxos</a> <span>— the role-decomposition theme OmniPaxos's decoupled election extends.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-7-6-caesar.html">← 7.6 Caesar</a>
+        <a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html">next: 7.8 Matchmaker, PigPaxos, BPaxos &amp; Rabia →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

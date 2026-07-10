@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-7-7-omnipaxos",
+    title: "OmniPaxos.",
+    date: "Jul 20, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "omnipaxos", "series-consensus"],
+    time: 18,
+    words: 3800,
+    excerpt: "Consensus Algorithms series, 7.7. OmniPaxos is a production-grade Rust library rather than a new theoretical algorithm -- Multi-Paxos's core stays recognizably present underneath. Decoupled leader election treats the election sub-problem as genuinely pluggable, separate from the safety-critical replication core. Reconfiguration is designed in as a first-class capability from the start, reflecting the operational reality that live membership changes are routine and carry real split-brain risk if mishandled.",
+    series: "consensus",
+    seriesNum: "37"
+  },
+  {
     slug: "consensus-7-6-caesar",
     title: "Caesar.",
     date: "Jul 19, 2026",

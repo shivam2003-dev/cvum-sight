@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flexible Paxos — Consensus 7.2 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 7.2. Howard, Malkhi and Spiegelman's 2016 proof that Paxos's two quorums (Phase 1 and Phase 2) only need to intersect each other, not be identical majorities -- unlocking asymmetric quorum configurations like Flexible Paxos's grid layout for better availability.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 7</p>
+        <p class="series-banner-title">The Modern Paxos Family</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 7.2 of 8</p>
+        <div class="series-banner-nav">
+          <a href="consensus-7-1-epaxos-leaderless-consensus.html" class="done">7.1 EPaxos</a>
+          <a href="consensus-7-2-flexible-paxos.html" class="active">7.2 Flexible Paxos</a>
+          <a href="consensus-7-3-generalized-and-fast-paxos.html">7.3 Generalized/Fast</a>
+          <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html">7.4 Cheap/Compart.</a>
+          <a href="consensus-7-5-atlas.html">7.5 Atlas</a>
+          <a href="consensus-7-6-caesar.html">7.6 Caesar</a>
+          <a href="consensus-7-7-omnipaxos.html">7.7 OmniPaxos</a>
+          <a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html">7.8 Survey</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 17, 2026 · devops · 19 min read · 4000 words <span class="difficulty expert">expert</span></p>
+        <h1>Flexible Paxos.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">flexible-paxos</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Article 3.3 established, and this whole series has assumed since, that Paxos's Phase 1 and Phase 2 quorums are both simple majorities. Howard, Malkhi, and Spiegelman's 2016 <strong>Flexible Paxos</strong> paper proves something genuinely surprising, discovered nearly three decades after Paxos itself: <strong>that assumption was stronger than necessary.</strong> The actual safety requirement is only that Phase 1 quorums intersect Phase 2 quorums — not that either quorum is, by itself, a majority of all nodes. This one relaxation opens a design space Phase 5 never explored, and this article walks through the proof and the flexible quorum configurations it unlocks.</p>
+
+        <h2 id="the-actual-requirement">Revisiting article 5.2's safety proof — what was actually load-bearing</h2>
+
+        <p>Recall article 5.2's worked example precisely: proposer P1's Phase 1 quorum and proposer P2's Phase 2 quorum needed to <em>overlap</em> — that overlap was the physical mechanism carrying "X was already accepted" forward, forcing P2 onto the same value. Notice what the proof actually used: it never required P1's quorum and P2's quorum to <em>both individually be majorities of the full node set</em> — it only required that whichever quorum P1 used for Phase 1 and whichever quorum P2 used for Phase 2 share at least one node. Phase 5's presentation used simple majorities for both because that's the easiest way to <em>guarantee</em> that overlap for arbitrary quorum choices — but it's not the only way to guarantee it.</p>
+
+        <div class="bm-fix"><strong>Flexible Paxos's core theorem, precisely:</strong> Paxos remains safe as long as every possible Phase 1 quorum intersects every possible Phase 2 quorum — <strong>Q1 ∩ Q2 ≠ ∅</strong> for all valid choices of Q1 (Phase 1 quorum) and Q2 (Phase 2 quorum) — with no requirement that |Q1| or |Q2| individually exceed N/2. This is strictly weaker than "both are majorities," and the paper's contribution is showing this weaker condition is genuinely sufficient — Phase 5's majority requirement was safe, but stronger than necessary.</div>
+
+        <h2 id="why-this-matters">Why this matters: decoupling election cost from replication cost</h2>
+
+        <p>The practical payoff: Phase 1 (leader election, article 4.2/5.5) and Phase 2 (log replication, article 5.6) happen at very different frequencies in a real Multi-Paxos deployment — Phase 1 runs rarely (only on leader change), while Phase 2 runs constantly (every single write). Flexible Paxos lets you size these two quorums <em>asymmetrically</em>, trading off their respective costs independently rather than being locked into identical majority-sized quorums for both.</p>
+
+        <p>A concrete example: with 5 nodes, instead of requiring 3 nodes for both Phase 1 and Phase 2 (the standard majority approach), you could require only 2 nodes for Phase 2 (cheaper per-write replication — the frequent, latency-sensitive path) as long as Phase 1 requires enough nodes to guarantee intersection with <em>any</em> possible 2-node Phase 2 quorum — which, by a simple pigeonhole argument, means Phase 1 needs at least 4 of the 5 nodes (since a Phase 1 quorum of only 3 could potentially avoid overlapping some specific 2-node Phase 2 quorum drawn from the remaining nodes). You've made the frequent operation (Phase 2 writes) cheaper, at the cost of making the rare operation (Phase 1 elections) more expensive — a genuine, tunable trade-off Phase 5's fixed-majority approach never exposed as a knob at all.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Flexible quorums: asymmetric sizing, still guaranteed to intersect</text>
+            <text x="150" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Standard Paxos (5 nodes)</text>
+            <text x="150" y="60" class="sm" text-anchor="middle">Phase 1: any 3 · Phase 2: any 3</text>
+            <text x="150" y="78" class="sm" text-anchor="middle">both "expensive," symmetric</text>
+            <text x="510" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Flexible Paxos (5 nodes)</text>
+            <text x="510" y="60" class="sm" text-anchor="middle">Phase 1: any 4 (rare, can cost more)</text>
+            <text x="510" y="78" class="sm" text-anchor="middle">Phase 2: any 2 (frequent, made cheap)</text>
+            <rect x="60" y="100" width="560" height="70" class="box" style="stroke-dasharray:3,3"/>
+            <text x="340" y="122" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">Guaranteed: any 4-node Phase 1 quorum intersects any 2-node Phase 2 quorum</text>
+            <text x="340" y="142" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">(pigeonhole: 4 + 2 &gt; 5, so they must share at least one node)</text>
+            <text x="340" y="160" class="sm" text-anchor="middle">Same safety guarantee as majority-majority — different cost distribution.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — The intersection guarantee holds via simple counting (|Q1| + |Q2| &gt; N), regardless of whether Q1 and Q2 are equal-sized.</p>
+        </div>
+
+        <h2 id="grid-quorums">Grid quorums and other configurations</h2>
+
+        <p>Flexible Paxos's paper (and follow-up work) explores configurations beyond simple asymmetric sizing — arranging nodes in a logical grid, where a Phase 1 quorum is any full row and a Phase 2 quorum is any full column (or similar structured arrangements), guaranteeing intersection by the grid's geometry itself (any row and any column of a grid always share exactly one cell) rather than by counting alone. These structured quorum layouts can be tuned for specific deployment topologies — for instance, weighting quorum membership toward nodes in a primary datacenter for the frequent Phase 2 path, while requiring broader cross-datacenter participation for the rarer Phase 1 path — a genuinely useful knob for the geo-distributed deployments Phase 9 covers in depth.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does Flexible Paxos change anything about Raft, or only Paxos specifically?</summary><p>The theorem is stated in terms of Paxos's explicit Phase 1/Phase 2 structure, but the underlying insight (only intersection matters, not majority-ness) applies to the equivalent quorum roles in Raft (election quorum vs. log-replication quorum) and VR (view-change quorum vs. normal-operation quorum) as well — it's a general property of the majority-overlap mechanism this whole series has traced, not a Paxos-specific quirk.</p></details>
+        <details class="faq"><summary>Is there ever a reason NOT to use flexible quorums, given the cost-tuning flexibility?</summary><p>Yes — asymmetric quorums mean the system's fault-tolerance characteristics differ depending on which quorum type is involved (a deployment optimized for cheap Phase 2 writes has a Phase 1 quorum that tolerates fewer simultaneous node failures during an election). This is a genuine trade-off requiring careful analysis of your specific failure and workload assumptions, not a strictly-dominant improvement over standard majority quorums.</p></details>
+        <details class="faq"><summary>Does making Phase 2 quorums smaller than a majority weaken the "no split-brain" guarantee from article 1.2?</summary><p>No, as long as the Q1∩Q2 intersection property is correctly maintained for every possible quorum pair — the split-brain prevention (article 1.2, 3.3) comes specifically from that intersection property, not from either quorum individually being a numerical majority. Flexible Paxos's whole point is that the intersection property can be satisfied by configurations other than "both are majorities."</p></details>
+        <details class="faq"><summary>Does EPaxos (7.1) use flexible quorums too?</summary><p>EPaxos's fast quorum (article 7.1) is itself an example of a non-standard quorum size (larger than a simple majority, for different reasons — reliable conflict detection rather than Phase 1/Phase 2 cost trade-offs), showing this general theme of "quorum sizing is a genuine design space, not a fixed constant" recurring across multiple threads of modern Paxos research, each motivated by a different specific goal.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Article 5.2's actual safety requirement was always just <strong>Phase 1 quorum ∩ Phase 2 quorum ≠ ∅</strong> — Phase 5's "both are majorities" convention was sufficient but, Howard/Malkhi/Spiegelman prove, <strong>stronger than necessary</strong>.</li>
+          <li>This unlocks <strong>asymmetric quorum sizing</strong> — since Phase 1 (rare, election) and Phase 2 (frequent, replication) have very different cost profiles, you can size them independently as long as intersection is guaranteed by counting (|Q1|+|Q2| &gt; N) or structured layout (grid quorums).</li>
+          <li>A concrete example: shrinking the frequent Phase 2 quorum below a majority, compensated by growing the rare Phase 1 quorum — cheaper writes, more expensive (but infrequent) leader elections.</li>
+          <li><strong>Grid quorums</strong> and other structured layouts extend this idea geometrically, useful for tuning geo-distributed deployments (Phase 9) toward the access patterns that matter most.</li>
+          <li>The underlying insight — <strong>only intersection matters, not majority-ness</strong> — generalizes beyond Paxos specifically to any algorithm relying on the same overlap mechanism (article 3.3), including Raft and VR's equivalent quorum roles.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://fpaxos.github.io/" target="_blank">Howard, Malkhi &amp; Spiegelman — Flexible Paxos: Quorum Intersection Revisited (2016)</a> <span>— the primary source and proof.</span></li>
+          <li><a href="consensus-3-3-quorums-and-majority-voting.html">cvam.sight — Consensus 3.3: Quorums and Majority Voting</a> <span>— the overlap mechanism this article shows was always the true load-bearing requirement.</span></li>
+          <li><a href="consensus-5-2-single-decree-paxos.html">cvam.sight — Consensus 5.2: Single-Decree Paxos</a> <span>— the worked example whose safety argument only ever needed intersection, not majority.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-7-1-epaxos-leaderless-consensus.html">← 7.1 EPaxos</a>
+        <a href="consensus-7-3-generalized-and-fast-paxos.html">next: 7.3 Generalized Paxos and Fast Paxos →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

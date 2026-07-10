@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-7-2-flexible-paxos",
+    title: "Flexible Paxos.",
+    date: "Jul 17, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "flexible-paxos", "series-consensus"],
+    time: 19,
+    words: 4000,
+    excerpt: "Consensus Algorithms series, 7.2. Howard, Malkhi and Spiegelman's 2016 proof that Paxos's Phase 1 and Phase 2 quorums only need to intersect, not both be majorities -- a genuinely weaker, sufficient condition discovered decades after Paxos itself. Unlocks asymmetric quorum sizing (cheap frequent Phase 2 writes, more expensive rare Phase 1 elections) and grid-quorum layouts tuned for geo-distributed deployments.",
+    series: "consensus",
+    seriesNum: "32"
+  },
+  {
     slug: "consensus-7-1-epaxos-leaderless-consensus",
     title: "EPaxos — leaderless consensus.",
     date: "Jul 17, 2026",

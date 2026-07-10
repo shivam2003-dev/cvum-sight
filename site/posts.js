@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-5-7-zab",
+    title: "Zab — ZooKeeper atomic broadcast.",
+    date: "Jul 14, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "zab", "series-consensus"],
+    time: 20,
+    words: 4300,
+    excerpt: "Consensus Algorithms series, 5.7 -- Phase 5 finale. Zab, ZooKeeper's protocol, framed closer to atomic broadcast than single-value Paxos specifically to make FIFO client order a first-class, structural guarantee. Epochs and zxids, the Broadcast/Recovery phase model (unifying election and log sync, unlike Raft's explicit decomposition), and a closing comparison table across Paxos/VR/Raft/Zab showing four independent research efforts converging on the identical majority-overlap safety mechanism.",
+    series: "consensus",
+    seriesNum: "25"
+  },
+  {
     slug: "consensus-5-6-raft-log-replication-and-safety",
     title: "Raft — log replication and safety.",
     date: "Jul 14, 2026",

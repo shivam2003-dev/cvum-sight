@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zab — ZooKeeper Atomic Broadcast — Consensus 5.7 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 5.7 -- Phase 5 finale. ZooKeeper's Zab protocol: epochs and zxids, the broadcast and recovery phases, why Zab optimizes specifically for the FIFO client-order guarantee Paxos and Raft don't make, and a full comparison table closing out the classical consensus phase.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 5</p>
+        <p class="series-banner-title">Classical Consensus — Paxos &amp; Raft</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Article 5.7 of 7 — Phase 5 complete after this</p>
+        <div class="series-banner-nav">
+          <a href="consensus-5-1-paxos-history-and-the-problem.html" class="done">5.1 Paxos History</a>
+          <a href="consensus-5-2-single-decree-paxos.html" class="done">5.2 Single-Decree</a>
+          <a href="consensus-5-3-multi-paxos.html" class="done">5.3 Multi-Paxos</a>
+          <a href="consensus-5-4-viewstamped-replication.html" class="done">5.4 VR</a>
+          <a href="consensus-5-5-raft-design-and-leader-election.html" class="done">5.5 Raft Election</a>
+          <a href="consensus-5-6-raft-log-replication-and-safety.html" class="done">5.6 Raft Safety</a>
+          <a href="consensus-5-7-zab.html" class="active">5.7 Zab</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 14, 2026 · devops · 20 min read · 4300 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Zab — ZooKeeper atomic broadcast.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">zab</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">This phase closes with Zab — the protocol underlying Apache ZooKeeper, a system so central to distributed infrastructure that Phase 8.2 gives it a full dedicated article. Zab is, by design and by its own authors' explicit framing, closer to article 4.3's <strong>atomic broadcast</strong> problem than to Paxos's single-value consensus framing — and that framing choice comes with one specific, deliberate guarantee that neither Paxos nor Raft makes as a first-class promise: strict <strong>FIFO client order</strong>, the guarantee that operations from the same client are delivered in the exact order that client sent them, everywhere, always. This article covers Zab's epoch/zxid structure, its two-phase (broadcast, recovery) operational model, and closes Phase 5 with a full comparison table across every classical algorithm covered.</p>
+
+        <h2 id="why-zab-exists">Why ZooKeeper needed its own protocol rather than reusing Paxos directly</h2>
+
+        <p>ZooKeeper's designers, per their own published rationale, found that off-the-shelf Paxos didn't cleanly provide one specific guarantee their use case needed: <strong>primary order</strong> — if a client submits operation A and then, after A completes, submits operation B, every server must apply A before B, and this ordering must hold even across leader changes. Plain single-decree Paxos (article 5.2), run independently per value, doesn't inherently preserve this client-submission-order guarantee across a leadership change unless additional care is taken — and ZooKeeper's designers judged it cleaner to build a protocol with this guarantee as a first-class, structural property from the start, rather than layering it on top of a general-purpose consensus primitive after the fact.</p>
+
+        <div class="bm-note"><strong>This is a genuinely useful lesson about the whole field, not just Zab specifically:</strong> "general-purpose consensus" (Paxos, Raft) and "atomic broadcast tuned for a specific ordering guarantee" (Zab) are, per article 4.3's equivalence, solving formally the same underlying problem — but the <em>engineering</em> choice of which specific extra guarantees to make load-bearing and structural, versus which to leave as an implementation detail layered on top, is a real and consequential design decision. Zab's designers made FIFO client order structural; Raft and Paxos, as originally presented, leave it as an implementation concern for whoever builds on top of them.</div>
+
+        <h2 id="epochs-zxids">Epochs and zxids: Zab's ordering vocabulary</h2>
+
+        <p>Zab's identifiers directly parallel everything this phase has already built, with its own specific naming: an <strong>epoch</strong> is Zab's leadership-epoch counter — the fourth independent name this series has now encountered for the same underlying concept (proposal number in Paxos, view number in VR, term in Raft, epoch in Zab). Each transaction is tagged with a <strong>zxid</strong> (ZooKeeper transaction ID), a 64-bit value structured as <code>(epoch, counter)</code> — the epoch in the high-order bits, a per-epoch monotonically increasing counter in the low-order bits. This composite structure means zxids are totally ordered by simple integer comparison, while still cleanly encoding both "which leadership period" and "which position within that period" in a single value — a compact, elegant encoding of exactly the two-part identity (article 3.2's index+term log entries) this series has seen built up piece by piece across Paxos and Raft.</p>
+
+        <h2 id="two-phases">The two operational phases: Broadcast and Recovery</h2>
+
+        <h3>Broadcast phase (the normal-case fast path)</h3>
+
+        <p>With a stable leader established, Zab operates much like Multi-Paxos's fast path (article 5.3) or Raft's normal AppendEntries flow (article 5.6): the leader assigns each new transaction the next zxid in sequence and broadcasts a <code>PROPOSAL</code> message to followers; once a majority of followers <code>ACK</code>, the leader broadcasts <code>COMMIT</code>, and every follower applies the transaction in strict zxid order — directly delivering the FIFO client-order guarantee, since each client's successive operations necessarily receive successively higher zxids from the same leader.</p>
+
+        <h3>Recovery phase (leader election and log synchronization, unified)</h3>
+
+        <p>When the current leader fails or becomes unreachable, Zab enters recovery: a new leader is elected (using a protocol that, once again, requires majority support — article 3.3's mechanism, doing its familiar work), and — this is the detail worth highlighting, because it differs slightly in emphasis from Raft's explicit decomposition (article 5.5's design philosophy) — Zab tightly <strong>unifies</strong> leader election with log synchronization into one recovery phase, rather than treating them as cleanly separable sub-problems the way Raft's presentation does. The newly elected leader synchronizes its log with a majority of followers (bringing everyone to a consistent state, directly analogous to article 3.2's catch-up mechanism) as part of the same recovery process that establishes it as leader, before transitioning back into the broadcast phase.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Zab's two phases</text>
+            <rect x="40" y="40" width="280" height="90" class="boxg"/>
+            <text x="180" y="62" class="smk" text-anchor="middle" style="font-weight:bold">Broadcast phase</text>
+            <text x="180" y="82" class="sm" text-anchor="middle">stable leader, PROPOSAL → ACK → COMMIT</text>
+            <text x="180" y="100" class="sm" text-anchor="middle">strict zxid order = FIFO client order</text>
+            <path d="M320,70 C360,70 380,70 380,70" class="arr"/>
+            <text x="350" y="60" class="sm" text-anchor="middle">leader fails</text>
+            <rect x="380" y="40" width="260" height="90" class="boxr"/>
+            <text x="510" y="62" class="smk" text-anchor="middle" style="font-weight:bold">Recovery phase</text>
+            <text x="510" y="82" class="sm" text-anchor="middle">election + log sync, UNIFIED</text>
+            <text x="510" y="100" class="sm" text-anchor="middle">(not separated like Raft's decomposition)</text>
+            <path d="M380,110 C300,150 150,150 60,110" class="arr"/>
+            <text x="220" y="165" class="sm" text-anchor="middle">new leader established → back to Broadcast</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Zab's recovery phase unifies election and log sync, a structural choice distinct from Raft's explicit decomposition (5.5).</p>
+        </div>
+
+        <h2 id="comparison">Phase 5 closing comparison: every classical algorithm, side by side</h2>
+
+        <p>Four algorithms, four independent research efforts, closing out this phase — worth seeing them together, one final time, now that every mechanism has been built up in detail:</p>
+
+        <table class="papers">
+          <tr><th>Algorithm</th><th>Origin</th><th>Leadership-epoch name</th><th>Distinctive design emphasis</th></tr>
+          <tr><td>Paxos (5.1-5.3)</td><td>Lamport, 1989/1998, theory-first</td><td>proposal number</td><td>Foundational proof; Multi-Paxos amortizes Phase 1 across a whole log</td></tr>
+          <tr><td>Viewstamped Replication (5.4)</td><td>Oki &amp; Liskov, 1988/2012, systems-first</td><td>view number</td><td>Practical replication focus; explicit state transfer, request de-duplication</td></tr>
+          <tr><td>Raft (5.5-5.6)</td><td>Ongaro &amp; Ousterhout, 2014, understandability-first</td><td>term</td><td>Deliberate decomposition into independently-provable sub-problems</td></tr>
+          <tr><td>Zab (this article)</td><td>Reed &amp; Junqueira / Yahoo Research, ZooKeeper team</td><td>epoch</td><td>Structural FIFO client-order guarantee; election and recovery unified</td></tr>
+        </table>
+
+        <div class="bm-fix"><strong>The single biggest lesson of Phase 5, restated one last time as the phase closes:</strong> four independent research efforts, spanning nearly three decades, different institutions, different motivating use cases, and different presentation philosophies, all converged on the same core safety mechanism — majority quorums with overlap (article 3.3) — as the answer to the precise problem article 5.1 stated. The differences between them are real and worth knowing (presentation clarity, specific extra guarantees like FIFO order, decomposition style) — but the convergence on the underlying mechanism is the far more important takeaway heading into Phase 6, where Byzantine failures will finally force a genuinely different mechanism, not just a different presentation of the same one.</div>
+
+        <h2 id="phase5-close">Closing Phase 5</h2>
+
+        <p>Phase 5 has been the payoff for everything built across Phases 1-4: the full mechanics of Paxos (5.1-5.3), an independent confirmation via Viewstamped Replication (5.4), the most implementation-friendly modern presentation via Raft (5.5-5.6), and a fourth data point via Zab (this article) — a protocol tuned for one specific additional guarantee (FIFO client order) that the others leave as an external concern. Every one of these algorithms rests on the identical majority-overlap safety foundation this series established in article 3.3, confirming that foundation isn't one lab's arbitrary choice but close to the natural, structurally-forced answer to the problem article 5.1 stated precisely.</p>
+
+        <p>Phase 6 now turns to a genuinely different failure model — Byzantine failures, where nodes don't merely crash but can actively lie — starting with the Byzantine Generals Problem and building up through PBFT, HotStuff, Tendermint, and the Narwhal/Bullshark lineage that powers much of the blockchain and high-throughput BFT world. The majority-quorum mechanism this phase relied on so heavily will need real reinforcement to survive adversarial, not just unreliable, participants.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is Zab's FIFO client-order guarantee something Raft/Paxos genuinely can't provide?</summary><p>They can provide it, but as an additional layer built on top rather than as a structural, first-class protocol guarantee — a client-side sequencing mechanism or an application-level ordering scheme can achieve the same effect on top of vanilla Raft or Paxos. Zab's distinction is making it a built-in, protocol-level guarantee rather than something every application built on top must separately re-implement.</p></details>
+        <details class="faq"><summary>Does unifying election and recovery (unlike Raft's decomposition) make Zab harder to reason about?</summary><p>Somewhat, per the understandability lens article 5.5 introduced — Zab's own documentation and academic treatments are generally considered denser than Raft's paper, echoing the exact presentation-clarity theme this whole phase has traced through Paxos, VR, and Raft. This is a genuine, acknowledged trade-off Zab's designers made in favor of the FIFO guarantee's structural simplicity, at some cost to the protocol's own explanatory clarity.</p></details>
+        <details class="faq"><summary>Why does ZooKeeper get its own dedicated production-systems article later (Phase 8.2) if Zab is already covered here?</summary><p>This article covers Zab as a consensus/atomic-broadcast algorithm on its own terms, matching this phase's algorithm-by-algorithm structure; Phase 8.2 covers ZooKeeper as a production system — its data model (the hierarchical znode namespace), its client API, ephemeral nodes and watches, and its real-world operational characteristics — a genuinely different, complementary angle.</p></details>
+        <details class="faq"><summary>Is there a "best" algorithm among the four covered in Phase 5?</summary><p>Not in any absolute sense — each makes a different, defensible trade-off (Paxos's foundational generality, VR's practical replication focus, Raft's understandability, Zab's structural FIFO guarantee), and Phase 9's coverage of real production systems shows all four lineages still actively deployed today. "Best" depends entirely on which specific extra guarantees and presentation trade-offs matter most for a given system's requirements — exactly the kind of judgment call this series has been building the vocabulary to make throughout.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Zab</strong> underlies Apache ZooKeeper, framed by its designers closer to article 4.3's atomic broadcast problem than to single-value Paxos, specifically to make <strong>FIFO client order</strong> a first-class, structural guarantee.</li>
+          <li><strong>Epochs and zxids</strong> — Zab's fourth independent name for the leadership-epoch counter, with zxids elegantly encoding both epoch and per-epoch position in one totally-ordered 64-bit value.</li>
+          <li>Zab's <strong>Broadcast phase</strong> (normal-case fast path) and <strong>Recovery phase</strong> (leader election unified with log synchronization, unlike Raft's explicit decomposition) are the two operational modes.</li>
+          <li>The Phase 5 closing comparison across Paxos, VR, Raft, and Zab shows <strong>four independent research efforts converging on the identical majority-overlap safety mechanism</strong> (article 3.3) — strong evidence it's close to the natural, forced solution, not an arbitrary choice.</li>
+          <li>Phase 5 is now complete. Phase 6 (Byzantine Consensus) introduces a genuinely different failure model — adversarial, lying participants — that will finally require real mechanism changes, not just presentation differences.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://web.stanford.edu/class/cs347/reading/zab.pdf" target="_blank">Reed &amp; Junqueira — A Simple Totally Ordered Broadcast Protocol (Zab, 2008)</a> <span>— the primary Zab reference.</span></li>
+          <li><a href="https://www.usenix.org/legacy/event/atc10/tech/full_papers/Hunt.pdf" target="_blank">Hunt, Konar, Junqueira &amp; Reed — ZooKeeper: Wait-free Coordination for Internet-scale Systems (2010)</a> <span>— the ZooKeeper system paper; full production coverage in Phase 8.2.</span></li>
+          <li><a href="consensus-4-3-atomic-broadcast.html">cvam.sight — Consensus 4.3: Atomic Broadcast</a> <span>— the equivalence framing Zab's own design rationale is built on.</span></li>
+          <li><a href="consensus-5-1-paxos-history-and-the-problem.html">cvam.sight — Consensus 5.1: Paxos, History and the Problem</a> <span>— the problem statement all four algorithms in this phase solve.</span></li>
+          <li><a href="../series-consensus.html">cvam.sight — Consensus Algorithms series hub</a> <span>— Phase 6 (Byzantine Consensus) picks up next.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-5-6-raft-log-replication-and-safety.html">← 5.6 Raft — Log Replication and Safety</a>
+        <a href="../series-consensus.html">Phase 5 complete — back to series hub →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

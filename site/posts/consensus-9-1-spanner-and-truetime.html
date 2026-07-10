@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spanner and TrueTime — Consensus 9.1 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 9.1 -- Phase 9 opener. Google Spanner's globally-distributed, externally-consistent transactions built on Multi-Paxos per shard plus TrueTime -- atomic clocks and GPS receivers producing bounded uncertainty intervals, and the commit-wait technique that turns that bound into a correctness guarantee.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 9</p>
+        <p class="series-banner-title">Cloud-Native &amp; Geo-Distributed Consensus</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 9.1 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-9-1-spanner-and-truetime.html" class="active">9.1 Spanner</a>
+          <a href="consensus-9-2-cockroachdb-and-multi-raft.html">9.2 CockroachDB</a>
+          <a href="consensus-9-3-foundationdb.html">9.3 FoundationDB</a>
+          <a href="consensus-9-4-tidb-and-yugabytedb.html">9.4 TiDB/Yugabyte</a>
+          <a href="consensus-9-5-wan-consensus-and-read-optimization.html">9.5 WAN Consensus</a>
+          <a href="consensus-9-6-dynamic-membership-and-reconfiguration.html">9.6 Reconfiguration</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 24, 2026 · devops · 22 min read · 4600 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Spanner and TrueTime.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">spanner</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Phase 8 covered consensus systems operating within a single datacenter or a handful of nearby zones. Phase 9 asks what changes when replicas are spread across continents — and Google's <strong>Spanner</strong> is the sharpest possible starting point, because it makes the boldest possible claim under those conditions: <strong>externally consistent transactions, globally</strong>, ordered consistently with real-world wall-clock time, at planet scale. This article covers how Spanner is built — Multi-Paxos (article 5.3) replicating each of many data shards independently — and the specific piece of custom infrastructure, <strong>TrueTime</strong>, that makes the strong global guarantee affordable rather than merely theoretically possible. This is the direct, concrete payoff of article 1.4's PACELC discussion, which used Spanner as its worked example before this series had built any of the machinery to actually explain how.</p>
+
+        <h2 id="architecture">Spanner's architecture: many Paxos groups, one system</h2>
+        <p>Spanner shards data into many small pieces, each independently replicated by its own Multi-Paxos group (article 5.3) — the same fast-path/leader-election machinery this series built in Phase 5, just running many instances in parallel, one per shard, rather than one instance for an entire dataset. This is directly the sharding pattern this series has referenced without deep coverage since Phase 8 — the interesting, genuinely hard problem isn't any single shard's replication (that's ordinary Phase 5 material) but <strong>coordinating transactions that span multiple shards</strong>, potentially in different datacenters, and making the whole system behave as if it had one single, globally-consistent clock — which is precisely what article 1.3's linearizability definition demands, extended to multi-shard transactions.</p>
+
+        <h2 id="truetime">TrueTime: bounded uncertainty instead of a single number</h2>
+        <p>Recall article 2.1's entire argument: no clock can give you a trustworthy single "current time" value, because clocks drift and synchronization has fundamental limits. TrueTime doesn't try to defeat that limit — it accepts it and makes it <em>precise</em>. Instead of returning a single timestamp, TrueTime's API returns an <strong>interval</strong> <code>[earliest, latest]</code> that is guaranteed to contain the true current time — backed by real hardware (atomic clocks and GPS receivers) deployed across Google's datacenters specifically to keep that interval's width (the uncertainty, typically single-digit milliseconds) as small and as reliably bounded as possible.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 160" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">TrueTime: an honest interval instead of a false single number</text>
+            <text x="170" y="45" class="smk" text-anchor="middle" style="font-weight:bold">Ordinary clock API</text>
+            <rect x="60" y="55" width="220" height="30" class="boxr"/>
+            <text x="170" y="75" class="smk" text-anchor="middle">now() = 14:32:07.418</text>
+            <text x="170" y="100" class="sm" text-anchor="middle">looks precise, is secretly wrong by an unknown amount</text>
+            <text x="510" y="45" class="smk" text-anchor="middle" style="font-weight:bold">TrueTime API</text>
+            <rect x="400" y="55" width="220" height="30" class="boxg"/>
+            <text x="510" y="75" class="smk" text-anchor="middle">TT.now() = [14:32:07.415, .421]</text>
+            <text x="510" y="100" class="sm" text-anchor="middle">honestly bounded, backed by atomic clocks/GPS</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — TrueTime's contribution isn't eliminating uncertainty — it's making the uncertainty explicit, bounded, and small.</p>
+        </div>
+
+        <h2 id="commit-wait">Commit-wait: turning a bound into a guarantee</h2>
+        <p>Here's the mechanism that actually cashes TrueTime's interval into a correctness guarantee, and it's genuinely elegant. When Spanner commits a transaction, it assigns it a timestamp — and then, before acknowledging the commit to the client, it <strong>waits</strong> until TrueTime's interval guarantees that the assigned timestamp is definitely in the past (waiting out the uncertainty window, <code>latest - assigned_timestamp</code>). This <strong>commit-wait</strong> is a deliberate, small, bounded latency cost paid specifically to guarantee that any transaction that <em>could</em> have observed this commit (because it started after this commit's timestamp, in true wall-clock time) actually does — delivering external consistency (a stronger version of article 1.3's linearizability, ordering transactions consistently with real-world time, not just some internally-agreed order) even though no two machines' clocks are ever perfectly synchronized.</p>
+
+        <div class="bm-note">This is exactly the "expensive, deliberate infrastructure investment to minimize PACELC's EC cost" story article 1.4 told before this series had the vocabulary to explain the mechanism — now it's concrete: <strong>TrueTime's tight uncertainty bound is what makes commit-wait's latency cost small enough to be practical</strong> (milliseconds, not the tens-to-hundreds of milliseconds a looser clock synchronization bound would require). The atomic-clock hardware investment article 1.4 mentioned exists for exactly one purpose: keep commit-wait cheap.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does Spanner use Paxos or Raft for its per-shard replication?</summary><p>Multi-Paxos (article 5.3), predating Raft's 2014 publication and remaining Spanner's replication mechanism — a reminder from article 5.7's Phase 5 closing comparison that both algorithm families remain live, actively-deployed technology, not one having strictly superseded the other.</p></details>
+        <details class="faq"><summary>What happens if TrueTime's uncertainty bound is ever wrong (wider than reported)?</summary><p>This would be a serious correctness risk — commit-wait's guarantee depends entirely on the reported interval genuinely containing the true time. Google's TrueTime infrastructure is specifically engineered (redundant time sources, continuous monitoring) to make this failure mode extremely unlikely, but it's worth noting explicitly that the entire external-consistency guarantee rests on this one hardware/infrastructure assumption holding.</p></details>
+        <details class="faq"><summary>Could a company without Google's infrastructure budget replicate Spanner's guarantees?</summary><p>Approximately, with more latency cost — without dedicated atomic-clock/GPS hardware, a system must use a looser, NTP-derived uncertainty bound, making commit-wait proportionally more expensive. This is exactly the trade-off CockroachDB (article 9.2, next) makes differently, worth reading immediately after this article for the direct contrast.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Opens Phase 9: consensus at planet scale, where geographic distance turns latency into a first-class design constraint (article 1.4's PACELC, now with real mechanism behind it).</li>
+          <li><strong>Spanner</strong> shards data into many independent <strong>Multi-Paxos</strong> (5.3) groups — the hard problem is coordinating multi-shard transactions consistently, not any single shard's replication.</li>
+          <li><strong>TrueTime</strong> returns a bounded uncertainty interval instead of a false single timestamp, backed by real atomic-clock/GPS hardware — honest about clock imprecision (article 2.1) rather than pretending it away.</li>
+          <li><strong>Commit-wait</strong> turns that bound into a correctness guarantee: pause until the assigned timestamp is certainly in the past, delivering external consistency at a small, bounded latency cost.</li>
+          <li>This is the concrete mechanism behind article 1.4's PACELC example — the atomic-clock investment exists specifically to keep commit-wait's cost small.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://static.googleusercontent.com/media/research.google.com/en//archive/spanner-osdi2012.pdf" target="_blank">Corbett et al. — Spanner: Google's Globally-Distributed Database (OSDI 2012)</a> <span>— the primary source; TrueTime and commit-wait described in full.</span></li>
+          <li><a href="consensus-1-4-pacelc-and-beyond-cap.html">cvam.sight — Consensus 1.4: PACELC and Beyond CAP</a> <span>— the theoretical framing this article's TrueTime mechanism cashes out concretely.</span></li>
+          <li><a href="consensus-2-1-physical-clocks-and-why-they-lie.html">cvam.sight — Consensus 2.1: Physical Clocks and Why They Lie</a> <span>— the clock-uncertainty problem TrueTime is engineered specifically to bound.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../series-consensus.html">← Consensus series hub</a>
+        <a href="consensus-9-2-cockroachdb-and-multi-raft.html">next: 9.2 CockroachDB and Multi-Raft →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

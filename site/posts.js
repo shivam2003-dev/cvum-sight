@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-9-1-spanner-and-truetime",
+    title: "Spanner and TrueTime.",
+    date: "Jul 24, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "spanner", "series-consensus"],
+    time: 22,
+    words: 4600,
+    excerpt: "Consensus Algorithms series, 9.1 -- Phase 9 opener. Spanner shards data into many independent Multi-Paxos groups; the hard problem is coordinating multi-shard transactions consistently at planet scale. TrueTime returns a bounded uncertainty interval instead of a false single timestamp, backed by real atomic-clock/GPS hardware. Commit-wait turns that bound into a correctness guarantee -- the concrete mechanism behind article 1.4's PACELC example, finally explained.",
+    series: "consensus",
+    seriesNum: "45"
+  },
+  {
     slug: "consensus-8-6-jepsen",
     title: "Jepsen — testing consensus in the wild.",
     date: "Jul 23, 2026",

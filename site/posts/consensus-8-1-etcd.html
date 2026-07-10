@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>etcd — Consensus 8.1 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 8.1 -- Phase 8 opener. How etcd wraps Raft into a production key-value store: the watch mechanism built on MVCC revision history, leases for TTL-based coordination, linearizable vs serializable reads, and why Kubernetes chose it as its single source of truth.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 8</p>
+        <p class="series-banner-title">Consensus in Production</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 8.1 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-8-1-etcd.html" class="active">8.1 etcd</a>
+          <a href="consensus-8-2-apache-zookeeper.html">8.2 ZooKeeper</a>
+          <a href="consensus-8-3-consul.html">8.3 Consul</a>
+          <a href="consensus-8-4-kafka-kraft.html">8.4 Kafka KRaft</a>
+          <a href="consensus-8-5-kubernetes-and-etcd.html">8.5 Kubernetes</a>
+          <a href="consensus-8-6-jepsen.html">8.6 Jepsen</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 21, 2026 · devops · 21 min read · 4400 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>etcd.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">etcd</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Phase 5 built Raft (5.5-5.6) as an algorithm. This phase asks a different question for six articles running: what does it actually take to turn that algorithm into a system people build real infrastructure on? <strong>etcd</strong> — CoreOS's (now part of the CNCF) distributed key-value store — is the cleanest place to start, because it's a comparatively thin, direct wrapping of Raft into a genuinely useful storage API, and because it's the system underlying Kubernetes (article 8.5 gives that specific relationship its own full treatment). This article covers etcd's data model, its watch mechanism (arguably its single most distinctive feature beyond "Raft plus a KV store"), leases, and the linearizable-vs-serializable read distinction that directly cashes out article 3.4's lease theory into a real, documented API choice.</p>
+
+        <h2 id="raft-core">Raft as the replication core, barely modified</h2>
+        <p>etcd's consensus layer is close to a textbook implementation of the Raft algorithm this series built in detail across articles 5.5-5.6 — leader election via RequestVote, log replication via AppendEntries, the same safety guarantees (Election Safety, Log Matching, Leader Completeness, State Machine Safety). This is a deliberate design choice worth noting explicitly: etcd's engineering effort is concentrated almost entirely in the storage and API layers built <em>on top of</em> Raft, not in modifying the consensus algorithm itself — a useful confirmation that a well-understood, well-tested classical algorithm (Phase 5) is often exactly the right foundation for production systems, rather than something that needs to be replaced with a more exotic modern-Paxos-family variant (Phase 7) by default.</p>
+
+        <h2 id="mvcc">MVCC: the storage layer underneath the KV API</h2>
+        <p>etcd stores data using <strong>Multi-Version Concurrency Control</strong> — every write creates a new, immutable revision rather than overwriting the previous value in place, and etcd retains (subject to configurable compaction) the full history of revisions for every key. This isn't just an implementation detail; it's the structural foundation that makes etcd's most distinctive feature, watches, possible at all.</p>
+
+        <h2 id="watches">Watches: streaming changes from a point in history</h2>
+        <p>A client can <strong>watch</strong> a key or key range starting from a specific revision, and etcd streams every subsequent change to that range as it's committed through Raft — a live, ordered feed of modifications, not just point-in-time reads. Because of MVCC's revision history, a client can even specify a <em>past</em> revision to start watching from, catching up on everything that happened since a specific point rather than only seeing changes from "now" forward — directly useful for a client that was disconnected and needs to know exactly what it missed, without racing a full re-read of current state against new incoming changes.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Watches: a live feed anchored in MVCC revision history</text>
+            <rect x="40" y="40" width="600" height="40" class="boxg"/>
+            <text x="90" y="65" class="smk">rev 10</text><text x="200" y="65" class="smk">rev 11</text><text x="320" y="65" class="smk">rev 12</text><text x="440" y="65" class="smk">rev 13</text><text x="560" y="65" class="smk">rev 14</text>
+            <path d="M200,100 C200,110 200,110 200,120" class="arr"/>
+            <text x="200" y="115" class="sm" text-anchor="middle">client starts watching from rev 11</text>
+            <rect x="180" y="120" width="420" height="30" class="boxy"/>
+            <text x="390" y="140" class="smk" text-anchor="middle">streams rev 11, 12, 13, 14... as they commit — including catch-up on disconnect</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — MVCC's immutable revision history is what lets watches resume precisely, not just subscribe to "changes from now."</p>
+        </div>
+
+        <h2 id="leases">Leases: TTL-based coordination primitives</h2>
+        <p>etcd's <strong>lease</strong> mechanism directly generalizes article 3.4's lease concept from a read-optimization technique into a first-class, client-facing coordination primitive: a client attaches a lease (with a time-to-live) to one or more keys, and must periodically renew it (a heartbeat, echoing article 2.4's failure-detection pattern) to keep those keys alive. If the client stops renewing — because it crashed, or lost network connectivity — the lease expires and etcd automatically deletes the associated keys. This is exactly the mechanism Kubernetes uses for leader election among controller replicas and for service liveness registration (a service "holds" a lease key; if it dies, the key disappears and other components notice via a watch) — a direct, practical application of article 3.4's clock-skew-aware safety margins to real cluster coordination.</p>
+
+        <h2 id="reads">Linearizable vs. serializable reads: article 3.4's trade-off, as an actual API flag</h2>
+        <p>etcd exposes exactly the read-consistency trade-off article 3.4 built up theoretically, as a literal client-facing option: a <strong>linearizable</strong> read (the default) goes through the full Raft-backed guarantee — the leader confirms its leadership is still current (via a round of heartbeats, or the lease-based optimization article 3.4 covered) before answering, guaranteeing the absolute latest committed value. A <strong>serializable</strong> read instead answers directly from whichever node received the request, without that confirmation round-trip — faster and cheaper, but able to return slightly stale data if that node is a follower that hasn't yet caught up to the very latest committed entry.</p>
+
+        <table class="papers">
+          <tr><th>Read mode</th><th>Guarantee</th><th>Cost</th><th>When to use</th></tr>
+          <tr><td>Linearizable (default)</td><td>Always the latest committed value</td><td>Extra round-trip/lease-check overhead</td><td>Correctness-critical reads (locks, leader status)</td></tr>
+          <tr><td>Serializable</td><td>Possibly stale (bounded by replication lag)</td><td>Local read, no extra round-trip</td><td>High-throughput reads where staleness is acceptable</td></tr>
+        </table>
+
+        <div class="bm-note">This is a genuinely satisfying place to land after four phases of theory: article 3.4 built the exact machinery (leases, clock-skew safety margins, the fast-local-read-vs-guaranteed-fresh-read trade-off) that etcd exposes as a two-value enum in its client API. Reading etcd's actual documentation after this series' Phase 3 treatment should feel like meeting an old, precisely-specified friend rather than encountering new unexplained jargon.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does etcd use Multi-Paxos-style leader-stable replication, or does it re-elect for every write?</summary><p>Stable leader, exactly like article 5.3's Multi-Paxos amortization — a single elected Raft leader handles writes for as long as it remains leader (typically a long time in a healthy cluster), only triggering a new election when it actually fails or is partitioned, per article 5.5's election mechanics.</p></details>
+        <details class="faq"><summary>What happens to watches during a leader election?</summary><p>Watches briefly pause (no new committed entries to stream) during the unavailability window while a new leader is being elected, then resume automatically once a new leader is established and processing writes again — no data is lost, since MVCC's revision history means a reconnecting watch client can always resume from its last-seen revision.</p></details>
+        <details class="faq"><summary>Is etcd's compaction (removing old MVCC revisions) a safety risk?</summary><p>Only if a watch client has fallen behind further than the retained history — compaction is a configurable trade-off between storage growth and how far back watch clients can catch up from, not a safety violation in the article 4.1 sense (it doesn't cause disagreement, just limits how much history is available for late-reconnecting clients).</p></details>
+        <details class="faq"><summary>Why did Kubernetes specifically choose etcd rather than ZooKeeper (8.2) or Consul (8.3)?</summary><p>Full treatment in article 8.5, but briefly: etcd's watch mechanism and MVCC-based revision history map unusually well onto Kubernetes's own controller-pattern architecture (controllers watch for resource changes and reconcile state), which was a more natural fit than ZooKeeper's older API design or Consul's broader service-mesh-oriented feature set.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>etcd wraps a close-to-textbook <strong>Raft</strong> implementation (Phase 5) with minimal modification — its real engineering investment is in the storage/API layers on top, not the consensus algorithm itself.</li>
+          <li><strong>MVCC</strong> (immutable, versioned revisions per key) is the structural foundation that makes etcd's <strong>watch</strong> mechanism possible — a live, precisely-resumable feed of changes, not just point-in-time polling.</li>
+          <li><strong>Leases</strong> generalize article 3.4's theoretical lease concept into a first-class, client-facing TTL coordination primitive — the mechanism behind Kubernetes leader election and liveness registration.</li>
+          <li><strong>Linearizable vs. serializable reads</strong> is article 3.4's read-consistency trade-off exposed directly as an API choice — a satisfying, concrete payoff for that earlier theoretical article.</li>
+          <li>Opens Phase 8 by demonstrating the pattern this phase will repeat: a well-understood classical algorithm (Raft, Zab) wrapped in real storage/API engineering is usually the actual production answer, more often than a specialized Phase 7 variant.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://etcd.io/docs/latest/learning/api/" target="_blank">etcd documentation — API Reference</a> <span>— watches, leases, and the linearizable/serializable read modes described directly.</span></li>
+          <li><a href="https://raft.github.io/raft.pdf" target="_blank">Ongaro &amp; Ousterhout — In Search of an Understandable Consensus Algorithm (Raft, 2014)</a> <span>— the algorithm etcd implements; full treatment in articles 5.5-5.6.</span></li>
+          <li><a href="consensus-3-4-leases-and-linearizable-reads.html">cvam.sight — Consensus 3.4: Leases and Linearizable Reads</a> <span>— the theory this article's read-mode API directly implements.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../series-consensus.html">← Consensus series hub</a>
+        <a href="consensus-8-2-apache-zookeeper.html">next: 8.2 Apache ZooKeeper →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

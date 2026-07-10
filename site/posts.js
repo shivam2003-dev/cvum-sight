@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-8-1-etcd",
+    title: "etcd.",
+    date: "Jul 21, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "etcd", "series-consensus"],
+    time: 21,
+    words: 4400,
+    excerpt: "Consensus Algorithms series, 8.1 -- Phase 8 opener. etcd wraps a close-to-textbook Raft implementation with minimal modification -- the real engineering is in the storage/API layers on top. MVCC's immutable revision history makes the watch mechanism possible; leases generalize the theoretical lease concept into a first-class TTL coordination primitive (Kubernetes leader election); linearizable vs serializable reads exposes article 3.4's read-consistency trade-off directly as an API choice.",
+    series: "consensus",
+    seriesNum: "39"
+  },
+  {
     slug: "consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia",
     title: "Matchmaker Paxos, PigPaxos, BPaxos &amp; Rabia.",
     date: "Jul 20, 2026",

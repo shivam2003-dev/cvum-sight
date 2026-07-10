@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-5-1-paxos-history-and-the-problem",
+    title: "Paxos — history and the problem.",
+    date: "Jul 12, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "paxos", "series-consensus"],
+    time: 18,
+    words: 3700,
+    excerpt: "Consensus Algorithms series, 5.1. Lamport's Part-Time Parliament (1989/1998) and the strange, allegory-driven publication history that delayed adoption for years -- and why Paxos Made Simple (2001) and later Raft were direct reactions to that communication failure. The precise problem statement Paxos solves: unconditional safety plus majority-conditional liveness, threading every gap identified across Phases 1-4. Proposers, acceptors, learners -- the three roles, before article 5.2's mechanical walkthrough.",
+    series: "consensus",
+    seriesNum: "19"
+  },
+  {
     slug: "consensus-4-5-three-phase-commit",
     title: "Three-phase commit (3PC).",
     date: "Jul 12, 2026",

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paxos — History and the Problem — Consensus 5.1 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 5.1. Lamport's Part-Time Parliament, why the paper's reception delayed the field for a decade, Paxos Made Simple, and the precise problem statement Paxos solves -- correctly, under the full realistic failure model this series has insisted on since article 1.1.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 5</p>
+        <p class="series-banner-title">Classical Consensus — Paxos &amp; Raft</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 5.1 of 7</p>
+        <div class="series-banner-nav">
+          <a href="consensus-5-1-paxos-history-and-the-problem.html" class="active">5.1 Paxos History</a>
+          <a href="consensus-5-2-single-decree-paxos.html">5.2 Single-Decree</a>
+          <a href="consensus-5-3-multi-paxos.html">5.3 Multi-Paxos</a>
+          <a href="consensus-5-4-viewstamped-replication.html">5.4 VR</a>
+          <a href="consensus-5-5-raft-design-and-leader-election.html">5.5 Raft Election</a>
+          <a href="consensus-5-6-raft-log-replication-and-safety.html">5.6 Raft Safety</a>
+          <a href="consensus-5-7-zab.html">5.7 Zab</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 12, 2026 · devops · 18 min read · 3700 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Paxos — history and the problem.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">paxos</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Everything in Phases 1 through 4 has been building toward this moment: the algorithm that finally, correctly solves consensus under the full realistic failure model this series has insisted on since article 1.1 — crash failures <em>and</em> network partitions, together, with no unsafe trade-off like 3PC's (article 4.5). Leslie Lamport's Paxos, first written up in 1989 and published as "The Part-Time Parliament" in 1998, has one of the most unusual publication histories in computer science — a genuinely brilliant algorithm nearly buried by its own paper's presentation. This article covers that history (it matters — it explains why Paxos has a reputation for being "hard" that the algorithm itself doesn't fully deserve), and states the precise problem Paxos solves, setting up the mechanical walkthrough in article 5.2.</p>
+
+        <h2 id="history">The strange history of "The Part-Time Parliament"</h2>
+
+        <p>Lamport developed the algorithm in 1989, motivated by exactly the same gap this series has spent four phases building toward — the well-documented failure modes of 2PC and 3PC (articles 4.4, 4.5) under realistic, partition-prone networks. Rather than presenting it as a straightforward distributed-systems paper, Lamport wrote it as an elaborate allegory: a fictional Greek island called Paxos, whose part-time legislators (busy with their day jobs, not paying full attention) needed to pass laws by consensus despite constantly wandering in and out of the parliamentary chamber — a whimsical framing device for exactly the crash/asynchrony/partition failure model this article is about to state formally.</p>
+
+        <div class="bm-note"><strong>The allegory backfired, badly, and the delay is a genuinely instructive story about communicating technical ideas.</strong> Reviewers and readers found the ancient-Greek narrative device confusing and off-putting rather than illuminating — Lamport himself has written that the paper was initially rejected, and even after eventual publication in 1998 (a full nine years after he wrote it), it took years more before the wider distributed-systems community fully absorbed and trusted the algorithm. Lamport later wrote a much more direct, allegory-free explanation, <strong>"Paxos Made Simple"</strong> (2001), specifically to fix this communication failure — and that paper, not the original, is what most engineers actually learn Paxos from today. The lesson generalizes well beyond this one paper: a genuinely correct, important idea can sit unused for a decade if its presentation actively works against understanding it — worth remembering as this series works through several more papers with their own communication quirks in Phase 10.</div>
+
+        <h2 id="why-delay-mattered">Why the delay mattered for the field, not just Lamport</h2>
+
+        <p>This isn't just an amusing anecdote — the delay had real, traceable consequences for the field this series has been tracing. Google's Chubby lock service paper (2006) and the Paxos-based systems that followed it are often credited with finally demonstrating Paxos's practical viability to a broad engineering audience — nearly two decades after Lamport first solved the problem. Several other algorithms this series will cover (Viewstamped Replication, article 5.4, developed independently around the same time as Paxos by Oki and Liskov, solving an overlapping problem with different terminology) suffered a similar fate of being under-recognized relative to their actual importance, partly for similar communication and timing reasons. Raft's 2014 paper (article 5.5 onward) is explicitly, by its authors' own stated design goal, a reaction to this entire history — "In Search of an <em>Understandable</em> Consensus Algorithm" is not a subtle title; Ongaro and Ousterhout built Raft specifically to solve the same problem as Paxos while avoiding Paxos's decades-long reputation for being needlessly difficult to teach and implement correctly.</p>
+
+        <h2 id="problem-statement">The precise problem statement</h2>
+
+        <p>With the full vocabulary from Phases 1-4 now available, the problem Paxos solves can be stated with complete precision — worth doing carefully, because this exact statement is what article 5.2's mechanical walkthrough proves the algorithm satisfies:</p>
+
+        <div class="bm-fix"><strong>The single-decree consensus problem, precisely:</strong> a set of processes, any number of which may crash or become arbitrarily slow (article 1.1's failure spectrum, crash/omission/timing — but not Byzantine), communicating over an asynchronous network where messages may be arbitrarily delayed or lost but not corrupted or forged (article 1.1's "Lie #1," formalized) — must agree on a single value, satisfying: <strong>(Safety)</strong> only a value that was actually proposed can be chosen, and once any process learns that a value has been chosen, it never learns a different value was chosen (article 4.1's safety, unconditional); <strong>(Liveness)</strong> some proposed value is eventually chosen, and processes eventually learn it, <em>given sufficient favorable conditions</em> — a majority of processes up and communicating with each other for long enough (article 4.1's conditional liveness, article 2.5's partial-synchrony escape hatch).</div>
+
+        <p>Notice precisely how this statement threads every needle the previous four phases identified: it doesn't promise liveness unconditionally (FLP, article 2.5, proved that's impossible for a deterministic algorithm in full asynchrony) — but it promises safety <em>unconditionally</em>, in every execution, no matter how adversarial the scheduling (exactly the safety/liveness asymmetry from article 4.1). And it explicitly requires only a <strong>majority</strong> for liveness, not unanimity (exactly the fix article 4.5 identified as missing from 3PC's recovery logic) — which is precisely why Paxos, unlike 3PC, remains safe under partitions: the majority-overlap guarantee (article 3.3) makes it structurally impossible for two disjoint groups to both proceed independently and reach conflicting decisions.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">How Paxos's problem statement closes every gap from Phases 1-4</text>
+            <rect x="20" y="35" width="150" height="50" class="boxr"/><text x="95" y="55" class="smk" text-anchor="middle">2PC (4.4)</text><text x="95" y="72" class="sm" text-anchor="middle">blocks on crash</text>
+            <rect x="190" y="35" width="150" height="50" class="boxr"/><text x="265" y="55" class="smk" text-anchor="middle">3PC (4.5)</text><text x="265" y="72" class="sm" text-anchor="middle">unsafe on partition</text>
+            <rect x="360" y="35" width="150" height="50" class="boxr"/><text x="435" y="55" class="smk" text-anchor="middle">FLP (2.5)</text><text x="435" y="72" class="sm" text-anchor="middle">no guaranteed bound</text>
+            <rect x="530" y="35" width="130" height="50" class="boxr"/><text x="595" y="55" class="smk" text-anchor="middle">Naive election</text><text x="595" y="72" class="sm" text-anchor="middle">no data-safety link</text>
+            <path d="M95,85 C95,110 300,120 300,140" class="arr"/>
+            <path d="M265,85 C265,110 320,120 320,140" class="arr"/>
+            <path d="M435,85 C435,110 380,120 380,140" class="arr"/>
+            <path d="M595,85 C595,110 420,120 420,140" class="arr"/>
+            <rect x="180" y="140" width="320" height="55" class="boxg"/>
+            <text x="340" y="162" class="smk" text-anchor="middle" style="font-weight:bold">Paxos</text>
+            <text x="340" y="180" class="sm" text-anchor="middle">unconditional safety + majority-based conditional liveness</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Every gap identified across Phases 1-4 is a specific requirement Paxos's problem statement is built to close.</p>
+        </div>
+
+        <h2 id="roles">The three roles: proposers, acceptors, learners</h2>
+
+        <p>Before the mechanical walkthrough in article 5.2, it's worth introducing the three logical roles Paxos defines — a genuinely useful conceptual separation, even though in most real deployments a single physical process plays more than one role simultaneously:</p>
+
+        <ul>
+          <li><strong>Proposers</strong> — processes that propose values to be chosen. In practice, this is usually whichever process wants to get a write accepted (often, though not strictly required, a stable elected leader, echoing article 4.2's election machinery).</li>
+          <li><strong>Acceptors</strong> — the processes that actually vote on proposals and collectively determine, via majority (article 3.3), which value gets chosen. This is where the algorithm's safety guarantees live.</li>
+          <li><strong>Learners</strong> — processes that need to find out what value was chosen, without necessarily participating in the voting itself (useful for replicas that need to apply the decided value to their state machine, per article 3.1, without being part of the acceptor quorum).</li>
+        </ul>
+
+        <p>This three-role separation is a deliberate design choice that pays off in flexibility: the same core protocol supports configurations ranging from "every process plays all three roles" (the common simple case) to more elaborate deployments where, say, a small dedicated set of acceptors handles voting while a much larger set of learners consumes the results — a pattern that resurfaces when this series covers read scaling and witness-node-style configurations again in later phases.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is "Paxos Made Simple" actually simple?</summary><p>Simpler than the original allegorical paper, certainly, and it's the paper most working engineers should read first — but "simple" is relative; it still requires careful, close reading to fully internalize the two-phase protocol and its safety argument. Article 5.2 of this series aims to be an even more gradual, worked-example-driven on-ramp than either of Lamport's own papers, building directly on the vocabulary already established in Phases 1-4.</p></details>
+        <details class="faq"><summary>Why does this article distinguish "single-decree" consensus specifically?</summary><p>Because Paxos, as originally described, solves the problem of agreeing on exactly <em>one</em> value — this is deliberately the simplest possible version of the problem, and it's precisely the version proven equivalent to atomic broadcast in article 4.3 (recall: a sequence of single consensus decisions builds a replicated log). Article 5.3 (Multi-Paxos) covers the practical extension to repeatedly deciding a whole sequence of values efficiently — which is what any real production log-replication system actually needs.</p></details>
+        <details class="faq"><summary>Did anyone solve this problem before Lamport, even informally?</summary><p>The broader distributed-transactions and commit-protocol research (2PC in the 1970s, 3PC in 1981 — articles 4.4, 4.5) directly preceded and motivated Paxos, but those protocols, as this series has shown in detail, don't actually solve the majority-based, partition-safe version of the problem — Paxos is generally credited as the first algorithm to get the full, correct answer, even though (as the VR discussion in article 5.4 will show) Oki and Liskov developed an independent, overlapping solution around the same time using different terminology and framing.</p></details>
+        <details class="faq"><summary>Is Paxos actually used directly in production, or mostly Raft/its variants now?</summary><p>Both, extensively — Google's Chubby, Spanner, and several internal systems use Paxos or Multi-Paxos variants directly (covered in Phase 9); Raft (5.5-5.6) has become the more common choice for new systems built after 2014 specifically because of its understandability advantage, but Paxos-family algorithms (including the modern Paxos family in Phase 7) remain very much live, actively-developed production technology, not a historical curiosity.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Lamport developed Paxos in <strong>1989</strong>, but its allegorical "Part-Time Parliament" presentation delayed publication to <strong>1998</strong> and delayed broad adoption for years beyond that — a genuine cautionary tale about presentation mattering as much as correctness for an idea's real-world impact.</li>
+          <li><strong>"Paxos Made Simple" (2001)</strong> is the direct, allegory-free follow-up most engineers actually learn from, and Raft (5.5 onward) was explicitly designed as a further reaction to this same communication problem.</li>
+          <li>The precise problem statement threads every gap identified across Phases 1-4: <strong>unconditional safety</strong> (only a proposed value is chosen, never two different ones) plus <strong>majority-conditional liveness</strong> (a value is eventually chosen, given a majority up and communicating) — exactly matching article 4.1's safety/liveness asymmetry and article 3.3's majority-overlap mechanism.</li>
+          <li>Paxos defines three logical roles — <strong>proposers, acceptors, learners</strong> — a separation that enables flexible deployment configurations beyond the simple "everyone plays every role" case.</li>
+          <li>Article 5.2 next: the actual mechanical two-phase protocol (Prepare/Promise, Accept/Accepted) that satisfies this problem statement, walked through with a full worked example.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://lamport.azurewebsites.net/pubs/lamport-paxos.pdf" target="_blank">Lamport — The Part-Time Parliament (1998)</a> <span>— the original paper, allegory and all; historically important, not the recommended starting point for learning the algorithm.</span></li>
+          <li><a href="https://lamport.azurewebsites.net/pubs/paxos-simple.pdf" target="_blank">Lamport — Paxos Made Simple (2001)</a> <span>— the direct, allegory-free explanation; the standard starting reference.</span></li>
+          <li><a href="https://static.googleusercontent.com/media/research.google.com/en//archive/chubby-osdi06.pdf" target="_blank">Burrows — The Chubby Lock Service for Loosely-Coupled Distributed Systems (2006)</a> <span>— widely credited with demonstrating Paxos's practical production viability.</span></li>
+          <li><a href="consensus-4-5-three-phase-commit.html">cvam.sight — Consensus 4.5: Three-Phase Commit (3PC)</a> <span>— the exact gap this article's problem statement is built to close.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../series-consensus.html">← Consensus series hub</a>
+        <a href="consensus-5-2-single-decree-paxos.html">next: 5.2 Single-Decree Paxos →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

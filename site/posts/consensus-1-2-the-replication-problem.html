@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Replication Problem — Consensus 1.2 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 1.2. Why 'just use a database' isn't enough: single points of failure, the replication spectrum, split-brain mechanics, and why replicas disagreeing is the whole ballgame.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 1</p>
+        <p class="series-banner-title">Foundations</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 1.2 of 4</p>
+        <div class="series-banner-nav">
+          <a href="consensus-1-1-why-distributed-systems-are-hard.html" class="done">1.1 Why Hard</a>
+          <a href="consensus-1-2-the-replication-problem.html" class="active">1.2 Replication</a>
+          <a href="consensus-1-3-cap-theorem-properly.html">1.3 CAP</a>
+          <a href="consensus-1-4-pacelc-and-beyond-cap.html">1.4 PACELC</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 8, 2026 · devops · 20 min read · 4300 words <span class="difficulty beginner">beginner</span></p>
+        <h1>The replication problem.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">replication</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">"Just replicate the data" sounds like a solved problem — copy it to a second machine, done. It isn't, because the moment you have two copies, you've created a new question that didn't exist before: what happens when they disagree? Every replication strategy is really an answer to that one question, dressed up in different terminology. This article builds the full picture: why a single machine is unacceptable at any real scale, the replication spectrum from single-leader to leaderless, the precise mechanics of how split-brain actually corrupts data (not just the visual intuition from 1.1), and why "replicas disagreeing" is not an edge case to handle — it's the central design problem the rest of this series exists to solve.</p>
+
+        <h2 id="why-replicate">Why a single machine is not an option</h2>
+
+        <p>Start with the boring case: one database, one server, no replicas. It's the simplest system to reason about, and for genuinely small, low-stakes workloads it's a legitimate choice — fewer moving parts, no consensus protocol to misconfigure, no split-brain to worry about because there's only one brain. But it has a hard ceiling, and the ceiling isn't subtle:</p>
+
+        <ul>
+          <li><strong>Availability is capped at that one machine's uptime.</strong> If it's down — hardware failure, OS crash, a bad deploy, the datacenter losing power, someone tripping over a cable — your service is down, in its entirety, until that specific machine (or a restore from backup) comes back. There is no partial degradation; it's binary.</li>
+          <li><strong>Durability rests on that one machine's disk.</strong> A backup taken every few hours means every write since the last backup is unrecoverable if the disk dies between backups. (This is exactly the gap continuous WAL archiving closes for PostgreSQL — see the <a href="pgbackrest-s3-guide.html">pgBackRest guide</a> — but that only protects against data loss, not availability during the outage.)</li>
+          <li><strong>Read capacity is capped at one machine's throughput.</strong> You cannot add read capacity by adding servers if there's only ever one server that has the data.</li>
+          <li><strong>Geography is fixed.</strong> A user in Singapore querying a database in Virginia pays the full round-trip latency of that distance, every single request, with no way to serve them from somewhere closer.</li>
+        </ul>
+
+        <p>Replication is the answer to all four — copy the data onto multiple machines, and you get survivability past a single failure, more read throughput, and the option to place copies close to users. But the fix creates the problem this whole series is about: <strong>now that there are multiple copies, what guarantees do you make about how closely they agree with each other, and who's allowed to accept a write when they can't all talk to each other?</strong> Every replication architecture is a specific, named answer to that question.</p>
+
+        <h2 id="spectrum">The replication spectrum</h2>
+
+        <p>Replication strategies aren't a binary choice — they sit on a spectrum defined by two independent questions: <strong>who is allowed to accept writes</strong>, and <strong>how is agreement enforced before those writes are considered safe</strong>.</p>
+
+        <h3>Single-leader replication</h3>
+
+        <p>One node (the leader/primary) accepts all writes; the rest (followers/replicas) apply the same writes in the same order and serve reads. This is by far the most common pattern in production systems — PostgreSQL streaming replication, MySQL replication, MongoDB replica sets in their default configuration. It's conceptually simple: there's never a question of two nodes disagreeing about write order, because only one node ever decides that order.</p>
+
+        <p>The catch is entirely about <em>how</em> writes propagate to followers, and this single design decision is one of the most consequential in all of distributed systems:</p>
+
+        <ul>
+          <li><strong>Synchronous replication</strong> — the leader waits for at least one follower to confirm the write before acknowledging it to the client. Safer (a leader crash right after acknowledging doesn't lose the write — a follower has it), but the leader's write latency now includes a network round-trip to a follower, and if that follower is unreachable, the leader can't accept writes at all (or must fall back to a degraded mode).</li>
+          <li><strong>Asynchronous replication</strong> — the leader acknowledges the write immediately and propagates to followers in the background. Fast, and doesn't block on follower availability, but if the leader crashes before a write reaches any follower, that write is <strong>gone</strong> — acknowledged to the client, then silently lost. This exact failure mode is why "my database has replicas" is not automatically the same claim as "my database doesn't lose acknowledged writes."</li>
+          <li><strong>Semi-synchronous</strong> — a middle ground (used by MySQL, among others): wait for confirmation from at least one follower, but not all of them, trading some safety for latency better than full-synchronous.</li>
+        </ul>
+
+        <div class="bm-warn"><strong>Asynchronous replication's data-loss window is not a hypothetical.</strong> It's the standard failure mode that motivates "how many 9s of durability do you actually need" conversations. If your leader acknowledges a write, then dies half a second later before that write reaches any follower, and you promote a follower to be the new leader — that write is gone, and the client that received a success response was lied to. Consensus-based replication (Phase 4 onward) exists specifically to make that scenario structurally impossible: a write isn't acknowledged until a <em>majority</em> of nodes have durably stored it, so promoting any surviving majority-member as leader is guaranteed to preserve it.</div>
+
+        <h3>Multi-leader replication</h3>
+
+        <p>More than one node accepts writes, typically one leader per datacenter/region, with each leader replicating to the others. This buys write availability during a full datacenter partition (each side keeps accepting writes locally) at a steep cost: <strong>the same piece of data can now be written differently and simultaneously by two leaders that haven't yet heard from each other</strong> — a write conflict. Resolving these conflicts (last-writer-wins, custom merge logic, CRDTs) is a real, ongoing engineering burden, not a one-time setup cost, and it's precisely the trade-off eventual consistency systems (mentioned in 1.1) accept deliberately.</p>
+
+        <h3>Leaderless replication</h3>
+
+        <p>No fixed leader at all — a client writes to (and reads from) several replicas directly, using quorum math (write to W replicas, read from R replicas, where W+R > total replicas guarantees at least one overlap) to keep reads and writes consistent enough. Amazon's original Dynamo popularized this; Cassandra and Riak are direct descendants. It trades the simplicity of "one node decides order" for very high write availability — there's no leader to be a bottleneck or single point of failure for writes at all.</p>
+
+        <table class="papers">
+          <tr><th>Strategy</th><th>Who accepts writes</th><th>Conflict handling</th><th>Write availability during partition</th><th>Examples</th></tr>
+          <tr><td>Single-leader (async)</td><td>one node</td><td>none needed (single order) but can silently lose acked writes</td><td>none if leader is isolated</td><td>PostgreSQL streaming replication, MySQL (default)</td></tr>
+          <tr><td>Single-leader (consensus-backed)</td><td>one node, elected by quorum</td><td>none — quorum makes order unambiguous</td><td>yes, if a majority partition exists</td><td>etcd, CockroachDB, Spanner</td></tr>
+          <tr><td>Multi-leader</td><td>multiple, one per region typically</td><td>required — LWW, CRDTs, custom merge</td><td>full, on every side</td><td>multi-region MySQL/Postgres setups, some CouchDB deployments</td></tr>
+          <tr><td>Leaderless</td><td>any replica, per quorum config</td><td>read-repair, vector clocks, hinted handoff</td><td>very high, tunable via W/R</td><td>Cassandra, Riak, DynamoDB (original design)</td></tr>
+        </table>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">The replication spectrum: who can accept a write?</text>
+            <text x="115" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Single-leader</text>
+            <rect x="60" y="52" width="110" height="34" class="boxy"/><text x="115" y="73" class="smk" text-anchor="middle">LEADER</text>
+            <rect x="20" y="100" width="70" height="28" class="boxg"/><text x="55" y="118" class="sm" text-anchor="middle">follower</text>
+            <rect x="145" y="100" width="70" height="28" class="boxg"/><text x="180" y="118" class="sm" text-anchor="middle">follower</text>
+            <path d="M115,86 C90,90 65,95 55,100" class="arr"/>
+            <path d="M115,86 C140,90 165,95 180,100" class="arr"/>
+
+            <text x="340" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Multi-leader</text>
+            <rect x="280" y="52" width="60" height="30" class="boxy"/><text x="310" y="71" class="smk" text-anchor="middle">L(us)</text>
+            <rect x="350" y="52" width="60" height="30" class="boxy"/><text x="380" y="71" class="smk" text-anchor="middle">L(eu)</text>
+            <path d="M340,67 C345,67 345,67 350,67" class="arr"/>
+            <path d="M350,75 C345,75 345,75 340,75" class="arr"/>
+            <text x="340" y="105" class="sm" text-anchor="middle" style="fill:#c96442">conflicts possible</text>
+
+            <text x="560" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Leaderless</text>
+            <rect x="480" y="55" width="55" height="26" class="boxg"/><text x="507" y="72" class="sm" text-anchor="middle">node</text>
+            <rect x="545" y="55" width="55" height="26" class="boxg"/><text x="572" y="72" class="sm" text-anchor="middle">node</text>
+            <rect x="610" y="55" width="55" height="26" class="boxg"/><text x="637" y="72" class="sm" text-anchor="middle">node</text>
+            <text x="560" y="105" class="sm" text-anchor="middle">client writes W, reads R</text>
+
+            <rect x="20" y="150" width="640" height="80" class="box" style="stroke-dasharray:3,3"/>
+            <text x="340" y="172" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">The tradeoff is always the same shape:</text>
+            <text x="340" y="192" class="sm" text-anchor="middle">fewer writers = simpler ordering, lower write availability during a partition</text>
+            <text x="340" y="208" class="sm" text-anchor="middle">more writers = higher write availability, but you now own conflict resolution</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Three points on the same spectrum. Consensus-backed single-leader (Phase 4 onward) is the pattern this series spends most of its time on, because it gives single-leader's simple ordering without async replication's silent data loss.</p>
+        </div>
+
+        <h2 id="quorum-preview">Consensus-backed single-leader: the pattern this series builds toward</h2>
+
+        <p>There's a fourth row worth calling out separately, because it's where nearly every algorithm in Phases 4–7 lands: <strong>single-leader replication where the leader itself is elected and writes are only acknowledged once a majority durably has them</strong> — not "one arbitrarily-designated leader whose crash can silently lose data," but "whichever node currently holds a majority's trust, provably." This gets you single-leader's simplicity (one order, no conflict resolution needed) while structurally closing the async-replication data-loss hole, because promotion after a crash can only ever happen from a node that's part of a majority that already has the data. Article 3.3 (Quorums and Majority Voting) proves exactly why majority overlap makes this safe; for now, hold onto the shape of the idea — it's the single mechanism nearly every algorithm from here forward is a variation on.</p>
+
+        <h2 id="split-brain-mechanics">Split-brain, mechanically this time</h2>
+
+        <p>Article 1.1 showed split-brain as a scenario. Here's exactly how it corrupts data, step by step, using a simple key-value store as the running example:</p>
+
+        <ol>
+          <li><strong>t=0.</strong> Replica A is leader, Replica B is follower. Both agree: <code>x = 1</code>.</li>
+          <li><strong>t=1.</strong> The network link between A and B fails. Neither crashes — each is fully healthy and reachable by clients on its own side of the partition.</li>
+          <li><strong>t=2.</strong> A client on A's side writes <code>x = 5</code>. A accepts it (it has no way to know B is unreachable due to a partition rather than a crash — the ambiguity from article 1.1's "Lie #1" is exactly this moment). A now has <code>x = 5</code>.</li>
+          <li><strong>t=3.</strong> B, having not heard a heartbeat from A in some timeout window, decides A must be down and promotes itself to leader. This is a <em>correct, reasonable</em> local decision given what B can observe — it has no way to distinguish "A crashed" from "the network between us broke" (again, article 1.1's central ambiguity).</li>
+          <li><strong>t=4.</strong> A client on B's side writes <code>x = 9</code>. B, now believing itself leader, accepts it. B now has <code>x = 9</code>.</li>
+          <li><strong>t=5.</strong> The network heals. A and B can talk again. <strong>Both believe they are the current leader. Both have accepted client-facing writes since the partition began. There is no shared history to consult that says which write should win</strong> — from either replica's local perspective, its own write sequence is completely valid.</li>
+        </ol>
+
+        <p>This is the mechanical version of Fig 2 from article 1.1, and it's worth sitting with the specific failure: it is not that A or B did anything wrong. Each followed a sensible local rule. The corruption is a <em>systemic</em> property — the system as a whole had no rule that could have prevented two nodes from simultaneously believing they were sole leader, because no rule based on local information alone can distinguish a partition from a crash.</p>
+
+        <div class="bm-note"><strong>The fix is not "detect partitions faster."</strong> You cannot detect a partition faster than the time it takes for a message to fail to arrive — and by lie #1 from article 1.1, a message that hasn't arrived yet might still arrive. The fix has to be structural: require a <strong>majority</strong> before any node is allowed to act as leader. Because any two majorities of the same node set must share at least one member, it becomes mathematically impossible for both A and B to simultaneously hold a majority's confirmation — whichever side of the partition doesn't have a majority simply can't accept writes at all, and has to say so honestly ("unavailable") rather than silently corrupting data. This is the entire idea Phase 4 onward formalizes.</div>
+
+        <h2 id="quorum-preview2">A first look at why majorities specifically</h2>
+
+        <p>It's worth previewing the actual arithmetic here, informally, because it explains a design choice you'll see repeated throughout this series: consensus systems are almost always deployed with an <strong>odd number</strong> of nodes (3, 5, 7), and tolerate <code>(N-1)/2</code> failures.</p>
+
+        <p>With 5 nodes, a majority is any 3. If a partition splits the cluster into a group of 3 and a group of 2, the group of 3 has a majority and can keep operating; the group of 2 does not, and correctly refuses to accept writes. There is no possible partition of 5 nodes into two non-overlapping groups where <em>both</em> groups have 3 or more members — 3+3=6 > 5, so it's arithmetically impossible. That's the whole mechanism. With an even number, say 4 nodes, a 2-2 split is possible, and neither side has a majority — which is actually the <em>safer</em> failure mode (nobody accepts writes, rather than the risk of miscounting) but it does mean you paid for a 4th node that bought you zero additional fault tolerance over 3 (both tolerate exactly 1 failure). This is why production consensus clusters are conventionally sized 3 or 5, not 4 or 6 — the even number is pure waste. Article 3.3 makes this fully rigorous; this is the intuition to carry forward.</p>
+
+        <h2 id="not-a-panacea">What replication (even done right) doesn't solve</h2>
+
+        <p>Worth being honest about the limits before moving on, so the rest of this series doesn't oversell itself:</p>
+
+        <ul>
+          <li><strong>Correlated failures.</strong> If all your replicas are in the same datacenter and that datacenter loses power, having 5 replicas didn't help — they all failed together. Real fault tolerance requires replicas to fail <em>independently</em>, which is why production consensus clusters are spread across availability zones or regions (Phase 9 covers the added latency cost of doing this across real geographic distance).</li>
+          <li><strong>Bad data replicated correctly is still bad data.</strong> Consensus guarantees replicas agree on <em>what happened</em>, not that what happened was <em>correct</em>. If your application logic issues a wrong write (the <code>DELETE FROM orders</code> without a WHERE clause example from the pgBackRest guide), a perfectly functioning consensus system will faithfully replicate that mistake to every single replica, instantly and durably. This is exactly why point-in-time recovery from backups remains necessary even in a fully consensus-backed system — consensus and backup solve different problems.</li>
+          <li><strong>Client-perceived consistency still needs care.</strong> Even with a correctly majority-committed write, a client reading from a follower that hasn't yet applied that write can see stale data — unless the system specifically provides read guarantees (linearizable reads, leases — article 3.4) on top of the underlying replication.</li>
+        </ul>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Isn't asynchronous replication "good enough" for most systems?</summary><p>For plenty of systems, genuinely yes — the acceptable-data-loss-window calculation depends entirely on what the data represents. A social media "like" count losing the last half-second of writes during a rare leader crash is a non-event; a payments ledger losing the last half-second of writes is a serious incident. Know which category your system is in before picking a replication strategy, rather than defaulting to whichever your ORM ships with.</p></details>
+        <details class="faq"><summary>Can multi-leader and leaderless systems ever be made as safe as consensus-backed single-leader?</summary><p>Not in the same sense — they make a deliberate, different trade: availability during a partition over immediate agreement. CRDTs (conflict-free replicated data types) can make certain data structures merge deterministically without a leader at all, which is a genuinely different and valid answer to the replication problem for the specific data shapes CRDTs support (counters, sets, some map types) — but it's not a drop-in replacement for arbitrary application logic that needs strict ordering.</p></details>
+        <details class="faq"><summary>Why not just use more replicas so a partition is less likely to split the majority?</summary><p>More replicas reduce the probability that any given partition removes your majority, but they increase the latency cost of every majority-requiring write (more nodes to hear back from) and increase the operational surface area (more nodes to keep patched, monitored, and correctly configured). It's a real tuning knob — 5 nodes tolerate more simultaneous failures than 3 — but it's not free, which is why 3 and 5 are the conventional defaults rather than always reaching for 7 or 9.</p></details>
+        <details class="faq"><summary>Does read replica lag mean single-leader replication is "eventually consistent" too?</summary><p>For reads from followers, yes, in the sense that a follower can lag behind the leader briefly — this is called "replication lag" and is a real, measurable operational metric. The distinction from true multi-leader eventual consistency is that there's still exactly one canonical order of writes (the leader's), so once a follower catches up it agrees completely — there's no permanent conflict-resolution problem, just a temporary visibility delay.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>A single machine has a hard ceiling on availability, durability, read throughput, and geography — replication exists to lift all four, but creates the "what if replicas disagree" problem in exchange.</li>
+          <li>The replication spectrum runs <strong>single-leader → multi-leader → leaderless</strong>, trading write-availability-during-partition against conflict-resolution complexity.</li>
+          <li><strong>Asynchronous single-leader replication can silently lose acknowledged writes</strong> if the leader crashes before propagating them — a real, common production risk, not a theoretical edge case.</li>
+          <li><strong>Consensus-backed single-leader replication</strong> (where the leader is elected by majority and writes need majority durability before acknowledgment) is the pattern nearly this entire series builds toward — single-leader's simplicity without async replication's data-loss hole.</li>
+          <li>Split-brain, mechanically, is two replicas each making a <em>locally reasonable</em> decision that turns out to be globally wrong — because neither can distinguish "peer crashed" from "network partitioned" using only local information.</li>
+          <li><strong>Majorities specifically work</strong> because any two majorities of the same set must overlap — which is why clusters are conventionally sized 3 or 5 (odd), not 4 or 6.</li>
+          <li>Consensus is not a cure-all: correlated failures, application-level bad writes, and read-side staleness are all separate problems it doesn't automatically solve.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://martin.kleppmann.com/2015/05/11/please-stop-calling-databases-cp-or-ap.html" target="_blank">Kleppmann — Please Stop Calling Databases CP or AP</a> <span>— directly relevant here: why coarse spectrum labels undersell the real design space, previewing article 1.3.</span></li>
+          <li><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf" target="_blank">DeCandia et al. — Dynamo: Amazon's Highly Available Key-value Store (SOSP 2007)</a> <span>— the canonical leaderless replication paper; W/R quorum reads and writes, vector clocks, hinted handoff.</span></li>
+          <li><a href="https://www.postgresql.org/docs/current/warm-standby.html" target="_blank">PostgreSQL docs — Log-Shipping Standby Servers</a> <span>— sync vs. async streaming replication in a real, widely-deployed system.</span></li>
+          <li><a href="pgbackrest-s3-guide.html">cvam.sight — pgBackRest with S3</a> <span>— replication and backup solve different problems; this guide covers the durability half.</span></li>
+          <li><a href="consensus-1-1-why-distributed-systems-are-hard.html">cvam.sight — Consensus 1.1: Why Distributed Systems Are Hard</a> <span>— the failure vocabulary this article builds directly on.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-1-1-why-distributed-systems-are-hard.html">← 1.1 Why Distributed Systems Are Hard</a>
+        <a href="consensus-1-3-cap-theorem-properly.html">next: 1.3 CAP Theorem, Properly →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

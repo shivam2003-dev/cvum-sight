@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-1-2-the-replication-problem",
+    title: "The replication problem.",
+    date: "Jul 8, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "replication", "series-consensus"],
+    time: 20,
+    words: 4300,
+    excerpt: "Consensus Algorithms series, 1.2. Why a single machine has a hard ceiling on availability, durability, throughput, and geography. The replication spectrum (single-leader, multi-leader, leaderless), why async replication can silently lose acknowledged writes, split-brain traced mechanically step by step, and why majority quorums specifically are what makes consensus-backed single-leader replication safe.",
+    series: "consensus",
+    seriesNum: "2"
+  },
+  {
     slug: "consensus-1-1-why-distributed-systems-are-hard",
     title: "Why distributed systems are hard.",
     date: "Jul 8, 2026",

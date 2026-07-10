@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-4-3-atomic-broadcast",
+    title: "Atomic broadcast.",
+    date: "Jul 11, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "atomic-broadcast", "series-consensus"],
+    time: 18,
+    words: 3800,
+    excerpt: "Consensus Algorithms series, 4.3. State Machine Replication, log replication, and Total Order (Atomic) Broadcast are provably the same underlying problem viewed from three different angles. The formal equivalence with consensus (a sequence of consensus instances builds atomic broadcast -- literally what Multi-Paxos and Raft's log are; atomic broadcast solves single-value consensus via first-delivered-value), and why the field still uses three names despite the equivalence.",
+    series: "consensus",
+    seriesNum: "16"
+  },
+  {
     slug: "consensus-4-2-leader-election",
     title: "Leader election.",
     date: "Jul 11, 2026",

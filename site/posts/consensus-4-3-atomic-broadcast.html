@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atomic Broadcast — Consensus 4.3 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 4.3. Total order broadcast's two properties (atomicity and total order), why it's provably equivalent to consensus, and how SMR, log replication, and atomic broadcast are three names for the same underlying problem viewed from different angles.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 4</p>
+        <p class="series-banner-title">Consensus Basics</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 4.3 of 5</p>
+        <div class="series-banner-nav">
+          <a href="consensus-4-1-safety-vs-liveness.html" class="done">4.1 Safety/Liveness</a>
+          <a href="consensus-4-2-leader-election.html" class="done">4.2 Leader Election</a>
+          <a href="consensus-4-3-atomic-broadcast.html" class="active">4.3 Atomic Broadcast</a>
+          <a href="consensus-4-4-two-phase-commit.html">4.4 2PC</a>
+          <a href="consensus-4-5-three-phase-commit.html">4.5 3PC</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 11, 2026 · devops · 18 min read · 3800 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Atomic broadcast.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">atomic-broadcast</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">This article ties together a thread that's been running quietly since Phase 3: <strong>State Machine Replication (3.1), log replication (3.2), and a formal problem called Total Order (Atomic) Broadcast are, provably, three different framings of the exact same underlying computational problem.</strong> This isn't a loose analogy — it's a formal equivalence result, and understanding it explains something genuinely useful: why a consensus algorithm, an SMR system, and a totally-ordered multicast system can all be built from each other, and why research and production systems freely borrow techniques across all three framings without loss of generality. This is also the last purely conceptual article before Phase 4 turns to the two historical protocols (2PC, 3PC) that directly motivated real consensus research.</p>
+
+        <h2 id="definition">Total order broadcast, defined</h2>
+
+        <p>A <strong>Total Order Broadcast</strong> (also called Atomic Broadcast) primitive lets any process <code>broadcast(m)</code> a message <code>m</code>, and guarantees two properties across every correct process that receives messages via <code>deliver(m)</code>:</p>
+
+        <ul>
+          <li><strong>Atomicity (agreement):</strong> if any correct process delivers message <code>m</code>, then <em>every</em> correct process eventually delivers <code>m</code> — no message is delivered to some correct processes but silently dropped for others.</li>
+          <li><strong>Total order:</strong> if two correct processes both deliver messages <code>m1</code> and <code>m2</code>, they deliver them in the <em>same relative order</em> — no process sees <code>m1</code> before <code>m2</code> while another sees <code>m2</code> before <code>m1</code>.</li>
+        </ul>
+
+        <p>Read those two properties again next to article 3.1's SMR requirement ("every replica applies the same commands in the same order") and article 3.2's log requirement ("every replica's log agrees on entry order at every committed position") — they're not similar, they're <strong>the same statement</strong>, just using "broadcast/deliver" vocabulary instead of "propose/commit" or "append/replicate" vocabulary.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Three names, one problem</text>
+            <rect x="20" y="40" width="200" height="60" class="boxy"/>
+            <text x="120" y="63" class="smk" text-anchor="middle">State Machine</text>
+            <text x="120" y="80" class="smk" text-anchor="middle">Replication (3.1)</text>
+            <rect x="240" y="40" width="200" height="60" class="boxg"/>
+            <text x="340" y="63" class="smk" text-anchor="middle">Log Replication</text>
+            <text x="340" y="80" class="smk" text-anchor="middle">(3.2)</text>
+            <rect x="460" y="40" width="200" height="60" class="boxr"/>
+            <text x="560" y="63" class="smk" text-anchor="middle">Total Order</text>
+            <text x="560" y="80" class="smk" text-anchor="middle">Broadcast (4.3)</text>
+            <text x="340" y="130" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">All three: "get every correct process to agree on the same sequence of events."</text>
+            <text x="340" y="155" class="sm" text-anchor="middle">Provably inter-reducible — a solution to any one gives you a solution to the others.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Different vocabulary, formally identical underlying problem.</p>
+        </div>
+
+        <h2 id="equivalence">The equivalence with consensus, sketched</h2>
+
+        <p>The formal result (well-established in the distributed systems literature, notably formalized by Chandra and Toueg among others) is that Total Order Broadcast and Consensus are <strong>equivalent</strong> — each can be built from the other, meaning a solution to one gives you a solution to the other with only modest additional machinery. Both directions are worth sketching, because each direction illuminates a different, useful engineering pattern.</p>
+
+        <h3>Consensus → Atomic Broadcast</h3>
+
+        <p>Given a working consensus primitive (agree on one value at a time — this is literally what single-decree Paxos, covered in Phase 5.2, does), you can build atomic broadcast by running a <em>sequence</em> of independent consensus instances, one per log position: instance 1 decides which message goes at position 1, instance 2 decides position 2, and so on. This is, precisely, what <strong>Multi-Paxos</strong> (Phase 5.3) and Raft's log replication (Phase 5.6) actually are — a sequence of consensus decisions, one per log slot, which is exactly why article 3.2's log replication and this article's atomic broadcast were flagged as "the same problem" above.</p>
+
+        <h3>Atomic Broadcast → Consensus</h3>
+
+        <p>Given a working atomic broadcast primitive, you can solve single-value consensus: every process broadcasts its proposed value, and whichever value is delivered <em>first</em> (by the total-order guarantee, every correct process agrees on which one that is) becomes the decided value. This direction is arguably the more surprising one on a first read — it shows that "agree on an order of many things" and "agree on one single thing" are not actually different-difficulty problems, just different framings of the same underlying difficulty.</p>
+
+        <div class="bm-note"><strong>Why this equivalence is practically useful, not just theoretically tidy:</strong> it means research and engineering effort spent on any one of these three framings (consensus algorithms, SMR systems, atomic broadcast protocols) directly transfers to the other two. A performance improvement discovered for atomic broadcast protocols in the message-passing literature can be applied to log-replication systems, and vice versa — this cross-pollination is a real, recurring pattern in the field, and it's part of why some of the algorithms in Phase 7 (the modern Paxos family) borrow ideas that originated in the atomic-broadcast research literature rather than the "consensus" literature specifically.</div>
+
+        <h2 id="why-separate-name">Why the field still uses three separate names, given the equivalence</h2>
+
+        <p>If they're formally equivalent, why hasn't the field simply standardized on one term? Because each framing highlights different, useful engineering emphases even though the underlying mathematical problem is identical:</p>
+
+        <ul>
+          <li><strong>"Consensus"</strong> emphasizes the single-decision moment — useful when reasoning about safety proofs and the FLP-style impossibility results (article 2.5), which are most naturally stated in terms of a single agreed value.</li>
+          <li><strong>"State Machine Replication"</strong> emphasizes the application-facing outcome — useful when reasoning about what a system built on top of consensus actually delivers to its users (article 3.1's framing).</li>
+          <li><strong>"Atomic/Total Order Broadcast"</strong> emphasizes the messaging-and-delivery semantics — useful when reasoning about network protocols, message ordering guarantees, and multicast-style system design, and it's the framing most naturally connected to the pub/sub and event-streaming systems that show up later in this series (Kafka's KRaft, Phase 8.4, is essentially an atomic-broadcast system by construction).</li>
+        </ul>
+
+        <p>Knowing all three names — and knowing they're the same thing — is genuinely useful for reading the literature broadly: a paper framed around "atomic broadcast" and a paper framed around "state machine replication" might be solving, and improving on, the identical underlying problem, and missing the connection means missing directly-relevant related work.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is atomic broadcast the same thing as reliable broadcast?</summary><p>No, and the distinction matters — reliable broadcast only guarantees the atomicity property (every correct process delivers the same set of messages) without the total-order property (they might deliver those same messages in different relative orders). Reliable broadcast alone is a strictly weaker, easier primitive than atomic broadcast; it's atomic broadcast's total-order guarantee specifically that makes it equivalent in power to consensus.</p></details>
+        <details class="faq"><summary>Does the consensus-to-broadcast direction (running a sequence of consensus instances) have any real downsides compared to running one big consensus decision?</summary><p>It introduces its own coordination overhead per log slot if done naively (a full leader-election-style negotiation for every single entry) — which is exactly the performance problem Multi-Paxos (Phase 5.3) specifically solves, by electing a stable leader once and then only running the lightweight "propose a value" phase repeatedly, rather than re-running full leader election for every log position. This optimization is a direct, practical answer to the overhead this equivalence direction would otherwise imply.</p></details>
+        <details class="faq"><summary>Is Kafka's KRaft mode literally implementing atomic broadcast?</summary><p>In spirit and in formal characterization, yes — a Kafka partition's ordered, durably-replicated log of messages, agreed upon by the KRaft consensus layer (itself Raft-based), is functionally an atomic broadcast channel: every consumer that reads the partition sees the same messages in the same order. Full treatment of Kafka's specific architecture is in Phase 8.4.</p></details>
+        <details class="faq"><summary>Why introduce this equivalence now, in Phase 4, rather than back in Phase 3 alongside SMR?</summary><p>Because appreciating the equivalence fully requires having already seen both SMR (3.1) and the safety/liveness framework (4.1) — this article deliberately sits right before Phase 5's classical algorithms specifically so readers approach Paxos and Raft already knowing that "consensus," "replicated log," and "atomic broadcast" are one problem wearing three names, which makes the algorithms' design choices (especially Multi-Paxos's optimization, mentioned above) immediately legible rather than mysterious.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Total Order (Atomic) Broadcast</strong> requires two properties: <strong>atomicity</strong> (every correct process delivers the same messages) and <strong>total order</strong> (every correct process delivers them in the same relative order).</li>
+          <li>This is <strong>formally equivalent to consensus</strong> — a sequence of consensus instances builds atomic broadcast (this is literally what Multi-Paxos and Raft's log replication are); atomic broadcast can conversely be used to solve single-value consensus by taking the first-delivered value.</li>
+          <li><strong>SMR, log replication, and atomic broadcast are three names for the same underlying problem</strong>, each emphasizing a different useful engineering angle — application outcome, storage mechanics, and messaging semantics respectively.</li>
+          <li>This equivalence means techniques and results transfer freely across all three framings in the research literature — missing the connection means missing directly-relevant work.</li>
+          <li>Multi-Paxos's key optimization (elect a stable leader once, avoid re-running full negotiation per log slot) is a direct, practical answer to the naive overhead the consensus→broadcast reduction would otherwise imply.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://infoscience.epfl.ch/record/149218" target="_blank">Défago, Schiper &amp; Urbán — Total Order Broadcast and Multicast Algorithms: Taxonomy and Survey (2004)</a> <span>— comprehensive survey of atomic broadcast approaches and their relationship to consensus.</span></li>
+          <li><a href="https://www.microsoft.com/en-us/research/uploads/prod/2016/12/UnreliableFailureDetectors-1.pdf" target="_blank">Chandra &amp; Toueg — Unreliable Failure Detectors for Reliable Distributed Systems (1996)</a> <span>— includes the consensus/atomic-broadcast equivalence formalization.</span></li>
+          <li><a href="consensus-3-1-state-machine-replication.html">cvam.sight — Consensus 3.1: State Machine Replication</a> <span>— the same underlying problem, application-outcome framing.</span></li>
+          <li><a href="consensus-3-2-log-replication.html">cvam.sight — Consensus 3.2: Log Replication</a> <span>— the same underlying problem, storage-mechanics framing.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-4-2-leader-election.html">← 4.2 Leader Election</a>
+        <a href="consensus-4-4-two-phase-commit.html">next: 4.4 Two-Phase Commit (2PC) →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

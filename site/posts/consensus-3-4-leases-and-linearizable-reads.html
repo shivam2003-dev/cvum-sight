@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leases and Linearizable Reads — Consensus 3.4 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 3.4. Why reads need coordination too, quorum reads vs leader leases, the clock-skew danger in lease-based reads, and how read index / lease read optimizations avoid a full consensus round-trip per read.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 3</p>
+        <p class="series-banner-title">Replication</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+        </div>
+        <p class="series-banner-meta">Article 3.4 of 4 — Phase 3 complete after this</p>
+        <div class="series-banner-nav">
+          <a href="consensus-3-1-state-machine-replication.html" class="done">3.1 SMR</a>
+          <a href="consensus-3-2-log-replication.html" class="done">3.2 Log Replication</a>
+          <a href="consensus-3-3-quorums-and-majority-voting.html" class="done">3.3 Quorums</a>
+          <a href="consensus-3-4-leases-and-linearizable-reads.html" class="active">3.4 Leases</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 10, 2026 · devops · 19 min read · 3900 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Leases and linearizable reads.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">leases</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Everything in this phase so far has focused on writes — getting a majority to agree, replicating a log, proving overlap makes it safe. But a subtle question remains, one that trips up a surprising number of otherwise-correct system designs: <strong>is reading from the leader alone actually safe?</strong> The intuitive answer ("the leader has the most up-to-date data, so just read from it") is wrong in one specific, important way — and understanding exactly why closes out Phase 3 by connecting directly back to article 1.3's precise definition of linearizability. This article covers the naive approach's flaw, the fully-safe-but-expensive fix (quorum reads), and the two major optimizations production systems actually use to get linearizable reads without paying a full consensus round-trip on every single read: leader leases and the read-index protocol.</p>
+
+        <h2 id="the-flaw">Why reading from "the leader" alone isn't automatically safe</h2>
+
+        <p>Here's the scenario that breaks the naive intuition. A node believes it's the leader (it was, as of the last time it successfully communicated with a majority) and serves a client's read request directly from its local state, without any further coordination. The flaw: <strong>believing you're the leader and actually still being the leader are not the same thing</strong>, and the gap between them is exactly the ambiguity article 1.1 and article 2.4 have been building vocabulary around this whole series. If this node has been partitioned from the rest of the cluster (its outgoing/incoming messages to peers are failing, but it hasn't yet detected this — or has detected it, but a client's read request arrives in the narrow window before it steps down), a <em>new</em> leader may already have been elected by the majority partition and may already be serving fresher writes that this stale, isolated node has no way of knowing about.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">The stale-leader-read problem</text>
+            <rect x="40" y="40" width="240" height="80" class="boxr"/>
+            <text x="160" y="65" class="smk" text-anchor="middle">Node A: "I'm still leader"</text>
+            <text x="160" y="85" class="sm" text-anchor="middle">(partitioned, doesn't know</text>
+            <text x="160" y="100" class="sm" text-anchor="middle">it's been replaced)</text>
+            <rect x="400" y="40" width="240" height="80" class="boxg"/>
+            <text x="520" y="65" class="smk" text-anchor="middle">Node B: new leader</text>
+            <text x="520" y="85" class="sm" text-anchor="middle">elected by majority,</text>
+            <text x="520" y="100" class="sm" text-anchor="middle">already serving newer writes</text>
+            <rect x="150" y="150" width="380" height="40" class="boxy"/>
+            <text x="340" y="175" class="ink" text-anchor="middle" style="font-weight:bold">Client reads from A → gets STALE data, violates linearizability (1.3)</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — A node can believe it's leader after actually being replaced — reading from it directly can silently violate linearizability.</p>
+        </div>
+
+        <p>This is a direct, concrete instance of article 1.3's formal Consistency definition being violated: a linearizable read must return the most recent write, and a stale isolated leader has no way to guarantee that by itself. It's also a subtler failure than split-brain (article 1.2) — no conflicting <em>write</em> happens (majority quorums already prevent that, per article 3.3), but a <em>read</em> can still return outdated information, which is its own real correctness bug for any application that needs read-your-writes or stronger guarantees.</p>
+
+        <h2 id="quorum-reads">The fully-safe fix: quorum reads</h2>
+
+        <p>The unambiguously correct solution, directly following from article 3.3's overlap proof: treat a read like a write, and require confirmation from a majority before answering. Concretely, before serving a read, the leader (or any node) confirms with a majority of the cluster that it's still actually the current leader (or, in a leaderless system, directly applies the <code>W+R&gt;N</code> generalized quorum logic from article 3.3 to the read itself). Because any majority is guaranteed to overlap with whatever majority most recently committed a write (article 3.3's core proof), this approach is provably safe — no stale read is possible.</p>
+
+        <p>The cost is exactly what you'd expect: a full round-trip to a majority of the cluster, <em>for every single read</em>, even though nothing is actually being written. For read-heavy workloads (the overwhelming majority of real production traffic in most systems), paying a full quorum round-trip cost on every read — often to a cluster spread across multiple datacenters, where that round-trip could mean tens of milliseconds — is a serious, real performance tax, exactly the kind of cost article 1.4's PACELC framework would flag as an EC (consistency-over-latency) choice worth optimizing if possible.</p>
+
+        <h2 id="leases">Optimization 1: leader leases</h2>
+
+        <p>A <strong>lease</strong> is a time-bounded, exclusive grant: the cluster majority explicitly agrees, "node L is the leader, and this agreement is valid until time T." As long as the current node holds an unexpired lease, it can serve reads <em>entirely locally</em> — no per-read quorum round-trip needed — because the lease itself already encodes the majority's confirmation, valid for a bounded window.</p>
+
+        <p>The safety argument hinges on one critical, easy-to-get-wrong detail: <strong>the lease holder must never serve a local read after the lease has expired from its own clock's perspective, and — critically — every other node must never grant or recognize a new leader's lease until the old lease has definitely expired from a global perspective, accounting for clock skew between machines.</strong> This directly reconnects to article 2.1's entire treatment of physical clocks: if the old leader's clock runs even slightly slow (thinks less time has passed than actually has), it might believe its lease is still valid and serve a stale read <em>after</em> a new leader has already been safely granted a fresh lease elsewhere — precisely the stale-read scenario this whole article is trying to prevent, now reintroduced via clock skew instead of a naive missing-check.</p>
+
+        <div class="bm-warn"><strong>This is exactly why lease durations in real systems are chosen conservatively, with an explicit safety margin for clock skew.</strong> A common, safe pattern: the leader treats its own lease as expiring slightly <em>before</em> the nominal lease duration (accounting for its own clock potentially running fast, wrongly extending its perceived validity), while other nodes wait slightly <em>past</em> the nominal duration before considering the old lease expired and granting a new one (accounting for the old leader's clock potentially running slow). This asymmetric safety margin is a direct, practical application of article 2.1's core lesson — measure and bound the clock uncertainty, then design correctness around the bound, rather than assuming clocks are perfectly synchronized.</div>
+
+        <h2 id="read-index">Optimization 2: the read-index protocol</h2>
+
+        <p>Raft's specific refinement (covered fully in Phase 5.6) avoids leases' clock-dependency entirely, trading it for one lightweight network round-trip instead of a full consensus write — a middle ground between "quorum read on every request" and "trust a time-based lease." The mechanism: when a read request arrives, the leader records the current commit index (its position in the log, from article 3.2) as the <strong>read index</strong>, then sends a single round of heartbeats to a majority of followers <em>without proposing any new log entry</em> — just confirming "are you still following me as leader?" If a majority responds affirmatively, the leader is confirmed to still genuinely be the leader (by the same quorum-overlap logic as a full quorum read), and can safely serve the read locally once its own state machine has applied everything up to that recorded read index.</p>
+
+        <p>The advantage over a full quorum read: this heartbeat-confirmation round-trip is much cheaper than proposing and committing an actual new log entry (no disk write, no log replication, just a lightweight liveness check), while still being fully safe — it doesn't depend on synchronized clocks or bounded clock skew the way lease-based reads do, avoiding article 2.1's entire clock-uncertainty problem. The trade-off versus leases: read-index still requires a network round-trip per read (or per batch of reads, since the confirmation can be amortized across multiple pending reads that arrive close together), whereas a valid, unexpired lease allows a read to be served with zero network communication at all.</p>
+
+        <table class="papers">
+          <tr><th>Approach</th><th>Safety basis</th><th>Cost per read</th><th>Clock-dependent?</th></tr>
+          <tr><td>Naive leader read</td><td>none — unsafe</td><td>zero (but wrong)</td><td>no</td></tr>
+          <tr><td>Quorum read</td><td>majority overlap (3.3), every time</td><td>full round-trip to majority</td><td>no</td></tr>
+          <tr><td>Leader lease</td><td>majority-granted, time-bounded exclusivity</td><td>zero, while lease valid</td><td><strong>yes</strong> — needs bounded clock skew</td></tr>
+          <tr><td>Read-index (Raft)</td><td>majority overlap, confirmed via lightweight heartbeat</td><td>one cheap round-trip (amortizable)</td><td>no</td></tr>
+        </table>
+
+        <h2 id="phase3-close">Closing Phase 3</h2>
+
+        <p>Phase 3 built the concrete machinery every classical consensus algorithm operates on top of. 3.1 established the abstract SMR guarantee — agree on commands, get matching state for free. 3.2 made that concrete with the actual append-only log data structure, including the real engineering (snapshotting, catch-up) it demands. 3.3 proved the single mathematical fact — majority overlap — that makes the whole thing safe against split-brain. This article closed the loop by showing that safety extends to reads too, but requires its own explicit mechanism (quorum reads, leases, or read-index) rather than following automatically from the write-side guarantees alone.</p>
+
+        <p>Phase 4 (Consensus Basics) now introduces the first real consensus-specific vocabulary — safety vs. liveness as formal properties, leader election as its own studied problem, atomic broadcast, and the two commit protocols (2PC, 3PC) that predate and directly motivate real consensus algorithms, closing out the "basics" before Phase 5 introduces Paxos and Raft themselves with the complete foundation (Phases 1-4) already in place.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Do all consensus-backed systems need to worry about this stale-read problem, or only some?</summary><p>Any system claiming linearizable (or even just read-your-writes) consistency needs one of these mechanisms — a system that's explicitly designed for weaker guarantees (eventual consistency, as discussed in article 1.2's leaderless row) has already accepted some staleness by design and doesn't need to solve this problem the same way, since it never promised the stronger guarantee in the first place.</p></details>
+        <details class="faq"><summary>Can leases and read-index be combined in the same system?</summary><p>Yes, and some production systems do exactly this — using lease-based fast-path reads when clock synchronization is trusted to be tight (e.g., within a single datacenter with good NTP), falling back to read-index or full quorum confirmation for cross-region reads where clock skew assumptions are riskier. This mirrors the tunable, per-situation trade-offs seen throughout this series (CAP's per-data-type choice in 1.3, PACELC's per-operation choice in 1.4).</p></details>
+        <details class="faq"><summary>Is TrueTime (article 2.1) essentially a very sophisticated version of a leader lease?</summary><p>They share the same underlying idea — bound the clock uncertainty and design correctness around the bound — but TrueTime is used for a different, broader purpose (globally ordering transactions across Spanner, not specifically leader-lease-based reads). It's fair to say they're philosophical cousins: both convert "we can't have a perfectly synchronized clock" into "we can have a precisely bounded and honestly-accounted-for uncertainty," then build correctness on top of the bound rather than the impossible ideal.</p></details>
+        <details class="faq"><summary>What happens to in-flight reads if a lease expires mid-request?</summary><p>A correctly implemented system checks lease validity at the moment of serving the read (or re-validates if enough time has passed during processing), not just at the moment the request arrived — a request that started under a valid lease but would be served after expiration must either wait for lease renewal or fall back to a safer mechanism (quorum confirmation) rather than serving potentially-stale data on a technicality of when the check happened.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>"Read from the leader" is <strong>not automatically safe</strong> — a node can believe it's still leader after actually being replaced by a majority elsewhere, and serve a stale read that violates linearizability.</li>
+          <li><strong>Quorum reads</strong> (confirm current leadership, or apply W+R&gt;N directly to the read) are fully safe, by the same majority-overlap proof as article 3.3, at the cost of a full round-trip per read.</li>
+          <li><strong>Leader leases</strong> let a confirmed leader serve reads with zero network cost while the lease is valid — but require careful, conservative handling of <strong>clock skew</strong> (article 2.1) to remain safe, with asymmetric safety margins on both the leader and the followers' sides.</li>
+          <li>The <strong>read-index protocol</strong> (Raft) avoids clock dependency entirely — a lightweight heartbeat-confirmation round-trip, cheaper than a full quorum write but not free like a valid lease.</li>
+          <li>Phase 3 is now complete: SMR's abstract guarantee (3.1), the concrete log (3.2), the majority-overlap proof that makes it all safe (3.3), and the read-side extension of that safety (3.4) — the full replication machinery Phase 5's classical algorithms build directly on top of.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://raft.github.io/raft.pdf" target="_blank">Ongaro &amp; Ousterhout — In Search of an Understandable Consensus Algorithm (Raft, 2014)</a> <span>— Section 8's read-only query handling is the primary source for the read-index protocol.</span></li>
+          <li><a href="https://static.googleusercontent.com/media/research.google.com/en//archive/spanner-osdi2012.pdf" target="_blank">Corbett et al. — Spanner: Google's Globally-Distributed Database (OSDI 2012)</a> <span>— leases and TrueTime-bounded reads in a real, production-scale system.</span></li>
+          <li><a href="consensus-2-1-physical-clocks-and-why-they-lie.html">cvam.sight — Consensus 2.1: Physical Clocks and Why They Lie</a> <span>— the clock-skew danger this article's lease discussion depends on.</span></li>
+          <li><a href="consensus-3-3-quorums-and-majority-voting.html">cvam.sight — Consensus 3.3: Quorums and Majority Voting</a> <span>— the overlap proof every safe-read mechanism in this article ultimately relies on.</span></li>
+          <li><a href="../series-consensus.html">cvam.sight — Consensus Algorithms series hub</a> <span>— Phase 4 (Consensus Basics) picks up next.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-3-3-quorums-and-majority-voting.html">← 3.3 Quorums and Majority Voting</a>
+        <a href="../series-consensus.html">Phase 3 complete — back to series hub →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

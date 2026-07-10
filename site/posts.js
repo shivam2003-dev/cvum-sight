@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-3-4-leases-and-linearizable-reads",
+    title: "Leases and linearizable reads.",
+    date: "Jul 10, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "leases", "series-consensus"],
+    time: 19,
+    words: 3900,
+    excerpt: "Consensus Algorithms series, 3.4 -- Phase 3 finale. Reading from 'the leader' is not automatically safe: a node can believe it's still leader after being replaced, serving a stale read that violates linearizability. Quorum reads are fully safe but expensive; leader leases avoid the cost but need careful, conservative clock-skew handling; Raft's read-index protocol avoids clock dependency with one cheap heartbeat round-trip instead.",
+    series: "consensus",
+    seriesNum: "13"
+  },
+  {
     slug: "consensus-3-3-quorums-and-majority-voting",
     title: "Quorums and majority voting.",
     date: "Jul 10, 2026",

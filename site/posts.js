@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-3-2-log-replication",
+    title: "Log replication.",
+    date: "Jul 10, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "log-replication", "series-consensus"],
+    time: 21,
+    words: 4400,
+    excerpt: "Consensus Algorithms series, 3.2. The concrete data structure behind SMR's abstract command sequence: append-only logs, entries with index/term/command, exactly how logs diverge after a leader change and the universal repair rule (discard uncommitted, never roll back committed), snapshotting and log compaction, and how a brand-new or badly-lagging replica catches up efficiently instead of replaying history from scratch.",
+    series: "consensus",
+    seriesNum: "11"
+  },
+  {
     slug: "consensus-3-1-state-machine-replication",
     title: "State machine replication.",
     date: "Jul 10, 2026",

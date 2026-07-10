@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log Replication — Consensus 3.2 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 3.2. Why the replicated log is append-only, how log entries, indexes, and terms work, gaps and holes, snapshotting and compaction, and how a new node catches up from nothing.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 3</p>
+        <p class="series-banner-title">Replication</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 3.2 of 4</p>
+        <div class="series-banner-nav">
+          <a href="consensus-3-1-state-machine-replication.html" class="done">3.1 SMR</a>
+          <a href="consensus-3-2-log-replication.html" class="active">3.2 Log Replication</a>
+          <a href="consensus-3-3-quorums-and-majority-voting.html">3.3 Quorums</a>
+          <a href="consensus-3-4-leases-and-linearizable-reads.html">3.4 Leases</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 10, 2026 · devops · 21 min read · 4400 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Log replication.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">log-replication</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Article 3.1 established the abstract "why" — agree on an ordered sequence of commands, and matching state follows automatically. This article gets concrete about the "how": the actual data structure — an append-only log — that carries that sequence in every real consensus system, and the surprisingly deep engineering that a seemingly simple append-only list demands in practice. Entries, indexes, and terms; how logs briefly diverge and get repaired; snapshotting and compaction (because a log can't grow forever); and how a brand-new or long-dead replica catches up from nothing. This is the concrete machinery Raft's log-replication mechanics (Phase 5.6) and every other classical algorithm's storage layer builds directly on top of.</p>
+
+        <h2 id="why-a-log">Why a log specifically, not some other data structure</h2>
+
+        <p>An append-only log is the natural implementation of "an ordered sequence of commands" for reasons that go beyond convenience — each property maps directly to something the SMR guarantee (article 3.1) actually needs:</p>
+
+        <ul>
+          <li><strong>Append-only means the past is immutable.</strong> Once an entry is durably written at position N, it never changes. This gives every replica a stable, unambiguous reference point — "I've applied up through index 47" is a complete, unambiguous description of a replica's progress, because entry 47 (and everything before it) will never retroactively change.</li>
+          <li><strong>A total order is built in for free.</strong> A log's positions (indexes) are, by construction, a total order — there's no separate ordering mechanism needed once entries are placed in the log; their position <em>is</em> their order.</li>
+          <li><strong>It's naturally resumable.</strong> A replica that falls behind just needs "give me everything after index N" — no complex reconciliation, no diffing of arbitrary data structures, just "the tail of the log I'm missing."</li>
+          <li><strong>It doubles as an audit trail and a durability mechanism.</strong> Because it's append-only and persisted, a log written to disk (this is exactly the WAL — write-ahead log — concept familiar from the <a href="pgbackrest-s3-guide.html">pgBackRest guide</a>'s PostgreSQL context) survives a crash and lets a replica recover its exact state by simply replaying from the beginning, or from the last known-good checkpoint.</li>
+        </ul>
+
+        <h2 id="anatomy">Anatomy of a log entry</h2>
+
+        <p>A real consensus log entry (this shape is essentially universal across Raft, Multi-Paxos, and their descendants) carries three pieces of information, not just the raw command:</p>
+
+        <pre class="code" data-lang="python">class LogEntry:
+    def __init__(self, index, term, command):
+        self.index = index      # position in the log -- the total order
+        self.term = term        # the "epoch" during which this entry was proposed
+        self.command = command  # the actual, opaque command bytes for the state machine</pre>
+
+        <p>The <strong>index</strong> is the log's own position counter — simple, and exactly what article 3.1's abstract "sequence position" concretely is. The <strong>term</strong> (sometimes called "epoch" or "view number" in other algorithms — Raft's exact terminology, previewed here and covered in full in Phase 5) is subtler and worth pausing on: it's a monotonically increasing counter that identifies <em>which leadership period</em> an entry was proposed during. Every time a new leader is elected (after the previous one is suspected failed, per article 2.4's failure detectors), the term increments. This gives every log entry a compound identity — "index 47, term 3" is a more specific, more useful piece of information than "index 47" alone, because it lets replicas detect exactly the scenario the next section describes: two different, conflicting entries that both claim to be at index 47, proposed by different leaders during different terms.</p>
+
+        <h2 id="divergence">How logs diverge, and how they're repaired</h2>
+
+        <p>Recall the leader-election machinery previewed across articles 1.2, 2.4, and now 3.1 — a leader can be suspected dead (correctly or not) and a new one elected. This creates a real, common scenario: a leader proposes an entry, replicates it to <em>some</em> but not all followers, then is suspected dead and replaced before that entry reaches everyone or gets fully committed. The result: different replicas' logs can genuinely diverge at their tails.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Log divergence after a leader change</text>
+            <text x="80" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Replica A (old leader, term 2)</text>
+            <rect x="30" y="50" width="50" height="28" class="boxg"/><text x="55" y="68" class="smk" text-anchor="middle">1,t1</text>
+            <rect x="85" y="50" width="50" height="28" class="boxg"/><text x="110" y="68" class="smk" text-anchor="middle">2,t1</text>
+            <rect x="140" y="50" width="50" height="28" class="boxr"/><text x="165" y="68" class="smk" text-anchor="middle">3,t2</text>
+            <text x="165" y="95" class="sm" text-anchor="middle">never reached majority</text>
+
+            <text x="480" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Replica B (new leader, term 3)</text>
+            <rect x="410" y="50" width="50" height="28" class="boxg"/><text x="435" y="68" class="smk" text-anchor="middle">1,t1</text>
+            <rect x="465" y="50" width="50" height="28" class="boxg"/><text x="490" y="68" class="smk" text-anchor="middle">2,t1</text>
+            <rect x="520" y="50" width="50" height="28" class="boxy"/><text x="545" y="68" class="smk" text-anchor="middle">3,t3</text>
+            <text x="545" y="95" class="sm" text-anchor="middle">DIFFERENT entry, same index!</text>
+
+            <rect x="180" y="140" width="320" height="60" class="box" style="stroke-dasharray:3,3"/>
+            <text x="340" y="162" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">Repair rule: higher term wins at a conflicting index.</text>
+            <text x="340" y="182" class="sm" text-anchor="middle">A's uncommitted (3,t2) is overwritten by B's (3,t3) once A rejoins.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — A's stale, never-committed entry at index 3 is safely discarded and overwritten once the new leader's term-3 entry arrives.</p>
+        </div>
+
+        <p>The repair mechanism, in essentially every classical algorithm, is variations on the same rule: <strong>when a follower finds its log conflicts with what the current leader says should be there (same index, different term), the follower's conflicting entry — and everything after it — is discarded and overwritten with the leader's version.</strong> This is safe specifically because of a property every classical consensus algorithm carefully guarantees (proven formally when Raft's safety argument is covered in Phase 5.6): an entry is only ever <em>discarded</em> this way if it was never actually <strong>committed</strong> — meaning it never reached a majority of replicas and was therefore never applied to any state machine or exposed to any client as durable. A committed entry, once committed, is never rolled back — that's the actual, load-bearing safety guarantee; uncommitted, in-flight entries from a deposed leader are fair game for overwriting, precisely because no correct process ever treated them as final.</p>
+
+        <div class="bm-warn"><strong>This is exactly why "committed" is a precise, load-bearing term in this series, not a loose synonym for "written."</strong> An entry sitting in a log, even durably persisted to disk on one replica, is not safe until a <strong>majority</strong> has it (the mechanism previewed in article 1.2 and formalized fully in article 3.3). Only majority-replicated entries are guaranteed to survive a leader change without being discarded — an entry that only ever reached one replica, even if perfectly durable on that one replica's disk, has no such guarantee, and correctly gets overwritten in the scenario above.</div>
+
+        <h2 id="snapshotting">Snapshotting and log compaction</h2>
+
+        <p>An append-only log that genuinely never deletes anything grows forever — for a long-running production system processing thousands of commands per second, this becomes a real, practical problem within days or weeks, not years: unbounded disk usage, and unboundedly slow replica catch-up (a brand-new replica joining after a year of operation would need to replay a year's worth of commands from scratch before being useful).</p>
+
+        <p>The fix is <strong>snapshotting</strong>: periodically, a replica serializes its <em>entire current state machine state</em> (not the log — the actual resulting state, article 3.1's <code>current_state</code>) to a durable snapshot, then safely discards every log entry <em>before</em> the point that snapshot represents — because the snapshot already captures the cumulative effect of every command up to that point, and article 3.1's determinism guarantee means "replay from snapshot + remaining log entries" produces an identical result to "replay the entire log from the very beginning."</p>
+
+        <div class="eq">final_state = apply(snapshot_state, remaining_log_entries_after_snapshot)
+            ≡ apply(initial_state, entire_log_from_start)   (by SMR determinism, article 3.1)</div>
+
+        <p>This compaction is a real, necessary piece of engineering in every production consensus system — Raft's paper devotes a full dedicated section to it, and every serious implementation (etcd, CockroachDB's Raft usage, and others covered in Phase 8/9) has a snapshotting subsystem, usually triggered automatically once the log grows past a configured size threshold, running as a background process so it doesn't block ongoing command replication.</p>
+
+        <h2 id="catchup">How a replica catches up from nothing</h2>
+
+        <p>Putting the log and snapshot mechanisms together gives the complete, practical answer to a question every real deployment eventually faces: how does a brand-new node — or one that's been offline so long its log is drastically behind — get caught up efficiently, without replaying potentially millions of individual historical commands one at a time?</p>
+
+        <ol>
+          <li><strong>Install the latest snapshot.</strong> The lagging/new replica receives the leader's (or any sufficiently caught-up replica's) most recent full-state snapshot in one transfer — this alone brings it to "current as of snapshot time," a single bulk operation rather than millions of small ones.</li>
+          <li><strong>Replay the log tail.</strong> Only the log entries created <em>after</em> the snapshot was taken need to be replayed individually — typically a small, bounded number if snapshots are taken reasonably often, regardless of how far behind the replica started.</li>
+          <li><strong>Rejoin normal replication.</strong> Once caught up to the current log tail, the replica participates in ongoing replication exactly like any other follower, receiving new entries as they're proposed.</li>
+        </ol>
+
+        <div class="bm-fix"><strong>This is exactly the mechanism that makes horizontal scaling and disaster recovery practical for consensus-backed systems</strong> — the ability to add a brand-new replica to a running, established cluster (for more read capacity, or to replace a permanently failed node) without replaying the system's entire history from day one. Without snapshotting, "add a new replica to a mature production cluster" would become progressively more expensive over the system's lifetime — with it, the cost stays roughly bounded regardless of how long the cluster has been running, which is exactly the property you want from infrastructure meant to run for years.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is the consensus log the same thing as a database's write-ahead log (WAL)?</summary><p>Conceptually closely related — both are append-only, ordered, durable records used for recovery and replay — but they usually operate at different layers. A database's WAL (covered from PostgreSQL's specific angle in the <a href="pgbackrest-s3-guide.html">pgBackRest guide</a>) typically records low-level physical or logical changes for crash recovery within one instance; a consensus log records the higher-level commands being agreed upon across a whole cluster of replicas. Some systems do unify these concepts more directly (the consensus log effectively <em>is</em> the WAL), which is an implementation choice covered when specific production systems come up in Phase 8/9.</p></details>
+        <details class="faq"><summary>Can a follower ever have MORE entries in its log than the current leader?</summary><p>Yes, and this is exactly the scenario Fig 1 depicts from the deposed-leader's side — a replica that was leader during an earlier term may have proposed entries that never reached a majority before it lost leadership; those extra, uncommitted entries get discarded once it rejoins as a follower and discovers the new leader's conflicting, higher-term entries at the same index positions.</p></details>
+        <details class="faq"><summary>How often should snapshots be taken in practice?</summary><p>It's a real tuning trade-off, not a fixed universal number: more frequent snapshots mean faster replica catch-up and a smaller log to store, at the cost of more frequent (and non-trivial, for a large state) snapshot-creation overhead. Production systems commonly trigger snapshots based on log size thresholds (e.g., "snapshot after every N entries since the last one") rather than a fixed time interval, since command rate and command size vary considerably across workloads.</p></details>
+        <details class="faq"><summary>Does taking a snapshot require pausing command processing?</summary><p>Well-engineered implementations avoid this — snapshotting is typically done via a copy-on-write or similar mechanism (analogous in spirit to the copy-on-write sharing covered in the <a href="pagedattention.html">PagedAttention article</a>'s memory-management context) so the state machine can keep processing new commands concurrently with a snapshot of an earlier consistent point being serialized in the background, rather than blocking the whole system for the duration of the snapshot.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>An <strong>append-only log</strong> is the natural concrete implementation of article 3.1's abstract "ordered command sequence" — immutable history, built-in total order, naturally resumable, and durable.</li>
+          <li>Real log entries carry <strong>index, term, and command</strong> — the term (incremented on every leadership change) is what lets replicas detect and resolve conflicting entries at the same index.</li>
+          <li>Logs can genuinely <strong>diverge</strong> after a leader change; the universal repair rule is that <strong>uncommitted</strong> entries from a deposed leader are safely discarded and overwritten — because "committed" specifically means majority-replicated, and only committed entries carry the never-rolled-back guarantee.</li>
+          <li><strong>Snapshotting/compaction</strong> is a necessary, real piece of engineering — periodically capture full state, discard the log entries it supersedes, relying directly on SMR's determinism guarantee (article 3.1) to prove the shortcut is safe.</li>
+          <li>Snapshot + remaining log tail is exactly how a new or badly-lagging replica <strong>catches up efficiently</strong>, keeping the cost of adding capacity roughly bounded regardless of cluster age.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://raft.github.io/raft.pdf" target="_blank">Ongaro &amp; Ousterhout — In Search of an Understandable Consensus Algorithm (Raft, 2014)</a> <span>— Section 5.3 (log replication) and Section 7 (snapshotting) are the concrete reference implementation of everything in this article; full Raft treatment in Phase 5.</span></li>
+          <li><a href="consensus-3-1-state-machine-replication.html">cvam.sight — Consensus 3.1: State Machine Replication</a> <span>— the abstract guarantee this article's snapshotting shortcut relies on.</span></li>
+          <li><a href="pgbackrest-s3-guide.html">cvam.sight — pgBackRest with S3</a> <span>— write-ahead logging in a real, adjacent production context (PostgreSQL).</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-3-1-state-machine-replication.html">← 3.1 State Machine Replication</a>
+        <a href="consensus-3-3-quorums-and-majority-voting.html">next: 3.3 Quorums and Majority Voting →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

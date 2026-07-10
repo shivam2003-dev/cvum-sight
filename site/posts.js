@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-7-5-atlas",
+    title: "Atlas.",
+    date: "Jul 19, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "atlas", "series-consensus"],
+    time: 18,
+    words: 3700,
+    excerpt: "Consensus Algorithms series, 7.5. Atlas targets a specific, documented EPaxos weakness: fast-quorum size grows less favorably relative to a plain majority as cluster size increases. Its fix directly applies Flexible Paxos's quorum-intersection insight to EPaxos's leaderless dependency-graph setting -- near-majority fast quorums plus a background synchronization mechanism to compensate for the higher risk of missing conflict information. The clearest example in this phase of modern Paxos ideas composing deliberately.",
+    series: "consensus",
+    seriesNum: "35"
+  },
+  {
     slug: "consensus-7-4-cheap-and-compartmentalized-paxos",
     title: "Cheap Paxos and Compartmentalized Paxos.",
     date: "Jul 18, 2026",

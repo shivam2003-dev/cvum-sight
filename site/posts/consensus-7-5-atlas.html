@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas — Consensus 7.5 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 7.5. Atlas applies Flexible Paxos's quorum-shrinking insight to leaderless EPaxos-style consensus, using near-majority fast quorums combined with a synchronization mechanism to fix EPaxos's real-world conflict-handling weaknesses at scale.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 7</p>
+        <p class="series-banner-title">The Modern Paxos Family</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 7.5 of 8</p>
+        <div class="series-banner-nav">
+          <a href="consensus-7-1-epaxos-leaderless-consensus.html" class="done">7.1 EPaxos</a>
+          <a href="consensus-7-2-flexible-paxos.html" class="done">7.2 Flexible Paxos</a>
+          <a href="consensus-7-3-generalized-and-fast-paxos.html" class="done">7.3 Generalized/Fast</a>
+          <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html" class="done">7.4 Cheap/Compart.</a>
+          <a href="consensus-7-5-atlas.html" class="active">7.5 Atlas</a>
+          <a href="consensus-7-6-caesar.html">7.6 Caesar</a>
+          <a href="consensus-7-7-omnipaxos.html">7.7 OmniPaxos</a>
+          <a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html">7.8 Survey</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 19, 2026 · devops · 18 min read · 3700 words <span class="difficulty expert">expert</span></p>
+        <h1>Atlas.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">atlas</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">EPaxos (7.1) established leaderless consensus is achievable, but its fast-quorum size — larger than a simple majority, article 7.1's honest trade-off — has a real practical cost that becomes more painful as cluster sizes grow, precisely mirroring article 7.2's Flexible Paxos observation that Multi-Paxos's own quorum requirements were stronger than necessary. Enrique Fynn, Alexey Bessani, and colleagues' <strong>Atlas</strong> (2018) applies Flexible Paxos's exact quorum-shrinking insight to the leaderless, dependency-graph setting EPaxos pioneered — combining two of this phase's earlier ideas (7.1's leaderlessness, 7.2's quorum flexibility) into a system that fixes a specific, well-documented weakness in EPaxos at larger cluster sizes.</p>
+
+        <h2 id="epaxos-weakness">The specific gap Atlas targets</h2>
+        <p>EPaxos's fast quorum requirement (article 7.1: <code>⌊N/2⌋ + ⌊(f+1)/2⌋</code>) grows relative to a simple majority as the cluster size increases — at larger <code>N</code>, the gap between EPaxos's fast-quorum size and a plain majority becomes proportionally more significant, meaning more of the cluster must be reachable and responsive for the fast path to succeed at all. This directly undercuts one of EPaxos's own selling points: at larger deployments (exactly where you'd most want the throughput and locality benefits article 7.1 described), the larger quorum requirement makes the fast path less resilient to node slowness or unavailability than Multi-Paxos's plain-majority fast path would be.</p>
+
+        <h2 id="atlas-fix">Atlas's fix: apply Flexible Paxos's insight to the leaderless setting</h2>
+        <p>Atlas's core move: rather than accepting EPaxos's larger fast-quorum requirement as a fixed cost of leaderlessness, apply article 7.2's exact insight — quorums only need to guarantee the right <em>intersection</em> properties, not be maximally conservative majorities — to redesign the fast-quorum size specifically for the dependency-graph ordering setting. The result is a fast quorum close to a simple majority (rather than EPaxos's larger requirement), while still preserving the conflict-detection guarantee EPaxos's larger quorum existed to provide, by being more precise about exactly what intersection property is actually needed for safe dependency-set computation, rather than using EPaxos's more conservative, one-size-fits-all sizing.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 170" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Atlas = EPaxos's leaderlessness + Flexible Paxos's quorum precision</text>
+            <rect x="40" y="40" width="260" height="60" class="boxg"/>
+            <text x="170" y="62" class="smk" text-anchor="middle">EPaxos (7.1)</text>
+            <text x="170" y="82" class="sm" text-anchor="middle">leaderless, larger fast quorum</text>
+            <rect x="380" y="40" width="260" height="60" class="boxg"/>
+            <text x="510" y="62" class="smk" text-anchor="middle">Flexible Paxos (7.2)</text>
+            <text x="510" y="82" class="sm" text-anchor="middle">quorums need only intersect</text>
+            <path d="M170,100 C240,125 440,125 510,100" class="arr"/>
+            <rect x="230" y="125" width="220" height="35" class="boxy"/>
+            <text x="340" y="147" class="smk" text-anchor="middle">Atlas: near-majority fast quorums</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Atlas is a direct, explicit synthesis of two ideas already covered separately in this phase.</p>
+        </div>
+
+        <h2 id="synchronization">The synchronization mechanism: closing the gap safely</h2>
+        <p>Shrinking the fast quorum reintroduces some risk of the exact scenario article 7.1 flagged — replicas with incomplete knowledge of recent conflicting commands, now with a smaller quorum less likely to collectively "know everything." Atlas compensates with an explicit background synchronization mechanism that periodically reconciles replicas' dependency knowledge, reducing the odds that a genuinely conflicting command gets missed by a too-small fast quorum, without requiring the larger EPaxos-style quorum on every single operation. This is a real, deliberate engineering trade — accept slightly more background reconciliation traffic, in exchange for smaller, more available fast quorums on the hot path.</p>
+
+        <div class="bm-note">This is the cleanest illustration in this phase of how the modern Paxos family's ideas <strong>compose</strong>, not just accumulate independently. Atlas isn't a fundamentally new insight — it's a demonstration that 7.1's and 7.2's separately-discovered relaxations can be combined deliberately to fix a specific, documented weakness that shows up only when you actually try to deploy the earlier idea (EPaxos) at the scale where it matters most.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does Atlas's synchronization mechanism add a new single point of failure?</summary><p>No — the synchronization traffic is itself distributed across replicas (not routed through any one coordinator), consistent with EPaxos's original leaderless design goal; it's additional background communication, not a new centralized dependency.</p></details>
+        <details class="faq"><summary>Is Atlas strictly better than EPaxos?</summary><p>At larger cluster sizes, generally yes on the specific dimension it targets (fast-quorum availability), but it adds the real complexity of the synchronization mechanism — consistent with this whole phase's pattern of genuine trade-offs rather than free upgrades. For small clusters where EPaxos's larger quorum isn't much bigger than a plain majority anyway, the benefit is correspondingly smaller.</p></details>
+        <details class="faq"><summary>Could Atlas's synchronization idea be applied back to plain EPaxos without the Flexible-Paxos quorum shrinking?</summary><p>In principle, background reconciliation could reduce EPaxos's own slow-path frequency somewhat, but the quorum-shrinking is what delivers Atlas's primary, most significant benefit (fast-quorum availability at scale) — the synchronization mechanism exists specifically to make that shrinking safe, not as an independently valuable addition.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Atlas</strong> (Fynn, Bessani et al., 2018) targets a specific, documented EPaxos weakness: fast-quorum size grows less favorably relative to a plain majority as cluster size increases.</li>
+          <li>Its fix directly applies <strong>Flexible Paxos's quorum-intersection insight</strong> (7.2) to EPaxos's leaderless dependency-graph setting (7.1) — near-majority fast quorums instead of EPaxos's larger requirement.</li>
+          <li>A background <strong>synchronization mechanism</strong> compensates for the shrunk quorum's higher risk of missing conflict information, trading some background traffic for better hot-path quorum availability.</li>
+          <li>Atlas is the clearest example in this phase of modern Paxos ideas <strong>composing</strong> deliberately, rather than accumulating as isolated, unrelated variants.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://dl.acm.org/doi/10.1145/3241539.3241547" target="_blank">Enes, Fynn, Bessani et al. — State-Machine Replication for Planet-Scale Systems (Atlas, 2020 EuroSys)</a> <span>— the primary Atlas reference.</span></li>
+          <li><a href="consensus-7-1-epaxos-leaderless-consensus.html">cvam.sight — Consensus 7.1: EPaxos, Leaderless Consensus</a> <span>— the fast-quorum weakness Atlas addresses.</span></li>
+          <li><a href="consensus-7-2-flexible-paxos.html">cvam.sight — Consensus 7.2: Flexible Paxos</a> <span>— the quorum-intersection insight Atlas applies.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html">← 7.4 Cheap Paxos and Compartmentalized Paxos</a>
+        <a href="consensus-7-6-caesar.html">next: 7.6 Caesar →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

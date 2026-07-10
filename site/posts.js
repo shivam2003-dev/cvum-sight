@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-8-5-kubernetes-and-etcd",
+    title: "Kubernetes and etcd.",
+    date: "Jul 23, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "kubernetes", "series-consensus"],
+    time: 20,
+    words: 4100,
+    excerpt: "Consensus Algorithms series, 8.5. Kubernetes has no separate database -- etcd is the single source of truth for every object in a cluster. The controller pattern (watch, diff, reconcile) is a direct application of etcd's watch mechanism, run concurrently by hundreds of independent controllers. resourceVersion is etcd's MVCC revision exposed directly, the foundation of optimistic concurrency control at scale. Why etcd's watch/MVCC design was a better architectural fit than ZooKeeper's older API.",
+    series: "consensus",
+    seriesNum: "43"
+  },
+  {
     slug: "consensus-8-4-kafka-kraft",
     title: "Kafka's KRaft.",
     date: "Jul 22, 2026",

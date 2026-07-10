@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes and etcd — Consensus 8.5 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 8.5. Why Kubernetes treats etcd as its single source of truth, how the controller pattern (watch, diff, reconcile) maps directly onto etcd's watch mechanism, optimistic concurrency via resourceVersion, and why etcd's watch/MVCC design specifically was a better fit for Kubernetes than ZooKeeper's older API.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 8</p>
+        <p class="series-banner-title">Consensus in Production</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 8.5 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-8-1-etcd.html" class="done">8.1 etcd</a>
+          <a href="consensus-8-2-apache-zookeeper.html" class="done">8.2 ZooKeeper</a>
+          <a href="consensus-8-3-consul.html" class="done">8.3 Consul</a>
+          <a href="consensus-8-4-kafka-kraft.html" class="done">8.4 Kafka KRaft</a>
+          <a href="consensus-8-5-kubernetes-and-etcd.html" class="active">8.5 Kubernetes</a>
+          <a href="consensus-8-6-jepsen.html">8.6 Jepsen</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 23, 2026 · devops · 20 min read · 4100 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Kubernetes and etcd.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">kubernetes</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Article 8.1 covered etcd on its own terms. This article covers the specific relationship that makes etcd one of the most consequential consensus-backed systems in modern infrastructure: <strong>every single object in a Kubernetes cluster — every Pod, every Deployment, every Service, every ConfigMap — lives in etcd, and nowhere else.</strong> Kubernetes has no separate database; etcd <em>is</em> the cluster's entire persistent state. This article covers why that architecture works, how Kubernetes's defining "controller" pattern maps directly onto etcd's watch mechanism (article 8.1), and the optimistic-concurrency mechanism that lets thousands of controllers safely read and write shared state without explicit locking.</p>
+
+        <h2 id="single-source">etcd as the single source of truth</h2>
+        <p>Kubernetes's API server is, architecturally, close to a thin translation layer in front of etcd: when you <code>kubectl apply</code> a Deployment, the API server validates and normalizes the request, then writes it as a key in etcd (article 8.1's flat, MVCC-versioned key-value store) — there is no separate relational database, no secondary source of truth to keep in sync. Every piece of desired and observed cluster state — what you asked for, and what's actually running — is a key in etcd's namespace, replicated and made durable by the exact Raft mechanism (article 5.5-5.6) this series built from first principles. This radical simplicity (one storage system, one consistency model, for literally everything) is a deliberate architectural bet, and it's one that pays off directly because of the specific mechanism covered next.</p>
+
+        <h2 id="controller-pattern">The controller pattern: watch, diff, reconcile</h2>
+        <p>Kubernetes's defining architectural idiom — the <strong>controller pattern</strong> — is a direct, almost one-to-one application of etcd's watch mechanism (article 8.1). A controller (the Deployment controller, the ReplicaSet controller, hundreds of custom controllers in real clusters) does exactly three things in a loop: <strong>watch</strong> etcd (via the API server) for changes to the resources it cares about, <strong>diff</strong> the observed state against the desired state encoded in those resources, and <strong>reconcile</strong> by issuing whatever API calls (which themselves become new etcd writes) are needed to close the gap. This loop runs continuously and asynchronously across potentially hundreds of independent controllers, all watching overlapping slices of the same etcd-backed state, all reacting to changes as etcd's Raft-backed log commits them and streams them out via watches.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">The controller loop, built directly on etcd's watch mechanism</text>
+            <circle cx="150" cy="90" r="55" class="boxg"/>
+            <text x="150" y="80" class="smk" text-anchor="middle">1. WATCH</text>
+            <text x="150" y="98" class="sm" text-anchor="middle">etcd stream</text>
+            <text x="150" y="114" class="sm" text-anchor="middle">(8.1's mechanism)</text>
+            <path d="M205,90 C240,90 260,90 290,90" class="arr"/>
+            <circle cx="340" cy="90" r="55" class="boxy"/>
+            <text x="340" y="86" class="smk" text-anchor="middle">2. DIFF</text>
+            <text x="340" y="104" class="sm" text-anchor="middle">observed vs desired</text>
+            <path d="M395,90 C430,90 450,90 480,90" class="arr"/>
+            <circle cx="530" cy="90" r="55" class="boxr"/>
+            <text x="530" y="86" class="smk" text-anchor="middle">3. RECONCILE</text>
+            <text x="530" y="104" class="sm" text-anchor="middle">API call → new etcd write</text>
+            <path d="M530,145 C480,175 220,175 150,145" class="arr"/>
+            <text x="340" y="185" class="sm" text-anchor="middle">→ triggers new watch events, loop continues indefinitely</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Hundreds of independent controllers run this loop concurrently, all fed by the same underlying etcd watch stream.</p>
+        </div>
+
+        <h2 id="optimistic-concurrency">Optimistic concurrency: resourceVersion instead of locks</h2>
+        <p>With potentially many controllers reading and writing overlapping resources concurrently, Kubernetes doesn't use explicit locking (article 8.2's ZooKeeper-style sequential-ephemeral-znode locks would be one option, but a heavyweight one for this specific access pattern) — it uses <strong>optimistic concurrency control</strong> built directly on etcd's MVCC revision numbers (article 8.1). Every Kubernetes object carries a <code>resourceVersion</code> field, which is, under the hood, exactly etcd's MVCC revision for that key. When a controller updates an object, it includes the <code>resourceVersion</code> it last read; etcd's underlying compare-and-swap semantics (itself a direct, practical application of this series' repeated "propose a value, only accept if nothing changed underneath you" pattern, echoing article 5.2's Phase 2 acceptance logic) reject the write if the resource has changed since — forcing the controller to re-read the latest state and retry its reconciliation, rather than silently overwriting a concurrent change and losing information.</p>
+
+        <div class="bm-note">This is a clean, production-scale instance of a theme this series introduced abstractly and now gets to see fully cashed out: rather than pessimistically locking a resource before every read (expensive, and a real bottleneck at Kubernetes's scale — potentially thousands of controllers across a large cluster), Kubernetes lets every controller optimistically compute its intended change, and lets etcd's underlying consensus-backed compare-and-swap mechanism be the single, authoritative arbiter of whether that change is still valid by the time it's actually applied. This is exactly the kind of design decision that only works because the underlying storage layer (etcd, backed by Raft, backed by the majority-overlap safety argument of article 3.3) is trustworthy enough to be the sole point of truth for a conflict check this consequential.</div>
+
+        <h2 id="why-etcd-fit">Why etcd's specific design fit Kubernetes better than ZooKeeper's</h2>
+        <p>Revisiting article 8.2's comparison table with Kubernetes's specific access pattern in mind: the controller loop's core need — a live, precisely-resumable stream of changes across a broad set of resources, with a clean way to know exactly what changed and in what order — maps far more directly onto etcd's <strong>watch + MVCC revision history</strong> (article 8.1) than onto ZooKeeper's older, more callback-oriented watch API (article 8.2), which was originally designed more around the ephemeral-znode presence/locking recipes than around Kubernetes-style continuous, high-volume state reconciliation. This isn't a claim that ZooKeeper is deficient in general — article 8.2 covered plenty of things it does well — it's a specific statement about fit-for-purpose: Kubernetes's designers picked the coordination service whose particular feature set (streaming watches anchored in revision history) most directly matched their specific architectural pattern.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>What happens to a Kubernetes cluster if etcd becomes unavailable?</summary><p>The cluster's control plane (API server, controllers, scheduler) can't read or write any state, so no new scheduling or reconciliation decisions can be made — but already-running Pods keep running on their nodes (kubelet, the per-node agent, operates independently for already-scheduled workloads). This is a direct, practical instance of article 4.1's safety/liveness framing: etcd unavailability is a liveness failure for the control plane, not a safety violation or an immediate outage for already-running workloads.</p></details>
+        <details class="faq"><summary>Does every kubectl read go through etcd directly?</summary><p>Not necessarily — the API server maintains in-memory caches (informers, built on the same watch mechanism) to serve many reads without round-tripping to etcd for every single request, an optimization layered on top of, not replacing, etcd's role as the authoritative source of truth for writes and the ultimate backing store.</p></details>
+        <details class="faq"><summary>Can Kubernetes run with a non-Raft-backed etcd alternative?</summary><p>Kubernetes's API is technically storage-agnostic in principle, and alternative backends have been explored in various projects, but etcd (and by extension Raft, article 5.5-5.6) is overwhelmingly the standard, battle-tested, officially-supported choice — the watch/MVCC/resourceVersion machinery this article describes is specifically etcd's design, and substituting a different backend means reimplementing equivalent guarantees.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Kubernetes has <strong>no separate database</strong> — etcd (8.1) is the single source of truth for every object in a cluster, with the API server as a thin translation layer in front of it.</li>
+          <li>The <strong>controller pattern</strong> (watch, diff, reconcile) is a direct, near-literal application of etcd's watch mechanism, run concurrently by hundreds of independent controllers across a large cluster.</li>
+          <li><strong>resourceVersion</strong> is etcd's MVCC revision number exposed directly to Kubernetes's API — the foundation of an <strong>optimistic concurrency control</strong> scheme that avoids explicit locking at scale.</li>
+          <li>etcd's specific <strong>watch + MVCC revision history</strong> design was a better architectural fit for Kubernetes's continuous, high-volume reconciliation pattern than ZooKeeper's (8.2) older, more locking/presence-oriented API.</li>
+          <li>etcd unavailability is a control-plane <strong>liveness</strong> failure (article 4.1), not an immediate safety violation or workload outage — already-running Pods keep running independently.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://kubernetes.io/docs/concepts/architecture/" target="_blank">Kubernetes documentation — Cluster Architecture</a> <span>— the API server / etcd relationship described directly.</span></li>
+          <li><a href="https://kubernetes.io/docs/concepts/architecture/controller/" target="_blank">Kubernetes documentation — Controllers</a> <span>— the watch/diff/reconcile pattern in the project's own words.</span></li>
+          <li><a href="consensus-8-1-etcd.html">cvam.sight — Consensus 8.1: etcd</a> <span>— the watch/MVCC/lease mechanisms this article builds directly on.</span></li>
+          <li><a href="consensus-8-2-apache-zookeeper.html">cvam.sight — Consensus 8.2: Apache ZooKeeper</a> <span>— the comparison this article's fit-for-purpose argument depends on.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-8-4-kafka-kraft.html">← 8.4 Kafka's KRaft</a>
+        <a href="consensus-8-6-jepsen.html">next: 8.6 Jepsen — Testing Consensus in the Wild →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

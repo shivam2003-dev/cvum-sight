@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raft — Design and Leader Election — Consensus 5.5 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 5.5. Raft's understandability-first design goals, decomposition into leader election, log replication, and safety, terms as Raft's proposal numbers, and the full leader election protocol with RequestVote RPCs.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 5</p>
+        <p class="series-banner-title">Classical Consensus — Paxos &amp; Raft</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 5.5 of 7</p>
+        <div class="series-banner-nav">
+          <a href="consensus-5-1-paxos-history-and-the-problem.html" class="done">5.1 Paxos History</a>
+          <a href="consensus-5-2-single-decree-paxos.html" class="done">5.2 Single-Decree</a>
+          <a href="consensus-5-3-multi-paxos.html" class="done">5.3 Multi-Paxos</a>
+          <a href="consensus-5-4-viewstamped-replication.html" class="done">5.4 VR</a>
+          <a href="consensus-5-5-raft-design-and-leader-election.html" class="active">5.5 Raft Election</a>
+          <a href="consensus-5-6-raft-log-replication-and-safety.html">5.6 Raft Safety</a>
+          <a href="consensus-5-7-zab.html">5.7 Zab</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 14, 2026 · devops · 22 min read · 4600 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Raft — design and leader election.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">raft</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Diego Ongaro and John Ousterhout's 2014 paper, "In Search of an Understandable Consensus Algorithm," states its goal in the title — and delivers on it by making one explicit, deliberate design choice that Paxos's own presentation never made: <strong>decompose the problem into independently-understandable pieces</strong> (leader election, log replication, safety, membership changes) instead of presenting consensus as one dense, interleaved proof. This article covers Raft's design philosophy and the first piece — leader election, built entirely from vocabulary this series has already handed you (terms are proposal numbers/view numbers under a third name; the election safety argument is, once again, article 3.3's majority overlap). Article 5.6 continues with log replication and the full safety proof.</p>
+
+        <h2 id="design-goals">Raft's explicit design goal: understandability as a first-class metric</h2>
+
+        <p>Ongaro and Ousterhout's paper makes an unusual, explicit methodological claim for a systems paper: they treat <strong>understandability</strong> as a design goal to be optimized directly, alongside the usual correctness and performance metrics — and they back this claim with an actual user study, teaching both Raft and Paxos to students and measuring comprehension. This framing directly continues the thread articles 5.1 and 5.4 have been building: Paxos's allegorical presentation delayed adoption for years; VR's thesis-format obscurity limited its reach despite solid engineering; Raft's authors treat this history as a solvable design problem, not an unavoidable cost of correctness. The result of that explicit focus is <strong>decomposition</strong>: rather than Paxos's tightly-coupled Phase 1/Phase 2 mechanism (where election and value-agreement are, in the original presentation, somewhat entangled), Raft splits the problem into clearly separated sub-problems that can be understood, and largely verified, independently.</p>
+
+        <table class="papers">
+          <tr><th>Raft sub-problem</th><th>What it covers</th><th>Where in this series</th></tr>
+          <tr><td>Leader election</td><td>How exactly one leader is chosen per term</td><td>This article</td></tr>
+          <tr><td>Log replication</td><td>How the leader propagates entries and they become committed</td><td>Article 5.6</td></tr>
+          <tr><td>Safety</td><td>The formal argument that these mechanisms never violate correctness</td><td>Article 5.6</td></tr>
+          <tr><td>Membership changes</td><td>Safely adding/removing nodes from a live cluster</td><td>Phase 9.6 (previewed in article 3.3's FAQ)</td></tr>
+        </table>
+
+        <h2 id="terms">Terms: Raft's name for the leadership-epoch counter</h2>
+
+        <p>Raft divides time into <strong>terms</strong>, numbered consecutively — precisely the same concept as Multi-Paxos's proposal numbers (article 5.3) and VR's view numbers (article 5.4), a third independent name for the identical underlying mechanism this series keeps re-encountering. Each term begins with an election; if an election succeeds, exactly one leader serves for the remainder of that term; if it fails (article 4.2's split-vote scenario), the term ends without a leader and a new term begins. Every message in Raft carries the sender's current term number, and a simple, universal rule keeps everyone converging: <strong>if a node ever sees a term number higher than its own, it immediately updates to that higher term and, if it was a leader or candidate, steps down to follower.</strong> This one rule is what makes stale leaders (from article 3.4's stale-read discussion) reliably discover they've been superseded.</p>
+
+        <h2 id="states">The three node states</h2>
+
+        <p>Every Raft node is, at any moment, in exactly one of three states:</p>
+
+        <ul>
+          <li><strong>Follower</strong> — the default, passive state. Followers accept log entries and RPCs from a leader, and vote in elections, but never initiate anything themselves.</li>
+          <li><strong>Candidate</strong> — a follower transitions here when its election timeout (article 4.2's randomized timeout) expires without hearing from a leader; it then requests votes from peers, attempting to become leader.</li>
+          <li><strong>Leader</strong> — a candidate that wins a majority of votes becomes leader for the current term, and handles all client requests and log replication (article 5.6) until it steps down or is superseded.</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Raft's state machine</text>
+            <circle cx="120" cy="100" r="55" class="boxg"/><text x="120" y="96" class="smk" text-anchor="middle">Follower</text><text x="120" y="114" class="sm" text-anchor="middle">(default)</text>
+            <circle cx="340" cy="100" r="55" class="boxy"/><text x="340" y="96" class="smk" text-anchor="middle">Candidate</text><text x="340" y="114" class="sm" text-anchor="middle">(requesting votes)</text>
+            <circle cx="560" cy="100" r="55" class="boxr"/><text x="560" y="96" class="smk" text-anchor="middle">Leader</text><text x="560" y="114" class="sm" text-anchor="middle">(replicating log)</text>
+            <path d="M175,100 C230,100 260,100 285,100" class="arr"/>
+            <text x="230" y="90" class="sm" text-anchor="middle">timeout</text>
+            <path d="M395,100 C440,100 480,100 505,100" class="arr"/>
+            <text x="450" y="90" class="sm" text-anchor="middle">wins majority</text>
+            <path d="M340,155 C260,180 180,170 140,150" class="arr"/>
+            <text x="240" y="185" class="sm" text-anchor="middle">election times out (split vote) — retry with higher term</text>
+            <path d="M560,155 C480,190 250,190 130,150" class="arr"/>
+            <text x="340" y="205" class="sm" text-anchor="middle">discovers higher term (a newer leader exists) — steps down to follower</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Raft's three states and the transitions between them; the "discovers higher term → step down" rule keeps the system converging on exactly one leader per term.</p>
+        </div>
+
+        <h2 id="requestvote">The election protocol: RequestVote</h2>
+
+        <p>When a follower's election timeout expires, it becomes a candidate: increments its current term, votes for itself, and sends a <code>RequestVote(term, candidateId, lastLogIndex, lastLogTerm)</code> RPC to every other node. Each recipient grants its vote if — and only if — <strong>both</strong> of these hold: (1) it hasn't already voted for a different candidate in this term (a node votes at most once per term, "first come, first served" — this alone is enough to prevent two candidates both winning a full majority in the same term, since two disjoint majorities are impossible per article 3.3), and (2) the candidate's log is at least as up-to-date as the voter's own — comparing <code>lastLogTerm</code> first, then <code>lastLogIndex</code> as a tiebreaker (exactly the "vote only for a candidate whose log is at least as current" rule previewed back in articles 3.3 and 4.2, now given its precise, concrete comparison criteria).</p>
+
+        <pre class="code" data-lang="text">On election timeout, a follower becomes a Candidate:
+  currentTerm += 1
+  votedFor = self
+  send RequestVote(currentTerm, self, lastLogIndex, lastLogTerm) to all peers
+
+On receiving RequestVote(term, candidateId, lastLogIndex, lastLogTerm):
+  if term < currentTerm:                 reject   (stale candidate)
+  if term > currentTerm:                 currentTerm = term; step down to follower; votedFor = null
+  if votedFor is null or votedFor == candidateId:
+      if candidate's log is at least as up-to-date as mine:
+          votedFor = candidateId
+          grant vote
+      else:
+          reject   (my log is more current -- I might hold a committed entry they lack)
+  else:
+      reject   (already voted for someone else this term)</pre>
+
+        <p>If the candidate receives votes from a <strong>majority</strong> of nodes (article 3.3, doing its work under yet another name), it becomes leader immediately and starts sending heartbeats (empty <code>AppendEntries</code> RPCs, covered fully in article 5.6) to establish authority and reset every follower's election timeout, preventing unnecessary further elections.</p>
+
+        <h2 id="why-log-check">Why the log up-to-dateness check is the whole safety mechanism, made concrete</h2>
+
+        <p>This is worth connecting explicitly back to article 3.3's leader-election application and article 5.2's Paxos Phase 1 rule, because it's the identical mechanism appearing a third time, now fully concrete: any candidate that wins a majority vote is guaranteed, by article 3.3's overlap proof, to have gotten at least one vote from a node that also participated in whatever majority most recently committed an entry (article 3.2's precise definition of "committed"). That overlapping voter would have <em>refused</em> to vote for a candidate whose log doesn't include that committed entry — so any candidate that actually wins must already have it. This is exactly why Raft never needs a separate "sync the new leader's missing committed data" step before it starts serving — the election protocol's voting rule structurally guarantees the new leader already has everything it needs, before it's even elected.</p>
+
+        <div class="bm-fix"><strong>This is the payoff for having built this series in order.</strong> If you've followed from article 3.3 through this point, the RequestVote protocol above shouldn't feel like new material to memorize — it's the majority-overlap proof, the log-up-to-dateness voting rule previewed in 3.3 and 4.2, and the randomized-timeout split-vote fix from 4.2, all snapped together into one concrete, implementable RPC. That's precisely Raft's understandability achievement: not a simpler underlying idea than Paxos, but a presentation that lets you build the mechanism up from pieces you already, individually, understand.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Can a node vote for itself and also grant its vote to another candidate in the same term?</summary><p>No — a node votes at most once per term, full stop, whether for itself (as a candidate) or for another candidate that requests it. This single constraint, combined with majority overlap, is what makes it impossible for two different candidates to both win a majority in the same term.</p></details>
+        <details class="faq"><summary>What happens if a candidate's log comparison shows it's actually behind some voters?</summary><p>Those voters reject its RequestVote — per the up-to-dateness check — which is exactly the intended, safety-critical behavior: a candidate that's behind on committed data must not become leader, because doing so could lose or contradict already-committed entries (exactly the failure article 3.4 opened with). Being behind simply means that candidate won't win this election; a more up-to-date candidate (or the same node after catching up) will eventually succeed instead.</p></details>
+        <details class="faq"><summary>Why does a leader need to keep sending heartbeats even when there's nothing new to replicate?</summary><p>To prevent followers' election timeouts from expiring and triggering unnecessary elections — a live, functioning leader that stops communicating (even with nothing new to say) looks, from a follower's perspective, identical to a genuinely failed leader (article 1.1's core ambiguity, once again). Regular heartbeats are the concrete implementation of the failure-detection liveness signal from article 2.4.</p></details>
+        <details class="faq"><summary>Is Raft's term concept doing anything Paxos's proposal numbers and VR's view numbers don't?</summary><p>Functionally, no — as this article's table makes explicit, they're the same underlying mechanism. The value Raft adds is entirely in decomposition and presentation clarity (this article's opening theme), not in a fundamentally different algorithmic idea. This is exactly the point article 5.4 made about VR converging on the same mechanism as Paxos — Raft is the third independent confirmation.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Raft's explicit, stated design goal is <strong>understandability</strong>, pursued via <strong>decomposition</strong> into independently-graspable sub-problems: leader election (this article), log replication and safety (5.6), and membership changes (Phase 9.6).</li>
+          <li><strong>Terms</strong> are Raft's name for the leadership-epoch counter — functionally identical to Multi-Paxos's proposal numbers (5.3) and VR's view numbers (5.4), the same mechanism under a third name.</li>
+          <li>Every node is <strong>Follower, Candidate, or Leader</strong>; the "step down on seeing a higher term" rule keeps the system converging reliably.</li>
+          <li>The <strong>RequestVote</strong> protocol grants a vote only if the node hasn't already voted this term <em>and</em> the candidate's log is at least as up-to-date — the concrete implementation of the log-comparison voting rule previewed all the way back in articles 3.3 and 4.2.</li>
+          <li>This voting rule, combined with majority overlap (3.3), <strong>guarantees any elected leader already holds every committed entry</strong> — no separate catch-up step needed before serving, exactly the same safety payoff Paxos's Phase 1 and VR's view change deliver, via a third independently-arrived-at mechanism.</li>
+          <li>Article 5.6 continues with log replication (AppendEntries) and Raft's full, formal safety proof.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://raft.github.io/raft.pdf" target="_blank">Ongaro &amp; Ousterhout — In Search of an Understandable Consensus Algorithm (2014)</a> <span>— the primary source; Section 5.2 covers leader election in full.</span></li>
+          <li><a href="https://raft.github.io/" target="_blank">The Raft Consensus Algorithm (raft.github.io)</a> <span>— includes the visualization tool referenced widely for building intuition about elections and log replication.</span></li>
+          <li><a href="consensus-4-2-leader-election.html">cvam.sight — Consensus 4.2: Leader Election</a> <span>— the general framework this article's RequestVote protocol makes concrete.</span></li>
+          <li><a href="consensus-5-4-viewstamped-replication.html">cvam.sight — Consensus 5.4: Viewstamped Replication</a> <span>— the closely parallel view-change mechanism.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-5-4-viewstamped-replication.html">← 5.4 Viewstamped Replication</a>
+        <a href="consensus-5-6-raft-log-replication-and-safety.html">next: 5.6 Raft — Log Replication and Safety →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

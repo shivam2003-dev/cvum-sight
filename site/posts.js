@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-5-5-raft-design-and-leader-election",
+    title: "Raft — design and leader election.",
+    date: "Jul 14, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "raft", "series-consensus"],
+    time: 22,
+    words: 4600,
+    excerpt: "Consensus Algorithms series, 5.5. Raft's explicit understandability-first design goal and its decomposition into leader election, log replication, safety, and membership changes. Terms as the third independent name for the leadership-epoch counter (after Paxos's proposal numbers and VR's view numbers). The full RequestVote protocol, the log up-to-dateness voting rule made concrete, and why any elected leader is guaranteed to already hold every committed entry -- no catch-up step needed.",
+    series: "consensus",
+    seriesNum: "23"
+  },
+  {
     slug: "consensus-5-4-viewstamped-replication",
     title: "Viewstamped replication.",
     date: "Jul 13, 2026",

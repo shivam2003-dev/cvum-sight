@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TiDB and YugabyteDB — Consensus 9.4 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 9.4. Two Spanner-inspired, MySQL/PostgreSQL-compatible distributed SQL databases built on Raft: TiDB's separated storage (TiKV) and compute (TiDB SQL layer) architecture, YugabyteDB's DocDB storage engine, and why 'wire-compatible with an existing database' is itself a distinct, deliberate architectural strategy.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 9</p>
+        <p class="series-banner-title">Cloud-Native &amp; Geo-Distributed Consensus</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 9.4 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-9-1-spanner-and-truetime.html" class="done">9.1 Spanner</a>
+          <a href="consensus-9-2-cockroachdb-and-multi-raft.html" class="done">9.2 CockroachDB</a>
+          <a href="consensus-9-3-foundationdb.html" class="done">9.3 FoundationDB</a>
+          <a href="consensus-9-4-tidb-and-yugabytedb.html" class="active">9.4 TiDB/Yugabyte</a>
+          <a href="consensus-9-5-wan-consensus-and-read-optimization.html">9.5 WAN Consensus</a>
+          <a href="consensus-9-6-dynamic-membership-and-reconfiguration.html">9.6 Reconfiguration</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 25, 2026 · devops · 22 min read · 4600 words <span class="difficulty advanced">advanced</span></p>
+        <h1>TiDB and YugabyteDB.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">tidb</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Spanner (9.1), CockroachDB (9.2), and FoundationDB (9.3) each answer the geo-distributed consensus question with a bespoke API and data model. TiDB and YugabyteDB make a different, additional bet on top of the same underlying Raft-based foundations: <strong>wire compatibility</strong> with an existing, enormously popular database — MySQL for TiDB, PostgreSQL for YugabyteDB — so that an application can gain distributed, Raft-backed strong consistency without rewriting its data-access layer at all. This article covers both systems' storage/compute separation, how Raft (5.5-5.6) gets applied per data range in each, and why "be a drop-in replacement for something already popular" is itself a legitimate, distinct architectural strategy worth naming alongside the purely technical design axes this series has covered so far.</p>
+
+        <h2 id="origins">Where both projects came from</h2>
+
+        <p>Both systems emerged from the same broad moment in database history — the years immediately following Spanner's 2012 publication (article 9.1), when it became clear that "horizontally scalable, strongly consistent, SQL-speaking" was no longer a contradiction in terms, just a very hard engineering problem that Google had shown was solvable. PingCAP, the company behind TiDB, was founded in China in 2015 specifically to build an open-source system inspired by Spanner and by Google's earlier internal storage systems, targeting the enormous existing base of MySQL deployments as its adoption path. Yugabyte, the company behind YugabyteDB, was founded around the same period by engineers with backgrounds at Facebook and other large-scale infrastructure teams, targeting PostgreSQL specifically because of its broader extensibility and its growing popularity as the default choice for new application development. Neither company invented the underlying idea — Spanner (9.1) and F1, Google's SQL layer built on top of it, had already demonstrated the architecture was viable — but both made the specific, deliberate bet that the biggest adoption barrier for anyone else building a similar system wouldn't be the underlying consensus and storage engineering (hard, but by 2015 reasonably well understood, thanks to Raft's 2014 publication making this series' Phase 5 material broadly accessible) — it would be asking every prospective user to rewrite their application against a brand-new API.</p>
+
+        <h2 id="wire-compatibility">Wire compatibility as a design goal, not an afterthought</h2>
+
+        <p>Every system covered in Phase 9 so far required an application to speak that system's own specific API or query language — Spanner's own client libraries and SQL dialect, CockroachDB's PostgreSQL-inspired but not fully compatible SQL, FoundationDB's minimal key-value operations. TiDB and YugabyteDB both start from a different premise: rather than asking developers to adopt a new interface, present the <em>exact same</em> wire protocol and SQL dialect as an already-massively-deployed database (MySQL for TiDB, PostgreSQL for YugabyteDB), so that existing applications, existing drivers, and existing operational tooling continue to work largely unchanged, while the actual storage and consensus underneath is completely re-engineered for horizontal scale and strong consistency.</p>
+
+        <p>This is worth treating as a genuine, first-class architectural decision, not merely a marketing convenience. It creates a real engineering constraint that none of the other systems in Phase 9 had to satisfy: every SQL feature, every transaction-isolation nuance, every wire-protocol quirk of the original database has to be faithfully reproduced on top of a fundamentally different storage and consensus layer underneath. That constraint shapes the rest of both systems' architecture in ways worth tracing through directly.</p>
+
+        <h2 id="tidb-architecture">TiDB: separating SQL compute from Raft-backed storage</h2>
+
+        <p>TiDB's architecture splits cleanly into two independently-scalable tiers, a separation directly reminiscent of article 7.4's Compartmentalized Paxos discussion, just realized as a full production system rather than a research proposal. The <strong>TiDB server</strong> tier is a stateless SQL layer — it parses and plans queries, and speaks the MySQL wire protocol, but holds no data of its own and no consensus responsibility whatsoever. The actual data lives in <strong>TiKV</strong>, a separate, horizontally-scalable distributed key-value store that TiDB's creators (PingCAP) built specifically as TiDB's storage foundation, directly inspired by Google's internal storage systems that predate and informed Spanner's own design.</p>
+
+        <p>TiKV shards data into <strong>Regions</strong> — the same conceptual unit as CockroachDB's ranges (article 9.2) under a different name — each independently replicated by its own Raft group. A Region splits automatically as it grows past a size threshold, and TiKV's placement driver (a separate coordination component, itself Raft-backed for its own fault tolerance) continuously rebalances Region replicas across the cluster to keep load even — the same fundamental sharding-plus-rebalancing pattern this series has now seen three times (Spanner's shards, CockroachDB's ranges, TiKV's Regions), each time with slightly different terminology but the identical underlying majority-overlap safety mechanism (article 3.3) doing the actual correctness work underneath.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">TiDB's two-tier separation: stateless SQL compute, Raft-backed storage</text>
+            <rect x="60" y="40" width="560" height="50" class="boxy"/>
+            <text x="340" y="70" class="smk" text-anchor="middle">TiDB server tier — stateless, MySQL wire protocol, query planning</text>
+            <text x="340" y="105" class="sm" text-anchor="middle">↓ reads/writes routed to the right Region</text>
+            <rect x="60" y="120" width="560" height="50" class="boxg"/>
+            <text x="340" y="150" class="smk" text-anchor="middle">TiKV — sharded into Regions, each an independent Raft group</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — SQL parsing/planning and Raft-backed storage scale independently, each tier sized for its own bottleneck.</p>
+        </div>
+
+        <h2 id="yugabytedb-architecture">YugabyteDB: DocDB underneath a PostgreSQL-compatible layer</h2>
+
+        <p>YugabyteDB follows a structurally parallel design, aimed at PostgreSQL compatibility instead of MySQL's. Its storage engine, <strong>DocDB</strong>, is built directly on top of RocksDB (an embedded, single-node key-value storage library originally developed at Facebook) with a Raft-based replication layer added on top, sharding data into <strong>tablets</strong> — YugabyteDB's own name for the same underlying concept as TiKV's Regions and CockroachDB's ranges. YugabyteDB's SQL layer, called YSQL, is built to be close enough to genuine PostgreSQL that it reuses a substantial part of PostgreSQL's own upstream query-processing code, a deliberate choice to maximize actual compatibility (not just superficial syntax similarity) with the real PostgreSQL ecosystem — extensions, drivers, and tooling that assume real PostgreSQL semantics.</p>
+
+        <p>The consistent pattern across TiDB and YugabyteDB, worth stating explicitly because it's the actual lesson of this article: both systems separately, independently arrived at the same three-part formula — (1) shard data into small, independently-Raft-replicated units, (2) separate stateless query/compute logic from stateful storage/consensus logic, and (3) present a wire-compatible surface to an existing, popular database rather than inventing a new one. Given article 5.7's closing observation that Paxos, VR, Raft, and Zab converged independently on the same majority-overlap safety mechanism, this is a second, higher-level instance of the same kind of convergence — different teams, different starting points, arriving at structurally similar answers to "how do you build a horizontally-scalable, strongly-consistent SQL database" once Raft (5.5-5.6) is available as a solid, well-understood building block.</p>
+
+        <table class="papers">
+          <tr><th>System</th><th>Wire compatibility target</th><th>Storage engine</th><th>Sharding unit</th></tr>
+          <tr><td>TiDB</td><td>MySQL</td><td>TiKV (custom, Raft-backed)</td><td>Region</td></tr>
+          <tr><td>YugabyteDB</td><td>PostgreSQL</td><td>DocDB (built on RocksDB)</td><td>Tablet</td></tr>
+          <tr><td>CockroachDB (9.2, for contrast)</td><td>PostgreSQL-inspired, not fully wire-compatible</td><td>Custom, built on Pebble/RocksDB-family</td><td>Range</td></tr>
+        </table>
+
+        <div class="bm-note">The wire-compatibility bet is a genuinely different kind of trade-off from anything else this series has evaluated — it's not a safety/liveness or latency/throughput trade the way Phase 7's variants were; it's a <strong>migration-cost</strong> trade. A team already running MySQL or PostgreSQL at a scale where a single instance is becoming a bottleneck can, in principle, adopt TiDB or YugabyteDB with a much smaller application-layer rewrite than adopting Spanner's or FoundationDB's own APIs would require — at the cost of both systems needing to faithfully replicate every relevant behavioral nuance of the database they're compatible with, an ongoing engineering burden that never fully goes away as the upstream MySQL or PostgreSQL project keeps evolving.</div>
+
+        <h2 id="raft-per-region">Raft mechanics at the Region/tablet level, concretely</h2>
+
+        <p>It's worth tracing what actually happens, mechanically, when a client issues a write against a TiDB cluster, because it makes concrete exactly how much of this series' Phase 5 machinery is doing real, load-bearing work underneath a query that looks, from the application's point of view, like an ordinary MySQL statement. The stateless TiDB server tier parses the SQL statement and determines which Region (or Regions, for a multi-row write) the affected keys belong to, using metadata it maintains about the current Region-to-node mapping. It then forwards the write to that Region's current Raft leader — found via the same kind of leader-tracking this series covered in article 5.5, with the TiDB server retrying against a different replica if it guesses wrong about which node currently holds leadership, exactly the kind of transient misdirection article 5.5's stale-leader discussion anticipated. The Raft leader for that Region then runs the ordinary AppendEntries replication flow from article 5.6 — proposing the write to its followers, waiting for a majority to acknowledge, and only then considering the write committed and returning success up through the TiDB server tier back to the client. A single SQL statement touching several rows spread across different Regions may involve several such Raft rounds, coordinated by a two-phase-commit-style protocol at the TiDB server tier to keep the whole multi-Region write atomic — directly recalling article 4.4's 2PC discussion, here deployed deliberately, at a scale where the number of participants (the specific Regions touched) is usually small enough that 2PC's blocking risk is judged an acceptable trade against the complexity of an alternative.</p>
+
+        <p>YugabyteDB's DocDB tablets follow the structurally identical flow — a query touching a tablet is routed to that tablet's Raft leader, replicated via the same AppendEntries mechanism, and multi-tablet transactions coordinate via a comparable atomic-commit protocol at the YSQL layer. The point worth taking away from tracing this out explicitly: everything genuinely novel about TiDB and YugabyteDB, as products, lives in the SQL-compatibility layer and the sharding/rebalancing logic — the actual consensus doing the correctness work, at the bottom of the stack, is exactly the Raft machinery this series built from first principles across articles 5.5 and 5.6, unmodified.</p>
+
+        <h2 id="why-not-just">Why not just use CockroachDB, if the underlying pattern is the same?</h2>
+
+        <p>Given how structurally similar TiDB, YugabyteDB, and CockroachDB (9.2) all turn out to be once you look underneath the marketing surface — shard into small units, replicate each with Raft, separate compute from storage — it's worth asking directly why all three exist as separate, competing products rather than the field converging on one. The honest answer is that the wire-compatibility choice is not a minor implementation detail; it's close to the single most consequential decision each project made, and it's genuinely different across the three. CockroachDB deliberately chose to be PostgreSQL-<em>inspired</em> without committing to full wire compatibility, giving its team more freedom to diverge from PostgreSQL's exact behavior where doing so serves the distributed setting better, at the cost of not being a true drop-in replacement. YugabyteDB committed harder to genuine PostgreSQL compatibility, accepting the ongoing burden of tracking upstream PostgreSQL's evolution in exchange for a smoother migration story for the (very large) existing PostgreSQL user base. TiDB targeted MySQL specifically because of MySQL's own enormous, partially non-overlapping installed base, particularly strong in certain regions and industries. None of these are simply "more correct" than the others — they're different bets about which existing user base is worth optimizing the migration path for, made by different teams at different times with different market assumptions, which is precisely why this series treats the choice as a legitimate architectural axis in its own right rather than a footnote.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Are TiDB and YugabyteDB actually 100% compatible with MySQL and PostgreSQL respectively?</summary><p>Close, but not perfectly — both projects maintain public compatibility documentation listing specific unsupported features or behavioral differences, typically around certain advanced SQL features, specific isolation-level edge cases, or extensions that assume single-node storage internals. The compatibility bet is "close enough that most real applications migrate with minimal changes," not "byte-for-byte identical in every corner case."</p></details>
+        <details class="faq"><summary>Why would TiKV or DocDB be preferred over just using CockroachDB directly?</summary><p>The choice mostly comes down to which existing database an organization is already running and wants to migrate from with minimal application changes — a team on MySQL has a smoother path to TiDB; a team on PostgreSQL has a smoother path to YugabyteDB or CockroachDB (which is PostgreSQL-inspired but not fully wire-compatible). This is a migration-cost decision more than a pure technical-superiority one, consistent with this article's core argument.</p></details>
+        <details class="faq"><summary>Does the stateless SQL tier in TiDB introduce any consensus concerns of its own?</summary><p>No — this is precisely the point of the separation: the TiDB server tier holds no durable state and makes no consensus-relevant decisions itself, so it can be scaled up or down, or restarted, without any of the safety concerns this series has spent eight phases building (majority overlap, log replication, leader election). All of that machinery lives entirely within TiKV's per-Region Raft groups.</p></details>
+
+        <h2 id="analytics">A brief note on TiDB's hybrid transactional/analytical angle</h2>
+
+        <p>One further distinguishing feature worth naming, since it's a genuine architectural addition rather than just another wire-compatibility flavor: TiDB ships an optional columnar storage engine, TiFlash, that replicates the same underlying data from TiKV's row-oriented Regions into a column-oriented format specifically optimized for analytical queries, kept consistent with the primary row-store via the Raft log itself (TiFlash nodes act as a special kind of Raft learner, replaying the same committed log entries other Region replicas apply, just materializing them into a different physical storage layout). This lets a single TiDB cluster serve both ordinary transactional MySQL-style queries and large analytical scans against the same consistent data, without a separate ETL pipeline into a different analytics system — a real, distinctive engineering answer to the classic transactional-versus-analytical workload split, built directly on top of the same Raft replication mechanism this article has traced throughout, rather than requiring an entirely separate consensus or replication story for the analytical path.</p>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>TiDB</strong> (MySQL-compatible) and <strong>YugabyteDB</strong> (PostgreSQL-compatible) both bet on <strong>wire compatibility</strong> with an already-popular database as a first-class architectural goal, not an afterthought — minimizing application migration cost.</li>
+          <li>Both separate a <strong>stateless SQL/compute tier</strong> from a <strong>sharded, Raft-backed storage tier</strong> — TiKV's Regions, YugabyteDB's DocDB tablets — the same fundamental pattern as CockroachDB's ranges, under different names.</li>
+          <li>Both independently converged on the same three-part formula (shard + separate compute/storage + wire-compatible surface) once Raft (5.5-5.6) was available as a solid foundation — a second-order instance of the convergence article 5.7 first identified among the classical algorithms themselves.</li>
+          <li>Wire compatibility is a genuine, distinct trade-off axis — a <strong>migration-cost</strong> bet, not a safety/liveness or latency/throughput one — with its own ongoing engineering burden (faithfully tracking an evolving upstream database's behavior).</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.pingcap.com/blog/tidb-architecture/" target="_blank">PingCAP — TiDB Architecture</a> <span>— the TiDB server / TiKV separation described directly.</span></li>
+          <li><a href="https://docs.yugabyte.com/preview/architecture/" target="_blank">YugabyteDB documentation — Architecture</a> <span>— DocDB, tablets, and the YSQL compatibility layer.</span></li>
+          <li><a href="consensus-9-2-cockroachdb-and-multi-raft.html">cvam.sight — Consensus 9.2: CockroachDB and Multi-Raft</a> <span>— the closely parallel per-range Raft sharding pattern.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-9-3-foundationdb.html">← 9.3 FoundationDB</a>
+        <a href="consensus-9-5-wan-consensus-and-read-optimization.html">next: 9.5 WAN Consensus and Read Optimization →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-9-4-tidb-and-yugabytedb",
+    title: "TiDB and YugabyteDB.",
+    date: "Jul 25, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "tidb", "series-consensus"],
+    time: 22,
+    words: 4600,
+    excerpt: "Consensus Algorithms series, 9.4. TiDB (MySQL-compatible) and YugabyteDB (PostgreSQL-compatible) both bet on wire compatibility with an already-popular database as a first-class goal, minimizing migration cost. Both separate a stateless SQL tier from a sharded, Raft-backed storage tier (TiKV Regions, DocDB tablets) -- traced mechanically through an actual write's path. Why CockroachDB, TiDB, and YugabyteDB all coexist despite structural similarity: wire-compatibility target is a genuine, distinct architectural bet, not a footnote.",
+    series: "consensus",
+    seriesNum: "48"
+  },
+  {
     slug: "consensus-9-3-foundationdb",
     title: "FoundationDB.",
     date: "Jul 25, 2026",

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>State Machine Replication — Consensus 3.1 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 3.1. The core abstraction underneath every consensus system: deterministic state machines, why identical inputs in identical order guarantee identical state, and how this turns 'agree on data' into 'agree on a sequence of commands.'">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 3</p>
+        <p class="series-banner-title">Replication</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 3.1 of 4</p>
+        <div class="series-banner-nav">
+          <a href="consensus-3-1-state-machine-replication.html" class="active">3.1 SMR</a>
+          <a href="consensus-3-2-log-replication.html">3.2 Log Replication</a>
+          <a href="consensus-3-3-quorums-and-majority-voting.html">3.3 Quorums</a>
+          <a href="consensus-3-4-leases-and-linearizable-reads.html">3.4 Leases</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 10, 2026 · devops · 20 min read · 4200 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>State machine replication.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">state-machine-replication</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Every algorithm in Phases 4 through 7 of this series — Paxos, Raft, PBFT, all of it — is, underneath its specific mechanics, solving the exact same abstract problem: <strong>State Machine Replication (SMR)</strong>. The core insight, formalized by Lamport and Schneider in the 1980s, is almost suspiciously simple: if every replica starts in the same state and applies the same sequence of deterministic commands in the same order, every replica ends up in the same state — guaranteed, by definition of "deterministic," with no additional coordination needed once that sequence is agreed on. This reframes the entire replication problem (article 1.2) from "how do replicas agree on data" into "how do replicas agree on an ordered sequence of commands" — a reframing that turns out to make the problem dramatically more tractable, and it's the reason every classical consensus algorithm you'll meet from here on is really an "agree on a log" algorithm, not a "agree on data" algorithm.</p>
+
+        <h2 id="core-idea">The core idea, precisely</h2>
+
+        <p>A <strong>deterministic state machine</strong> is any system where the next state is a pure function of the current state and an input command: <code>next_state = f(current_state, command)</code>, with no randomness, no wall-clock reads, no external side-effect dependence baked into <code>f</code> itself. Given that definition, a remarkably strong guarantee follows almost for free:</p>
+
+        <div class="bm-note"><strong>The State Machine Replication guarantee, stated plainly:</strong> if two replicas start from the same initial state and apply the exact same sequence of commands, in the exact same order, they will end up in the exact same final state — always, with certainty, purely as a mathematical consequence of determinism. No further communication between the replicas is needed <em>during</em> command application itself; all the hard coordination work happens once, upfront, in agreeing on <em>the sequence</em>.</div>
+
+        <p>This is the single most important reframing in the entire series, so it's worth restating from a different angle: replicating a complex, mutable, ever-changing database is genuinely hard to reason about directly — what does it even mean for two copies of a live, growing dataset to "agree"? But replicating an <em>ordered list of commands</em> is a much simpler problem, because a list is just a sequence, and "do these two sequences match" is a comparison any two parties can check trivially. SMR's insight is that if you can solve the simpler problem (agree on a sequence of commands) you get the harder one (agree on the resulting state) for free, as a mathematical consequence rather than something you have to separately verify.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Same commands, same order, same starting state → same ending state</text>
+            <text x="150" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Replica A</text>
+            <rect x="30" y="50" width="240" height="30" class="boxy"/><text x="150" y="70" class="smk" text-anchor="middle">state: {x:0, y:0}</text>
+            <text x="150" y="98" class="sm" text-anchor="middle">apply: SET x=5</text>
+            <text x="150" y="114" class="sm" text-anchor="middle">apply: SET y=3</text>
+            <text x="150" y="130" class="sm" text-anchor="middle">apply: INCR x</text>
+            <rect x="30" y="145" width="240" height="30" class="boxg"/><text x="150" y="165" class="smk" text-anchor="middle">state: {x:6, y:3}</text>
+
+            <text x="530" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Replica B</text>
+            <rect x="410" y="50" width="240" height="30" class="boxy"/><text x="530" y="70" class="smk" text-anchor="middle">state: {x:0, y:0}</text>
+            <text x="530" y="98" class="sm" text-anchor="middle">apply: SET x=5</text>
+            <text x="530" y="114" class="sm" text-anchor="middle">apply: SET y=3</text>
+            <text x="530" y="130" class="sm" text-anchor="middle">apply: INCR x</text>
+            <rect x="410" y="145" width="240" height="30" class="boxg"/><text x="530" y="165" class="smk" text-anchor="middle">state: {x:6, y:3}</text>
+
+            <text x="340" y="200" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">Never had to directly compare states — matching sequences guarantee matching outcomes.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Two replicas that never coordinate on the resulting state, only on the command sequence, still provably converge.</p>
+        </div>
+
+        <h2 id="determinism">Why determinism is the load-bearing requirement</h2>
+
+        <p>The entire guarantee collapses without determinism, and it's worth being concrete about the ways real code accidentally violates it — because this is a genuinely common source of production bugs in replicated systems, not a theoretical nitpick:</p>
+
+        <ul>
+          <li><strong>Reading the wall clock inside command logic.</strong> A command handler that does <code>if timestamp() &gt; deadline: reject()</code> will evaluate differently on different replicas applying the "same" command at slightly different real moments — this directly reconnects to article 2.1's lesson that physical clocks can't be trusted for anything correctness-critical.</li>
+          <li><strong>Iterating over an unordered collection.</strong> Many languages' hash maps/sets don't guarantee consistent iteration order across processes (or even across runs of the same process, depending on hash randomization settings) — a command handler that depends on iteration order to decide something (like "process the first matching entry") can diverge silently between replicas.</li>
+          <li><strong>Using true randomness without a shared, replicated seed.</strong> <code>random.random()</code> called independently on each replica produces different sequences on each — any command logic depending on it directly breaks the guarantee. The fix, when randomness is genuinely needed in the state machine's logic, is to make the random value itself part of the <em>command</em> (generated once, by whoever proposes the command, then replicated as data) rather than regenerated independently by each replica.</li>
+          <li><strong>Multi-threaded non-determinism inside a single replica's command application.</strong> If applying one command spins up concurrent threads whose interleaving affects the result, two runs of the exact same command on the exact same replica could even produce different results — this is why production SMR implementations (including the state-machine layer inside Raft/Paxos-based systems like etcd) apply commands strictly sequentially, one at a time, on a single logical thread, specifically to preserve determinism.</li>
+        </ul>
+
+        <div class="bm-warn"><strong>This is not a hypothetical list — floating-point non-determinism has caused real, documented consensus-adjacent bugs.</strong> Certain floating-point operations can produce very slightly different results on different CPU architectures or even different compiler optimization settings, due to differences in how intermediate precision is handled. Systems that must be bit-for-bit deterministic across heterogeneous hardware (this shows up acutely in blockchain/BFT contexts, Phase 6) have had to specifically restrict or carefully control floating-point usage in state-machine logic for exactly this reason — a subtle, easy-to-miss violation of the determinism requirement that doesn't show up in testing on identical hardware but can silently break replication in a heterogeneous production fleet.</div>
+
+        <h2 id="architecture">The SMR architecture: three components</h2>
+
+        <p>Every SMR-based system, regardless of which specific consensus algorithm it uses to agree on the command sequence, has the same three-part shape:</p>
+
+        <ol>
+          <li><strong>The consensus module</strong> — the machinery (Paxos, Raft, etc. — Phase 5 onward) that gets every replica to agree on the same sequence of commands, in the same order. This is where nearly all the algorithmic complexity in this entire series lives.</li>
+          <li><strong>The replicated log</strong> — the actual ordered, append-only record of agreed-upon commands, durably stored. Article 3.2 gives this its own full treatment, because the log itself — not just the abstract "sequence" — has real, important engineering properties (durability, compaction, snapshotting) that matter enormously in practice.</li>
+          <li><strong>The state machine</strong> — the application-specific logic that takes a command from the log and deterministically applies it to local state. This is usually the simplest part conceptually (it's often literally just your application's business logic, wrapped to be deterministic) but it's also where the determinism requirement above has to be enforced, usually by the application developer, not the consensus library.</li>
+        </ol>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">The three-layer SMR architecture, per replica</text>
+            <rect x="30" y="40" width="180" height="120" class="boxr"/>
+            <text x="120" y="70" class="smk" text-anchor="middle">Consensus</text>
+            <text x="120" y="88" class="smk" text-anchor="middle">module</text>
+            <text x="120" y="112" class="sm" text-anchor="middle">(Paxos, Raft...)</text>
+            <text x="120" y="128" class="sm" text-anchor="middle">agrees on order</text>
+            <path d="M210,100 C240,100 260,100 260,100" class="arr"/>
+            <rect x="260" y="40" width="180" height="120" class="boxy"/>
+            <text x="350" y="70" class="smk" text-anchor="middle">Replicated</text>
+            <text x="350" y="88" class="smk" text-anchor="middle">log</text>
+            <text x="350" y="112" class="sm" text-anchor="middle">durable, ordered,</text>
+            <text x="350" y="128" class="sm" text-anchor="middle">append-only</text>
+            <path d="M440,100 C470,100 490,100 490,100" class="arr"/>
+            <rect x="490" y="40" width="160" height="120" class="boxg"/>
+            <text x="570" y="70" class="smk" text-anchor="middle">State</text>
+            <text x="570" y="88" class="smk" text-anchor="middle">machine</text>
+            <text x="570" y="112" class="sm" text-anchor="middle">applies each</text>
+            <text x="570" y="128" class="sm" text-anchor="middle">command, must</text>
+            <text x="570" y="144" class="sm" text-anchor="middle">be deterministic</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — The consensus module's entire job is agreeing on log order; everything after that is deterministic and needs no further coordination.</p>
+        </div>
+
+        <h2 id="why-clean-separation">Why this separation is the single biggest reason Paxos/Raft are reusable</h2>
+
+        <p>This architectural separation is what makes it possible to build a general-purpose consensus <em>library</em> (like etcd's raft implementation, used far beyond etcd itself — by CockroachDB, TiKV, and others, all with completely different application logic) rather than needing a bespoke, from-scratch consensus protocol for every different application. The consensus module doesn't need to know or care <em>what</em> the commands mean — "SET x=5", "DEBIT account A $10", "CREATE lock L" are all just opaque byte blobs to the consensus layer. Its only job is agreeing on their order. The state machine layer is where the domain-specific meaning lives, and it's swappable independently of the consensus mechanism — which is precisely why the same Raft implementation can power a key-value store, a distributed lock service, and a SQL database's replication layer, just by plugging in different state machines on top of the same ordered log.</p>
+
+        <h2 id="beyond-crash">SMR under Byzantine failures — a brief preview</h2>
+
+        <p>Worth a brief forward-reference here, because it's a genuinely important qualifier: the SMR guarantee as stated assumes <em>correct</em> replicas apply the agreed commands faithfully. Under Byzantine failures (Phase 6), a compromised or malicious replica might apply commands incorrectly, or claim to have applied a different sequence than it actually did, even after correctly agreeing on the sequence via a Byzantine-tolerant consensus protocol. Byzantine SMR (Castro &amp; Liskov's PBFT, and its descendants) needs additional machinery beyond plain SMR — output voting, where clients or other replicas cross-check that enough independent replicas produced the <em>same result</em> after applying the same command, not just that they agreed on the command sequence going in. This is a meaningfully different and stronger guarantee than crash-fault SMR provides, and it's why Byzantine consensus systems (Phase 6) are structurally more complex than the crash-fault classical algorithms in Phase 5, even beyond the consensus protocol itself.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does SMR mean every replica has to process commands at the exact same real-world moment?</summary><p>No — SMR says nothing about timing, only about order. Different replicas can apply the same command sequence at different real-world times (one replica might briefly lag behind, catching up later) and still converge to the identical final state, as long as they apply the exact same commands in the exact same order eventually. This is exactly why a temporarily lagging follower in a Raft cluster (Phase 5.6) isn't "wrong" — it's just behind, and will converge once it catches up on the log.</p></details>
+        <details class="faq"><summary>Can two different state machines built on the same replicated log diverge if the log itself is correct?</summary><p>Only if determinism is violated somewhere in the state machine logic (the bullet list above) — if the log is genuinely identical and applied by genuinely deterministic logic, divergence is mathematically impossible. In practice, "unexplained state divergence between replicas that agree on their log" is one of the most common classes of real production bugs in SMR-based systems, and it almost always traces back to an accidental non-determinism, which is exactly why that section of this article is worth taking seriously.</p></details>
+        <details class="faq"><summary>Is SQL a good fit for the "deterministic command" model?</summary><p>Mostly, with caveats that real systems handle carefully — a SQL statement like <code>UPDATE accounts SET balance = balance - 10 WHERE id = 5</code> is deterministic given a starting state. But statements involving <code>NOW()</code>, <code>RANDOM()</code>, or auto-incrementing IDs generated independently per-replica are not, and SQL-based replicated systems built on SMR (several databases in Phase 9) specifically rewrite or intercept these non-deterministic constructs — for example, replacing <code>NOW()</code> with a fixed timestamp value chosen once by the proposer and replicated as part of the command, rather than re-evaluated independently by each replica.</p></details>
+        <details class="faq"><summary>Why not just replicate the raw database file/disk state directly instead of a command log?</summary><p>That's a legitimate, different strategy (physical/disk-level replication, as opposed to logical command replication) with real trade-offs — it can be simpler in some ways but ties you much more tightly to a specific storage engine's on-disk format, and doesn't give you the same clean "log is the single source of truth, replay it anywhere" property that makes SMR-based systems easy to reason about, debug, and extend (e.g. adding a new replica by just replaying the log from scratch, covered more in Phase 3.2).</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>State Machine Replication (SMR)</strong> reframes "replicas must agree on data" into "replicas must agree on an ordered sequence of deterministic commands" — a strictly easier problem with the same guaranteed outcome.</li>
+          <li>The core guarantee is a pure consequence of <strong>determinism</strong>: same starting state + same commands + same order = same ending state, provably, with no further coordination needed during application.</li>
+          <li><strong>Determinism is easy to accidentally violate</strong> — wall-clock reads, unordered iteration, unshared randomness, and even floating-point differences across hardware are all real, documented sources of silent replica divergence.</li>
+          <li>Every SMR system has the same three layers: a <strong>consensus module</strong> (agrees on order, doesn't care what commands mean), a <strong>replicated log</strong> (durable ordered record — full treatment next), and a <strong>state machine</strong> (application-specific, must be deterministic).</li>
+          <li>This clean separation is exactly why general-purpose consensus libraries (etcd's raft package, for instance) can power wildly different applications just by swapping the state machine layer.</li>
+          <li>Under <strong>Byzantine failures</strong> (Phase 6), plain SMR isn't enough — you additionally need output voting to detect a correctly-agreed command being incorrectly applied by a compromised replica.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.microsoft.com/en-us/research/publication/implementing-fault-tolerant-services-using-the-state-machine-approach-a-tutorial/" target="_blank">Schneider — Implementing Fault-Tolerant Services Using the State Machine Approach: A Tutorial (1990)</a> <span>— the canonical SMR reference, remarkably readable.</span></li>
+          <li><a href="https://lamport.azurewebsites.net/pubs/time-clocks.pdf" target="_blank">Lamport — Time, Clocks, and the Ordering of Events (1978)</a> <span>— foundational context; also article 2.2's primary source.</span></li>
+          <li><a href="consensus-1-2-the-replication-problem.html">cvam.sight — Consensus 1.2: The Replication Problem</a> <span>— the informal replication problem this article's abstraction formally solves.</span></li>
+          <li><a href="../series-consensus.html">cvam.sight — Consensus Algorithms series hub</a></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../series-consensus.html">← Consensus series hub</a>
+        <a href="consensus-3-2-log-replication.html">next: 3.2 Log Replication →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

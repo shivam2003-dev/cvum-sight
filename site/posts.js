@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-3-1-state-machine-replication",
+    title: "State machine replication.",
+    date: "Jul 10, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "state-machine-replication", "series-consensus"],
+    time: 20,
+    words: 4200,
+    excerpt: "Consensus Algorithms series, 3.1. The core abstraction underneath Paxos, Raft, and every algorithm in this series: agree on an ordered sequence of deterministic commands, not on data directly, and matching state follows as a mathematical guarantee. How determinism is easy to accidentally violate (clocks, unordered iteration, unshared randomness, even floating-point), the three-layer SMR architecture, and why it's what makes general-purpose consensus libraries reusable across totally different applications.",
+    series: "consensus",
+    seriesNum: "10"
+  },
+  {
     slug: "consensus-2-5-the-flp-impossibility-theorem",
     title: "The FLP impossibility theorem.",
     date: "Jul 9, 2026",

@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-2-2-lamport-clocks-and-logical-time",
+    title: "Lamport clocks and logical time.",
+    date: "Jul 9, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "lamport-clocks", "series-consensus"],
+    time: 21,
+    words: 4400,
+    excerpt: "Consensus Algorithms series, 2.2. Forget measuring time -- track causality instead. Lamport's 1978 happens-before relation, the two-rule counter mechanism (increment locally, max+1 on receive), the worked three-process example, why the converse of the core guarantee is false (concurrent events can get any relative counter values), and the process-ID tie-break for building a total order out of a partial one.",
+    series: "consensus",
+    seriesNum: "6"
+  },
+  {
     slug: "consensus-2-1-physical-clocks-and-why-they-lie",
     title: "Physical clocks and why they lie.",
     date: "Jul 9, 2026",

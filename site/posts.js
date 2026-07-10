@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-1-3-cap-theorem-properly",
+    title: "CAP theorem, properly.",
+    date: "Jul 8, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "cap-theorem", "series-consensus"],
+    time: 21,
+    words: 4500,
+    excerpt: "Consensus Algorithms series, 1.3. Not 'pick two' -- partition tolerance isn't optional over a real network. The precise definitions of C (linearizability), A, and P from Gilbert & Lynch's 2002 proof, the proof sketch itself, and the four misconceptions (CA systems, 'CP means always unavailable', CAP's C vs eventual consistency) that make most popular CAP explanations subtly wrong.",
+    series: "consensus",
+    seriesNum: "3"
+  },
+  {
     slug: "consensus-1-2-the-replication-problem",
     title: "The replication problem.",
     date: "Jul 8, 2026",

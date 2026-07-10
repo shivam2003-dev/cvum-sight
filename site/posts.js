@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-1-1-why-distributed-systems-are-hard",
+    title: "Why distributed systems are hard.",
+    date: "Jul 8, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "consensus", "series-consensus"],
+    time: 22,
+    words: 4600,
+    excerpt: "Consensus Algorithms series, 1.1. A single machine gives you a total order, atomic failure, a trustworthy clock, and synchronous calls -- all for free. Distributed systems throw all four away. The three lies (the network is reliable, clocks are synchronized, failure is binary), the full failure spectrum from crash to Byzantine, split-brain visualized, and real production incidents (GitHub 2018, AWS DynamoDB 2015) showing why the blast radius is wildly disproportionate to the trigger.",
+    series: "consensus",
+    seriesNum: "1"
+  },
+  {
     slug: "pgbackrest-s3-guide",
     title: "pgBackRest with S3 — the complete hands-on guide to backup &amp; restore.",
     date: "Jul 7, 2026",

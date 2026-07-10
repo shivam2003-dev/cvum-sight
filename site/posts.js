@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-4-2-leader-election",
+    title: "Leader election.",
+    date: "Jul 11, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "leader-election", "series-consensus"],
+    time: 19,
+    words: 4000,
+    excerpt: "Consensus Algorithms series, 4.2. The classical Bully and Ring algorithms as historical baseline, and why they're unsafe alone for consensus systems (no awareness of data safety). How consensus-integrated election ties leadership eligibility to log up-to-dateness, inheriting safety from majority overlap so election only needs to solve liveness. The split-vote livelock problem and why randomized timeouts fix it, and the Omega failure detector's precise formal characterization of what election needs.",
+    series: "consensus",
+    seriesNum: "15"
+  },
+  {
     slug: "consensus-4-1-safety-vs-liveness",
     title: "Safety vs liveness.",
     date: "Jul 11, 2026",

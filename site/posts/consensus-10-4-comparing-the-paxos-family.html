@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comparing the Paxos Family — A Master Table — Consensus 10.4 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 10.4. Every algorithm this series has covered, in one master comparison: which of Multi-Paxos's four bundled assumptions each one relaxes, its node-count requirements, its distinctive mechanism, and a decision framework for choosing among them.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 10</p>
+        <p class="series-banner-title">Research Papers</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 10.4 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-10-1-how-to-read-a-consensus-paper.html" class="done">10.1 How to Read</a>
+          <a href="consensus-10-2-quepaxa.html" class="done">10.2 QuePaxa</a>
+          <a href="consensus-10-3-meerkat.html" class="done">10.3 Meerkat</a>
+          <a href="consensus-10-4-comparing-the-paxos-family.html" class="active">10.4 Master Table</a>
+          <a href="consensus-10-5-benchmarking-consensus-algorithms.html">10.5 Benchmarking</a>
+          <a href="consensus-10-6-open-problems-in-consensus.html">10.6 Open Problems</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 28, 2026 · devops · 20 min read · 4300 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Comparing the Paxos family — a master table.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">paxos-family</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Twenty-two algorithms and protocols, thirteen production systems, ten phases — this article compresses all of it into one reference table and a decision framework, so that the entire journey from article 1.1 through article 10.3 becomes something you can scan in minutes rather than reread in full. This is deliberately the most reference-oriented article in the series: less narrative, more lookup table, designed to be the page you return to when choosing between algorithms for a real system rather than learning any of them for the first time.</p>
+
+        <h2 id="master-table">The master table</h2>
+
+        <table class="papers">
+          <tr><th>Algorithm</th><th>Fault model</th><th>Node count</th><th>Leader?</th><th>Distinctive mechanism</th><th>Article</th></tr>
+          <tr><td>Paxos / Multi-Paxos</td><td>Crash</td><td>2f+1</td><td>Stable (amortized)</td><td>Phase 1/2 promise-and-accept, majority overlap</td><td>5.1-5.3</td></tr>
+          <tr><td>Viewstamped Replication</td><td>Crash</td><td>2f+1</td><td>Stable</td><td>Independently-derived views/primary, same safety core</td><td>5.4</td></tr>
+          <tr><td>Raft</td><td>Crash</td><td>2f+1</td><td>Stable</td><td>Decomposition for understandability, log matching</td><td>5.5-5.6</td></tr>
+          <tr><td>Zab</td><td>Crash</td><td>2f+1</td><td>Stable</td><td>Structural FIFO client order via zxids</td><td>5.7</td></tr>
+          <tr><td>PBFT</td><td>Byzantine</td><td>3f+1</td><td>Rotating (view change)</td><td>All-to-all pre-prepare/prepare/commit</td><td>6.2</td></tr>
+          <tr><td>HotStuff</td><td>Byzantine</td><td>3f+1</td><td>Rotating (pipelined)</td><td>Threshold-signature aggregation, three-chain commit</td><td>6.3</td></tr>
+          <tr><td>Tendermint</td><td>Byzantine</td><td>3f+1</td><td>Rotating (round-based)</td><td>Immediate deterministic finality, slashing</td><td>6.4</td></tr>
+          <tr><td>Narwhal/Bullshark</td><td>Byzantine</td><td>3f+1</td><td>None for dissemination</td><td>DAG mempool separated from ordering</td><td>6.5</td></tr>
+          <tr><td>EPaxos</td><td>Crash</td><td>2f+1 (larger fast quorum)</td><td>None (per-command)</td><td>Dependency-graph ordering</td><td>7.1</td></tr>
+          <tr><td>Flexible Paxos</td><td>Crash</td><td>Q1∩Q2≠∅, asymmetric</td><td>Stable</td><td>Quorums need only intersect, not both be majorities</td><td>7.2</td></tr>
+          <tr><td>Fast/Generalized Paxos</td><td>Crash</td><td>2f+1</td><td>Fast rounds skip leader</td><td>Commutativity, one-round-trip fast rounds</td><td>7.3</td></tr>
+          <tr><td>Cheap/Compartmentalized Paxos</td><td>Crash</td><td>f+1 main + f standby / decomposed</td><td>Stable</td><td>Idle standbys; role decomposition for scaling</td><td>7.4</td></tr>
+          <tr><td>Atlas</td><td>Crash</td><td>Near-majority fast quorum</td><td>None (per-command)</td><td>Flexible Paxos applied to EPaxos's setting</td><td>7.5</td></tr>
+          <tr><td>Caesar</td><td>Crash</td><td>2f+1-ish</td><td>None (per-command)</td><td>Proactive ordering certificates</td><td>7.6</td></tr>
+          <tr><td>OmniPaxos</td><td>Crash</td><td>2f+1</td><td>Stable, decoupled election</td><td>Production-engineered library, first-class reconfiguration</td><td>7.7</td></tr>
+          <tr><td>Matchmaker Paxos</td><td>Crash</td><td>2f+1</td><td>Stable</td><td>Dedicated matchmaker role for safe reconfiguration</td><td>7.8</td></tr>
+          <tr><td>PigPaxos</td><td>Crash</td><td>2f+1</td><td>Stable</td><td>Gossip-relay fan-out instead of direct leader broadcast</td><td>7.8</td></tr>
+          <tr><td>BPaxos</td><td>Crash</td><td>2f+1</td><td>Decoupled ordering/dissemination</td><td>Narwhal-style separation, crash-fault setting</td><td>7.8</td></tr>
+          <tr><td>Rabia</td><td>Crash</td><td>2f+1</td><td>None per-round</td><td>Randomization to simplify, not just to escape FLP</td><td>7.8</td></tr>
+          <tr><td>QuePaxa</td><td>Crash (adversarial-network-robust)</td><td>2f+1</td><td>Fast-path leader, no timeout dependency</td><td>Randomized async core, hedging delays, bandit tuning</td><td>10.2</td></tr>
+        </table>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">The four bundled Multi-Paxos assumptions, and who relaxes which</text>
+            <rect x="20" y="40" width="150" height="60" class="boxy"/><text x="95" y="62" class="smk" text-anchor="middle">Fixed leader</text><text x="95" y="80" class="sm" text-anchor="middle">EPaxos, Atlas, Caesar,</text><text x="95" y="94" class="sm" text-anchor="middle">Rabia, QuePaxa's core</text>
+            <rect x="185" y="40" width="150" height="60" class="boxy"/><text x="260" y="62" class="smk" text-anchor="middle">Total order</text><text x="260" y="80" class="sm" text-anchor="middle">Generalized Paxos,</text><text x="260" y="94" class="sm" text-anchor="middle">EPaxos, Atlas, Caesar</text>
+            <rect x="350" y="40" width="150" height="60" class="boxy"/><text x="425" y="62" class="smk" text-anchor="middle">Symmetric quorums</text><text x="425" y="80" class="sm" text-anchor="middle">Flexible Paxos,</text><text x="425" y="94" class="sm" text-anchor="middle">Atlas</text>
+            <rect x="515" y="40" width="145" height="60" class="boxy"/><text x="587" y="62" class="smk" text-anchor="middle">Uniform node cost</text><text x="587" y="80" class="sm" text-anchor="middle">Cheap Paxos,</text><text x="587" y="94" class="sm" text-anchor="middle">Compartmentalized</text>
+            <text x="340" y="130" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">Timeout-based liveness is a fifth axis QuePaxa (10.2) adds to this framing</text>
+            <text x="340" y="150" class="sm" text-anchor="middle">— not one of the original four, but the same kind of relaxable convenience assumption.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Every Phase 7 variant, plus QuePaxa, mapped onto exactly which convenience assumption it relaxes.</p>
+        </div>
+
+        <h2 id="reading-the-table">Reading the table's patterns, not just its rows</h2>
+
+        <p>Beyond looking up any single algorithm, the table rewards reading across it for patterns this series has built up piece by piece. Notice that the node-count column is almost entirely either <code>2f+1</code> or <code>3f+1</code> — there is no algorithm in this entire series' coverage that finds some clever way around article 6.1's proven threshold; the Byzantine/crash-fault boundary is a hard line every single entry respects, regardless of how sophisticated its other optimizations are. Notice, too, that the "leader?" column shows a genuine spread — stable, rotating, per-command-none, and QuePaxa's hybrid fast-path-with-fallback — but that every single entry, without exception, still relies on the same majority-overlap safety mechanism from article 3.3 underneath whatever leadership structure it uses on top. The table's real lesson isn't found in any one row; it's found in what stays constant across every row despite twenty different surface-level designs: majority overlap for safety, a small number of genuinely distinct fault-tolerance thresholds, and liveness as the dimension nearly every innovation actually targets.</p>
+
+        <h2 id="decision-framework">A decision framework, distilled</h2>
+
+        <p>Rather than a flowchart (which tends to oversimplify genuinely contextual decisions into false certainty), here's the actual sequence of questions this series' own material supports asking, in order, when choosing among this table's entries for a real system:</p>
+
+        <ol>
+          <li><strong>Do you need Byzantine tolerance?</strong> If any participant might be actively malicious or compromised (open/permissionless networks, adversarial multi-party settings) — go to the Phase 6 family (PBFT, HotStuff, Tendermint, Narwhal/Bullshark) and accept the 3f+1 node-count floor (article 6.1). If all participants are operated by one trusted organization, crash-fault tolerance (2f+1) is sufficient and considerably cheaper.</li>
+          <li><strong>Is understandability/operational maturity your top priority?</strong> Raft (5.5-5.6), wrapped by a production system like etcd (8.1), remains the most battle-tested, most widely-documented, easiest-to-hire-for choice — the default this series would recommend absent a specific reason to deviate.</li>
+          <li><strong>Is your workload latency-sensitive with low real contention, spread across a wide area?</strong> Consider EPaxos-family leaderless designs (7.1, 7.5, 7.6) — but only if you've confirmed genuine low contention; under high contention, their advantage shrinks or reverses relative to a well-placed Raft leader (article 9.5's leader-placement discussion).</li>
+          <li><strong>Are you fighting adversarial WAN jitter or DoS-style conditions specifically?</strong> QuePaxa (10.2) targets exactly this, at the cost of real implementation complexity — appropriate for Meerkat-scale (10.3) deployments, likely overkill for a single-datacenter cluster.</li>
+          <li><strong>Is reconfiguration frequency or safety your main operational pain point?</strong> OmniPaxos (7.7) and Matchmaker Paxos (7.8) specifically prioritize this.</li>
+          <li><strong>Is throughput at very large validator/replica counts the bottleneck?</strong> HotStuff (6.3) for Byzantine settings, PigPaxos or BPaxos (7.8) for crash-fault settings — both directly targeting the fan-out cost this series traced from article 6.2 through 9.2.</li>
+        </ol>
+
+        <div class="bm-fix">Notice what this framework never recommends: picking an algorithm because it's the newest, or because a benchmark somewhere reported an impressive number under conditions that may not match yours (article 10.1's second pitfall, restated one final time). Every entry in the master table above is a genuine, defensible choice for <em>some</em> real set of constraints — the actual engineering skill this series has tried to build, across sixty planned articles, is knowing which constraints you actually have.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Why isn't there a single "best" algorithm at the top of this table?</summary><p>Because, as this series has demonstrated repeatedly since Phase 7, there genuinely isn't one — every entry optimizes a specific axis (understandability, latency, throughput, cost, adversarial robustness) at some honest cost on another. A ranked "best to worst" list would misrepresent the actual shape of this research area.</p></details>
+        <details class="faq"><summary>Which algorithms in this table are most commonly seen in real production systems today?</summary><p>Raft (via etcd, Consul, CockroachDB, TiDB, YugabyteDB) and Multi-Paxos (via Spanner, Chubby) dominate real-world deployment by a wide margin, per Phase 8-9's coverage; the Phase 6 BFT family dominates blockchain and consortium settings; the more specialized Phase 7 variants and QuePaxa remain comparatively rare in production outside of research-adjacent deployments like Meerkat.</p></details>
+        <details class="faq"><summary>Should this table be treated as exhaustive?</summary><p>No — it covers every algorithm this series chose to include, which is itself a curated, not exhaustive, subset of a much larger research literature. Article 10.6 (open problems) and the broader field continue producing new variants; treat this table as a snapshot grounded in this series' coverage, not a permanent, closed reference.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>This series' twenty algorithms/protocols compress into <strong>one master table</strong>, comparable directly on fault model, node count, leader structure, and distinctive mechanism.</li>
+          <li>Every Phase 7 variant, plus QuePaxa, maps cleanly onto <strong>which of Multi-Paxos's bundled convenience assumptions it relaxes</strong> — fixed leader, total order, symmetric quorums, uniform cost, and (QuePaxa's addition) timeout-based liveness.</li>
+          <li>The <strong>decision framework</strong> is a sequence of honest questions about your actual constraints (Byzantine tolerance needed? Understandability priority? Contention level? Adversarial network conditions? Reconfiguration frequency? Scale?) — not a ranked list.</li>
+          <li>No algorithm in this table is simply "better" than the others in general — each is the right answer for a specific, nameable set of constraints, the central, repeated lesson of this entire series.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="../series-consensus.html">cvam.sight — Consensus Algorithms series hub</a> <span>— every article this master table summarizes, linked directly.</span></li>
+          <li><a href="consensus-10-1-how-to-read-a-consensus-paper.html">cvam.sight — Consensus 10.1: How to Read a Consensus Paper</a> <span>— the framework this table's decision process directly extends.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-10-3-meerkat.html">← 10.3 Meerkat</a>
+        <a href="consensus-10-5-benchmarking-consensus-algorithms.html">next: 10.5 Benchmarking Consensus Algorithms →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

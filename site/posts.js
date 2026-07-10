@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-10-4-comparing-the-paxos-family",
+    title: "Comparing the Paxos family — a master table.",
+    date: "Jul 28, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "paxos-family", "series-consensus"],
+    time: 20,
+    words: 4300,
+    excerpt: "Consensus Algorithms series, 10.4. Twenty algorithms and protocols compressed into one master comparison table: fault model, node count, leader structure, distinctive mechanism, and which of Multi-Paxos's four bundled assumptions each one relaxes. A decision framework of honest questions (Byzantine tolerance? understandability priority? contention level? adversarial network? reconfiguration frequency? scale?) rather than a ranked best-to-worst list -- the central, repeated lesson of this entire series made into a reference page.",
+    series: "consensus",
+    seriesNum: "54"
+  },
+  {
     slug: "consensus-10-3-meerkat",
     title: "Meerkat — Cloudflare's global consensus service.",
     date: "Jul 28, 2026",

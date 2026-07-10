@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Physical Clocks and Why They Lie — Consensus 2.1 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 2.1. Clock drift, NTP, why 'wall-clock time' can't order events across machines, and the hardware Google built (TrueTime) to bound the lie instead of pretending it doesn't exist.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+  .eq{background:rgba(240,192,64,.10);border:1px solid var(--rule,#d8cfb8);border-radius:7px;padding:10px 16px;margin:16px 0;font-family:var(--font-mono);font-size:.88rem;overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 2</p>
+        <p class="series-banner-title">Time and Failure</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 2.1 of 5</p>
+        <div class="series-banner-nav">
+          <a href="consensus-2-1-physical-clocks-and-why-they-lie.html" class="active">2.1 Physical Clocks</a>
+          <a href="consensus-2-2-lamport-clocks-and-logical-time.html">2.2 Lamport Clocks</a>
+          <a href="consensus-2-3-vector-clocks.html">2.3 Vector Clocks</a>
+          <a href="consensus-2-4-failure-models-and-failure-detectors.html">2.4 Failure Detectors</a>
+          <a href="consensus-2-5-the-flp-impossibility-theorem.html">2.5 FLP</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 9, 2026 · devops · 20 min read · 4200 words <span class="difficulty beginner">beginner</span></p>
+        <h1>Physical clocks and why they lie.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">clocks</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Every computer has a clock, and every one of those clocks is quietly, constantly wrong — not broken, just imprecise, in a way that compounds the moment you try to compare "now" across two machines. This article makes that imprecision concrete: what actually causes clock drift, why NTP helps but doesn't solve the problem, why you cannot use timestamps to reliably order events across machines, and how Google's Spanner responded — not by pretending the problem away, but by building custom hardware to measure and bound exactly how wrong the clock might be. This is the mechanical detail behind article 1.1's "Lie #2," and the last piece of vocabulary before logical clocks (2.2) show a genuinely different way to sidestep the whole mess.</p>
+
+        <h2 id="what-is-a-clock">What a computer's clock actually is</h2>
+
+        <p>Every computer has a small quartz crystal oscillator — the same basic technology as a quartz wristwatch — that vibrates at a specific frequency when a voltage is applied to it (usually around 32,768 Hz for the low-power real-time clock chip that keeps time even when the machine is off, and much higher frequencies for the main system clock). The operating system counts these vibrations to derive "how much time has passed," and adds that to a stored reference point to produce the wall-clock time your applications read.</p>
+
+        <p>This is already a hint at the whole problem: <strong>a clock isn't measuring time directly — it's counting oscillations of a physical crystal and trusting that the crystal vibrates at a perfectly constant, known rate.</strong> It doesn't. Temperature changes the resonant frequency of quartz measurably; manufacturing tolerances mean no two crystals, even from the same batch, oscillate at <em>exactly</em> the same frequency; and the crystal ages, drifting further from its nominal frequency over months and years. None of this is a defect — it's the physical reality of every quartz oscillator ever made, consumer-grade or otherwise.</p>
+
+        <h2 id="drift">Clock drift, with real numbers</h2>
+
+        <p>The practical consequence is called <strong>clock drift</strong> (or clock skew when comparing two clocks against each other): a machine's clock runs measurably faster or slower than true time, accumulating error linearly. Typical consumer-grade crystal oscillators drift on the order of tens of parts-per-million — commonly cited as roughly <strong>1 second every 11–12 days</strong> for a cheap crystal, though quality varies. Server-grade hardware does meaningfully better, but "better" here means less bad, not solved: even a well-specified server clock can drift several milliseconds per hour without correction, and that's before accounting for temperature swings in a datacenter, which measurably shift oscillator frequency in real time.</p>
+
+        <div class="eq">drift accumulated ≈ drift_rate × time_since_last_sync
+
+e.g. a 50 ppm (parts-per-million) oscillator, unsynced for 1 hour:
+  50 / 1,000,000 × 3600s = 0.18s of drift in just one hour</div>
+
+        <p>0.18 seconds might sound trivial. It is not trivial for a system trying to determine which of two events, on two different machines, happened first — especially when those events might be only microseconds apart in real time, which is routine for anything processing thousands of operations per second.</p>
+
+        <h2 id="ntp">NTP: helps enormously, solves nothing structurally</h2>
+
+        <p>The Network Time Protocol (NTP) is the standard fix — a hierarchical system of time servers (traceable back to atomic clocks and GPS receivers at the top, called "stratum 0/1" sources) that periodically corrects a machine's clock by exchanging timestamped messages and estimating network round-trip delay to compensate for it. Well-configured NTP keeps machines within single-digit milliseconds of true time under good conditions, and this is genuinely valuable — it's why your laptop's clock doesn't drift into obvious wrongness over weeks of use.</p>
+
+        <p>But NTP has real, structural limits that matter enormously for distributed systems design:</p>
+
+        <ul>
+          <li><strong>NTP corrections can jump the clock, not just smoothly adjust it.</strong> If a machine's clock has drifted significantly and NTP detects this, depending on configuration it may <em>step</em> the clock — an instantaneous jump forward or backward — rather than gradually correcting ("slewing") it. A backward jump is exactly as bad as it sounds for any code assuming time only moves forward, which turns out to be an assumption baked deep into a surprising amount of software (timeout logic, cache expiry, log ordering).</li>
+          <li><strong>NTP itself can silently fail.</strong> A misconfigured firewall blocking NTP's UDP port, a machine that can't reach any time server, an NTP daemon that's crashed — all of these leave a machine's clock free-running and drifting with no indication anything is wrong, unless you specifically monitor NTP sync status (a real, commonly-missed operational gap).</li>
+          <li><strong>Network asymmetry breaks NTP's core assumption.</strong> NTP estimates one-way delay by assuming the round trip is symmetric (equal delay each direction) and halving it. On networks where the path there and the path back have meaningfully different latency (common with asymmetric routing, congestion in one direction, or satellite/cellular links), this assumption is simply false, and NTP's correction inherits that error.</li>
+          <li><strong>Precision is still bounded by network jitter.</strong> Even under ideal conditions, NTP's accuracy over the public internet is typically single-digit to tens of milliseconds — vastly better than unsynchronized drift, but still far too imprecise to safely order two events that might be microseconds apart.</li>
+        </ul>
+
+        <div class="bm-warn"><strong>PTP (Precision Time Protocol) exists for a reason.</strong> Financial trading systems and other latency-sensitive infrastructure often use PTP instead of or alongside NTP, achieving sub-microsecond synchronization using specialized network hardware (switches that timestamp packets at the hardware level, not in software where OS scheduling jitter adds noise). This isn't an obscure detail — it's a direct illustration that "how synchronized do our clocks need to be" is an engineering decision with a real cost curve, and most systems don't need or pay for PTP-level precision, which is exactly why the logical-clock approach in the next two articles matters: it sidesteps needing precise physical time at all.</div>
+
+        <h2 id="why-cant-compare">Why you still can't compare timestamps across machines, even with good NTP</h2>
+
+        <p>Suppose you have excellent NTP sync — both machines within 1ms of true time. Can you now safely say "event A (timestamped 14:00:03.100 on machine 1) happened before event B (timestamped 14:00:03.099 on machine 2)"? <strong>No</strong> — and this is the crux of the whole article. Machine 1's clock could be 0.5ms fast and machine 2's could be 0.5ms slow (both well within the "1ms accuracy" bound, since that bound is typically a ± figure), meaning the "0.001s gap" you observed could easily be entirely clock error rather than real elapsed time. The two events could have happened in the opposite real-world order from what their timestamps suggest, and nothing about the timestamps alone tells you that.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Even "good" clock sync can't order close-together events</text>
+            <line x1="60" y1="80" x2="620" y2="80" stroke="#2a2620" stroke-width="1.5"/>
+            <text x="60" y="70" class="sm">true time →</text>
+            <rect x="280" y="60" width="6" height="40" class="boxr"/>
+            <text x="283" y="115" class="smk" text-anchor="middle">real event A</text>
+            <rect x="300" y="60" width="6" height="40" class="boxr"/>
+            <text x="303" y="135" class="smk" text-anchor="middle">real event B (2ms after A)</text>
+            <text x="340" y="160" class="sm" text-anchor="middle">Machine 1's clock reads 0.5ms FAST → timestamps A as later than it really was</text>
+            <text x="340" y="178" class="sm" text-anchor="middle">Machine 2's clock reads 0.5ms SLOW → timestamps B as earlier than it really was</text>
+            <text x="340" y="205" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">Recorded timestamps can show B before A — the exact opposite of what really happened.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Two clocks, each individually "within spec," can still disagree about the order of two closely-spaced real events.</p>
+        </div>
+
+        <p>This isn't a corner case you can engineer around with better hardware alone — it's the reason article 1.1 called clock synchronization a fundamental limit rather than a precision problem. There is a real, physics-grounded lower bound here too: information about "what time is it right now, exactly" takes nonzero time to propagate from any reference clock to any machine that wants it, so there is no way to eliminate uncertainty entirely, only to shrink and <em>bound</em> it.</p>
+
+        <h2 id="truetime">Google's answer: bound the uncertainty instead of pretending it's zero</h2>
+
+        <p>This is the single most important idea in this article, and it's the bridge to article 9.1's full Spanner treatment: <strong>instead of treating "current time" as a single trustworthy number, treat it as an interval of uncertainty, and design your algorithm to be correct no matter where within that interval the true time actually falls.</strong></p>
+
+        <p>Google's <strong>TrueTime</strong> API does exactly this. Rather than <code>now()</code> returning a single timestamp, TrueTime's <code>TT.now()</code> returns an interval <code>[earliest, latest]</code> that is <em>guaranteed</em> to contain the true current time. Every datacenter running Spanner has GPS receivers and atomic clocks (multiple, for redundancy — a "time master" per datacenter), so the uncertainty bound stays small — typically a few milliseconds in practice, occasionally more if a time master is temporarily unreachable and the bound has to widen conservatively to remain honest.</p>
+
+        <p>The genuinely clever part is what Spanner does with that interval: for a transaction that needs to be ordered with certainty relative to another, it simply <strong>waits out the uncertainty window</strong> before committing — this is literally called the "commit wait." If <code>TT.now()</code> returns <code>[100ms, 107ms]</code> uncertainty, Spanner waits until it's certain the interval has fully passed before allowing the transaction to be visible, guaranteeing that any transaction which started after this one will get a TrueTime interval entirely after this one's commit. It trades a small, bounded amount of latency (the width of the uncertainty interval, typically single-digit milliseconds) for a correctness guarantee that no amount of "just synchronize better" NTP tuning could ever provide, because the guarantee comes from <em>knowing and respecting the bound</em>, not from making the bound zero (which is physically impossible).</p>
+
+        <div class="bm-note"><strong>This is the same intellectual move you'll see repeated throughout this series.</strong> Rather than fighting an unavoidable physical limit, the strongest systems <em>measure</em> the limit precisely and design correctness around the measured bound. FLP (article 2.5) will show the theoretical version of this same lesson: you can't eliminate the fundamental uncertainty of an asynchronous network, but you can build algorithms that remain correct despite it.</div>
+
+        <h2 id="cheaper-alternatives">What everyone else does (most systems aren't Google)</h2>
+
+        <p>TrueTime-grade infrastructure — atomic clocks and GPS receivers in every datacenter — is a genuinely enormous investment that makes sense for a company operating Spanner at Google's scale, and it is not what most systems building on this series' algorithms actually have available. The overwhelmingly more common approach, and the one nearly every algorithm from Phase 4 onward actually relies on, is to <strong>not use physical clocks for ordering at all</strong>. This is precisely the motivation for logical clocks — the subject of the next two articles — which derive a correct ordering of events purely from the pattern of messages sent and received, with zero dependence on any physical clock's accuracy. It is, in a real sense, a cleverer and cheaper solution to the same problem TrueTime solves with hardware: Lamport's insight (1978, predating TrueTime by decades) was that you don't need to know real time at all if all you actually need is a consistent <em>order</em>.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>If NTP is imprecise, why do so many systems still use wall-clock timestamps at all?</summary><p>For plenty of purposes, millisecond-level imprecision genuinely doesn't matter — a log timestamp used by a human debugging an incident hours later doesn't need to resolve microsecond-scale event ordering. The problem is specific to cases where you need to make a <em>correctness-critical</em> decision (which write is newer, which lock request came first) based on comparing timestamps from different machines — that's the case this article, and the whole "clocks lie" theme, is warning about.</p></details>
+        <details class="faq"><summary>Does using UTC everywhere solve the cross-machine comparison problem?</summary><p>No — UTC is a time standard (what "zero drift" would even mean), not a synchronization mechanism. Every machine can agree to represent time in UTC and still have clocks that drift relative to true UTC time by different amounts. The standard doesn't synchronize anything; NTP (or PTP, or TrueTime) is the mechanism that actually narrows the gap between a machine's clock and true UTC.</p></details>
+        <details class="faq"><summary>Is TrueTime's "commit wait" the same latency cost PACELC described in article 1.4?</summary><p>Related but distinct. PACELC's EC latency cost is fundamentally about coordination round-trips (waiting for quorum acknowledgment across a network). TrueTime's commit wait is specifically about waiting out clock uncertainty, which is typically a smaller, more predictable delay (bounded by the width of the TrueTime interval) than a full cross-region quorum round-trip. Spanner pays both costs — coordination for consensus (Phase 9.1 covers Spanner's Paxos usage) and commit-wait for time ordering — and the TrueTime engineering specifically minimizes the second one as much as physically possible.</p></details>
+        <details class="faq"><summary>Could a system just refuse to care about event ordering across machines?</summary><p>Some genuinely do, for data where ordering doesn't matter (independent counters, certain append-only logs where order within a single writer is all that matters). But the moment your system needs to answer "which of these two writes should win" or "did this read happen after that write," you need <em>some</em> notion of ordering — the question this article and the next two answer is just whether that ordering comes from (expensive, still-imperfect) physical time, or from (cheap, logically exact) causal relationships between messages.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Every clock is a quartz oscillator whose frequency isn't perfectly constant — <strong>clock drift</strong> is physical reality, not a hardware defect, and it compounds continuously without correction.</li>
+          <li><strong>NTP</strong> narrows drift dramatically but has real structural limits: it can jump the clock, can fail silently, assumes symmetric network delay, and is still bounded by network jitter to single-digit-to-tens of milliseconds under real conditions.</li>
+          <li>Even with good NTP sync, <strong>you cannot safely order two events on different machines by comparing timestamps</strong> — the accuracy bound is wide enough that closely-spaced events can show the wrong order.</li>
+          <li>Google's <strong>TrueTime</strong> doesn't eliminate clock uncertainty (impossible) — it <em>measures and bounds</em> it precisely (via atomic clocks + GPS per datacenter), then designs correctness (commit wait) around the known bound rather than pretending the bound is zero.</li>
+          <li>This "measure and design around the limit, don't fight it" pattern reappears throughout this series, most sharply in FLP (article 2.5).</li>
+          <li>Most systems don't have TrueTime-grade infrastructure, which is exactly why <strong>logical clocks</strong> (Lamport, vector — next two articles) exist: they derive correct event ordering from message patterns alone, with zero dependence on physical clock accuracy.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://static.googleusercontent.com/media/research.google.com/en//archive/spanner-osdi2012.pdf" target="_blank">Corbett et al. — Spanner: Google's Globally-Distributed Database (OSDI 2012)</a> <span>— the primary source for TrueTime; full Spanner treatment in article 9.1.</span></li>
+          <li><a href="https://www.ntp.org/documentation/4.2.8-series/warp/" target="_blank">NTP documentation — clock discipline and step vs. slew</a> <span>— the mechanics of how NTP corrects a drifting clock.</span></li>
+          <li><a href="https://queue.acm.org/detail.cfm?id=2745385" target="_blank">Kulkarni et al. — Logical Physical Clocks and Consistent Snapshots in Globally Distributed Databases (2014)</a> <span>— a bridge paper between physical-clock and logical-clock thinking, relevant heading into article 2.2.</span></li>
+          <li><a href="consensus-1-1-why-distributed-systems-are-hard.html">cvam.sight — Consensus 1.1: Why Distributed Systems Are Hard</a> <span>— "Lie #2," which this article makes mechanically precise.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../series-consensus.html">← Consensus series hub</a>
+        <a href="consensus-2-2-lamport-clocks-and-logical-time.html">next: 2.2 Lamport Clocks and Logical Time →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

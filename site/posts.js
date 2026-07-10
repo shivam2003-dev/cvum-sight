@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-2-1-physical-clocks-and-why-they-lie",
+    title: "Physical clocks and why they lie.",
+    date: "Jul 9, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "clocks", "series-consensus"],
+    time: 20,
+    words: 4200,
+    excerpt: "Consensus Algorithms series, 2.1. Clock drift is physical reality, not a defect -- every quartz oscillator drifts. NTP helps but can jump the clock, fail silently, and is still bounded to single-digit-to-tens of milliseconds. Even with good sync you can't safely order two events by comparing timestamps across machines. Google's TrueTime doesn't eliminate the uncertainty -- it measures and bounds it with atomic clocks + GPS, then designs correctness (commit wait) around the bound.",
+    series: "consensus",
+    seriesNum: "5"
+  },
+  {
     slug: "consensus-1-4-pacelc-and-beyond-cap",
     title: "PACELC and beyond CAP.",
     date: "Jul 8, 2026",

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WAN Consensus and Read Optimization — Consensus 9.5 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 9.5. Why crossing continents changes consensus's economics: the speed-of-light latency floor, quorum leases and follower reads for fast local reads without sacrificing consistency, witness/non-voting replicas, and the geo-partitioning strategies real multi-region deployments actually use.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 9</p>
+        <p class="series-banner-title">Cloud-Native &amp; Geo-Distributed Consensus</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 9.5 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-9-1-spanner-and-truetime.html" class="done">9.1 Spanner</a>
+          <a href="consensus-9-2-cockroachdb-and-multi-raft.html" class="done">9.2 CockroachDB</a>
+          <a href="consensus-9-3-foundationdb.html" class="done">9.3 FoundationDB</a>
+          <a href="consensus-9-4-tidb-and-yugabytedb.html" class="done">9.4 TiDB/Yugabyte</a>
+          <a href="consensus-9-5-wan-consensus-and-read-optimization.html" class="active">9.5 WAN Consensus</a>
+          <a href="consensus-9-6-dynamic-membership-and-reconfiguration.html">9.6 Reconfiguration</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 26, 2026 · devops · 23 min read · 4900 words <span class="difficulty advanced">advanced</span></p>
+        <h1>WAN consensus and read optimization.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">wan-consensus</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Articles 9.1 through 9.4 each showed a specific system's answer to geo-distribution, but this article steps back and names the underlying constraint all four are actually fighting: the <strong>speed of light</strong>. A round trip between two points roughly the width of a continent apart has a hard physical floor — tens of milliseconds — that no amount of engineering cleverness removes, only works around. This article makes that floor explicit and quantitative, then covers the specific techniques real systems use to keep reads fast despite it: <strong>quorum leases</strong> and <strong>follower reads</strong> (both direct extensions of article 3.4's leases-and-linearizable-reads material), <strong>witness and non-voting replicas</strong> as a quorum-shaping tool distinct from article 7.2's Flexible Paxos but philosophically related, and the <strong>geo-partitioning</strong> strategies that let a write for a specific region avoid crossing an ocean at all.</p>
+
+        <h2 id="the-floor">The physical floor: what geography actually costs</h2>
+
+        <p>Light in vacuum travels roughly 300,000 kilometers per second; in the fiber-optic cable that actually carries internet traffic, the effective speed is closer to two-thirds of that, because of the refractive index of glass. A round trip between, say, a datacenter on the US East Coast and one in Western Europe — a great-circle distance of roughly 6,000 kilometers each way — has a physical lower bound of somewhere around 60 milliseconds for the round trip, before accounting for any of the real-world detours, switching delays, and congestion that push actual measured latency higher still. This is not a limitation of current technology that a faster fiber or a cleverer protocol will fix; it is dictated by the physical constant this series' entire Phase 9 has been implicitly working around since article 9.1 first introduced TrueTime.</p>
+
+        <p>Recall precisely why this matters for consensus specifically, connecting back to article 3.3's majority-overlap mechanism: every write that needs to reach a majority quorum has to wait for messages to travel to and from at least a majority of replicas. If those replicas are spread across continents, the write's latency is bounded below by the round-trip time to the <em>farthest</em> replica needed to form that majority — a single-digit-millisecond floor within one datacenter becomes a tens-of-milliseconds floor the moment the quorum spans oceans. This is the concrete, physical version of the abstract "latency" cost article 1.4's PACELC framing named back in Phase 1, now fully cashed out in real numbers.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">The physical floor: quorum latency bounded by the farthest required replica</text>
+            <circle cx="100" cy="90" r="14" class="boxg"/><text x="100" y="94" class="smk" text-anchor="middle" font-size="9">US-E</text>
+            <circle cx="340" cy="60" r="14" class="boxg"/><text x="340" y="64" class="smk" text-anchor="middle" font-size="9">EU-W</text>
+            <circle cx="580" cy="90" r="14" class="boxg"/><text x="580" y="94" class="smk" text-anchor="middle" font-size="9">ASIA</text>
+            <path d="M114,90 C200,75 260,65 326,60" class="arr"/>
+            <text x="220" y="65" class="sm" text-anchor="middle">~30ms</text>
+            <path d="M354,60 C420,70 500,80 566,90" class="arr"/>
+            <text x="460" y="65" class="sm" text-anchor="middle">~80ms</text>
+            <text x="340" y="140" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">A 3-node quorum spanning all three regions is bounded by the slowest leg — ~80ms, not ~30ms.</text>
+            <text x="340" y="160" class="sm" text-anchor="middle">This bound is set by geography, not by which consensus algorithm you choose.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — No Phase 5, 6, or 7 algorithm changes this floor — it's set entirely by which replicas a majority must include.</p>
+        </div>
+
+        <h2 id="quorum-leases">Quorum leases: extending article 3.4's leases across a whole quorum</h2>
+
+        <p>Article 3.4 covered leader leases: a single elected leader, holding a time-bounded promise from a majority that it remains leader, can serve reads locally without a network round-trip, as long as its lease hasn't expired. <strong>Quorum leases</strong> generalize this idea a step further, specifically for the geo-distributed setting: rather than only the leader being allowed to serve fast local reads, a lease can be granted to a <em>specific subset</em> of replicas — typically, the replicas in the same region as a particular access pattern's dominant read traffic — letting reads for that data be served locally from whichever nearby replica holds the lease, without contacting a leader that might be a continent away. This directly attacks the physical floor described above: if most reads for a given piece of data come from users near one specific region, granting that region's replica a quorum lease turns an ocean-crossing read into a local one, at the cost of the same bounded staleness risk article 3.4's clock-skew safety margins were built to manage, just now applied per-lease-holder rather than only per-leader.</p>
+
+        <h2 id="follower-reads">Follower reads: trading a small staleness bound for locality</h2>
+
+        <p>A closely related, somewhat simpler technique — used directly by CockroachDB (9.2) and conceptually available in most systems this series has covered since Phase 8 — is the <strong>follower read</strong>: rather than requiring every read to go through the current Raft or Paxos leader, a client can read directly from a nearby follower replica, accepting a small, bounded staleness (the follower might be a few log entries behind the leader) in exchange for avoiding the leader round-trip entirely. This is exactly article 8.1's etcd "serializable read" concept (a local read, possibly stale, versus a linearizable one that always contacts the leader), specialized for the geo-distributed case where "possibly stale" specifically means "possibly a few milliseconds behind, because the follower hasn't yet received the leader's latest AppendEntries batch" rather than an unbounded, unpredictable staleness. Some systems tighten this further with <strong>bounded staleness reads</strong>, where the client specifies an acceptable staleness window (e.g., "no more than 5 seconds old") and the system picks whichever nearby replica can satisfy it, giving an explicit, tunable dial between article 1.4's EL and EC extremes rather than a fixed binary choice.</p>
+
+        <div class="bm-note">Follower reads and quorum leases both exploit the same underlying observation: not every read needs the absolute latest committed value (article 3.3's strict linearizability) — many real applications can tolerate a small, bounded staleness in exchange for a large latency win, and the geo-distributed setting is exactly where that trade becomes most valuable, because the latency being saved is tens of milliseconds of ocean-crossing round-trip, not the sub-millisecond difference a same-datacenter local read versus leader read would offer.</div>
+
+        <h2 id="witness-replicas">Witness and non-voting replicas: shaping the quorum without shaping the data</h2>
+
+        <p>A different lever entirely, worth distinguishing clearly from Flexible Paxos's quorum-size relaxation (article 7.2): a <strong>witness replica</strong> (sometimes called a non-voting or arbiter replica) participates in the majority-overlap voting process — casting a vote in leader elections and acknowledging log entries for the purpose of reaching a majority — without storing the full data itself, or without being eligible to become leader. This is genuinely useful in geo-distributed deployments for a specific, practical reason: it lets an operator place a lightweight tie-breaking vote in a third region specifically to avoid an even-numbered majority requirement across two "real," full-data regions, without paying the cost of a third full data replica (and its associated storage and bandwidth cost) in that third region. A classic three-region deployment might place full replicas in two regions and a witness-only replica in a third, cheaper location purely to guarantee majority quorums remain resolvable if either of the two full-data regions goes down — the same underlying majority-overlap logic (article 3.3) this series has repeated throughout, just applied with an asymmetric mix of full and lightweight participants.</p>
+
+        <h2 id="geo-partitioning">Geo-partitioning: keeping a write from crossing an ocean at all</h2>
+
+        <p>The most direct answer to the physical floor, when the workload allows it: don't put a majority quorum across an ocean in the first place for data that doesn't need it. <strong>Geo-partitioning</strong> (sometimes marketed as "table localities" or "row-level geo-partitioning" in specific products, including CockroachDB's own implementation of the idea) lets an operator pin a specific shard, range, or table's Raft/Paxos group entirely within one region's replicas, based on the data's actual access pattern — a European customer's records live in European replicas, an Asian customer's in Asian replicas — so that the common case write for that data never needs a cross-ocean round-trip at all, while still retaining the option of a genuinely global quorum for the smaller subset of data (shared reference tables, cross-region coordination state) that actually needs it. This is, in effect, applying article 1.2's replication-topology thinking deliberately and non-uniformly across a single logical database, rather than accepting one fixed replication topology for every piece of data a system holds.</p>
+
+        <table class="papers">
+          <tr><th>Technique</th><th>What it trades</th><th>Where it's used</th></tr>
+          <tr><td>Quorum leases</td><td>Bounded staleness risk for fast local reads on a specific data subset</td><td>Research-lineage technique, echoed in several production systems' locality-aware read paths</td></tr>
+          <tr><td>Follower / bounded-staleness reads</td><td>A tunable staleness window for lower read latency</td><td>CockroachDB (9.2), etcd's serializable reads (8.1), most Phase 8-9 systems in some form</td></tr>
+          <tr><td>Witness/non-voting replicas</td><td>Extra storage cost avoided, in exchange for that region never serving full reads or becoming leader</td><td>CockroachDB, YugabyteDB (9.4), and most production Raft deployments crossing 3+ regions</td></tr>
+          <tr><td>Geo-partitioning</td><td>Global flexibility for a given row, in exchange for near-local latency on its common-case access pattern</td><td>CockroachDB locality features, Spanner's own partitioning options (9.1)</td></tr>
+        </table>
+
+        <h2 id="leader-placement">Leader placement: the other half of the WAN latency story</h2>
+
+        <p>Everything covered so far in this article addresses read latency. Write latency in a geo-distributed deployment has its own dedicated lever, worth naming explicitly: <strong>leader placement</strong>. Because every write in a Raft or Multi-Paxos group must be proposed by that group's current leader (articles 5.3, 5.5-5.6), and a client's write latency is dominated by its round trip to whichever region currently holds leadership, deliberately placing (and, when access patterns shift, deliberately re-electing) the leader in the region generating the most write traffic for that specific shard directly minimizes the common-case write latency, even though the underlying majority-quorum replication cost to the other regions is unchanged. Several production systems expose explicit leader-placement hints or preferences for exactly this reason — CockroachDB's locality-aware lease preferences and YugabyteDB's tablet leader affinity settings both let an operator express "prefer to keep this shard's leader in region X," directly trading a small amount of manual operational configuration for a real, measurable write-latency win on the dominant access pattern, the write-side mirror of the quorum-lease and follower-read techniques already covered for reads.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Can any of these techniques eliminate the physical latency floor entirely?</summary><p>No — every technique in this article works around the floor for a specific subset of operations (reads that can tolerate staleness, writes that can be geo-partitioned to stay local) rather than eliminating it for operations that genuinely require a fresh, globally-agreed answer touching data spread across regions. A truly global, always-fresh, cross-region write is always going to pay something close to the physical round-trip cost described in this article's opening section — no algorithm changes the speed of light.</p></details>
+        <details class="faq"><summary>Is a witness replica the same thing as Flexible Paxos's asymmetric quorums?</summary><p>Related in spirit but a different specific mechanism — Flexible Paxos (7.2) relaxes which nodes must be in a Phase 1 versus Phase 2 quorum, among otherwise-equal participants; a witness replica is a participant that is structurally lighter-weight (no full data, ineligible for leadership) but still counts toward quorum size. Both are examples of this series' broader theme — quorum composition is a genuine, tunable design space — realized through different specific levers.</p></details>
+        <details class="faq"><summary>Does geo-partitioning conflict with the strong consistency guarantees this series has spent so much time building?</summary><p>No — a geo-partitioned row's Raft or Paxos group still enforces exactly the same majority-overlap safety guarantee (article 3.3) as any other group; it simply chooses to place all of that group's replicas within one region rather than spreading them globally. The consistency guarantee for that specific row is unchanged; what changes is the latency profile and the fault-tolerance scope (a full regional outage affects that row's availability more than it would if replicas were spread across regions) — a real, honest trade-off, not a compromise on correctness.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>The <strong>speed of light</strong>, via fiber's real-world propagation speed, sets a hard physical floor on cross-region quorum latency — tens of milliseconds for continent-spanning round trips, unfixable by any algorithm.</li>
+          <li><strong>Quorum leases</strong> extend article 3.4's leader-lease concept to arbitrary regional replica subsets, letting locally-dominant read traffic be served without crossing the ocean.</li>
+          <li><strong>Follower reads</strong> and <strong>bounded-staleness reads</strong> trade a small, tunable staleness window for lower read latency — a direct, more finely-tunable extension of article 8.1's linearizable-vs-serializable read distinction.</li>
+          <li><strong>Witness/non-voting replicas</strong> shape quorum composition without full data-storage cost — a distinct lever from Flexible Paxos's quorum-size relaxation (7.2), aimed at cheap tie-breaking presence rather than cost/latency optimization of the primary quorum.</li>
+          <li><strong>Geo-partitioning</strong> avoids the floor altogether for data whose access pattern is genuinely regional, by keeping that data's entire replica set within one region — applying article 1.2's replication-topology thinking non-uniformly across a single database.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.cockroachlabs.com/docs/stable/topology-patterns" target="_blank">CockroachDB documentation — Topology Patterns</a> <span>— follower reads, geo-partitioning, and locality configuration described directly.</span></li>
+          <li><a href="https://static.googleusercontent.com/media/research.google.com/en//archive/spanner-osdi2012.pdf" target="_blank">Corbett et al. — Spanner: Google's Globally-Distributed Database (OSDI 2012)</a> <span>— Spanner's own directory/partitioning options, referenced in article 9.1.</span></li>
+          <li><a href="consensus-3-4-leases-and-linearizable-reads.html">cvam.sight — Consensus 3.4: Leases and Linearizable Reads</a> <span>— the foundational lease mechanism quorum leases extend.</span></li>
+          <li><a href="consensus-7-2-flexible-paxos.html">cvam.sight — Consensus 7.2: Flexible Paxos</a> <span>— the related but distinct quorum-composition flexibility.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-9-4-tidb-and-yugabytedb.html">← 9.4 TiDB and YugabyteDB</a>
+        <a href="consensus-9-6-dynamic-membership-and-reconfiguration.html">next: 9.6 Dynamic Membership and Reconfiguration →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

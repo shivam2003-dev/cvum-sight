@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-9-5-wan-consensus-and-read-optimization",
+    title: "WAN consensus and read optimization.",
+    date: "Jul 26, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "wan-consensus", "series-consensus"],
+    time: 23,
+    words: 4900,
+    excerpt: "Consensus Algorithms series, 9.5. The speed-of-light latency floor that every geo-distributed system in this phase has been implicitly fighting, made explicit and quantitative. Quorum leases and follower/bounded-staleness reads as direct extensions of article 3.4's lease theory; witness/non-voting replicas as a distinct quorum-shaping lever from Flexible Paxos; geo-partitioning to avoid the floor entirely for regional data; and leader placement as write latency's own dedicated lever.",
+    series: "consensus",
+    seriesNum: "49"
+  },
+  {
     slug: "consensus-9-4-tidb-and-yugabytedb",
     title: "TiDB and YugabyteDB.",
     date: "Jul 25, 2026",

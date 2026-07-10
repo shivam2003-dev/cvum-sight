@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-10-3-meerkat",
+    title: "Meerkat — Cloudflare's global consensus service.",
+    date: "Jul 28, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "meerkat", "series-consensus"],
+    time: 22,
+    words: 4700,
+    excerpt: "Consensus Algorithms series, 10.3. Cloudflare Research's experimental global consensus service, built directly on QuePaxa, for small high-importance control-plane state across 330+ data centers -- tested with up to 50 globally-distributed replicas. Every replica writable (no fixed leader funnel), leaders made to constantly fail on purpose in testing with no error-rate increase, and why it's deliberately not a general-purpose database. Real, web-verified validation that QuePaxa's problem statement wasn't hypothetical.",
+    series: "consensus",
+    seriesNum: "53"
+  },
+  {
     slug: "consensus-10-2-quepaxa",
     title: "QuePaxa — escaping the tyranny of timeouts.",
     date: "Jul 27, 2026",

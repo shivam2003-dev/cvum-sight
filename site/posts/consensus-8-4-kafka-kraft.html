@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kafka's KRaft — Consensus 8.4 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 8.4. Why Kafka replaced its ZooKeeper dependency with KRaft, a Raft variant built directly into the broker, treating Kafka's own metadata as just another partition log -- and why Kafka's data-plane partitions were always a form of atomic broadcast (article 4.3), even before KRaft.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 8</p>
+        <p class="series-banner-title">Consensus in Production</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 8.4 of 6</p>
+        <div class="series-banner-nav">
+          <a href="consensus-8-1-etcd.html" class="done">8.1 etcd</a>
+          <a href="consensus-8-2-apache-zookeeper.html" class="done">8.2 ZooKeeper</a>
+          <a href="consensus-8-3-consul.html" class="done">8.3 Consul</a>
+          <a href="consensus-8-4-kafka-kraft.html" class="active">8.4 Kafka KRaft</a>
+          <a href="consensus-8-5-kubernetes-and-etcd.html">8.5 Kubernetes</a>
+          <a href="consensus-8-6-jepsen.html">8.6 Jepsen</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 22, 2026 · devops · 19 min read · 4000 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Kafka's KRaft.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">kafka</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Apache Kafka's original architecture used ZooKeeper (8.2) purely for cluster metadata and controller election — the actual message data never went through ZooKeeper, only coordination about which broker owns which partition. <strong>KRaft</strong> (Kafka Raft) removes that external ZooKeeper dependency entirely, replacing it with a Raft implementation (article 5.5-5.6) built directly into Kafka's own brokers — treating cluster metadata as just another Kafka-style partition log. This article covers why the ZooKeeper dependency became a real operational liability worth removing, how KRaft folds metadata into Kafka's existing log abstraction, and a fact worth making explicit for the first time in this phase: Kafka's own data-plane partitions were <em>already</em> a real-world instance of article 4.3's atomic broadcast, years before KRaft touched metadata consensus at all.</p>
+
+        <h2 id="why-zk-was-there">Why ZooKeeper was there in the first place, and why it became a liability</h2>
+        <p>Kafka's original design used ZooKeeper for a genuinely bounded set of responsibilities: tracking which brokers are alive, storing topic/partition configuration, and — critically — electing a <strong>controller</strong> broker responsible for coordinating partition leadership across the cluster. This is a legitimate, correctly-scoped use of a coordination service exactly like article 8.2 described. The problem, articulated directly in Kafka's own KIP (Kafka Improvement Proposal) process: running Kafka meant operating <em>two</em> separate distributed systems — Kafka itself, and a ZooKeeper ensemble alongside it — each with its own deployment, monitoring, upgrade, and capacity-planning lifecycle. This operational overhead, and specific scaling limits ZooKeeper's design imposed on the total number of partitions a cluster could support (driven by how much metadata needed to round-trip through ZooKeeper's own consensus), motivated removing the dependency entirely rather than continuing to work around its limits.</p>
+
+        <h2 id="metadata-as-log">Metadata as just another partition log</h2>
+        <p>KRaft's core design move: rather than bolting on a separate embedded consensus module, represent cluster metadata itself as a special internal Kafka topic (<code>__cluster_metadata</code>), replicated among a small set of controller-eligible brokers using Raft — meaning metadata changes are literally just entries appended to a partition log, using the exact same log-replication machinery (article 5.6's AppendEntries, log-matching property, commitment rules) Kafka's designers already needed to build and maintain for ordinary data partitions. This is a clean, elegant unification: instead of "Kafka's data path" and "Kafka's metadata path" being two conceptually different systems (one Kafka-native, one ZooKeeper/Zab-based), KRaft makes them the same underlying mechanism, just applied to a different specific log.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Before/after: two systems collapse into one mechanism</text>
+            <text x="170" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Before KRaft</text>
+            <rect x="40" y="55" width="260" height="40" class="boxg"/><text x="170" y="80" class="smk" text-anchor="middle">Kafka data partitions (own replication)</text>
+            <rect x="40" y="105" width="260" height="40" class="boxr"/><text x="170" y="130" class="smk" text-anchor="middle">ZooKeeper (Zab) for metadata</text>
+            <text x="510" y="42" class="smk" text-anchor="middle" style="font-weight:bold">With KRaft</text>
+            <rect x="380" y="55" width="260" height="40" class="boxg"/><text x="510" y="80" class="smk" text-anchor="middle">Kafka data partitions</text>
+            <rect x="380" y="105" width="260" height="40" class="boxg"/><text x="510" y="130" class="smk" text-anchor="middle">__cluster_metadata partition (Raft)</text>
+            <text x="340" y="160" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">Same underlying log-replication mechanism, one fewer external system to operate.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — KRaft doesn't just swap Zab for Raft — it eliminates the conceptual and operational split between data-plane and metadata-plane replication entirely.</p>
+        </div>
+
+        <h2 id="already-broadcast">Kafka's data partitions were always atomic broadcast</h2>
+        <p>Worth pausing on a fact this series can now state precisely, having built article 4.3's equivalence result: a Kafka partition, even in the pre-KRaft architecture, was already a direct real-world instance of <strong>Total Order (Atomic) Broadcast</strong> — every producer's messages to a given partition are appended in a single, agreed order (Kafka's own in-sync-replica, ISR-based replication protocol enforcing exactly article 4.3's atomicity and total-order properties among a partition's replica set), and every consumer reading that partition sees messages in that identical order. This was true well before KRaft ever touched metadata consensus — it's worth stating explicitly because it directly confirms article 4.3's claim that atomic broadcast shows up as a practical, everyday production mechanism, not just an abstract equivalence result confined to research papers.</p>
+
+        <div class="bm-note">Kafka's own partition-replication protocol (ISR-based, with its own leader-per-partition and in-sync-replica quorum concept) is a close cousin of, though not identical in every mechanical detail to, the Raft/Multi-Paxos log-replication machinery this series built in Phase 5 — the important point for this series isn't a mechanical line-by-line match, it's that the <em>problem being solved</em> (agree on a single order, replicate it durably, serve it consistently to readers) is precisely article 4.3's atomic broadcast, regardless of the specific protocol details used to achieve it.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does KRaft change how Kafka's actual message data is replicated?</summary><p>No — KRaft specifically replaces the ZooKeeper-based metadata/controller-election path; ordinary topic partition replication (the ISR mechanism mentioned above) is a separate, pre-existing part of Kafka's architecture and is unaffected by the KRaft migration.</p></details>
+        <details class="faq"><summary>Is KRaft's Raft implementation identical to etcd's (8.1)?</summary><p>Conceptually the same algorithm (article 5.5-5.6's Raft), but implemented independently within Kafka's own codebase and specifically integrated with Kafka's partition-log abstraction — not a shared library with etcd, though both are correctly described as "Raft implementations" in the sense this series has built that term.</p></details>
+        <details class="faq"><summary>Did removing ZooKeeper actually solve the partition-count scaling limit mentioned above?</summary><p>Yes, substantially — by folding metadata into Kafka's own optimized log-replication path (rather than round-tripping through a separate system with its own, differently-tuned scaling characteristics), KRaft-based clusters support meaningfully larger numbers of partitions than the pre-KRaft ZooKeeper-based architecture could comfortably handle, a concrete, measured operational improvement.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Kafka originally used <strong>ZooKeeper</strong> (8.2) narrowly, for metadata and controller election — a correctly-scoped use that nonetheless became a real operational liability (two systems to run, real partition-count scaling limits).</li>
+          <li><strong>KRaft</strong> replaces that dependency with a Raft implementation built directly into Kafka, representing cluster metadata as just another partition log — <code>__cluster_metadata</code>, replicated with the same log-replication machinery (5.6) Kafka's data partitions already used.</li>
+          <li>This <strong>unifies</strong> the data-plane and metadata-plane replication mechanisms into one conceptual system, rather than two separately-operated ones — a direct operational and architectural simplification.</li>
+          <li><strong>Kafka's data partitions were already a real-world atomic broadcast instance</strong> (article 4.3) well before KRaft — a concrete confirmation that the equivalence this series proved isn't just academic.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-500%3A+Replace+ZooKeeper+with+a+Self-Managed+Metadata+Quorum" target="_blank">Apache Kafka — KIP-500: Replace ZooKeeper with a Self-Managed Metadata Quorum</a> <span>— the original proposal and motivation for KRaft.</span></li>
+          <li><a href="https://kafka.apache.org/documentation/#kraft" target="_blank">Apache Kafka documentation — KRaft</a> <span>— the current architecture reference.</span></li>
+          <li><a href="consensus-4-3-atomic-broadcast.html">cvam.sight — Consensus 4.3: Atomic Broadcast</a> <span>— the equivalence this article shows Kafka's partitions have always instantiated.</span></li>
+          <li><a href="consensus-8-2-apache-zookeeper.html">cvam.sight — Consensus 8.2: Apache ZooKeeper</a> <span>— the system KRaft removes as an external dependency.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-8-3-consul.html">← 8.3 Consul</a>
+        <a href="consensus-8-5-kubernetes-and-etcd.html">next: 8.5 Kubernetes and etcd →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

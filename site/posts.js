@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-8-4-kafka-kraft",
+    title: "Kafka's KRaft.",
+    date: "Jul 22, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "kafka", "series-consensus"],
+    time: 19,
+    words: 4000,
+    excerpt: "Consensus Algorithms series, 8.4. Kafka originally used ZooKeeper narrowly for metadata and controller election -- correctly scoped but a real operational liability (two systems to run, partition-count scaling limits). KRaft replaces it with Raft built directly into Kafka, representing metadata as just another partition log. Also makes explicit a fact this series can now state precisely: Kafka's data partitions were already a real-world atomic broadcast instance, years before KRaft touched metadata at all.",
+    series: "consensus",
+    seriesNum: "42"
+  },
+  {
     slug: "consensus-8-3-consul",
     title: "Consul.",
     date: "Jul 22, 2026",

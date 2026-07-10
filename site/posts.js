@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-8-3-consul",
+    title: "Consul.",
+    date: "Jul 22, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "consul", "series-consensus"],
+    time: 19,
+    words: 4000,
+    excerpt: "Consensus Algorithms series, 8.3. Consul runs two separate protocols: Raft for the strongly-consistent server catalog, and a gossip-based SWIM-family protocol for scalable failure detection across potentially thousands of agents. Applies CAP/PACELC framing honestly per sub-problem -- the catalog needs strong consistency, large-scale liveness detection doesn't. The clearest Phase 8 illustration that using different consistency mechanisms for different sub-problems is the architecturally correct answer, not a compromise.",
+    series: "consensus",
+    seriesNum: "41"
+  },
+  {
     slug: "consensus-8-2-apache-zookeeper",
     title: "Apache ZooKeeper.",
     date: "Jul 21, 2026",

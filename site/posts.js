@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-6-1-the-byzantine-generals-problem",
+    title: "The Byzantine generals problem.",
+    date: "Jul 15, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "byzantine-fault-tolerance", "series-consensus"],
+    time: 20,
+    words: 4200,
+    excerpt: "Consensus Algorithms series, 6.1 -- Phase 6 opener. Every Phase 5 algorithm assumed nodes never lie. Lamport/Shostak/Pease's 1982 formalization of agreement when participants can actively, adaptively falsify messages, why a lying node in the majority-overlap position breaks Phase 5's whole safety mechanism, and the sharp proven threshold: Byzantine agreement needs N >= 3f+1 nodes, strictly more than crash-fault tolerance's 2f+1. The clearest illustration in this series of a failure model forcing a genuinely different mechanism.",
+    series: "consensus",
+    seriesNum: "26"
+  },
+  {
     slug: "consensus-5-7-zab",
     title: "Zab — ZooKeeper atomic broadcast.",
     date: "Jul 14, 2026",

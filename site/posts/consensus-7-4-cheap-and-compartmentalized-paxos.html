@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cheap Paxos and Compartmentalized Paxos — Consensus 7.4 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 7.4. Two cost-engineering variants: Cheap Paxos's auxiliary standby nodes that only activate on failure, cutting steady-state node cost in half, and Compartmentalized Paxos's decomposition of one monolithic Paxos role into independently-scalable components.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 7</p>
+        <p class="series-banner-title">The Modern Paxos Family</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 7.4 of 8</p>
+        <div class="series-banner-nav">
+          <a href="consensus-7-1-epaxos-leaderless-consensus.html" class="done">7.1 EPaxos</a>
+          <a href="consensus-7-2-flexible-paxos.html" class="done">7.2 Flexible Paxos</a>
+          <a href="consensus-7-3-generalized-and-fast-paxos.html" class="done">7.3 Generalized/Fast</a>
+          <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html" class="active">7.4 Cheap/Compart.</a>
+          <a href="consensus-7-5-atlas.html">7.5 Atlas</a>
+          <a href="consensus-7-6-caesar.html">7.6 Caesar</a>
+          <a href="consensus-7-7-omnipaxos.html">7.7 OmniPaxos</a>
+          <a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html">7.8 Survey</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 18, 2026 · devops · 18 min read · 3800 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Cheap Paxos and Compartmentalized Paxos.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">cheap-paxos</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Articles 7.1-7.3 all relaxed a Multi-Paxos convenience assumption to improve <em>latency</em> or <em>throughput</em>. This article covers two variants optimizing a different axis entirely: <strong>resource cost</strong>. Lamport and Massa's <strong>Cheap Paxos</strong> (2004) asks whether you really need <code>2f+1</code> fully-provisioned nodes running all the time, or whether some of them can be much cheaper standby nodes that only activate on failure. Rodrigues, Liskov, and colleagues' <strong>Compartmentalized Paxos</strong> (2021, building on Corbett et al.'s Spanner-scale operational experience) asks a related but distinct question: does a single Paxos "role" have to be one physical process at all, or can its sub-responsibilities be split across independently-scalable components? Both are cost-engineering answers, not latency or throughput answers — genuinely useful for reading production deployment decisions in Phase 8-9 with the right lens.</p>
+
+        <h2 id="cheap-paxos">Cheap Paxos: standby nodes that activate only on failure</h2>
+
+        <p>Recall the sizing logic from article 5.2's FAQ: a crash-fault-tolerant cluster tolerating <code>f</code> failures needs <code>2f+1</code> nodes, all fully provisioned, all participating in every quorum decision, all the time — even though, in normal healthy operation, you only ever <em>need</em> <code>f+1</code> of them to make progress (any majority). The other <code>f</code> nodes exist purely as insurance against the (hopefully rare) event of failures actually happening.</p>
+
+        <p>Cheap Paxos's structural fix: split the node set into <code>f+1</code> full-cost, fully-provisioned <strong>main</strong> nodes that handle all normal-case operation, plus <code>f</code> much cheaper <strong>auxiliary</strong> nodes that sit mostly idle — not participating in the normal Phase 2 fast path at all — and only get activated, joining the active quorum, when a main node actually fails. This directly targets steady-state infrastructure cost: for the overwhelming majority of a system's operational lifetime (no failures happening), you're paying for <code>f+1</code> full nodes instead of <code>2f+1</code>, a substantial reduction for any reasonably large fault-tolerance target.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Cheap Paxos: full-cost mains + cheap standby auxiliaries</text>
+            <text x="170" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Standard 2f+1 (f=1: 3 nodes)</text>
+            <circle cx="90" cy="80" r="20" class="boxg"/><circle cx="170" cy="80" r="20" class="boxg"/><circle cx="250" cy="80" r="20" class="boxg"/>
+            <text x="170" y="115" class="sm" text-anchor="middle">all 3 fully provisioned, always active</text>
+            <text x="510" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Cheap Paxos (f=1: 2 main + 1 aux)</text>
+            <circle cx="450" cy="80" r="20" class="boxg"/><circle cx="530" cy="80" r="20" class="boxg"/>
+            <circle cx="610" cy="80" r="16" class="boxy"/><text x="610" y="84" class="smk" text-anchor="middle" font-size="9">idle</text>
+            <text x="510" y="115" class="sm" text-anchor="middle">2 full-cost mains active; auxiliary joins only on failure</text>
+            <text x="340" y="160" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">Same f=1 fault tolerance, lower steady-state resource cost.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Cheap Paxos trades a slightly slower failover (activating the auxiliary) for meaningfully lower steady-state cost.</p>
+        </div>
+
+        <div class="bm-note"><strong>The real trade-off: failover latency, not fault-tolerance strength.</strong> Cheap Paxos's fault-tolerance guarantee (surviving f failures) is identical to standard Paxos — it's not weaker. What's different is the <em>cost of activating</em> that guarantee: bringing an idle auxiliary node up to speed (potentially needing to catch up on recent log state, echoing article 3.2's catch-up mechanism) takes real time, during which the system may have reduced fault tolerance until the auxiliary is fully caught up and participating. This is a genuine, honest trade — lower steady-state cost, slower degraded-mode recovery — not a free lunch, consistent with every other variant this phase has covered.</div>
+
+        <h2 id="compartmentalized">Compartmentalized Paxos: splitting one role into scalable pieces</h2>
+
+        <p>Compartmentalized Paxos targets a different cost dimension, motivated directly by operational experience running Paxos-based systems at genuinely large scale (the paper draws explicitly on Google Spanner-scale lessons). The observation: a "leader" or "acceptor" in the classical presentation (Phase 5) is treated as one monolithic role bundling several genuinely separable responsibilities — proposing values, persisting the log durably, broadcasting to followers, and handling client communication. At large scale, these responsibilities have very different resource profiles (log persistence is disk/IO-bound; broadcast fan-out is network-bound; client-facing request handling is CPU/connection-bound), and bundling them into one physical process means you can't scale any single bottlenecked responsibility independently of the others.</p>
+
+        <p>Compartmentalized Paxos's fix: decompose the traditionally-monolithic leader role into separately deployable, independently-scalable components — echoing article 5.1's original proposer/acceptor/learner role separation, but taken considerably further, splitting what Phase 5 treated as a single "leader" into multiple distinct services that can each be scaled to match its own specific bottleneck, rather than over-provisioning the whole bundled role to compensate for whichever single responsibility happens to be under the most load at a given time.</p>
+
+        <table class="papers">
+          <tr><th>Variant</th><th>Cost dimension optimized</th><th>Mechanism</th><th>Trade-off</th></tr>
+          <tr><td>Cheap Paxos</td><td>Steady-state node/infrastructure cost</td><td>f+1 full nodes + f cheap idle standbys</td><td>Slower failover while auxiliary catches up</td></tr>
+          <tr><td>Compartmentalized Paxos</td><td>Scaling bottlenecked sub-responsibilities independently</td><td>Decompose the monolithic leader role into separate scalable services</td><td>Real operational/deployment complexity — more moving parts</td></tr>
+        </table>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is Cheap Paxos compatible with Flexible Paxos's asymmetric quorums (7.2)?</summary><p>Conceptually, yes — both target cost/resource trade-offs from different angles (asymmetric quorum sizing vs. asymmetric node provisioning), and combining them is a reasonable direction, though it compounds the operational complexity each already introduces individually. This is a genuine, if under-explored in the original papers, combination point.</p></details>
+        <details class="faq"><summary>Does Compartmentalized Paxos change the underlying safety proof at all?</summary><p>No — this is worth stating explicitly, echoing article 7.3's closing framing: decomposing the leader role into separate scalable services is an implementation/deployment architecture decision, not a change to the majority-overlap safety argument (article 3.3) itself. The decomposed services still collectively need to satisfy the same safety-critical invariants; they're just no longer required to live in one process.</p></details>
+        <details class="faq"><summary>Would a small startup ever need Cheap Paxos or Compartmentalized Paxos?</summary><p>Rarely — both are optimizations that matter most at the specific scale where their targeted cost genuinely dominates (very large fault-tolerance targets for Cheap Paxos; genuinely bottlenecked sub-responsibilities at high request volume for Compartmentalized Paxos). For most deployments, the added operational complexity isn't worth it relative to standard Multi-Paxos or Raft — a useful, honest caveat this series has tried to apply consistently across every variant covered.</p></details>
+        <details class="faq"><summary>How does an idle auxiliary node in Cheap Paxos know when to activate?</summary><p>Via the same failure-detection machinery this series built in article 2.4 — once the remaining main nodes suspect a peer has failed and needs replacement, they signal the standby auxiliary to join and begin catching up, a process directly analogous to article 4.2's leader-election trigger, just applied to bringing a previously-idle node into active participation rather than choosing a new leader among already-active nodes.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Cheap Paxos</strong> (Lamport &amp; Massa, 2004) splits nodes into <code>f+1</code> full-cost mains and <code>f</code> cheap idle auxiliaries that only activate on failure — same fault-tolerance strength as standard Paxos, lower steady-state resource cost, at the price of slower failover.</li>
+          <li><strong>Compartmentalized Paxos</strong> decomposes the traditionally-monolithic leader role into independently-scalable services (log persistence, broadcast, client handling) — motivated by real large-scale operational experience, letting each bottlenecked sub-responsibility scale on its own.</li>
+          <li>Both variants optimize <strong>resource/deployment cost</strong>, a genuinely different axis from 7.1-7.3's latency/throughput focus — the modern Paxos family spans multiple, largely orthogonal optimization goals, not one single dimension.</li>
+          <li>Neither changes the underlying <strong>majority-overlap safety proof</strong> (article 3.3) — both are cost-engineering layers on top of the same safety core every variant in this phase shares.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://lamport.azurewebsites.net/pubs/lower-bound.pdf" target="_blank">Lamport &amp; Massa — Cheap Paxos (2004)</a> <span>— the primary Cheap Paxos reference.</span></li>
+          <li><a href="https://www.usenix.org/conference/nsdi21/presentation/whittaker" target="_blank">Whittaker et al. — Scaling Replicated State Machines with Compartmentalization (2021)</a> <span>— the Compartmentalized Paxos paper.</span></li>
+          <li><a href="consensus-5-1-paxos-history-and-the-problem.html">cvam.sight — Consensus 5.1: Paxos, History and the Problem</a> <span>— the original proposer/acceptor/learner role separation this article's compartmentalization extends.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-7-3-generalized-and-fast-paxos.html">← 7.3 Generalized Paxos and Fast Paxos</a>
+        <a href="consensus-7-5-atlas.html">next: 7.5 Atlas →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

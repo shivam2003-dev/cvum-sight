@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-7-4-cheap-and-compartmentalized-paxos",
+    title: "Cheap Paxos and Compartmentalized Paxos.",
+    date: "Jul 18, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "cheap-paxos", "series-consensus"],
+    time: 18,
+    words: 3800,
+    excerpt: "Consensus Algorithms series, 7.4. Two cost-engineering variants, a different optimization axis from 7.1-7.3's latency/throughput focus. Cheap Paxos splits nodes into f+1 full-cost mains plus f cheap idle standbys that only activate on failure -- same fault tolerance, lower steady-state cost, slower failover. Compartmentalized Paxos decomposes the traditionally-monolithic leader role into independently-scalable services, motivated by real large-scale operational experience. Neither changes the underlying majority-overlap safety proof.",
+    series: "consensus",
+    seriesNum: "34"
+  },
+  {
     slug: "consensus-7-3-generalized-and-fast-paxos",
     title: "Generalized Paxos and Fast Paxos.",
     date: "Jul 18, 2026",

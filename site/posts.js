@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-3-3-quorums-and-majority-voting",
+    title: "Quorums and majority voting.",
+    date: "Jul 10, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "quorums", "series-consensus"],
+    time: 19,
+    words: 4000,
+    excerpt: "Consensus Algorithms series, 3.3. The formal proof that any two majorities of the same node set must overlap -- the single mathematical fact behind every anti-split-brain mechanism in this series. Applying overlap to leader election specifically (why committed writes survive leadership changes automatically), the generalized W+R>N quorum condition for tunable read/write trade-offs, and witness nodes for fixing even-numbered cluster arithmetic cheaply.",
+    series: "consensus",
+    seriesNum: "12"
+  },
+  {
     slug: "consensus-3-2-log-replication",
     title: "Log replication.",
     date: "Jul 10, 2026",

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generalized Paxos and Fast Paxos — Consensus 7.3 — cvam.sight</title>
+<meta name="description" content="Consensus Algorithms series, Module 7.3. Lamport's own two lesser-known Paxos variants: Generalized Paxos's commutative-operation reordering (a direct ancestor of EPaxos's dependency graphs) and Fast Paxos's one-round-trip optimistic path with collision recovery.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.d{white-space:nowrap;font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  svg .arr{stroke:#c96442;stroke-width:1.5;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .code-block-wrap code{counter-reset:ln}
+  .code-block-wrap code .line{counter-increment:ln}
+  .code-block-wrap code .line::before{content:counter(ln);display:inline-block;width:2.2ch;margin-right:1.4em;color:#5c6370;text-align:right;user-select:none;-webkit-user-select:none}
+  .code-block-wrap code .line:last-child:empty::before{content:none;counter-increment:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../tags.html">Tags</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Consensus Algorithms · Phase 7</p>
+        <p class="series-banner-title">The Modern Paxos Family</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 7.3 of 8</p>
+        <div class="series-banner-nav">
+          <a href="consensus-7-1-epaxos-leaderless-consensus.html" class="done">7.1 EPaxos</a>
+          <a href="consensus-7-2-flexible-paxos.html" class="done">7.2 Flexible Paxos</a>
+          <a href="consensus-7-3-generalized-and-fast-paxos.html" class="active">7.3 Generalized/Fast</a>
+          <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html">7.4 Cheap/Compart.</a>
+          <a href="consensus-7-5-atlas.html">7.5 Atlas</a>
+          <a href="consensus-7-6-caesar.html">7.6 Caesar</a>
+          <a href="consensus-7-7-omnipaxos.html">7.7 OmniPaxos</a>
+          <a href="consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia.html">7.8 Survey</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Jul 18, 2026 · devops · 19 min read · 3900 words <span class="difficulty expert">expert</span></p>
+        <h1>Generalized Paxos and Fast Paxos.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">distributed-systems</span>
+          <span class="tag">fast-paxos</span>
+          <span class="tag">series-consensus</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">EPaxos (7.1) felt genuinely novel — leaderless proposing, dependency-graph ordering. Worth knowing, though: Lamport himself had already explored closely related ideas years earlier, in two papers less famous than "Paxos Made Simple" but directly foreshadowing much of what this phase covers. <strong>Generalized Paxos</strong> (2004) relaxes the total-order requirement for commutative operations — the direct conceptual ancestor of EPaxos's dependency-based ordering. <strong>Fast Paxos</strong> (2006) shows how to skip Phase 1's leader-routing entirely for the common case, at the cost of a possible collision that needs explicit recovery — a direct ancestor of EPaxos's fast-path/slow-path split. This article covers both, and closes the loop on exactly how much of "modern" Paxos research traces back to ideas Lamport had already sketched.</p>
+
+        <h2 id="generalized-paxos">Generalized Paxos: commutativity instead of total order</h2>
+
+        <p>Recall article 4.3's atomic broadcast framing: total order requires <em>every</em> pair of operations to have an agreed relative order, even ones that don't logically interact. Generalized Paxos's insight, stated years before EPaxos built a full leaderless system around a closely related idea: if two operations <strong>commute</strong> — applying them in either order produces the same result — there's no need to agree on their relative order at all. Formally, Generalized Paxos replaces the single sequential command sequence with a <strong>partial order</strong>: a structure where only non-commuting (conflicting) operations need an agreed relative order, exactly the same underlying idea article 7.1 built EPaxos's dependency graph around.</p>
+
+        <div class="bm-note"><strong>Worth being precise about the relationship: Generalized Paxos is not EPaxos.</strong> Generalized Paxos, as Lamport presented it, retains Multi-Paxos's basic leader-based structure (article 5.3) — it relaxes <em>what needs ordering</em>, not <em>who can propose</em>. EPaxos takes the commutativity insight and combines it with full leaderlessness (any replica proposing directly). Reading Generalized Paxos after EPaxos, rather than before, makes this relationship easy to see clearly: EPaxos independently rediscovered and extended the commutativity idea, combining it with a structural change (removing the leader) that Generalized Paxos itself didn't make.</div>
+
+        <h2 id="fast-paxos">Fast Paxos: skipping the leader for the common case</h2>
+
+        <p>Fast Paxos targets a different inefficiency: in ordinary Multi-Paxos, even after Phase 1 is amortized (article 5.3), every client write still has to route through the leader specifically before being replicated — a latency cost for clients not physically close to the leader, precisely the cost article 7.1 opened by naming. Fast Paxos's fix: let any acceptor accept a value directly from a proposer that isn't the leader, in a designated <strong>fast round</strong>, cutting out the extra leader hop for the common case.</p>
+
+        <p>The catch, and it's a real one: if two different clients' proposals reach different subsets of acceptors in the same fast round (a <strong>collision</strong> — no single value gets the needed supermajority), the system can't simply pick one arbitrarily, because doing so might violate safety in exactly the way article 5.2's Phase 2 rule was designed to prevent. Fast Paxos handles this with an explicit recovery step — a designated coordinator (falling back to something like ordinary Multi-Paxos's leader role) resolves the collision using the same "adopt the highest-numbered information seen" logic from article 5.2's Phase 2 rule, just triggered specifically by a detected collision rather than running on every single value.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Fast Paxos: skip the leader, but pay for collisions</text>
+            <text x="170" y="42" class="smk" text-anchor="middle" style="font-weight:bold">No collision (common case)</text>
+            <circle cx="80" cy="80" r="10" class="boxg"/><text x="170" y="82" class="smk" text-anchor="middle">client → acceptors directly</text>
+            <path d="M95,80 C110,80 130,80 140,80" class="arr"/>
+            <text x="170" y="110" class="ink" text-anchor="middle" style="font-weight:bold">Fast, no leader hop</text>
+            <text x="510" y="42" class="smk" text-anchor="middle" style="font-weight:bold">Collision (two clients, same round)</text>
+            <text x="510" y="82" class="sm" text-anchor="middle">no value gets supermajority</text>
+            <text x="510" y="105" class="ink" text-anchor="middle" style="font-weight:bold">Recovery: coordinator resolves,</text>
+            <text x="510" y="122" class="ink" text-anchor="middle" style="font-weight:bold">using 5.2's Phase 2 adoption rule</text>
+            <text x="340" y="160" class="sm" text-anchor="middle">Same trade-off shape as EPaxos's fast path / slow path (7.1) — years earlier, narrower scope.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Fast Paxos's collision recovery is the direct structural ancestor of EPaxos's slow path.</p>
+        </div>
+
+        <h2 id="lineage">The lineage, made explicit</h2>
+
+        <table class="papers">
+          <tr><th>Paper</th><th>Year</th><th>What it relaxes</th><th>What it keeps</th></tr>
+          <tr><td>Multi-Paxos (5.3)</td><td>1998/2001</td><td>—</td><td>Fixed leader, total order, majority quorums</td></tr>
+          <tr><td>Fast Paxos</td><td>2006</td><td>Requires routing through the leader for every write</td><td>Total order, fixed leader as fallback/recovery coordinator</td></tr>
+          <tr><td>Generalized Paxos</td><td>2004 (concept), formalized later</td><td>Total order (only orders non-commuting operations)</td><td>Fixed leader structure</td></tr>
+          <tr><td>Flexible Paxos (7.2)</td><td>2016</td><td>Phase 1/Phase 2 quorums must both be majorities</td><td>Fixed leader, total order</td></tr>
+          <tr><td>EPaxos (7.1)</td><td>2013</td><td>Fixed leader AND total order, simultaneously</td><td>Majority-overlap safety core (article 3.3)</td></tr>
+        </table>
+
+        <div class="bm-fix"><strong>The genuinely useful way to read this table:</strong> every "modern" Paxos variant relaxes exactly one (or, in EPaxos's case, more than one at once) of the assumptions Multi-Paxos bundled together — fixed leader, total order, majority-sized symmetric quorums. None of them touch the actual safety core (majority overlap, article 3.3) — that stays constant across every single variant in this phase. What varies is which convenience assumption gets traded away, and what it costs to trade it away. This framing — "which assumption does this paper relax, and at what cost" — is the single most useful lens for reading the rest of Phase 7's papers efficiently.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Why isn't Fast Paxos as famous as Multi-Paxos or as widely deployed as EPaxos-inspired systems?</summary><p>Partly presentation (echoing article 5.1's recurring theme about Lamport's papers), and partly because the collision-recovery mechanism adds real implementation complexity for a latency win that matters most specifically for clients far from the leader — a narrower use case than Multi-Paxos's general-purpose replicated log. Its ideas, though, demonstrably influenced later, more widely-adopted leaderless designs.</p></details>
+        <details class="faq"><summary>Can Generalized Paxos and Fast Paxos be combined?</summary><p>Conceptually yes, and doing so gets you something quite close to EPaxos's actual design space — commutativity-based partial ordering plus leader-skipping fast rounds. This isn't a coincidence; it's a reasonable way to understand what EPaxos's contribution actually was: combining and extending two ideas Lamport had already sketched separately, into one coherent, fully leaderless system.</p></details>
+        <details class="faq"><summary>Does commutativity detection in Generalized Paxos have the same real-time-information problem EPaxos's conflict detection has?</summary><p>Yes, structurally identical — determining whether two operations commute (or conflict) in real time, with information that might not have fully propagated yet, is the same fundamental challenge article 7.1 described for EPaxos's dependency-set computation. Generalized Paxos doesn't sidestep this; it inherits it, which is part of why EPaxos's fuller treatment of the problem (fast quorums, explicit reconciliation) became the more complete, more discussed reference point.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Generalized Paxos</strong> (Lamport, 2004) relaxes total order to a partial order over commuting operations — the direct conceptual ancestor of EPaxos's dependency-graph approach, while retaining Multi-Paxos's fixed-leader structure.</li>
+          <li><strong>Fast Paxos</strong> (Lamport, 2006) lets proposers skip the leader hop for a fast round, with an explicit <strong>collision recovery</strong> mechanism reusing article 5.2's Phase 2 adoption rule when two proposals collide — the direct ancestor of EPaxos's fast-path/slow-path split.</li>
+          <li>Every modern Paxos variant covered so far relaxes exactly one (or more) of Multi-Paxos's three bundled convenience assumptions — <strong>fixed leader, total order, symmetric majority quorums</strong> — while leaving the underlying majority-overlap safety core (article 3.3) completely unchanged.</li>
+          <li>"Which assumption does this paper relax, and what does it cost" is the single most useful lens for reading the remaining Phase 7 papers efficiently.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.microsoft.com/en-us/research/publication/fast-paxos/" target="_blank">Lamport — Fast Paxos (2006)</a> <span>— the primary Fast Paxos reference.</span></li>
+          <li><a href="https://lamport.azurewebsites.net/pubs/generalized.pdf" target="_blank">Lamport — Generalized Consensus and Paxos (2004)</a> <span>— the primary Generalized Paxos reference.</span></li>
+          <li><a href="consensus-7-1-epaxos-leaderless-consensus.html">cvam.sight — Consensus 7.1: EPaxos, Leaderless Consensus</a> <span>— the system that combines and extends both ideas covered here.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="consensus-7-2-flexible-paxos.html">← 7.2 Flexible Paxos</a>
+        <a href="consensus-7-4-cheap-and-compartmentalized-paxos.html">next: 7.4 Cheap Paxos and Compartmentalized Paxos →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=10"></script>
+  <script defer src="../settings.js?v=6"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

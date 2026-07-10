@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "consensus-7-3-generalized-and-fast-paxos",
+    title: "Generalized Paxos and Fast Paxos.",
+    date: "Jul 18, 2026",
+    cat: "devops",
+    tags: ["devops", "distributed-systems", "fast-paxos", "series-consensus"],
+    time: 19,
+    words: 3900,
+    excerpt: "Consensus Algorithms series, 7.3. Lamport's own two lesser-known variants, predating EPaxos: Generalized Paxos relaxes total order to a partial order over commuting operations -- the direct ancestor of EPaxos's dependency graphs. Fast Paxos lets proposers skip the leader hop for a fast round, with explicit collision recovery -- the direct ancestor of EPaxos's fast/slow path split. Every modern Paxos variant relaxes exactly one of Multi-Paxos's bundled assumptions while leaving the majority-overlap safety core untouched.",
+    series: "consensus",
+    seriesNum: "33"
+  },
+  {
     slug: "consensus-7-2-flexible-paxos",
     title: "Flexible Paxos.",
     date: "Jul 17, 2026",

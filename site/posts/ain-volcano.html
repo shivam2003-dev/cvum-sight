@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Volcano — AI Native Crash Course — cvam.sight</title>
-<link rel="stylesheet" href="../style.css?v=39">
+<title>Volcano — AI Native Long Guide — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=40">
 <script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
 <script defer src="/_vercel/speed-insights/script.js"></script>
@@ -57,7 +57,7 @@
       </div>
 
       <div class="post-header">
-        <p class="meta">CRASH COURSE · AI-NATIVE · <span class="difficulty intermediate">intermediate</span> · 10 min read · <span class="ain-ver">CNCF</span></p>
+        <p class="meta">LONG GUIDE · AI-NATIVE · <span class="difficulty intermediate">intermediate</span> · 13 min read · <span class="ain-ver">CNCF</span></p>
         <h1>Volcano — the batch scheduler that starts all your training pods at once.</h1>
         <div class="tag-row">
           <span class="tag fill">orchestration</span>
@@ -144,7 +144,7 @@ spec:
             <tr><td><strong>Volcano</strong></td><td>Gang scheduling, rich AI/HPC policies, topology</td><td>A full scheduler to operate</td></tr>
             <tr><td><a href="../ai-native.html">Kueue</a></td><td>Job queueing + quota on the default scheduler</td><td>Not a placement scheduler itself</td></tr>
             <tr><td><a href="../ai-native.html">YuniKorn</a></td><td>Unified batch + service, Big Data heritage</td><td>Different policy model</td></tr>
-            <tr><td><a href="../ain-kubernetes.html">Default scheduler</a></td><td>Stateless services, simple workloads</td><td>No gang scheduling</td></tr>
+            <tr><td><a href="ain-kubernetes.html">Default scheduler</a></td><td>Stateless services, simple workloads</td><td>No gang scheduling</td></tr>
           </tbody>
         </table>
 
@@ -164,9 +164,119 @@ spec:
         </ul>
 
         <p style="margin-top:24px;color:var(--ink-faint);font-size:.9rem">Verified against the official Volcano docs (volcano.sh) and CNCF sources, May 2026.</p>
+      <!-- AIN-LONG-GUIDE:START -->
+      <section class="ain-generated">
+        <div class="ain-guide-status"><span>Depth: production guide</span><span>Freshness review: 10 July 2026</span><span>Category: Orchestration and Scheduling</span></div>
 
+        <h2 id="mental-model">Where Volcano fits: the mental model</h2>
+        <p>Volcano is a compute or serving layer that places expensive AI workloads and turns models into reliable runtime services. The useful question is not simply “can it run the demo?” It is whether the component gives your team a clear ownership boundary, predictable failure behavior, and enough evidence to operate changes safely. Treat it as one replaceable layer in a larger system rather than letting it quietly become the architecture.</p>
+        <p>Start by drawing the request and data path. Mark where untrusted input enters, where identity is checked, where durable state changes, and where retries can repeat work. That diagram tells you which guarantees belong to Volcano and which still belong to your application, platform, cloud provider, or database. The distinction matters during incidents: a healthy process is not proof that the end-to-end task is correct.</p>
+
+        <figure class="ain-architecture" aria-label="Volcano production architecture">
+          <div class="ain-flow"><div class="ain-flow-node">Model + workload spec</div><div class="ain-flow-node">Queue or API</div><div class="ain-flow-node">Volcano runtime</div><div class="ain-flow-node">CPU/GPU workers</div><div class="ain-flow-node">Results + utilization</div></div>
+          <figcaption>A reference flow, not a mandatory topology. Put authentication before the trust boundary, persist authoritative state outside transient workers, and attach one correlation ID across all five stages.</figcaption>
+        </figure>
+
+        <div class="ain-callout note"><strong>Architecture note</strong>Configuration and execution paths often fail independently. Document what continues working if Volcano cannot be configured or invoked, and what stops when one of its dependencies is unavailable.</div>
+
+        <h2 id="production-core-concepts">Core concepts you should understand first</h2>
+        <p>The vocabulary below is more important than any single SDK method. It lets application engineers, platform engineers, security reviewers, and incident responders describe the same system without confusing a framework feature with an end-to-end guarantee.</p>
+        <div class="ain-table-wrap"><table class="ain-table"><thead><tr><th>Concept</th><th>Meaning in this layer</th><th>Design question</th></tr></thead><tbody><tr><td><strong>Resource request</strong></td><td>Capacity reserved for placement; inaccurate requests create pending work or stranded accelerators.</td><td>Write down how Volcano represents or enforces this before production.</td></tr>
+<tr><td><strong>Topology</strong></td><td>NUMA, PCIe, NVLink, rack, and zone relationships that can dominate distributed workload performance.</td><td>Write down how Volcano represents or enforces this before production.</td></tr>
+<tr><td><strong>Batching</strong></td><td>Combining requests or examples to improve accelerator utilization at the cost of queueing latency.</td><td>Write down how Volcano represents or enforces this before production.</td></tr>
+<tr><td><strong>Parallelism</strong></td><td>Splitting model weights, pipeline stages, data, or requests across devices and processes.</td><td>Write down how Volcano represents or enforces this before production.</td></tr>
+<tr><td><strong>Preemption</strong></td><td>Reclaiming resources from lower-priority work; safe jobs need checkpoint and resume semantics.</td><td>Write down how Volcano represents or enforces this before production.</td></tr>
+<tr><td><strong>Cold start</strong></td><td>Time to schedule, pull images, load weights, compile kernels, and become ready.</td><td>Write down how Volcano represents or enforces this before production.</td></tr></tbody></table></div>
+
+        <h2 id="production-blueprint">From quick start to a production deployment</h2>
+        <p>The earlier quick start proves that the package or service runs. Production readiness is a different exercise. Build the smallest vertical slice that crosses every real boundary—identity, network, persistence, upstream provider, telemetry, and rollback—before broadening the feature set.</p>
+        <ol class="ain-steps">
+          <li><strong>Pin the compatibility envelope.</strong> Record the Volcano release, language/runtime version, client SDK version, model or backend version, and—where applicable—Kubernetes API or driver requirements. Use a lock file, immutable image digest, or chart version; floating “latest” tags prevent repeatable rollback.</li>
+          <li><strong>Define contracts before configuration.</strong> Write the accepted input, successful output, error classes, timeout, idempotency behavior, and ownership of durable state. Validate at the boundary so corrupt work fails early instead of surfacing deep in a workflow.</li>
+          <li><strong>Create separate development, staging, and production identities.</strong> Do not copy a broad personal API key into every environment. Prefer workload identity or short-lived credentials, scope access by tenant and operation, and verify denial cases as part of deployment.</li>
+          <li><strong>Add bounded failure behavior.</strong> Every remote call needs a deadline. Retry only transient, idempotent operations with exponential backoff and jitter. Set concurrency and queue limits so an upstream slowdown becomes controlled backpressure rather than resource exhaustion.</li>
+          <li><strong>Instrument the complete path.</strong> Emit a correlation ID, component and release version, duration, outcome, retry count, and resource or cost dimensions. Keep sensitive prompt, document, and credential values out of ordinary logs.</li>
+          <li><strong>Ship through a reversible rollout.</strong> Run compatibility and regression tests, deploy to a canary or isolated workload, compare service-level indicators, then increase exposure. Preserve the previous artifact and configuration until rollback has been exercised.</li>
+        </ol>
+
+        <div class="ain-callout tip"><strong>Practical tip</strong>Build one deliberately failing test for each boundary: invalid credentials, unreachable backend, malformed input, timeout, exhausted quota, and an incompatible version. A green happy-path demo otherwise proves very little.</div>
+
+        <h2 id="configuration-checklist">Production configuration checklist</h2>
+        <ul class="ain-checklist">
+          <li>Pin artifacts by version and, where possible, digest.</li>
+          <li>Set connect, request, and total workflow deadlines.</li>
+          <li>Bound retries, concurrency, queue length, and payload size.</li>
+          <li>Separate read-only operations from mutations.</li>
+          <li>Use idempotency keys for replayable mutations.</li>
+          <li>Persist canonical state outside disposable workers.</li>
+          <li>Encrypt traffic and durable data with managed keys.</li>
+          <li>Redact secrets, tokens, prompts, and personal data.</li>
+          <li>Apply per-tenant quotas and authorization filters.</li>
+          <li>Expose readiness separately from process liveness.</li>
+          <li>Back up metadata and test restore, not only backup.</li>
+          <li>Document owner, escalation path, RPO, and RTO.</li>
+        </ul>
+
+        <div class="ain-callout warning"><strong>Warning</strong>Never interpret a successful API response as proof of correct business behavior. Validate the returned schema and policy, record the side effect, and reconcile critical outcomes against the system of record.</div>
+
+        <h2 id="failure-modes">Failure modes and the response you should design</h2>
+        <div class="ain-table-wrap"><table class="ain-table"><thead><tr><th>Failure mode</th><th>What you observe</th><th>Engineering response</th></tr></thead><tbody><tr><td><strong>Unschedulable gang</strong></td><td>Some workers start but the full distributed job cannot fit.</td><td>Use gang scheduling or admission so the group starts together.</td></tr>
+<tr><td><strong>Topology penalty</strong></td><td>Workers span slow links or cross zones.</td><td>Express topology constraints and measure collective communication.</td></tr>
+<tr><td><strong>Memory fragmentation</strong></td><td>Free memory exists but a large allocation fails.</td><td>Tune allocation/batching and recycle workers under controlled policy.</td></tr>
+<tr><td><strong>Driver mismatch</strong></td><td>Host driver, runtime, CUDA, and framework are incompatible.</td><td>Qualify an immutable compatibility matrix before rollout.</td></tr>
+<tr><td><strong>Cold-start spike</strong></td><td>Scale-out misses the latency objective.</td><td>Pre-pull images, cache weights, keep warm capacity, and measure each phase.</td></tr>
+<tr><td><strong>Noisy neighbor</strong></td><td>One workload consumes shared network, CPU, or storage.</td><td>Apply quotas, priorities, isolation, and per-tenant saturation metrics.</td></tr></tbody></table></div>
+        <p>Turn these rows into runbook entries with an alert, first diagnostic query, safe mitigation, and escalation owner. Test at least one failure in staging every release cycle. If the system cannot be forced into a failure safely, it is usually not yet observable or isolated enough.</p>
+
+        <h2 id="security-governance">Security, privacy, and tenant isolation</h2>
+        <p>Place Volcano in a threat model, not just an architecture diagram. Identify human users, workload identities, administrators, upstream services, model providers, artifact registries, and data stores. For each edge, document authentication, authorization, encryption, audit evidence, and the consequence of credential compromise.</p>
+        <p>Apply least privilege at the operation and resource level. A component that only retrieves documents should not be able to delete the index; an evaluation worker should not inherit production mutation credentials; a model-serving pod should not need cluster-admin. In multi-tenant systems, enforce the tenant boundary before retrieval or execution and include tenant identity in quotas and audit events. Never rely on a prompt instruction, namespace string supplied by the client, or UI filtering as authorization.</p>
+        <p>Decide what data is permitted in telemetry. Prompts, retrieved chunks, tool arguments, model responses, notebooks, and traces can contain secrets or regulated data. Redact close to collection, keep high-sensitivity payload capture opt-in, encrypt exports, restrict support access, and give each class an explicit retention period. Verify deletion across caches, replicas, indexes, backups, and derived evaluation datasets.</p>
+
+        <h2 id="observability-slos">Observability and service-level objectives</h2>
+        <p>A useful dashboard follows the user-visible unit of work and then decomposes it by component, release, tenant tier, backend, and failure class. Start with these signals for Volcano:</p>
+        <ul><li><strong>accelerator utilization and memory</strong> — graph both rate and distribution, then compare with the previous release and traffic mix.</li><li><strong>queue wait and pending duration</strong> — graph both rate and distribution, then compare with the previous release and traffic mix.</li><li><strong>time to first token or first result</strong> — graph both rate and distribution, then compare with the previous release and traffic mix.</li><li><strong>throughput per device</strong> — graph both rate and distribution, then compare with the previous release and traffic mix.</li><li><strong>cold-start and model-load time</strong> — graph both rate and distribution, then compare with the previous release and traffic mix.</li><li><strong>failure, eviction, and preemption rate</strong> — graph both rate and distribution, then compare with the previous release and traffic mix.</li></ul>
+        <p>Choose an SLO at the boundary your users experience, such as “99% of accepted tasks complete correctly within five minutes over 28 days.” Availability alone is insufficient for AI systems because a fast but incorrect or ungrounded result is still a failure. Pair latency and completion objectives with a reviewed quality or policy indicator. Page on rapid error-budget burn; use tickets for slow capacity trends.</p>
+
+        <h2 id="testing-release">Testing and release strategy</h2>
+        <p>Use four layers. Unit tests cover deterministic adapters, schemas, policy, and error mapping without a live external service. Contract tests exercise the pinned integration boundary—API, CLI, SDK, protocol, or ephemeral service—and verify its exact surface. Scenario tests exercise representative end-to-end cases, including permissions and state. Load and resilience tests establish saturation, queue behavior, retry amplification, and recovery after dependency loss.</p>
+        <p>Keep a small blocking suite for every commit and a broader scheduled suite for expensive or probabilistic checks. Store results with the application version, Volcano version, configuration hash, model/backend version, dataset version, and random seed. A score without that provenance cannot explain a regression. Before upgrading, read the migration notes, run both versions against the same replay set, and explicitly test rollback across any schema or state transition.</p>
+
+        <h2 id="decision-guide">How to decide whether Volcano is the right tool</h2>
+        <div class="ain-table-wrap"><table class="ain-table"><thead><tr><th>Question</th><th>Evidence to collect</th><th>Red flag</th></tr></thead><tbody>
+          <tr><td><strong>Does it remove a real constraint?</strong></td><td>A measured bottleneck, missing guarantee, or repeated custom component.</td><td>Adoption is based only on a demo or feature count.</td></tr>
+          <tr><td><strong>Can the team operate it?</strong></td><td>Named owner, upgrade path, alerts, runbooks, backup, restore, and on-call skills.</td><td>Only the original prototype author understands failure behavior.</td></tr>
+          <tr><td><strong>Is the interface portable?</strong></td><td>Your domain contracts wrap vendor-specific APIs; data and state have an export path.</td><td>Business objects are inseparable from framework internals.</td></tr>
+          <tr><td><strong>Does it meet the envelope?</strong></td><td>Benchmarks using your payloads, concurrency, topology, quality bar, and cost model.</td><td>Published benchmark hardware or workload does not resemble production.</td></tr>
+          <tr><td><strong>Is failure affordable?</strong></td><td>Tested degraded mode, bounded blast radius, rollback, RPO, and RTO.</td><td>A component outage blocks unrelated tenants or irreversible actions.</td></tr>
+        </tbody></table></div>
+        <p>Prefer the smallest component that satisfies the required guarantees. A provider SDK, relational table, background job, or standard Kubernetes controller is often better than another platform when the workload is small and predictable. Choose Volcano when its specific abstraction removes sustained engineering work and the team is willing to own its lifecycle.</p>
+
+        <h2 id="hands-on-lab">A focused 90-minute validation lab</h2>
+        <ol class="ain-steps">
+          <li><strong>Minutes 0–15:</strong> run the documented quick start in a disposable environment with pinned dependencies. Save the exact commands and a known-good input/output fixture.</li>
+          <li><strong>Minutes 15–35:</strong> replace the toy input with one representative case from your system. Add schema validation, a deadline, and a correlation ID.</li>
+          <li><strong>Minutes 35–55:</strong> force invalid credentials, a timeout, malformed input, and one dependency failure. Record the observed errors and whether retries are safe.</li>
+          <li><strong>Minutes 55–75:</strong> run a small concurrency test and capture latency, throughput, saturation, and unit cost. Do not extrapolate beyond the tested range.</li>
+          <li><strong>Minutes 75–90:</strong> write the adoption decision: required guarantees met, open risks, owner, next experiment, and the simplest credible alternative.</li>
+        </ol>
+
+        <h2 id="faq">Frequently asked questions</h2>
+        <details class="osc-faq"><summary>Should we standardize on Volcano for every team?</summary><p>Standardize the contracts, telemetry, security controls, and release evidence first. Standardizing one implementation is useful only when workloads share requirements and a platform team owns upgrades and support.</p></details>
+        <details class="osc-faq"><summary>Can we use the hosted version and skip operations work?</summary><p>Hosted service removes part of the control-plane burden, not architecture ownership. You still own identity, tenant isolation, data classification, quotas, dependency failure, observability, export, and an exit plan.</p></details>
+        <details class="osc-faq"><summary>What should be pinned for reproducibility?</summary><p>Pin the tool/server, client SDK, runtime, configuration, model or backend, container image digest, and test dataset. Record these values with every benchmark and evaluation result.</p></details>
+        <details class="osc-faq"><summary>When is a proof of concept ready for production?</summary><p>After representative success and failure tests pass, sensitive data paths are approved, limits and SLOs are defined, telemetry and runbooks exist, restore or rollback is rehearsed, and an accountable owner accepts the remaining risk.</p></details>
+
+        <h2 id="official-sources">Official sources and freshness</h2>
+        <p>This guide was reviewed for architecture and operational guidance on <strong>10 July 2026</strong>. Projects evolve quickly: verify installation syntax, supported versions, feature maturity, and upgrade notes against the exact release you deploy.</p>
+        <ul class="ain-source-list"><li><a href="https://volcano.sh/en/" target="_blank" rel="noopener">Volcano official documentation</a></li>
+<li><a href="https://volcano.sh/en/docs/" target="_blank" rel="noopener">Primary project reference 2</a></li>
+<li><a href="https://volcano.sh/en/docs/unified_scheduling/" target="_blank" rel="noopener">Primary project reference 3</a></li>
+<li><a href="https://github.com/volcano-sh/volcano" target="_blank" rel="noopener">Primary project reference 4</a></li>
+<li><a href="https://www.infracloud.io/blogs/batch-scheduling-on-kubernetes/" target="_blank" rel="noopener">Primary project reference 5</a></li></ul>
+      </section>
+      <!-- AIN-LONG-GUIDE:END -->
       </div>
-
       <div class="post-nav">
         <a href="../ai-native.html">&larr; AI Native Stack</a>
         <span></span>

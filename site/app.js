@@ -7,6 +7,13 @@
     link.href = "https://about.shivam2003.com/";
   });
 
+  if (document.querySelector(".post-body") && !document.querySelector('script[data-cvam-focus]')) {
+    var focusScript = document.createElement("script");
+    focusScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "focus.js?v=1";
+    focusScript.setAttribute("data-cvam-focus", "true");
+    document.body.appendChild(focusScript);
+  }
+
   // Load the current visual system after any older page-pinned stylesheet.
   (function () {
     if (document.querySelector('link[data-cvam-modern-css]')) return;
@@ -14,7 +21,7 @@
     if (!existing) return;
     var fresh = document.createElement("link");
     fresh.rel = "stylesheet";
-    fresh.href = existing.href.split("?")[0] + "?v=45";
+    fresh.href = existing.href.split("?")[0] + "?v=46";
     fresh.setAttribute("data-cvam-modern-css", "true");
     document.head.appendChild(fresh);
   })();

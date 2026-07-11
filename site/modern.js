@@ -6,12 +6,19 @@
     link.href = "https://about.shivam2003.com/";
   });
 
+  if (document.querySelector(".post-body") && !document.querySelector('script[data-cvam-focus]')) {
+    var focusScript = document.createElement("script");
+    focusScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "focus.js?v=1";
+    focusScript.setAttribute("data-cvam-focus", "true");
+    document.body.appendChild(focusScript);
+  }
+
   if (!document.querySelector('link[data-cvam-modern-css]')) {
     var existingCss = document.querySelector('link[rel="stylesheet"][href*="style.css"]');
     if (existingCss) {
       var freshCss = document.createElement("link");
       freshCss.rel = "stylesheet";
-      freshCss.href = existingCss.href.split("?")[0] + "?v=45";
+      freshCss.href = existingCss.href.split("?")[0] + "?v=46";
       freshCss.setAttribute("data-cvam-modern-css", "true");
       document.head.appendChild(freshCss);
     }

@@ -1,5 +1,9 @@
 /* Modern/classic publication shell for legacy one-line pages. */
 (function () {
+  if (!localStorage.getItem("cvam-modern-default-v1")) {
+    localStorage.setItem("cvam-view", "modern");
+    localStorage.setItem("cvam-modern-default-v1", "1");
+  }
   document.querySelectorAll('a[href="about.html"],a[href="../about.html"],a[href="/about.html"],a[href="/about"]').forEach(function (link) {
     link.href = "https://about.shivam2003.com/";
   });

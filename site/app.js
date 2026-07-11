@@ -1,6 +1,10 @@
 /* app.js — renders post cards, archive list, tag cloud, sidebar cats, contrib grid, progress bar */
 
 (function () {
+  if (!localStorage.getItem("cvam-modern-default-v1")) {
+    localStorage.setItem("cvam-view", "modern");
+    localStorage.setItem("cvam-modern-default-v1", "1");
+  }
   document.querySelectorAll('a[href="about.html"],a[href="../about.html"],a[href="/about.html"],a[href="/about"]').forEach(function (link) {
     link.href = "https://about.shivam2003.com/";
   });

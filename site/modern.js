@@ -1,5 +1,9 @@
 /* Modern/classic publication shell for legacy one-line pages. */
 (function () {
+  document.querySelectorAll('a[href="about.html"],a[href="../about.html"],a[href="/about.html"],a[href="/about"]').forEach(function (link) {
+    link.href = "https://about.shivam2003.com/";
+  });
+
   if (!document.querySelector('link[data-cvam-modern-css]')) {
     var existingCss = document.querySelector('link[rel="stylesheet"][href*="style.css"]');
     if (existingCss) {

@@ -1,6 +1,10 @@
 /* app.js — renders post cards, archive list, tag cloud, sidebar cats, contrib grid, progress bar */
 
 (function () {
+  document.querySelectorAll('a[href="about.html"],a[href="../about.html"],a[href="/about.html"],a[href="/about"]').forEach(function (link) {
+    link.href = "https://about.shivam2003.com/";
+  });
+
   // Load the current visual system after any older page-pinned stylesheet.
   (function () {
     if (document.querySelector('link[data-cvam-modern-css]')) return;

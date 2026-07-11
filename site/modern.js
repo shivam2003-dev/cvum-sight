@@ -1,5 +1,15 @@
 /* Modern/classic publication shell for legacy one-line pages. */
 (function () {
+  if (!document.querySelector('link[data-cvam-modern-css]')) {
+    var existingCss = document.querySelector('link[rel="stylesheet"][href*="style.css"]');
+    if (existingCss) {
+      var freshCss = document.createElement("link");
+      freshCss.rel = "stylesheet";
+      freshCss.href = existingCss.href.split("?")[0] + "?v=41";
+      freshCss.setAttribute("data-cvam-modern-css", "true");
+      document.head.appendChild(freshCss);
+    }
+  }
   var savedView = localStorage.getItem("cvam-view") || "modern";
   document.documentElement.classList.toggle("view-modern", savedView === "modern");
 

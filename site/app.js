@@ -1,6 +1,18 @@
 /* app.js — renders post cards, archive list, tag cloud, sidebar cats, contrib grid, progress bar */
 
 (function () {
+  // Load the current visual system after any older page-pinned stylesheet.
+  (function () {
+    if (document.querySelector('link[data-cvam-modern-css]')) return;
+    var existing = document.querySelector('link[rel="stylesheet"][href*="style.css"]');
+    if (!existing) return;
+    var fresh = document.createElement("link");
+    fresh.rel = "stylesheet";
+    fresh.href = existing.href.split("?")[0] + "?v=41";
+    fresh.setAttribute("data-cvam-modern-css", "true");
+    document.head.appendChild(fresh);
+  })();
+
   // One publication-wide layout preference. Modern is the default; the
   // original design remains available from the persistent floating switch.
   (function () {

@@ -13,7 +13,7 @@
     if (existingCss) {
       var freshCss = document.createElement("link");
       freshCss.rel = "stylesheet";
-      freshCss.href = existingCss.href.split("?")[0] + "?v=42";
+      freshCss.href = existingCss.href.split("?")[0] + "?v=43";
       freshCss.setAttribute("data-cvam-modern-css", "true");
       document.head.appendChild(freshCss);
     }

@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "sql-server-always-on-aws-launch-wizard",
+    title: "SQL Server Always On with AWS Launch Wizard and FSx.",
+    date: "Aug 4, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "sql-server", "launch-wizard", "fsx"],
+    time: 28,
+    words: 4600,
+    excerpt: "Part 2 of the SQL Server Always On on AWS series. Everything part 1 built by hand, AWS Launch Wizard automates in about two hours: the IAM and Active Directory prerequisites that break most first attempts, the full wizard walkthrough with its live cost estimator, FCI on Amazon FSx shared storage that unlocks Standard Edition licensing, ONTAP sizing formulas, post-deploy hardening, and the honest answer to when you should still build it manually."
+  },
+  {
     slug: "consensus-11-4-closing-synthesis",
     title: "The consensus landscape map.",
     date: "Aug 3, 2026",

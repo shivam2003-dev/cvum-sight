@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQL Server Always On with AWS Launch Wizard and FSx — cvam.sight</title>
+<meta name="description" content="Part 2 of the SQL Server Always On on AWS series. Everything part 1 built by hand — ENI secondary IPs, WSFC, listeners, security groups — AWS Launch Wizard automates in about two hours. IAM prerequisites, Active Directory permissions, the full wizard walkthrough, FCI on Amazon FSx shared storage, ONTAP sizing formulas, verification, and when you should still build it manually.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}if(localStorage.getItem("cvam-view")==="modern")document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .article-lede{font-size:1.08rem;line-height:1.72;color:var(--ink);border-left:4px solid #c96442;padding:2px 0 2px 18px;margin:0 0 24px}
+  .callout{position:relative;border:1px solid var(--rule,#d8cfb8);border-radius:10px;padding:18px 18px 16px;margin:22px 0;background:var(--paper);box-shadow:0 3px 14px rgba(42,38,32,.05)}
+  .callout-label{display:inline-block;font-family:var(--font-mono);font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px;padding:3px 8px;border-radius:999px}
+  .callout p:last-child,.callout ul:last-child{margin-bottom:0}
+  .callout.note{border-left:4px solid #527aa8;background:rgba(82,122,168,.07)} .callout.note .callout-label{color:#355f8c;background:rgba(82,122,168,.12)}
+  .callout.tip{border-left:4px solid #6a8f5f;background:rgba(106,143,95,.08)} .callout.tip .callout-label{color:#4d7144;background:rgba(106,143,95,.13)}
+  .callout.warning{border-left:4px solid #c96442;background:rgba(201,100,66,.09)} .callout.warning .callout-label{color:#a8482b;background:rgba(201,100,66,.13)}
+  .callout.gotcha{border-left:4px solid #d49a20;background:rgba(240,192,64,.11)} .callout.gotcha .callout-label{color:#8a6208;background:rgba(240,192,64,.18)}
+  .callout.why{border-left:4px solid #7656a5;background:rgba(118,86,165,.07)} .callout.why .callout-label{color:#5d408a;background:rgba(118,86,165,.12)}
+  .diagram-container{border:1px solid var(--rule,#d8cfb8);border-radius:12px;padding:18px;margin:26px 0;background:linear-gradient(145deg,rgba(82,122,168,.045),rgba(106,143,95,.045));overflow-x:auto}
+  .diagram-container svg{display:block;width:100%;min-width:720px;height:auto}
+  .diagram-caption{font-family:var(--font-mono);font-size:.76rem;line-height:1.5;color:var(--ink-faint);text-align:center;margin:12px 0 0}
+  .concept-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0}
+  .concept-card{border:1px solid var(--rule,#d8cfb8);border-radius:9px;padding:14px;background:var(--paper)}
+  .concept-card strong{display:block;margin-bottom:6px}.concept-card p{font-size:.9rem;line-height:1.55;margin:0;color:var(--ink-faint)}
+  .ag-table{width:100%;border-collapse:collapse;margin:18px 0;font-size:.92rem}
+  .ag-table th,.ag-table td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 9px;text-align:left;vertical-align:top;line-height:1.5}
+  .ag-table th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  .ag-table td:first-child{font-weight:650}
+  pre.code{margin:16px 0 22px}
+  h2{scroll-margin-top:20px;margin-top:36px} h3{margin-top:28px}
+  .reflist li{margin:8px 0}
+  .flow-dash{stroke-dasharray:8 6;animation:flowdash 1.1s linear infinite}
+  @keyframes flowdash{to{stroke-dashoffset:-14}}
+  @media(prefers-reduced-motion:reduce){.flow-dash{animation:none} svg animate,svg animateMotion{display:none}}
+  @media(max-width:760px){.concept-grid{grid-template-columns:1fr}.callout{padding:15px}.diagram-container{margin-left:-8px;margin-right:-8px}}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../tags.html">Tags</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+    <div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p><a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a><a href="mailto:shivam.sk2003@gmail.com">Email</a></div>
+  </aside>
+  <div class="page">
+  <article>
+    <div class="post-header">
+      <p class="meta">Aug 4, 2026 · devops · 28 min read · 4600 words <span class="difficulty advanced">advanced</span></p>
+      <h1>SQL Server Always On with AWS Launch Wizard and FSx.</h1>
+      <div class="tag-row"><span class="tag fill">devops</span><span class="tag">aws</span><span class="tag">sql-server</span><span class="tag">launch-wizard</span><span class="tag">fsx</span></div>
+    </div>
+    <div class="post-body">
+      <p class="article-lede">Part 1 of this series built a two-node SQL Server 2025 Availability Group across two AWS Availability Zones by hand: reserving secondary IPs on ENIs, fighting WSFC's assumptions about Layer 2 networking, wiring security groups, DNS, listeners, and quorum witnesses one command at a time. That article exists because every one of those steps has a failure mode. This one exists because AWS eventually packaged all of those steps — the ENI arithmetic, the cluster build, the AD wiring, the listener, even the sizing math — into a free console wizard that produces a working Always On deployment in about two hours. Part 2 covers AWS Launch Wizard end to end: what it actually provisions under the hood, the IAM and Active Directory prerequisites that break most first attempts, the full walkthrough, the FSx shared-storage path that unlocks Failover Cluster Instances on Standard Edition, and the honest answer to when you should still do it part-1 style.</p>
+
+      <p>If you have not read <a href="sql-server-2025-always-on-aws-ec2.html">part 1</a>, the short version: SQL Server Always On on EC2 works, but VPC networking replaces the Layer 2 behaviors WSFC was designed around, so cluster and listener IPs must be reserved on ENIs through the AWS control plane, kept out of the Windows adapter configuration, and connected to clients through multi-subnet-aware drivers. Nothing in this article changes that architecture — Launch Wizard builds exactly the same shape. What changes is who types the commands.</p>
+
+      <h2 id="what-it-is">What Launch Wizard actually is</h2>
+      <p>AWS Launch Wizard is a free orchestration service — you pay only for the EC2, EBS, FSx, and Directory Service resources it creates, never for the wizard itself. You answer a guided questionnaire about your workload (performance needs, network layout, Active Directory situation, SQL licensing), and it sizes, provisions, and configures a complete SQL Server Always On deployment: EC2 instances across two Availability Zones, EBS or FSx storage, security groups, a Windows Server Failover Cluster, the Availability Group or Failover Cluster Instance itself, and the listener.</p>
+      <p>Under the hood it is not magic — it is CloudFormation plus AWS Systems Manager. The wizard generates CloudFormation templates for the infrastructure and drives SSM Automation documents and user-data scripts inside the instances to install and configure SQL Server, join the domain, build the cluster, and create the AG. Two properties fall out of this design that matter in practice:</p>
+      <div class="concept-grid">
+        <div class="concept-card"><strong>Repeatable</strong><p>The generated CloudFormation templates are yours to keep. Deploy once through the console, then re-deploy the identical stack through your pipeline for the next environment.</p></div>
+        <div class="concept-card"><strong>Deletable</strong><p>Deleting a Launch Wizard deployment rolls back the CloudFormation stacks, tearing down what it created. Failed deployments can roll back automatically if you enable it.</p></div>
+        <div class="concept-card"><strong>Inspectable</strong><p>Everything it builds is a normal resource in your account. The EC2 instances, the cluster, the AG — you can RDP in, open Failover Cluster Manager, and verify it exactly like part 1's hand-built cluster.</p></div>
+      </div>
+
+      <div class="diagram-container" role="img" aria-label="Animated flow of a Launch Wizard deployment from console questionnaire through CloudFormation and SSM to running Always On cluster">
+        <svg viewBox="0 0 980 430" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="lw-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#527aa8"/></marker>
+            <style>.t{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;fill:#2a2620}.h{font-weight:700;font-size:16px}.m{font-size:13px}.s{font-size:11.5px}.box{fill:#fffdf8;stroke:#968c7a;stroke-width:1.4}.stage{fill:#eef4fa;stroke:#527aa8;stroke-width:1.5}.out{fill:#eef5eb;stroke:#6a8f5f;stroke-width:1.5}.flow{stroke:#527aa8;stroke-width:2;fill:none;marker-end:url(#lw-arrow)}</style>
+          </defs>
+          <text x="490" y="30" text-anchor="middle" class="t h">One questionnaire in, one running cluster out</text>
+
+          <rect x="30" y="60" width="200" height="110" rx="11" class="stage"/>
+          <text x="130" y="90" text-anchor="middle" class="t h">Launch Wizard</text>
+          <text x="130" y="114" text-anchor="middle" class="t s">workload questionnaire</text>
+          <text x="130" y="132" text-anchor="middle" class="t s">sizing + live cost estimate</text>
+          <text x="130" y="150" text-anchor="middle" class="t s">free — pay for resources only</text>
+
+          <rect x="330" y="60" width="200" height="110" rx="11" class="stage"/>
+          <text x="430" y="90" text-anchor="middle" class="t h">CloudFormation</text>
+          <text x="430" y="114" text-anchor="middle" class="t s">generated templates</text>
+          <text x="430" y="132" text-anchor="middle" class="t s">VPC / EC2 / EBS / FSx</text>
+          <text x="430" y="150" text-anchor="middle" class="t s">reusable for next env</text>
+
+          <rect x="630" y="60" width="200" height="110" rx="11" class="stage"/>
+          <text x="730" y="90" text-anchor="middle" class="t h">Systems Manager</text>
+          <text x="730" y="114" text-anchor="middle" class="t s">in-guest automation</text>
+          <text x="730" y="132" text-anchor="middle" class="t s">domain join · WSFC build</text>
+          <text x="730" y="150" text-anchor="middle" class="t s">SQL install · AG create</text>
+
+          <path d="M230 115 L322 115" class="flow flow-dash"/>
+          <path d="M530 115 L622 115" class="flow flow-dash"/>
+
+          <circle r="6" fill="#c96442">
+            <animateMotion dur="4.5s" repeatCount="indefinite" path="M230,115 L330,115 L530,115 L630,115 L730,170 L730,215"/>
+          </circle>
+
+          <path d="M730 170 L730 215" class="flow flow-dash"/>
+
+          <rect x="60" y="225" width="860" height="175" rx="13" class="out"/>
+          <text x="90" y="256" class="t h">Deployed in ~2 hours</text>
+          <rect x="90" y="275" width="240" height="100" rx="9" class="box"/>
+          <text x="210" y="303" text-anchor="middle" class="t m">EC2 node 1 · AZ A</text>
+          <text x="210" y="324" text-anchor="middle" class="t s">SQL primary + WSFC</text>
+          <text x="210" y="344" text-anchor="middle" class="t s">ENI secondary IPs reserved</text>
+          <rect x="370" y="275" width="240" height="100" rx="9" class="box"/>
+          <text x="490" y="303" text-anchor="middle" class="t m">EC2 node 2 · AZ B</text>
+          <text x="490" y="324" text-anchor="middle" class="t s">SQL secondary + WSFC</text>
+          <text x="490" y="344" text-anchor="middle" class="t s">listener OR-dependency</text>
+          <rect x="650" y="275" width="240" height="100" rx="9" class="box"/>
+          <text x="770" y="303" text-anchor="middle" class="t m">Supporting cast</text>
+          <text x="770" y="324" text-anchor="middle" class="t s">Managed AD or your AD</text>
+          <text x="770" y="344" text-anchor="middle" class="t s">Secrets Manager · SNS · RDGW</text>
+          <path d="M330 325 L362 325" class="flow flow-dash"/>
+          <path d="M610 325 L642 325" class="flow flow-dash"/>
+        </svg>
+        <p class="diagram-caption">Figure 1 — Launch Wizard is a thin, free orchestration layer: your answers become CloudFormation templates for infrastructure and Systems Manager automation for everything inside the guest OS. The moving dot traces one deployment.</p>
+      </div>
+
+      <h2 id="ag-vs-fci">The decision the wizard forces early: AG or FCI</h2>
+      <p>Part 1 built an Availability Group and only mentioned Failover Cluster Instances in passing, because FCIs need shared storage every clustering node can reach — historically painful on EC2, where EBS volumes attach to one instance. Launch Wizard changes this calculus by offering Amazon FSx as the shared-storage layer, which makes the FCI path genuinely practical on AWS for the first time without third-party replication software. So before the walkthrough, the choice the wizard's first pages force on you:</p>
+      <table class="ag-table">
+        <tr><th>Aspect</th><th>Availability Group (part 1's build)</th><th>FCI on FSx shared storage</th></tr>
+        <tr><td>What is protected</td><td>Chosen user databases only; system databases (logins, jobs, linked servers) must be synced manually</td><td>The entire SQL instance, system databases included — nothing to sync by hand</td></tr>
+        <tr><td>Replication</td><td>Database-level, log-stream over TCP 5022; costs CPU and memory on every replica</td><td>Block-level at the storage layer (FSx replicates synchronously across AZs); near-zero instance overhead</td></tr>
+        <tr><td>Licensing</td><td>Multi-database AGs require Enterprise Edition</td><td>Standard Edition is sufficient — AWS quotes Standard as typically 50–60% cheaper than Enterprise</td></tr>
+        <tr><td>Read scaling</td><td>Readable secondaries can serve report traffic</td><td>One node runs the instance at a time; no readable secondary</td></tr>
+        <tr><td>Storage</td><td>Independent EBS volumes per node — two full copies of the data</td><td>One FSx file system, one copy (plus FSx's own synchronous AZ replica)</td></tr>
+      </table>
+      <div class="callout tip"><span class="callout-label">Rule of thumb</span><p>If the licensing budget only covers Standard Edition, or the team keeps forgetting to sync logins and Agent jobs to the secondary, FCI-on-FSx is the pragmatic choice. If you need readable secondaries or database-level failover granularity, it's an AG and Enterprise licensing. Launch Wizard automates both paths equally well.</p></div>
+
+      <h2 id="iam">Prerequisites 1: the two IAM identities people confuse</h2>
+      <p>Most failed first deployments die here, so it's worth being precise. There are <em>two separate identities</em> involved, and they need different things:</p>
+      <p><strong>Your user</strong> — the human clicking through the console — needs the <code>AmazonLaunchWizardFullAccessV2</code> managed policy (via an Identity Center permission set, a federated role, or an assumable role; AWS explicitly discourages attaching it directly to an IAM user).</p>
+      <p><strong>The EC2 instances</strong> Launch Wizard creates need an instance role named <code>AmazonEC2RoleForLaunchWizard</code>, composed of two managed policies: <code>AmazonSSMManagedInstanceCore</code> (so Systems Manager can drive the in-guest configuration) and <code>AmazonEC2RolePolicyForLaunchWizard</code>. You don't have to build this role — on the wizard's Choose Application page, it looks for the role and offers to create it if missing. That creation is a one-time act needing IAM privileges; after it exists, an admin can delegate all future deployments to users who hold only the Launch Wizard policy.</p>
+      <div class="callout note"><span class="callout-label">Secrets, not parameters</span><p>Launch Wizard stores your domain administrator and SQL service-account passwords in AWS Secrets Manager, and attaches a resource policy allowing exactly the <code>AmazonEC2RoleForLaunchWizard</code> role to call <code>GetSecretValue</code> during the build. Passwords never ride through CloudFormation parameters or user data in the clear — and after deployment, the secrets remain yours to rotate.</p></div>
+
+      <h2 id="ad">Prerequisites 2: Active Directory — where the sharp edges live</h2>
+      <p>Launch Wizard supports three AD postures: create a brand-new AWS Managed Microsoft AD as part of the deployment, use an existing AWS Managed AD, or connect to a self-managed AD (on EC2 or on-premises over VPN/Direct Connect). Two things trip people constantly.</p>
+      <h3 id="ad-perms">The domain user needs six specific OU permissions</h3>
+      <p>Whether managed or self-managed, the domain account you hand to the wizard must hold these rights on the default Organizational Unit, because the deployment creates real AD objects — the cluster's computer object, the SQL service user, the listener's virtual computer object:</p>
+      <ul>
+        <li><code>Reset password</code> and <code>Write userAccountControl</code></li>
+        <li><code>Create user accounts</code> and <code>Create computer objects</code></li>
+        <li><code>Read all properties</code> and <code>Modify permissions</code></li>
+      </ul>
+      <p>During the build, Launch Wizard adds the SQL service user to AD if absent, joins the SQL nodes and the Remote Desktop Gateway instance to the domain, grants the cluster the <code>CreateChild</code> right (this is what lets the CNO create the listener VCO — the exact delegation part 1 configured by hand), and gives the service account <code>FullControl</code> file-system rights where needed.</p>
+      <h3 id="ad-network">Self-managed AD adds networking homework</h3>
+      <p>Connecting to your own AD means the VPC must reach your domain controllers (VPN, Direct Connect, or VPC peering), the deployment subnets must resolve your AD DNS zone (the same conditional-forwarding requirement from part 1 — pointing at public DNS breaks everything), domain-controller firewalls must admit the VPC's traffic on the standard AD port set, and the domain functional level must be Windows Server 2019 or later. The AD does <em>not</em> need to live in the same VPC as the SQL deployment — cross-VPC works if connectivity and DNS resolution are in place.</p>
+      <div class="callout gotcha"><span class="callout-label">Gotcha</span><p>The existing-AD deployment option supports AWS Managed AD fully; for self-managed AD, verify DNS resolution from the deployment VPC <em>before</em> starting the wizard. A deployment that fails forty minutes in because the node couldn't resolve <code>corp.example.com</code> still consumed forty minutes of provisioned-resource time, and you get to watch the rollback.</p></div>
+
+      <h2 id="versions">Prerequisites 3: versions, AMIs, and the BYOL fine print</h2>
+      <p>The support matrix is refreshingly square — every current SQL Server pairs with every current Windows Server:</p>
+      <table class="ag-table">
+        <tr><th>SQL Server</th><th>Windows Server 2019</th><th>Windows Server 2022</th><th>Windows Server 2025</th></tr>
+        <tr><td>SQL Server 2019</td><td>yes</td><td>yes</td><td>yes</td></tr>
+        <tr><td>SQL Server 2022</td><td>yes</td><td>yes</td><td>yes</td></tr>
+        <tr><td>SQL Server 2025</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      </table>
+      <p>Licensing offers three lanes:</p>
+      <ul>
+        <li><strong>License-included AMIs</strong> — the easy lane. Windows and SQL licensing baked into the instance-hour price; zero pre-checks required.</li>
+        <li><strong>Windows license-included + SQL BYOL</strong> — your SQL media must be an ISO file, sitting in a folder inside an S3 bucket whose name starts with <code>LaunchWizard-*</code>, publicly readable within that folder so the wizard can pull and install it.</li>
+        <li><strong>Fully custom AMIs</strong> — allowed, with conditions: root volume on <code>C:</code>, SQL installed on the root drive, NTFS, English language pack, EC2Launch v2 configured so user-data scripts execute at launch (Launch Wizard bootstraps configuration through user data — an AMI that doesn't run it produces an instance that sits there doing nothing), plus current ENA/NVMe/SSM agents.</li>
+      </ul>
+      <div class="callout why"><span class="callout-label">Why user data matters here</span><p>Everything Systems Manager later does inside the guest starts from a user-data bootstrap. AWS's own AMIs enable user-data execution on first boot by default; custom images sysprepped the wrong way silently don't, and the deployment hangs at "configuring instance" until timeout. If you re-image, follow the EC2Launch v2 sysprep path.</p></div>
+
+      <h2 id="walkthrough">The walkthrough: six pages between you and a cluster</h2>
+      <p>With prerequisites settled, the wizard itself is genuinely quick. What follows maps each console page to what part 1 did manually.</p>
+      <h3 id="step-app">Application settings</h3>
+      <p>Deployment name, an SNS topic ARN if you want progress and failure notifications pushed to email or Slack, and the rollback preference for failed deployments. Then connectivity: choose an existing key pair, tenancy, and either an existing VPC or let the wizard create one; pick the two Availability Zones and private subnets for the SQL nodes. This page replaces part 1's subnet planning — the wizard enforces one subnet per node, the same unique-subnet-per-node rule AWS's clustering guidance mandates.</p>
+      <h3 id="step-ad-sql">Active Directory and SQL settings</h3>
+      <p>Select your AD posture from the section above and supply the domain user. Then SQL: service account details, license model (license-included AMI or BYOL), and — optionally — your own node names, cluster name, and instance name instead of generated ones. Take that option: when you're staring at Failover Cluster Manager during an incident, <code>SQLNODE1</code> beats a generated identifier.</p>
+      <h3 id="step-infra">Infrastructure requirements — the sizing engine</h3>
+      <p>Two modes. <em>"Based on infrastructure"</em>: you state performance requirements — vCPUs, memory, network throughput, SQL transaction throughput — and the wizard recommends instance types and storage. <em>"Based on instance type"</em>: you pick <code>r6i.4xlarge</code> yourself because you already know. Choosing FSx storage adds throughput-capacity and storage-capacity inputs. Every selection updates a <strong>dynamically calculated monthly cost estimate</strong> in place — change the instance type, watch the number move. It is an estimate of the infrastructure at list price, not a quote; RIs, Savings Plans, and data transfer aren't in it.</p>
+      <h3 id="step-review">Review and deploy</h3>
+      <p>A summary page, one button, and roughly two hours of CloudFormation events and SSM run-command output. SNS keeps you posted; the deployments list shows per-stage progress. When it finishes, you have the part 1 architecture — built by robots.</p>
+
+      <h2 id="fsx">The FSx path: FCI with genuinely shared storage</h2>
+      <p>This is the part with no part 1 equivalent, so it gets the full treatment. An FCI needs storage every possible owner node can mount. Amazon FSx for Windows File Server provides it as a managed SMB file system with the two properties an FCI cannot live without:</p>
+      <ul>
+        <li><strong>SMB Continuous Availability (CA) shares</strong> — the SMB 3 transparent-failover feature SQL Server requires for database files on a file share. FSx supports CA natively; a plain file server share without CA will corrupt an FCI's world during storage failover.</li>
+        <li><strong>Multi-AZ deployment</strong> — FSx itself runs as an active/standby pair across two Availability Zones with synchronous block replication, automatic failure detection, failover, and failback. Your FCI's single data copy is therefore not a single point of failure: lose the AZ hosting the active FSx side, and FSx fails over underneath the cluster.</li>
+      </ul>
+      <p>The same FSx file system can also host the <strong>file-share witness</strong> for cluster quorum — the third-failure-domain vote part 1 placed manually.</p>
+
+      <div class="diagram-container" role="img" aria-label="Animated FCI on FSx architecture with failover pulse">
+        <svg viewBox="0 0 980 470" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="fsx-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#6a8f5f"/></marker>
+            <style>.t2{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;fill:#2a2620}.h2x{font-weight:700;font-size:16px}.m2{font-size:13px}.s2{font-size:11.5px}.box2{fill:#fffdf8;stroke:#968c7a;stroke-width:1.4}.sub2{fill:#eef4fa;stroke:#527aa8;stroke-width:1.5}.node2{fill:#fffaf0;stroke:#d49a20;stroke-width:1.5}.fsx{fill:#eef5eb;stroke:#6a8f5f;stroke-width:1.8}.grn{stroke:#6a8f5f;stroke-width:2;fill:none;marker-end:url(#fsx-arrow)}.dash2{stroke:#968c7a;stroke-width:1.3;stroke-dasharray:6 5;fill:none}</style>
+          </defs>
+          <rect x="18" y="14" width="944" height="440" rx="14" class="box2"/>
+          <text x="42" y="44" class="t2 h2x">FCI on FSx · one SQL instance, one data copy, two Availability Zones</text>
+
+          <rect x="42" y="66" width="430" height="240" rx="12" class="sub2"/><text x="62" y="94" class="t2 h2x">AZ A</text>
+          <rect x="508" y="66" width="430" height="240" rx="12" class="sub2"/><text x="528" y="94" class="t2 h2x">AZ B</text>
+
+          <rect x="70" y="110" width="330" height="110" rx="10" class="node2"/>
+          <text x="90" y="140" class="t2 h2x">Node 1 · ACTIVE</text>
+          <text x="90" y="164" class="t2 m2">runs the entire SQL instance</text>
+          <text x="90" y="186" class="t2 s2">system DBs + user DBs, all on FSx share</text>
+          <rect x="90" y="110" width="290" height="110" rx="10" fill="none" stroke="#c96442" stroke-width="2.5" opacity="0" transform="translate(-20,0)">
+            <animate attributeName="opacity" values="0.9;0;0.9" dur="3s" repeatCount="indefinite"/>
+          </rect>
+
+          <rect x="540" y="110" width="330" height="110" rx="10" class="node2" opacity="0.75"/>
+          <text x="560" y="140" class="t2 h2x">Node 2 · standby</text>
+          <text x="560" y="164" class="t2 m2">SQL binaries installed, instance stopped</text>
+          <text x="560" y="186" class="t2 s2">mounts the same share on failover</text>
+
+          <path d="M400 165 C450 140 490 140 540 165" class="dash2"/>
+          <text x="470" y="132" text-anchor="middle" class="t2 s2">WSFC heartbeat</text>
+
+          <rect x="120" y="240" width="230" height="52" rx="9" class="fsx"/>
+          <text x="235" y="262" text-anchor="middle" class="t2 m2">FSx · preferred side</text>
+          <text x="235" y="281" text-anchor="middle" class="t2 s2">active SMB endpoint</text>
+          <rect x="600" y="240" width="230" height="52" rx="9" class="fsx" opacity="0.75"/>
+          <text x="715" y="262" text-anchor="middle" class="t2 m2">FSx · standby side</text>
+          <text x="715" y="281" text-anchor="middle" class="t2 s2">synchronous block replica</text>
+          <path d="M350 266 L592 266" class="grn flow-dash"/>
+          <text x="470" y="255" text-anchor="middle" class="t2 s2">synchronous replication</text>
+
+          <path d="M225 220 L232 240" class="grn"/>
+          <text x="150" y="232" class="t2 s2">SMB CA share</text>
+
+          <circle r="5" fill="#527aa8">
+            <animateMotion dur="2.2s" repeatCount="indefinite" path="M235,238 L235,222 L200,222"/>
+          </circle>
+
+          <rect x="42" y="330" width="430" height="100" rx="10" class="box2"/>
+          <text x="62" y="358" class="t2 m2">\\&lt;fsxdnsname&gt;\SQLDB   → data + log files</text>
+          <text x="62" y="382" class="t2 m2">\\&lt;fsxdnsname&gt;\witness → quorum file share</text>
+          <text x="62" y="406" class="t2 s2">one file system serves both roles</text>
+
+          <rect x="508" y="330" width="430" height="100" rx="10" class="box2"/>
+          <text x="528" y="358" class="t2 m2">Failover: instance stops on node 1,</text>
+          <text x="528" y="382" class="t2 m2">starts on node 2, mounts the same share.</text>
+          <text x="528" y="406" class="t2 s2">No log shipping. No data copy. System DBs come along free.</text>
+        </svg>
+        <p class="diagram-caption">Figure 2 — The FCI never replicates SQL data itself: FSx replicates blocks synchronously across AZs beneath it. The pulsing outline marks the single node running the instance; on failover the standby mounts the identical share and the system databases arrive with it.</p>
+      </div>
+
+      <h3 id="ontap">The ONTAP variant and its sizing formula</h3>
+      <p>Launch Wizard also offers Amazon FSx for NetApp ONTAP as the shared-storage engine, presenting iSCSI LUNs instead of SMB shares. The wizard carves the file system with a fixed formula worth knowing before you're surprised by the numbers — using the default 1,024&nbsp;GB file system:</p>
+      <table class="ag-table">
+        <tr><th>Layer</th><th>Sizing rule</th><th>At 1,024 GB</th></tr>
+        <tr><td>FSx file system</td><td>what you select</td><td>1,024 GB</td></tr>
+        <tr><td>Volume</td><td>85% of file system</td><td>870.4 GB</td></tr>
+        <tr><td>LUN</td><td>80% of volume (65% of total)</td><td>696.3 GB</td></tr>
+        <tr><td>SQL data LUN</td><td>60% of LUN storage</td><td>522.2 GB</td></tr>
+        <tr><td>SQL log LUN</td><td>20% of the data LUN</td><td>139.3 GB</td></tr>
+      </table>
+      <p>So a "1 TB" selection yields roughly 522&nbsp;GB of usable data-file space — the headroom is deliberate (snapshots, metadata, performance), and all of it is adjustable after deployment. Two ONTAP-specific behaviors: backups are <em>disabled</em> by default during the build (enable a schedule in the FSx console afterward), and deleting an ONTAP-backed deployment triggers a final volume backup that lingers — and bills — until you delete it manually.</p>
+      <div class="callout gotcha"><span class="callout-label">Sizing gotcha, Windows variant</span><p>For FSx for Windows File Server, the wizard computes capacity from your <em>peak IOPS requirement</em> as well as raw size — FSx throughput scales with provisioned capacity, so demanding high IOPS can produce a file system noticeably larger than the storage you asked for. That isn't a bug; it's the throughput floor being purchased through capacity.</p></div>
+
+      <h2 id="under-hood">What lands in your account: the configuration it applies</h2>
+      <p>The instances come out configured the way part 1 configured them by hand — the notable defaults:</p>
+      <table class="ag-table">
+        <tr><th>Setting</th><th>Value applied</th></tr>
+        <tr><td>SQL patching</td><td>Latest service pack applied; service set to start automatically</td></tr>
+        <tr><td>Network ports</td><td>TCP 1433 (client) and UDP 1434 (browser) opened; ICMP and RDP allowed through the host firewall</td></tr>
+        <tr><td>Clock behavior</td><td><code>RealTimeIsUniversal</code> registry key set — without it, Windows time drifts on non-UTC time zones (the same clock hygiene part 1 required)</td></tr>
+        <tr><td>Server role</td><td><code>BUILTIN\Administrators</code> added to the <code>SysAdmin</code> server role</td></tr>
+        <tr><td>PowerShell</td><td>Execution policy <code>Unrestricted</code> during setup — tighten it after deployment completes</td></tr>
+        <tr><td>Backups (FSx Windows)</td><td>Daily automatic backup 01:00, 7-day retention, weekly maintenance window Saturday 22:00 — all adjustable in the FSx console</td></tr>
+      </table>
+      <div class="callout warning"><span class="callout-label">Post-deploy hardening</span><p>Two defaults deserve immediate attention in production: pull <code>BUILTIN\Administrators</code> out of <code>SysAdmin</code> unless your ops model genuinely wants every local admin owning SQL, and restore a stricter PowerShell execution policy once the build is done. The wizard optimizes for a working deployment, not your final security posture.</p></div>
+
+      <h2 id="verify">Verifying the deployment — same checklist as part 1</h2>
+      <p>Trust, then verify, exactly as if you'd built it yourself:</p>
+      <ol>
+        <li>RDP to a node (through the RD Gateway instance the wizard deployed) and open <strong>Failover Cluster Manager</strong> — confirm both nodes are up, the witness has a vote, and the cluster core resources are online.</li>
+        <li>For FSx deployments, browse <code>\\&lt;fsxdnsname&gt;\&lt;sqlshare&gt;</code> from a domain-joined instance and confirm the SQL data files live there.</li>
+        <li>Run a manual failover — move the AG or FCI role to the second node — and confirm the instance (and, for FCIs, the system databases with all their logins and jobs) comes up intact on the other side.</li>
+        <li>Test client connectivity through the listener with <code>MultiSubnetFailover=True</code>, part 1's non-negotiable client-driver requirement, which remains non-negotiable here.</li>
+        <li>Confirm the instances report as managed in Systems Manager — that's your ongoing patching lane via Patch Manager.</li>
+      </ol>
+
+      <h2 id="manual-vs-wizard">Part 1 by hand vs part 2 by wizard — the honest comparison</h2>
+      <table class="ag-table">
+        <tr><th>Dimension</th><th>Manual build (part 1)</th><th>Launch Wizard (part 2)</th></tr>
+        <tr><td>Time to running AG</td><td>A focused day, if nothing bites</td><td>~2 hours, mostly unattended</td></tr>
+        <tr><td>ENI/IP reservation errors</td><td>Yours to make and debug</td><td>Automated away</td></tr>
+        <tr><td>Topology flexibility</td><td>Anything WSFC supports — odd subnet layouts, existing clusters, exotic quorum</td><td>The wizard's supported patterns only</td></tr>
+        <tr><td>Custom hardening at build time</td><td>Baked in as you go</td><td>Applied after; defaults documented above</td></tr>
+        <tr><td>Repeatability</td><td>Your runbook's discipline</td><td>Generated CloudFormation, replayable</td></tr>
+        <tr><td>Understanding what you own</td><td>Deep, earned the hard way</td><td>Only what you bring — which is why part 1 exists</td></tr>
+      </table>
+      <div class="callout why"><span class="callout-label">The real answer</span><p>Use Launch Wizard for the build; use part 1's knowledge for the 3 a.m. incident. The wizard removes the toil, not the responsibility — when a listener IP refuses to come online eight months from now, "the wizard configured it" is not a diagnosis. The two articles are one skill set.</p></div>
+
+      <h2 id="faq">FAQ</h2>
+      <p><strong>Does Launch Wizard cost anything?</strong> No — the service is free. You pay for the EC2, EBS, FSx, Directory Service, and other resources it provisions, and the in-wizard cost estimate tracks exactly those.</p>
+      <p><strong>Can it deploy into my existing VPC and existing AD?</strong> Yes, both — that's the mainstream enterprise path. Existing-AD support is full for AWS Managed AD and works for self-managed AD when the connectivity, DNS-resolution, firewall, and 2019+ functional-level prerequisites hold.</p>
+      <p><strong>Can I use my own SQL licenses?</strong> Yes — SQL BYOL on Windows license-included AMIs (ISO in a <code>LaunchWizard-*</code> S3 bucket) or a fully custom AMI meeting the EC2Launch v2/user-data requirements.</p>
+      <p><strong>What happens if a deployment fails midway?</strong> With rollback enabled in application settings, the CloudFormation stacks tear back down automatically. Deleting a successful deployment later rolls back the stacks the same way — minus the ONTAP farewell backup noted above.</p>
+      <p><strong>Does the wizard support SQL Server on Linux?</strong> Yes — Ubuntu 18.04 LTS with SQL Server 2019, including custom-AMI support with its own requirement list. The Windows path covered here is the far more common one.</p>
+
+      <h2 id="takeaways">Takeaways</h2>
+      <ul>
+        <li>Launch Wizard is free orchestration over CloudFormation + Systems Manager that turns part 1's day of careful manual work into a ~2-hour guided deployment, producing the identical multi-subnet Always On architecture.</li>
+        <li>The prerequisites are where deployments fail: <code>AmazonLaunchWizardFullAccessV2</code> for the human, <code>AmazonEC2RoleForLaunchWizard</code> for the instances, six specific OU permissions for the domain user, and verified DNS resolution for self-managed AD.</li>
+        <li>FSx makes FCIs practical on AWS — SMB Continuously Available shares plus Multi-AZ synchronous replication give a Standard Edition cluster whole-instance protection at 50–60% lower licensing cost than an Enterprise AG.</li>
+        <li>Know the sizing formulas going in: ONTAP's 1 TB selection nets ~522 GB of data-LUN space, and FSx-for-Windows capacity is driven by peak IOPS, not just gigabytes.</li>
+        <li>Harden after deployment: <code>BUILTIN\Administrators</code> in SysAdmin and an <code>Unrestricted</code> PowerShell policy are build-time conveniences, not production posture.</li>
+        <li>The wizard replaces the typing, not the understanding — keep part 1 within reach for the day something fails over and doesn't come back.</li>
+      </ul>
+
+      <h2 id="refs">References &amp; extra reads</h2>
+      <ul class="reflist">
+        <li><a href="sql-server-2025-always-on-aws-ec2.html">Part 1 — SQL Server 2025 Always On across AWS subnets</a> — the manual build this article automates.</li>
+        <li><a href="https://docs.aws.amazon.com/launchwizard/latest/userguide/launch-wizard-getting-started.html">AWS Launch Wizard for SQL Server — Getting Started</a> — IAM, AD, AMI, and FSx prerequisites in full.</li>
+        <li><a href="https://aws.amazon.com/blogs/aws/accelerate-sql-server-always-on-deployments-with-aws-launch-wizard/">AWS News Blog — Accelerate SQL Server Always On Deployments with AWS Launch Wizard</a> — the launch announcement and wizard tour.</li>
+        <li><a href="https://aws.amazon.com/blogs/storage/simplify-sql-server-always-on-deployments-with-the-aws-launch-wizard-and-amazon-fsx/">AWS Storage Blog — Simplify SQL Server Always On Deployments with Launch Wizard and Amazon FSx</a> — the FCI-on-FSx walkthrough and licensing math.</li>
+        <li><a href="https://docs.aws.amazon.com/sql-server-ec2/latest/userguide/aws-sql-ec2-clustering.html">AWS — SQL Server clustering on EC2 guidance</a> — the ENI and subnet rules both parts of this series follow.</li>
+      </ul>
+    </div>
+    <div class="post-nav"><a href="sql-server-2025-always-on-aws-ec2.html">← part 1: Always On across AWS subnets</a><a href="../index.html">home →</a></div>
+  </article>
+  <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer>
+  </div>
+  <aside class="toc-panel">
+    <p class="toc-panel-label">// on this page</p>
+    <nav id="toc-nav"></nav>
+  </aside>
+</div>
+<script src="../posts.js?v=2"></script>
+<script src="../stats.js"></script>
+<script src="../app.js?v=10"></script>
+<script defer src="../settings.js?v=6"></script>
+<script type="module" src="../highlighter.js"></script>
+<script defer src="../reader.js"></script>
+</body>
+</html>

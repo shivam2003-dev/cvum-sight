@@ -12,13 +12,19 @@
     focusScript.setAttribute("data-cvam-focus", "true");
     document.body.appendChild(focusScript);
   }
+  if (!document.querySelector('script[data-cvam-enhancements]')) {
+    var enhancementsScript = document.createElement("script");
+    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=1";
+    enhancementsScript.setAttribute("data-cvam-enhancements", "true");
+    document.body.appendChild(enhancementsScript);
+  }
 
   if (!document.querySelector('link[data-cvam-modern-css]')) {
     var existingCss = document.querySelector('link[rel="stylesheet"][href*="style.css"]');
     if (existingCss) {
       var freshCss = document.createElement("link");
       freshCss.rel = "stylesheet";
-      freshCss.href = existingCss.href.split("?")[0] + "?v=47";
+      freshCss.href = existingCss.href.split("?")[0] + "?v=48";
       freshCss.setAttribute("data-cvam-modern-css", "true");
       document.head.appendChild(freshCss);
     }

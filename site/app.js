@@ -13,6 +13,12 @@
     focusScript.setAttribute("data-cvam-focus", "true");
     document.body.appendChild(focusScript);
   }
+  if (!document.querySelector('script[data-cvam-enhancements]')) {
+    var enhancementsScript = document.createElement("script");
+    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=1";
+    enhancementsScript.setAttribute("data-cvam-enhancements", "true");
+    document.body.appendChild(enhancementsScript);
+  }
 
   // Load the current visual system after any older page-pinned stylesheet.
   (function () {
@@ -21,7 +27,7 @@
     if (!existing) return;
     var fresh = document.createElement("link");
     fresh.rel = "stylesheet";
-    fresh.href = existing.href.split("?")[0] + "?v=47";
+    fresh.href = existing.href.split("?")[0] + "?v=48";
     fresh.setAttribute("data-cvam-modern-css", "true");
     document.head.appendChild(fresh);
   })();

@@ -17,7 +17,7 @@
     { id: "font-serif", label: "Serif" },
     { id: "font-mono", label: "Mono" },
     { id: "font-cursive", label: "Cursive" },
-    { id: "font-dyslexic", label: "Dyslexic" }
+    { id: "font-readable", label: "Readable" }
   ];
   var SPACINGS = [
     { id: "ls-compact", label: "Compact" },
@@ -53,6 +53,7 @@
   panel.className = "settings-panel";
 
   var savedFont = localStorage.getItem("cvam-font");
+  if (savedFont === "font-dyslexic") { savedFont = "font-readable"; localStorage.setItem("cvam-font", savedFont); }
   if (!savedFont) {
     savedFont = localStorage.getItem("cvam-sans") === "0" ? "font-serif" : "font-sans";
   }

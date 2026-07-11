@@ -15,7 +15,7 @@
   }
   if (!document.querySelector('script[data-cvam-enhancements]')) {
     var enhancementsScript = document.createElement("script");
-    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=2";
+    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=3";
     enhancementsScript.setAttribute("data-cvam-enhancements", "true");
     document.body.appendChild(enhancementsScript);
   }
@@ -27,7 +27,7 @@
     if (!existing) return;
     var fresh = document.createElement("link");
     fresh.rel = "stylesheet";
-    fresh.href = existing.href.split("?")[0] + "?v=49";
+    fresh.href = existing.href.split("?")[0] + "?v=50";
     fresh.setAttribute("data-cvam-modern-css", "true");
     document.head.appendChild(fresh);
   })();

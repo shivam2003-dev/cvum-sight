@@ -198,10 +198,10 @@
     if (reduced) { window.scrollBy({ top: dir * pageStep(), behavior: "auto" }); updateReadout(); return; }
     document.body.classList.add("page-turning", dir > 0 ? "page-turning-forward" : "page-turning-backward");
     setTimeout(function () {
-      window.scrollBy({ top: dir * pageStep(), behavior: "auto" });
-      updateReadout();
-    }, 220);
-    setTimeout(function () { document.body.classList.remove("page-turning", "page-turning-forward", "page-turning-backward"); }, 520);
+      window.scrollBy({ top: dir * pageStep(), behavior: "smooth" });
+    }, 70);
+    setTimeout(updateReadout, 300);
+    setTimeout(function () { document.body.classList.remove("page-turning", "page-turning-forward", "page-turning-backward"); }, 340);
   }
   function pagedKeys(e) {
     var t = e.target.tagName;

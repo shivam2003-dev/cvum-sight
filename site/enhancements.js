@@ -105,7 +105,6 @@
       if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target === "_blank" || link.hasAttribute("download")) return;
       var url = new URL(link.href, location.href);
       if (url.origin !== location.origin || url.pathname === location.pathname && url.hash) return;
-      if (document.startViewTransition) return;
       event.preventDefault();
       document.body.classList.add("page-leaving");
       setTimeout(function () { location.href = url.href; }, 160);

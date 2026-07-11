@@ -100,6 +100,15 @@
   }
 
   function installFallbackTransitions() {
+    function restorePage() {
+      document.body.classList.remove("page-leaving");
+    }
+    window.addEventListener("pageshow", restorePage);
+    window.addEventListener("pagehide", restorePage);
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") restorePage();
+    });
+    restorePage();
     document.addEventListener("click", function (event) {
       var link = event.target.closest("a[href]");
       if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target === "_blank" || link.hasAttribute("download")) return;

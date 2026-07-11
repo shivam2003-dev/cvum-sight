@@ -62,7 +62,7 @@
 
   function upgradeBookHub() {
     var grid = document.querySelector(".chapter-grid");
-    if (!grid || document.querySelector(".book-toolbar")) return;
+    if (!grid || !grid.closest(".series-index") || document.querySelector(".book-toolbar")) return;
     document.body.classList.add("book-hub");
     var cards = Array.from(grid.querySelectorAll(".post-card"));
     var toolbar = document.createElement("div");
@@ -81,6 +81,24 @@
     });
   }
 
+  function fixDuplicateIds() {
+    var seen = {};
+    document.querySelectorAll("[id]").forEach(function (element) {
+      var original = element.id;
+      if (!seen[original]) { seen[original] = 1; return; }
+      var next = original + "-" + (++seen[original]);
+      element.id = next;
+      var svg = element.closest("svg");
+      if (svg) {
+        svg.querySelectorAll("*").forEach(function (node) {
+          Array.from(node.attributes || []).forEach(function (attr) {
+            if (attr.value.includes("url(#" + original + ")")) node.setAttribute(attr.name, attr.value.replaceAll("url(#" + original + ")", "url(#" + next + ")"));
+          });
+        });
+      }
+    });
+  }
+
   function installFallbackTransitions() {
     document.addEventListener("click", function (event) {
       var link = event.target.closest("a[href]");
@@ -94,7 +112,7 @@
     });
   }
 
-  function run() { upgradeNavigation(); upgradeSettings(); upgradeBookHub(); installFallbackTransitions(); }
+  function run() { upgradeNavigation(); upgradeSettings(); upgradeBookHub(); fixDuplicateIds(); installFallbackTransitions(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run); else run();
   var observer = new MutationObserver(function () { upgradeNavigation(); upgradeSettings(); });
   observer.observe(document.body, { childList:true, subtree:true });

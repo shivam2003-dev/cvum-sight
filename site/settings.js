@@ -28,20 +28,14 @@
     { id: "scroll-normal", label: "Scroll" },
     { id: "scroll-paged",  label: "Paged" }
   ];
-  var VIEWS = [
-    { id: "classic", label: "Classic" },
-    { id: "modern",  label: "Modern" }
-  ];
-
   var hasArticle = !!document.querySelector(".post-body");
 
   var savedTheme = localStorage.getItem("cvam-theme") || "paper";
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
   var savedSpace = localStorage.getItem("cvam-ls")    || "ls-cozy";
   var savedScroll = localStorage.getItem("cvam-scroll") || "scroll-normal";
-  var savedView = localStorage.getItem("cvam-view") || "modern";
-  // head bootstrap also applies this pre-paint; keep in sync here
-  document.documentElement.classList.toggle("view-modern", savedView === "modern");
+  localStorage.setItem("cvam-view", "modern");
+  document.documentElement.classList.add("view-modern");
   // line width now adaptive (CSS clamp) — clear any legacy override
   localStorage.removeItem("cvam-lw");
   document.documentElement.classList.remove("lw-narrow", "lw-wide");
@@ -81,11 +75,6 @@
 
   var html =
     '<div class="settings-panel-head"><span class="settings-panel-icon">Aa</span><span><b>Reader settings</b><small>Make this page yours</small></span><button type="button" class="settings-close" aria-label="Close reader settings">×</button></div>' +
-    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
-      '<label class="seg-label">Layout</label>' +
-      '<div class="seg-row view-row">' + seg("view-btn", "data-view", VIEWS, savedView) + '</div>' +
-    '</div>' +
-    '<div class="settings-divider"></div>' +
     '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">' +
       '<label>Theme</label>' +
       '<div class="theme-picker">' + themeSwatches + '</div>' +
@@ -141,17 +130,6 @@
     current.classList.add("active");
     current.setAttribute("aria-pressed", "true");
   }
-
-  // ── layout view (classic / modern) ──
-  var viewBtns = panel.querySelectorAll(".view-btn");
-  viewBtns.forEach(function (b) {
-    b.addEventListener("click", function () {
-      var view = this.getAttribute("data-view");
-      document.documentElement.classList.toggle("view-modern", view === "modern");
-      localStorage.setItem("cvam-view", view);
-      activate(viewBtns, this);
-    });
-  });
 
   // ── font style ──
   var fontBtnEls = panel.querySelectorAll(".font-btn");

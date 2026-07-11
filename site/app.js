@@ -1,10 +1,8 @@
 /* app.js — renders post cards, archive list, tag cloud, sidebar cats, contrib grid, progress bar */
 
 (function () {
-  if (!localStorage.getItem("cvam-modern-default-v1")) {
-    localStorage.setItem("cvam-view", "modern");
-    localStorage.setItem("cvam-modern-default-v1", "1");
-  }
+  localStorage.setItem("cvam-view", "modern");
+  document.documentElement.classList.add("view-modern");
   document.querySelectorAll('a[href="about.html"],a[href="../about.html"],a[href="/about.html"],a[href="/about"]').forEach(function (link) {
     link.href = "https://about.shivam2003.com/";
   });
@@ -16,39 +14,26 @@
     if (!existing) return;
     var fresh = document.createElement("link");
     fresh.rel = "stylesheet";
-    fresh.href = existing.href.split("?")[0] + "?v=43";
+    fresh.href = existing.href.split("?")[0] + "?v=44";
     fresh.setAttribute("data-cvam-modern-css", "true");
     document.head.appendChild(fresh);
   })();
 
-  // One publication-wide layout preference. Modern is the default; the
-  // original design remains available from the persistent floating switch.
+  // Publication shell and collapsible vertical navigation.
   (function () {
-    var savedView = localStorage.getItem("cvam-view") || "modern";
-    document.documentElement.classList.toggle("view-modern", savedView === "modern");
-    if (document.getElementById("home-view-toggle")) return;
-    var toggle = document.createElement("button");
-    toggle.className = "home-view-toggle";
-    toggle.id = "home-view-toggle";
-    toggle.type = "button";
-    toggle.innerHTML = '<span class="home-view-toggle-icon" aria-hidden="true"></span><span class="home-view-toggle-label"></span>';
-    function syncViewToggle() {
-      var modern = document.documentElement.classList.contains("view-modern");
-      toggle.setAttribute("aria-pressed", modern ? "true" : "false");
-      toggle.setAttribute("aria-label", modern ? "Switch to classic view" : "Switch to modern view");
-      toggle.querySelector(".home-view-toggle-label").textContent = modern ? "Classic view" : "Modern view";
-    }
-    toggle.addEventListener("click", function () {
-      var modern = !document.documentElement.classList.contains("view-modern");
-      document.documentElement.classList.toggle("view-modern", modern);
-      localStorage.setItem("cvam-view", modern ? "modern" : "classic");
-      syncViewToggle();
-    });
-    document.body.appendChild(toggle);
-    syncViewToggle();
-
     var sidebar = document.querySelector(".sidebar");
     if (sidebar && !sidebar.querySelector(".sidebar-collapse")) {
+      var brand = sidebar.querySelector(".logo");
+      if (brand && !brand.querySelector(".brand-mark")) {
+        var oldDot = brand.querySelector(".dot");
+        var mark = document.createElement("img");
+        mark.className = "brand-mark";
+        mark.alt = "";
+        mark.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "assets/cvam-sight-mark.png";
+        if (oldDot) oldDot.replaceWith(mark); else brand.insertBefore(mark, brand.firstChild);
+        var textNodes = Array.from(brand.childNodes).filter(function (n) { return n.nodeType === 3 && n.textContent.trim(); });
+        textNodes.forEach(function (n) { var span = document.createElement("span"); span.className = "brand-name"; span.textContent = n.textContent.trim(); n.replaceWith(span); });
+      }
       var navIcons = { "Home":"⌂", "Series":"▦", "AI Native":"✦", "Archive":"▤", "Tags":"#", "Paper Juice":"◈", "Discover":"⌕", "About":"ⓘ", "Overview":"◎" };
       sidebar.querySelectorAll("nav a").forEach(function (link) {
         var label = link.textContent.trim();

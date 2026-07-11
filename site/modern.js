@@ -18,7 +18,7 @@
     if (existingCss) {
       var freshCss = document.createElement("link");
       freshCss.rel = "stylesheet";
-      freshCss.href = existingCss.href.split("?")[0] + "?v=46";
+      freshCss.href = existingCss.href.split("?")[0] + "?v=47";
       freshCss.setAttribute("data-cvam-modern-css", "true");
       document.head.appendChild(freshCss);
     }

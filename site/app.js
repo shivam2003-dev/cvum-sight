@@ -21,7 +21,7 @@
     if (!existing) return;
     var fresh = document.createElement("link");
     fresh.rel = "stylesheet";
-    fresh.href = existing.href.split("?")[0] + "?v=46";
+    fresh.href = existing.href.split("?")[0] + "?v=47";
     fresh.setAttribute("data-cvam-modern-css", "true");
     document.head.appendChild(fresh);
   })();
@@ -189,7 +189,7 @@
   if (grid && typeof POSTS !== "undefined") {
     // Home feed stays light: only the 6 latest posts.
     // Everything else lives behind "browse all articles".
-    const RECENT_LIMIT = 6;
+    const RECENT_LIMIT = 4;
     const recent = POSTS.slice(0, RECENT_LIMIT);
     grid.innerHTML = recent.map(renderPostCard).join("");
 

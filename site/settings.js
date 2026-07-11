@@ -39,7 +39,7 @@
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
   var savedSpace = localStorage.getItem("cvam-ls")    || "ls-cozy";
   var savedScroll = localStorage.getItem("cvam-scroll") || "scroll-normal";
-  var savedView = localStorage.getItem("cvam-view") || (document.body.classList.contains("home-page") ? "modern" : "classic");
+  var savedView = localStorage.getItem("cvam-view") || "modern";
   // head bootstrap also applies this pre-paint; keep in sync here
   document.documentElement.classList.toggle("view-modern", savedView === "modern");
   // line width now adaptive (CSS clamp) — clear any legacy override

@@ -14,7 +14,7 @@
     if (!existing) return;
     var fresh = document.createElement("link");
     fresh.rel = "stylesheet";
-    fresh.href = existing.href.split("?")[0] + "?v=44";
+    fresh.href = existing.href.split("?")[0] + "?v=45";
     fresh.setAttribute("data-cvam-modern-css", "true");
     document.head.appendChild(fresh);
   })();
@@ -62,6 +62,27 @@
       });
       sidebar.appendChild(collapse);
       syncSidebar();
+    }
+
+    var rightPanel = document.querySelector(".toc-panel, .vocab-panel");
+    if (rightPanel && !rightPanel.querySelector(".right-panel-collapse")) {
+      var rightToggle = document.createElement("button");
+      rightToggle.className = "right-panel-collapse";
+      rightToggle.type = "button";
+      rightToggle.innerHTML = '<span aria-hidden="true">›</span><b>' + (rightPanel.classList.contains("toc-panel") ? "On this page" : "Key terms") + '</b>';
+      function syncRightPanel() {
+        var closed = document.documentElement.classList.contains("right-panel-collapsed");
+        rightToggle.setAttribute("aria-label", closed ? "Expand right sidebar" : "Collapse right sidebar");
+        rightToggle.setAttribute("aria-expanded", closed ? "false" : "true");
+      }
+      if (localStorage.getItem("cvam-right-panel") === "collapsed") document.documentElement.classList.add("right-panel-collapsed");
+      rightToggle.addEventListener("click", function () {
+        document.documentElement.classList.toggle("right-panel-collapsed");
+        localStorage.setItem("cvam-right-panel", document.documentElement.classList.contains("right-panel-collapsed") ? "collapsed" : "expanded");
+        syncRightPanel();
+      });
+      rightPanel.insertBefore(rightToggle, rightPanel.firstChild);
+      syncRightPanel();
     }
   })();
 

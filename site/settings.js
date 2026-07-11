@@ -70,17 +70,17 @@
   function seg(cls, dataAttr, items, saved) {
     return items.map(function (it) {
       var active = it.id === saved ? " active" : "";
-      return '<button class="' + cls + active + '" ' + dataAttr + '="' + it.id + '">' + it.label + '</button>';
+      return '<button type="button" class="' + cls + active + '" ' + dataAttr + '="' + it.id + '" aria-pressed="' + (it.id === saved) + '">' + it.label + '</button>';
     }).join("");
   }
 
   var themeSwatches = THEMES.map(function (t) {
     var active = t.id === savedTheme ? " active" : "";
-    return '<div class="theme-swatch' + active + '" data-theme="' + t.id + '" title="' + t.label + '"></div>';
+    return '<button type="button" class="theme-swatch' + active + '" data-theme="' + t.id + '" title="' + t.label + '" aria-label="' + t.label + ' theme" aria-pressed="' + (t.id === savedTheme) + '"><span>' + t.label.split(" ")[0] + '</span></button>';
   }).join("");
 
   var html =
-    '<p class="settings-panel-title">// reader settings</p>' +
+    '<div class="settings-panel-head"><span class="settings-panel-icon">Aa</span><span><b>Reader settings</b><small>Make this page yours</small></span><button type="button" class="settings-close" aria-label="Close reader settings">×</button></div>' +
     '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
       '<label class="seg-label">Layout</label>' +
       '<div class="seg-row view-row">' + seg("view-btn", "data-view", VIEWS, savedView) + '</div>' +
@@ -112,7 +112,7 @@
       '</div>';
   }
 
-  html += '<p style="font-family:var(--font-body);font-size:10px;color:var(--ink-faint);margin:8px 0 0;text-align:center;">press ? for keyboard shortcuts</p>';
+  html += '<p class="settings-hint"><kbd>?</kbd> keyboard shortcuts <span>·</span> settings save automatically</p>';
 
   panel.innerHTML = html;
 
@@ -125,10 +125,22 @@
     document.body.classList.add('has-toc');
   }
 
-  btn.addEventListener("click", function () { panel.classList.toggle("open"); });
-  document.addEventListener("click", function (e) {
-    if (!panel.contains(e.target) && e.target !== btn) { panel.classList.remove("open"); }
+  btn.setAttribute("aria-expanded", "false");
+  btn.addEventListener("click", function () {
+    panel.classList.toggle("open");
+    btn.setAttribute("aria-expanded", panel.classList.contains("open") ? "true" : "false");
   });
+  panel.querySelector(".settings-close").addEventListener("click", function () { panel.classList.remove("open"); btn.setAttribute("aria-expanded", "false"); });
+  document.addEventListener("click", function (e) {
+    if (!panel.contains(e.target) && e.target !== btn) { panel.classList.remove("open"); btn.setAttribute("aria-expanded", "false"); }
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && panel.classList.contains("open")) { panel.classList.remove("open"); btn.setAttribute("aria-expanded", "false"); btn.focus(); } });
+
+  function activate(group, current) {
+    group.forEach(function (x) { x.classList.remove("active"); x.setAttribute("aria-pressed", "false"); });
+    current.classList.add("active");
+    current.setAttribute("aria-pressed", "true");
+  }
 
   // ── layout view (classic / modern) ──
   var viewBtns = panel.querySelectorAll(".view-btn");
@@ -137,8 +149,7 @@
       var view = this.getAttribute("data-view");
       document.documentElement.classList.toggle("view-modern", view === "modern");
       localStorage.setItem("cvam-view", view);
-      viewBtns.forEach(function (x) { x.classList.remove("active"); });
-      this.classList.add("active");
+      activate(viewBtns, this);
     });
   });
 
@@ -151,8 +162,7 @@
       if (font !== "font-sans") { document.documentElement.classList.add(font); }
       localStorage.setItem("cvam-font", font);
       localStorage.setItem("cvam-sans", font === "font-sans" ? "1" : "0");
-      fontBtnEls.forEach(function (x) { x.classList.remove("active"); });
-      this.classList.add("active");
+      activate(fontBtnEls, this);
     });
   });
 
@@ -164,8 +174,7 @@
       THEMES.forEach(function (t) { document.documentElement.classList.remove("theme-" + t.id); });
       if (theme !== "paper") { document.documentElement.classList.add("theme-" + theme); }
       localStorage.setItem("cvam-theme", theme);
-      swatches.forEach(function (x) { x.classList.remove("active"); });
-      this.classList.add("active");
+      activate(swatches, this);
     });
   });
 
@@ -177,8 +186,7 @@
       SIZES.forEach(function (s) { document.documentElement.classList.remove(s.id); });
       document.documentElement.classList.add(size);
       localStorage.setItem("cvam-size", size);
-      fsBtns.forEach(function (x) { x.classList.remove("active"); });
-      this.classList.add("active");
+      activate(fsBtns, this);
     });
   });
 
@@ -190,8 +198,7 @@
       SPACINGS.forEach(function (s) { document.documentElement.classList.remove(s.id); });
       if (ls !== "ls-cozy") { document.documentElement.classList.add(ls); }
       localStorage.setItem("cvam-ls", ls);
-      lsBtns.forEach(function (x) { x.classList.remove("active"); });
-      this.classList.add("active");
+      activate(lsBtns, this);
     });
   });
 
@@ -204,11 +211,18 @@
     var total = Math.max(1, doc.scrollHeight - window.innerHeight);
     var pages = Math.max(1, Math.ceil(doc.scrollHeight / window.innerHeight));
     var cur = Math.min(pages, Math.floor(window.scrollY / pageStep()) + 1);
-    pagedControls.querySelector(".page-readout").textContent = cur + " / " + pages;
+    pagedControls.querySelector(".page-readout b").textContent = cur + " / " + pages;
   }
   function flip(dir) {
-    window.scrollBy({ top: dir * pageStep(), behavior: "smooth" });
-    setTimeout(updateReadout, 350);
+    if (document.body.classList.contains("page-turning")) return;
+    var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) { window.scrollBy({ top: dir * pageStep(), behavior: "auto" }); updateReadout(); return; }
+    document.body.classList.add("page-turning", dir > 0 ? "page-turning-forward" : "page-turning-backward");
+    setTimeout(function () {
+      window.scrollBy({ top: dir * pageStep(), behavior: "auto" });
+      updateReadout();
+    }, 220);
+    setTimeout(function () { document.body.classList.remove("page-turning", "page-turning-forward", "page-turning-backward"); }, 520);
   }
   function pagedKeys(e) {
     var t = e.target.tagName;
@@ -222,9 +236,9 @@
         pagedControls = document.createElement("div");
         pagedControls.className = "paged-controls";
         pagedControls.innerHTML =
-          '<button data-flip="-1">&#8249; prev</button>' +
-          '<span class="page-readout">1 / 1</span>' +
-          '<button data-flip="1">next &#8250;</button>';
+          '<button data-flip="-1" aria-label="Previous page"><span>←</span><b>Previous</b></button>' +
+          '<span class="page-readout"><small>PAGE</small><b>1 / 1</b></span>' +
+          '<button data-flip="1" aria-label="Next page"><b>Next</b><span>→</span></button>';
         pagedControls.querySelectorAll("button").forEach(function (pb) {
           pb.addEventListener("click", function () { flip(parseInt(this.getAttribute("data-flip"), 10)); });
         });
@@ -249,8 +263,7 @@
       var mode = this.getAttribute("data-scroll");
       localStorage.setItem("cvam-scroll", mode);
       applyPaged(mode === "scroll-paged");
-      scrollBtns.forEach(function (x) { x.classList.remove("active"); });
-      this.classList.add("active");
+      activate(scrollBtns, this);
     });
   });
 })();

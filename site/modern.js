@@ -46,8 +46,16 @@
 
     var sidebar = document.querySelector(".sidebar");
     if (sidebar && !sidebar.querySelector(".sidebar-collapse")) {
-      var navMarks = { "Home":"H", "Series":"S", "AI Native":"AI", "Archive":"A", "Tags":"#", "Paper Juice":"PJ", "Discover":"D", "About":"?", "Overview":"O" };
-      sidebar.querySelectorAll("nav a").forEach(function (link) { link.setAttribute("data-short", navMarks[link.textContent.trim()] || link.textContent.trim().slice(0, 2)); });
+      var navIcons = { "Home":"⌂", "Series":"▦", "AI Native":"✦", "Archive":"▤", "Tags":"#", "Paper Juice":"◈", "Discover":"⌕", "About":"ⓘ", "Overview":"◎" };
+      sidebar.querySelectorAll("nav a").forEach(function (link) {
+        var label = link.textContent.trim();
+        link.setAttribute("data-short", label);
+        var icon = document.createElement("span");
+        icon.className = "nav-icon";
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = navIcons[label] || "◆";
+        link.insertBefore(icon, link.firstChild);
+      });
       var collapse = document.createElement("button");
       collapse.className = "sidebar-collapse";
       collapse.type = "button";

@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "frontier-digest-003",
+    title: "Frontier Digest #3 — the week the harness became the product.",
+    date: "Jul 12, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "releases", "funding", "weekly"],
+    time: 18,
+    words: 3600,
+    excerpt: "Edition #3 of the weekly AI newsletter (Jul 5 – Jul 12) — the WHOLE week, not just papers. Lead story: three flagships on one Thursday — GPT-5.6 goes GA (Sol/Terra/Luna, the gated system card from Edition #1 finally ships), SpaceXAI drops the 'Opus-class' Grok 4.5 at $2/$6, and Meta starts charging for AI with Muse Spark 1.1 and the Meta Model API. The ten research papers threaded around one throughline — the harness is the load-bearing layer: The Harness Effect's 41% cost cut with models held constant, Verification as a Scaling Axis, ReContext, and Oxford's agent-failure taxonomy warning that scaffolding is not a robustness fix. Plus Always-On Agents' state survey, HOLA, Puzzle-75B, tools, a ranked 'what matters most,' patterns, and tips — with confirmed-vs-reported tags throughout.",
+    series: "frontier-digest",
+    seriesNum: "003"
+  },
+  {
     slug: "sql-server-always-on-aws-launch-wizard",
     title: "SQL Server Always On with AWS Launch Wizard and FSx.",
     date: "Aug 4, 2026",

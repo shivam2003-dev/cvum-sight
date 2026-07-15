@@ -53,9 +53,24 @@
         <blockquote>
           The Google <strong>Associate Cloud Engineer (ACE)</strong> exam (120 min, multiple-choice/select)
           tests whether you can deploy and operate on GCP. It's mostly "pick the right service" + "least-
-          privilege IAM" + "right gcloud command". This sheet follows the official five domains, then the
-          high-priority services, gcloud, and exam-style Q&amp;A. Study order at the bottom.
+          privilege IAM" + "right gcloud command". Updated for the <strong>current exam guide</strong>, which now has
+          <strong>four sections</strong>: setting up the environment (~20%), planning &amp; implementing (~30%),
+          ensuring successful operation (~30%), and access &amp; security (~20%). This sheet follows those
+          domains, then gcloud, exam-style Q&amp;A, what to keep in mind, and the common mistakes.
         </blockquote>
+
+        <h2 id="new-syllabus">0. What changed in the new syllabus</h2>
+        <ul>
+          <li><strong>Four sections, not five</strong> — planning and implementing merged into one ~30% section; operations is the other ~30%.</li>
+          <li><strong>App Engine is gone</strong> from the guide; "Cloud Functions" is now <strong>Cloud Run functions</strong>. Deployment Manager and Cloud Marketplace are out too.</li>
+          <li><strong>AI tooling is in scope</strong>: Gemini Cloud Assist (analyze resources, assist Monitoring), Gemini CLI, Google Antigravity, Application Design Center, and deploying agents to <strong>Agent Runtime on Gemini Enterprise Agent Platform</strong> (formerly Vertex AI Agent Engine). Know <em>when</em> you'd use each, plus GPUs vs TPUs.</li>
+          <li><strong>Firewalls upgraded</strong>: legacy VPC firewall rules <em>and</em> <strong>Cloud Next-Generation Firewall (NGFW)</strong> policies with secure Tags and service accounts in rules.</li>
+          <li><strong>Bigger data menu</strong>: AlloyDB, Dataflow, Pub/Sub, Managed Service for Apache Kafka, NetApp Volumes, Managed Lustre, Storage Transfer Service, and <strong>Database Center</strong> for fleet management.</li>
+          <li><strong>IaC beyond Terraform</strong>: Fabric FAST, Config Connector, and Helm are named explicitly.</li>
+          <li><strong>Identity federation, both kinds</strong>: <strong>Workforce</strong> Identity Federation (humans via external IdP) in section 1; <strong>Workload</strong> Identity Federation (CI/workloads, keyless) in section 4 — plus SA impersonation and short-lived credentials.</li>
+          <li><strong>Observability got deeper</strong>: Managed Service for Prometheus, log buckets/analytics/routers, custom metrics, Personalized Service Health, Active Assist, Cloud Hub, Query Insights, index advisor, Ops Agent.</li>
+          <li><strong>Compute odds and ends</strong>: OS Login, VM Manager, Hyperdisk, Spot VMs (the current name — "preemptible" is legacy), Eventarc, Cloud Workstations, HPA/VPA, Autopilot pod resource requests, traffic splitting.</li>
+        </ul>
 
         <h2 id="hierarchy">1. Resource hierarchy &amp; environment</h2>
         <p><strong>Organization &rarr; Folder &rarr; Project &rarr; Resources.</strong> IAM and
@@ -67,8 +82,11 @@
           <li><strong>Org Policies</strong> — guardrails (constraints): restrict regions, block external IPs, enforce uniform bucket access, disable SA key creation. Different from IAM (who can do what) — org policy = what's <em>allowed at all</em>.</li>
           <li><strong>Cloud Identity</strong> — manage users &amp; groups; grant IAM to <strong>groups</strong>, not individuals.</li>
           <li><strong>APIs</strong> — must be enabled per project (<code>gcloud services enable</code>).</li>
-          <li><strong>Cloud Asset Inventory</strong> — search/export resource + IAM metadata across the org (snapshots, exports to BigQuery).</li>
-          <li><strong>Resource scope:</strong> <em>global</em> (VPC, images, snapshots), <em>regional</em> (subnets, regional MIGs, regional disks), <em>zonal</em> (VMs, zonal disks).</li>
+          <li><strong>Cloud Asset Inventory</strong> — search/export resource + IAM metadata across the org (snapshots, exports to BigQuery); the new guide pairs it with <strong>Gemini Cloud Assist</strong> for analyzing resources.</li>
+          <li><strong>Workforce Identity Federation</strong> — let <em>human users</em> from an external IdP (Okta, Azure AD) access GCP without Cloud Identity accounts. (Contrast with Workload Identity Federation in §3 — workloads, not people.)</li>
+          <li><strong>Quotas</strong> — per-project hard limits; view in console/<code>gcloud compute project-info describe</code>, request increases (not instant). Different from budgets (alerts) and org policy (allowed at all).</li>
+          <li><strong>Observability setup</strong> — provisioning Cloud Monitoring/Logging products per project is now an explicit section-1 task, not an afterthought.</li>
+          <li><strong>Resource scope:</strong> <em>global</em> (VPC, images, snapshots), <em>regional</em> (subnets, regional MIGs, regional disks), <em>zonal</em> (VMs, zonal disks). Verify product availability per region/zone before planning.</li>
         </ul>
         <div class="gotcha"><span class="gotcha-label">project = isolation + billing unit</span>
           Quotas, APIs, billing, and most IAM live at the project level. Separate prod/dev into different
@@ -96,6 +114,9 @@
           <li><strong>Least privilege:</strong> predefined/custom roles over basic; grant to groups; scope at the lowest node.</li>
           <li><strong>Workload Identity</strong> (GKE) / attached SAs (GCE) so pods/VMs auth <em>without</em> key files.</li>
           <li><strong>SA keys</strong> are a liability — prefer keyless (Workload Identity Federation for external/CI). Org policy can disable key creation.</li>
+          <li><strong>SA impersonation</strong> — a user/SA with <code>roles/iam.serviceAccountTokenCreator</code> mints <strong>short-lived credentials</strong> for another SA (<code>gcloud --impersonate-service-account</code>). The exam's preferred answer for "human needs SA powers temporarily" — never key download.</li>
+          <li><strong>Google-managed SAs</strong> (service agents) — created automatically per service; don't delete or strip their roles, that's a classic outage cause.</li>
+          <li><strong>Workforce vs Workload IF:</strong> Workforce = external <em>people</em> via IdP; Workload = external <em>workloads/CI</em> exchanging OIDC/SAML tokens for GCP creds. Both keyless.</li>
         </ul>
         <pre data-lang="bash">gcloud projects add-iam-policy-binding PROJECT \
   --member="group:devs@ex.com" --role="roles/compute.viewer"
@@ -108,14 +129,19 @@ gcloud projects get-iam-policy PROJECT      # audit who has what</pre>
 
         <h2 id="compute">4. Compute (study #3)</h2>
         <ul>
-          <li><strong>Compute Engine</strong> — VMs (IaaS). Machine families: E2/N2 (general), C2 (compute), M (memory). <strong>Preemptible/Spot</strong> = cheap, can be reclaimed. Custom machine types. Sustained-use + committed-use discounts.</li>
+          <li><strong>Compute Engine</strong> — VMs (IaaS). Machine families: E2/N2 (general), C2 (compute), M (memory). <strong>Spot VMs</strong> (current name; "preemptible" is the legacy term) = up to ~90% cheaper, can be reclaimed any time, no SLA — batch/fault-tolerant only. Custom machine types. Sustained-use + committed-use discounts.</li>
           <li><strong>Instance templates</strong> — immutable VM blueprint; <strong>Managed Instance Group (MIG)</strong> uses a template for autoscaling, autohealing (health checks), rolling updates, regional (multi-zone) spread.</li>
-          <li><strong>GKE</strong> — managed Kubernetes. Standard (you manage nodes) vs <strong>Autopilot</strong> (Google manages nodes, per-pod billing). Node pools, cluster autoscaler, Workload Identity.</li>
-          <li><strong>Cloud Run</strong> — serverless containers, scale to zero, request/CPU billing, any language. Best for stateless HTTP/event services with no infra.</li>
-          <li><strong>App Engine</strong> — PaaS: Standard (sandboxed, scales to zero) vs Flexible (containers on VMs).</li>
-          <li><strong>Cloud Functions</strong> — serverless event-driven functions (Pub/Sub, GCS, HTTP triggers).</li>
+          <li><strong>OS Login</strong> — SSH access managed through IAM (roles/compute.osLogin) instead of metadata SSH keys — centralized, auditable, the exam-preferred answer. <strong>VM Manager</strong> — patch/inventory/config management for VM fleets.</li>
+          <li><strong>Disks</strong> — zonal/regional Persistent Disk, plus <strong>Hyperdisk</strong> (newer, per-disk tunable IOPS/throughput) for high-performance workloads.</li>
+          <li><strong>GKE</strong> — managed Kubernetes. Standard (you manage nodes) vs <strong>Autopilot</strong> (Google manages nodes, per-pod billing — you set <em>pod resource requests</em>, not node sizes). Regional clusters (multi-zone control plane) and <strong>private clusters</strong> (nodes without external IPs) are explicitly on the guide. Node pools, cluster autoscaler, <strong>HPA/VPA</strong>, Workload Identity, StatefulSets.</li>
+          <li><strong>Cloud Run</strong> — serverless containers, scale to zero, request/CPU billing, any language. Revisions + <strong>traffic splitting</strong> (canary/gradual rollout), min/max instances for autoscaling.</li>
+          <li><strong>Cloud Run functions</strong> — the current name for Cloud Functions: event-driven code triggered by Pub/Sub, Cloud Storage object changes, HTTP, or <strong>Eventarc</strong> (routes events from 90+ sources).</li>
+          <li><strong>Agent Runtime on Gemini Enterprise Agent Platform</strong> (formerly Vertex AI Agent Engine) — managed runtime for deploying AI <em>agents</em>; Workbench notebooks for ML dev. Know it as the "deploy an AI agent" answer.</li>
+          <li><strong>GPUs vs TPUs</strong> — GPUs: general accelerated compute, broad framework support, attachable to VMs/GKE. TPUs: Google's matrix-math ASICs for large-scale ML training/inference (TensorFlow/JAX-first). Exam wants the <em>selection</em> logic, not internals.</li>
+          <li><strong>Cloud Workstations</strong> — managed, preconfigured cloud developer environments (the "secure standardized dev env" answer).</li>
+          <li><strong>App Engine</strong> — <em>removed from the current guide.</em> Recognize it in legacy questions; don't pick it for new designs.</li>
         </ul>
-        <p>Pick: VM control &rarr; Compute Engine; orchestrated containers &rarr; GKE; stateless container no infra &rarr; Cloud Run; tiny event glue &rarr; Cloud Functions.</p>
+        <p>Pick: VM control &rarr; Compute Engine; orchestrated containers &rarr; GKE; stateless container no infra &rarr; Cloud Run; event-driven glue &rarr; Cloud Run functions (+ Eventarc); AI agent &rarr; Agent Runtime.</p>
         <pre data-lang="bash">gcloud compute instances create vm1 --machine-type e2-medium --zone us-central1-a
 gcloud compute instance-templates create tmpl --machine-type e2-small
 gcloud compute instance-groups managed create mig --template tmpl --size 3 --region us-central1
@@ -125,8 +151,9 @@ gcloud run deploy svc --image REGION-docker.pkg.dev/P/repo/img --region us-centr
 
         <h2 id="storage">5. Storage &amp; databases (study #4, #7)</h2>
         <ul>
-          <li><strong>Cloud Storage (GCS)</strong> — object storage. Classes: <strong>Standard</strong> (hot), <strong>Nearline</strong> (~30d), <strong>Coldline</strong> (~90d), <strong>Archive</strong> (~365d). <strong>Lifecycle rules</strong> transition/delete by age; versioning; uniform bucket-level access; signed URLs.</li>
-          <li><strong>Persistent Disk</strong> (block, VM-attached, zonal/regional) ; <strong>Filestore</strong> (managed NFS).</li>
+          <li><strong>Cloud Storage (GCS)</strong> — object storage. Classes: <strong>Standard</strong> (hot), <strong>Nearline</strong> (~30d), <strong>Coldline</strong> (~90d), <strong>Archive</strong> (~365d). <strong>Lifecycle rules</strong> transition/delete by age; versioning; uniform bucket-level access; signed URLs. Dual/multi-region buckets for redundancy.</li>
+          <li><strong>Persistent Disk / Hyperdisk</strong> (block, VM-attached); <strong>Filestore</strong> (managed NFS); <strong>NetApp Volumes</strong> (enterprise NFS/SMB file); <strong>Managed Lustre</strong> (HPC parallel file system).</li>
+          <li><strong>Loading data</strong> — CLI upload for small, <strong>Storage Transfer Service</strong> for large/recurring/cross-cloud transfers (S3 &rarr; GCS), Transfer Appliance for offline bulk.</li>
         </ul>
         <table>
           <thead><tr><th>Need</th><th>Database</th></tr></thead>
@@ -136,9 +163,13 @@ gcloud run deploy svc --image REGION-docker.pkg.dev/P/repo/img --region us-centr
             <tr><td>Serverless NoSQL document, mobile/web, realtime</td><td><strong>Firestore</strong></td></tr>
             <tr><td>Wide-column, massive throughput, time-series/IoT</td><td><strong>Bigtable</strong></td></tr>
             <tr><td>Serverless analytics / data warehouse (SQL over huge data)</td><td><strong>BigQuery</strong></td></tr>
+            <tr><td>Postgres-compatible, higher performance/HA than Cloud SQL</td><td><strong>AlloyDB</strong></td></tr>
             <tr><td>In-memory cache</td><td><strong>Memorystore</strong> (Redis/Memcached)</td></tr>
+            <tr><td>Async messaging / event ingestion</td><td><strong>Pub/Sub</strong> (or <strong>Managed Kafka</strong> if you need Kafka compatibility)</td></tr>
+            <tr><td>Managed batch/stream data processing (Beam)</td><td><strong>Dataflow</strong></td></tr>
           </tbody>
         </table>
+        <p><strong>Database Center</strong> — single dashboard to manage/monitor the whole database fleet (health, security posture) — new on the guide. Multi-region redundancy (cross-region replicas, dual-region buckets) is an explicit exam consideration.</p>
         <pre data-lang="bash">gsutil mb -c standard -l us gs://my-bucket ; gsutil cp f gs://my-bucket/
 gsutil lifecycle set lifecycle.json gs://my-bucket
 gcloud sql instances create db1 --database-version POSTGRES_15 --tier db-custom-2-7680 --region us-central1
@@ -153,6 +184,8 @@ bq query --use_legacy_sql=false 'SELECT count(*) FROM ds.t'</pre>
           <tbody>
             <tr><td><strong>VPC</strong></td><td><em>Global</em> resource; <strong>subnets are regional</strong> (with a CIDR). Auto or custom mode.</td></tr>
             <tr><td><strong>Firewall rules</strong></td><td>VPC-level, stateful, by network tag / SA; priority-ordered; implied allow-egress + deny-ingress.</td></tr>
+            <tr><td><strong>Cloud NGFW policies</strong></td><td>Next-gen firewall: hierarchical/global/regional <em>policies</em> (org/folder/network scope), rules using <strong>secure Tags</strong> (IAM-governed) and SAs; intrusion prevention on higher tiers. The guide now names both legacy rules <em>and</em> NGFW.</td></tr>
+            <tr><td><strong>Network Service Tiers</strong></td><td><strong>Premium</strong> (default — Google's global backbone, global LB, best performance) vs <strong>Standard</strong> (public internet transit, regional LB only, cheaper).</td></tr>
             <tr><td><strong>Routes</strong></td><td>Where traffic goes (default to internet GW, custom for NAT/VPN).</td></tr>
             <tr><td><strong>Cloud NAT</strong></td><td>Outbound internet for VMs with no external IP (private instances).</td></tr>
             <tr><td><strong>Cloud Load Balancing</strong></td><td><em>Global</em> external HTTP(S) (anycast IP, L7) ; regional/internal (L4 TCP/UDP). Backend services + health checks + MIGs/NEGs.</td></tr>
@@ -172,7 +205,9 @@ gcloud compute routers nats create nat --router r --region us-central1 --auto-al
 
         <h2 id="iac">7. Infrastructure automation &amp; CI/CD</h2>
         <ul>
-          <li><strong>Terraform</strong> — the standard IaC; <code>google</code> provider; remote state in a GCS backend. (Deployment Manager is legacy — just be aware.)</li>
+          <li><strong>Terraform</strong> — the standard IaC; <code>google</code> provider; remote state in a GCS backend. (Deployment Manager is <em>gone from the guide</em>.)</li>
+          <li><strong>The guide's wider IaC menu:</strong> <strong>Fabric FAST</strong> (Google's opinionated Terraform landing-zone framework), <strong>Config Connector</strong> (manage GCP resources as Kubernetes CRDs), <strong>Helm</strong> (Kubernetes app packaging/charts).</li>
+          <li><strong>AI-assisted tooling</strong> — <strong>Gemini CLI</strong> (terminal AI agent), <strong>Gemini Cloud Assist</strong> (in-console analysis/help), <strong>Google Antigravity</strong> (agentic dev environment), <strong>Application Design Center</strong> (AI-assisted architecture design). Know what each <em>is</em>; the exam asks selection, not usage depth.</li>
           <li><strong>Cloud Build</strong> — managed CI/CD; <code>cloudbuild.yaml</code> steps build/test/deploy; triggers on repo push; runs as a service account.</li>
           <li><strong>Artifact Registry</strong> — store container images + language packages (replaces Container Registry).</li>
           <li>Typical flow: push &rarr; Cloud Build builds image &rarr; push to Artifact Registry &rarr; deploy to Cloud Run/GKE.</li>
@@ -183,10 +218,13 @@ gcloud artifacts repositories create repo --repository-format docker --location 
 
         <h2 id="ops">8. Operations — monitoring &amp; logging (study #8)</h2>
         <ul>
-          <li><strong>Cloud Monitoring</strong> — metrics, dashboards, uptime checks, <strong>alerting policies</strong> (condition + notification channel). The Ops Agent collects VM metrics/logs.</li>
-          <li><strong>Cloud Logging</strong> — centralized logs; <strong>log sinks</strong> export to GCS/BigQuery/Pub/Sub; log-based metrics; retention buckets.</li>
+          <li><strong>Cloud Monitoring</strong> — metrics, dashboards, uptime checks, <strong>alerting policies</strong> (condition + notification channel), <strong>custom metrics</strong> from apps/logs. The Ops Agent collects VM metrics/logs — installing/configuring it is an explicit exam task.</li>
+          <li><strong>Cloud Logging</strong> — centralized logs; <strong>log routers/sinks</strong> export to GCS/BigQuery/Pub/Sub (or on-prem); <strong>log buckets</strong> + <strong>Log Analytics</strong> (SQL over logs); log-based metrics; retention.</li>
+          <li><strong>Managed Service for Prometheus</strong> — GKE-native Prometheus metrics without running your own — the "we already use Prometheus" answer.</li>
+          <li><strong>Audit-adjacent logs</strong> — VPC Flow Logs, firewall logs, data-access audit logs — configuring these is on the guide.</li>
           <li><strong>Error Reporting</strong> — groups + surfaces application exceptions.</li>
-          <li><strong>Cloud Trace / Profiler</strong> — latency traces / CPU+heap profiling.</li>
+          <li><strong>Cloud Trace / Profiler / Query Insights / index advisor</strong> — latency traces, CPU+heap profiling, and database query diagnostics (Cloud SQL/AlloyDB) respectively.</li>
+          <li><strong>Personalized Service Health</strong> — GCP-incident status scoped to <em>your</em> projects. <strong>Active Assist</strong> — idle-resource/rightsizing recommendations. <strong>Cloud Hub</strong> — app-centric view of active events + health.</li>
           <li><strong>Cloud Asset Inventory</strong> — inventory + change history of resources/IAM.</li>
         </ul>
         <pre data-lang="bash">gcloud logging read 'severity>=ERROR' --limit 20 --freshness 1h
@@ -245,23 +283,65 @@ gsutil ls / cp / rsync / iam ch ; bq ls / query / mk</pre>
           <li><span class="q">How to export billing for analysis?</span><span class="a">Enable billing export to BigQuery; query + label for cost attribution.</span></li>
           <li><span class="q">CI/CD on GCP?</span><span class="a">Cloud Build (triggers, cloudbuild.yaml) builds &rarr; Artifact Registry stores images &rarr; deploy to Cloud Run/GKE. Terraform for infra (state in GCS).</span></li>
           <li><span class="q">VM unreachable — how to debug?</span><span class="a">Check firewall rule + target tag/SA, external IP / Cloud NAT, routes; use Connectivity Tests and SSH-in-browser; then VM serial console + logs.</span></li>
+          <li><span class="q">Workforce vs Workload Identity Federation?</span><span class="a">Workforce = external humans (Okta/Azure AD) into GCP without Cloud Identity accounts. Workload = external workloads/CI exchange OIDC/SAML tokens for GCP creds. Both keyless.</span></li>
+          <li><span class="q">Human needs to act as a service account temporarily?</span><span class="a">SA impersonation via roles/iam.serviceAccountTokenCreator + short-lived credentials (gcloud --impersonate-service-account). Never download a key.</span></li>
+          <li><span class="q">Cheapest compute for fault-tolerant batch?</span><span class="a">Spot VMs (up to ~90% off, reclaimable, no SLA). Wrong for anything stateful/user-facing.</span></li>
+          <li><span class="q">Legacy firewall rules vs Cloud NGFW?</span><span class="a">Legacy = per-VPC rules with network tags. NGFW = hierarchical/global/regional policies with IAM-governed secure Tags + SAs, org/folder scope, IPS features. Know both exist.</span></li>
+          <li><span class="q">Premium vs Standard network tier?</span><span class="a">Premium (default): Google backbone, global LB, best performance. Standard: public-internet transit, regional LB only, cheaper.</span></li>
+          <li><span class="q">Cloud SQL vs AlloyDB?</span><span class="a">Both managed Postgres-compatible; AlloyDB for higher performance/HA/analytics-on-OLTP needs; Cloud SQL for standard regional workloads (and MySQL/SQL Server).</span></li>
+          <li><span class="q">GPU or TPU?</span><span class="a">GPU: general accelerated compute, broad frameworks. TPU: large-scale ML training/inference, TensorFlow/JAX-first. Selection logic only.</span></li>
+          <li><span class="q">Move 100 TB from S3 to GCS?</span><span class="a">Storage Transfer Service (scheduled, managed, cross-cloud). Transfer Appliance for offline. Not gsutil cp.</span></li>
+          <li><span class="q">Team already runs Prometheus on GKE?</span><span class="a">Managed Service for Prometheus — keep PromQL, drop the self-run stack.</span></li>
+          <li><span class="q">SSH access for a team, centrally managed?</span><span class="a">OS Login (IAM-based SSH) — not metadata keys per VM.</span></li>
+          <li><span class="q">Deploy an AI agent to a managed runtime?</span><span class="a">Agent Runtime on Gemini Enterprise Agent Platform (formerly Vertex AI Agent Engine).</span></li>
         </ul>
 
-        <h2 id="study">13. Study priority order</h2>
+        <h2 id="keep-in-mind">13. What to keep in mind</h2>
+        <ul>
+          <li><strong>Every question is a selection question.</strong> The exam gives a requirement and four plausible services. Train the mapping ("global relational &rarr; Spanner", "keyless CI auth &rarr; WIF"), not feature trivia.</li>
+          <li><strong>Least privilege is the tiebreaker.</strong> When two answers both work, the one with narrower roles, no SA keys, no external IPs, and lower scope wins. Owner/Editor in prod is always wrong.</li>
+          <li><strong>Managed beats self-run.</strong> If a managed service covers the requirement, the exam wants it over DIY-on-VMs — that's the point of the platform.</li>
+          <li><strong>Know the three control planes apart:</strong> IAM (who can do what), org policy (what's allowed at all), quotas (how much), budgets (alert on spend). Questions deliberately blur them.</li>
+          <li><strong>Scope words are load-bearing.</strong> "Global", "regional", "zonal", "multi-region" in the question usually eliminate half the options (VPC global, subnets regional, VMs zonal; global HTTP(S) LB vs regional L4).</li>
+          <li><strong>gcloud structure over memorized flags:</strong> <code>gcloud &lt;service&gt; &lt;resource&gt; &lt;verb&gt;</code>. The exam tests recognizing the right command shape, not flag spelling.</li>
+          <li><strong>New-syllabus names count.</strong> Spot (not preemptible), Cloud Run functions (not Cloud Functions), Artifact Registry (not Container Registry), NGFW policies, Agent Runtime/GEAP. Old names in an answer are often the trap.</li>
+          <li><strong>Cost questions want the mechanism</strong>: lifecycle rules, Spot, committed-use discounts, Standard tier, Active Assist recommendations, billing export + labels for attribution.</li>
+          <li><strong>~2 min per question.</strong> Flag and move on; unanswered = wrong, so answer everything.</li>
+        </ul>
+
+        <h2 id="mistakes">14. Common mistakes</h2>
+        <ul>
+          <li><strong>Downloading SA keys</strong> when attached SAs, Workload Identity, impersonation, or WIF are options — the single most-tested anti-pattern.</li>
+          <li><strong>Picking basic roles</strong> (Owner/Editor/Viewer) where a predefined role exists.</li>
+          <li><strong>BigQuery for app reads</strong> — it's an analytics warehouse (OLAP), not a transactional backend. Same trap in reverse: Cloud SQL for petabyte analytics.</li>
+          <li><strong>Spanner "because global sounds better"</strong> — it's the answer only when the question says global/multi-region relational + horizontal scale; otherwise Cloud SQL (or AlloyDB for performance).</li>
+          <li><strong>Treating budgets as caps</strong> — budgets only alert. Hard limits are quotas; prevention is org policy.</li>
+          <li><strong>AWS habits</strong>: assuming VPC is regional (it's global, subnets regional), looking for NACLs (firewall rules/NGFW policies instead), expecting security groups per instance (target tags/SAs instead).</li>
+          <li><strong>Forgetting Cloud NAT / Private Google Access</strong> for private VMs — answers that add external IPs "so it can reach the internet" are wrong.</li>
+          <li><strong>Spot/preemptible for stateful or user-facing workloads</strong> — reclaim can happen any time.</li>
+          <li><strong>Secrets in env vars, code, or images</strong> instead of Secret Manager.</li>
+          <li><strong>Deleting/stripping Google-managed service agents</strong> — breaks services silently.</li>
+          <li><strong>Enabling Data Access audit logs everywhere without thinking</strong> — they're opt-in for a reason (volume/cost); Admin Activity is the always-on one.</li>
+          <li><strong>Answering with removed services</strong> — App Engine, Deployment Manager, Container Registry are off the current guide; their presence in an option is usually the distractor.</li>
+          <li><strong>Ignoring the cheapest-correct rule</strong> — when two designs meet the requirement, the exam wants the cheaper one (Standard tier, lifecycle to Archive, Spot for batch).</li>
+        </ul>
+
+        <h2 id="study">15. Study priority order</h2>
         <ol>
-          <li>IAM + Service Accounts</li>
-          <li>VPC networking</li>
-          <li>Compute Engine</li>
-          <li>Cloud Storage</li>
-          <li>GKE</li>
-          <li>Cloud Run</li>
-          <li>Cloud SQL</li>
-          <li>Monitoring &amp; Logging</li>
+          <li>IAM + Service Accounts (incl. impersonation, WIF/Workforce IF)</li>
+          <li>VPC networking + Cloud NGFW + network tiers</li>
+          <li>Compute Engine (Spot, OS Login, MIGs)</li>
+          <li>GKE (Autopilot, private/regional clusters, HPA/VPA)</li>
+          <li>Cloud Run + Cloud Run functions + Eventarc</li>
+          <li>Cloud Storage + Storage Transfer Service</li>
+          <li>Databases (Cloud SQL, AlloyDB, Spanner, BigQuery, Bigtable, Firestore)</li>
+          <li>Monitoring &amp; Logging (Ops Agent, Managed Prometheus, log routers)</li>
           <li>Load Balancers</li>
-          <li>Terraform + Cloud Build</li>
+          <li>Terraform + Cloud Build + the AI-tooling name map (Gemini Cloud Assist / CLI, Agent Runtime)</li>
         </ol>
         <p>Exam: 120 min, multiple-choice + multiple-select, ~6 months hands-on recommended. Lean on the
-        "right service for the requirement" framing and least-privilege defaults.</p>
+        "right service for the requirement" framing and least-privilege defaults — then run §13's mindset
+        and §14's mistake list the night before.</p>
 
       </div>
 

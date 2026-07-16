@@ -20,18 +20,6 @@
     document.body.appendChild(enhancementsScript);
   }
 
-  // Load the current visual system after any older page-pinned stylesheet.
-  (function () {
-    if (document.querySelector('link[data-cvam-modern-css]')) return;
-    var existing = document.querySelector('link[rel="stylesheet"][href*="style.css"]');
-    if (!existing) return;
-    var fresh = document.createElement("link");
-    fresh.rel = "stylesheet";
-    fresh.href = existing.href.split("?")[0] + "?v=50";
-    fresh.setAttribute("data-cvam-modern-css", "true");
-    document.head.appendChild(fresh);
-  })();
-
   // Publication shell and collapsible vertical navigation.
   (function () {
     var sidebar = document.querySelector(".sidebar");
@@ -97,27 +85,6 @@
       rightPanel.insertBefore(rightToggle, rightPanel.firstChild);
       syncRightPanel();
     }
-  })();
-
-  // Reading XP turns long-form progress into a quiet game mechanic.
-  (function () {
-    if (!document.querySelector(".post-body") || document.querySelector(".reading-xp")) return;
-    var xp = document.createElement("div");
-    xp.className = "reading-xp";
-    xp.setAttribute("aria-label", "Reading progress");
-    xp.innerHTML = '<span class="reading-xp-level">LVL 01</span><span class="reading-xp-track"><i></i></span><b>0 XP</b>';
-    document.body.appendChild(xp);
-    var fill = xp.querySelector("i");
-    var score = xp.querySelector("b");
-    function updateReadingXp() {
-      var max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
-      var progress = Math.max(0, Math.min(1, scrollY / max));
-      fill.style.width = Math.round(progress * 100) + "%";
-      score.textContent = Math.round(progress * 500) + " XP";
-      xp.classList.toggle("complete", progress > .96);
-    }
-    addEventListener("scroll", updateReadingXp, { passive: true });
-    updateReadingXp();
   })();
 
   // ── mobile hamburger nav ──

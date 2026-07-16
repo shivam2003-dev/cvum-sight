@@ -94,24 +94,6 @@
       syncRightPanel();
     }
 
-    if (document.querySelector(".post-body") && !document.querySelector(".reading-xp")) {
-      var xp = document.createElement("div");
-      xp.className = "reading-xp";
-      xp.setAttribute("aria-label", "Reading progress");
-      xp.innerHTML = '<span class="reading-xp-level">LVL 01</span><span class="reading-xp-track"><i></i></span><b>0 XP</b>';
-      document.body.appendChild(xp);
-      var fill = xp.querySelector("i");
-      var score = xp.querySelector("b");
-      function update() {
-        var max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
-        var progress = Math.max(0, Math.min(1, scrollY / max));
-        fill.style.width = Math.round(progress * 100) + "%";
-        score.textContent = Math.round(progress * 500) + " XP";
-        xp.classList.toggle("complete", progress > .96);
-      }
-      addEventListener("scroll", update, { passive:true });
-      update();
-    }
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install);

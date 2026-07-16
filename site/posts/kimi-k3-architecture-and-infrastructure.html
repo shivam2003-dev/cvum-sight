@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kimi K3 — Architecture &amp; Infrastructure, Explained — cvam.sight</title>
+<meta name="description" content="A plain-language deep dive into Kimi K3: the 2.8T-parameter Mixture-of-Experts design (16 of 896 experts active), Kimi Delta Attention and Attention Residuals, the 1M-token context window, MXFP4/MXFP8 quantization-aware training, the 64-accelerator serving supernodes, and the prefill-cache economics behind $0.30 cache-hit pricing — with the basics (MoE, KV cache, linear attention) explained from scratch.">
+<link rel="stylesheet" href="../style.css?v=39">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f0d0c4;stroke:#2a2620;stroke-width:1.5}
+  svg .ink{fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:11px;fill:#948a78}
+  svg .smk{font-family:monospace;font-size:11px;fill:#2a2620}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden;transition:border-color .15s}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px;user-select:none}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq summary:hover{color:#c96442}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Aug 5, 2026 · ml · 24 min read · 4200 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Kimi K3 — the architecture and infrastructure, explained.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">llm-architecture</span>
+          <span class="tag">moe</span>
+          <span class="tag">kimi</span>
+          <span class="tag">inference</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Moonshot AI's <strong>Kimi K3</strong> is a 2.8-trillion-parameter Mixture-of-Experts model with native vision and a 1-million-token context window — and, per Moonshot, the largest open-weights release ever (weights out July 27, 2026). The headline numbers are big, but the interesting part is <em>how</em> it stays affordable at that size: only <strong>16 of 896 experts</strong> fire per token, the attention layer is mostly <strong>Kimi Delta Attention</strong> (a linear-attention variant that keeps a fixed-size memory instead of an ever-growing KV cache), weights ship in <strong>MXFP4</strong> from quantization-aware training, and serving runs on <strong>64+-accelerator supernodes</strong> with a prefill cache hitting &gt;90% in coding workloads — which is how cache-hit input lands at $0.30 per million tokens. This post walks through the architecture and the infrastructure in plain language, building each concept from the basics first.</p>
+
+        <h2 id="basics-first">The three basics you need first</h2>
+        <p>Three ideas carry this whole article. If you know them, skip ahead; if not, two minutes here makes everything else readable.</p>
+        <h3 id="basics-moe">1. Mixture of Experts — a big model that only wakes up a little</h3>
+        <p>A dense transformer runs <em>every</em> parameter for <em>every</em> token — a 2.8T dense model would be absurdly expensive to run. A <strong>Mixture-of-Experts (MoE)</strong> model replaces each feed-forward block with a set of parallel "experts" (small feed-forward networks) plus a <strong>router</strong> that picks a handful of them per token. Total parameters measure what the model <em>knows</em> (capacity); <strong>active parameters</strong> measure what you <em>pay</em> per token (compute). K3's bet: 2.8T of capacity, a tiny active slice per token — 16 experts chosen out of 896.</p>
+        <h3 id="basics-kv">2. The KV cache — why long context is usually expensive</h3>
+        <p>Standard attention lets each new token look back at every previous token. To avoid recomputing the past, inference keeps every previous token's key/value vectors in GPU memory — the <strong>KV cache</strong>. It grows linearly with context length: at 1M tokens it becomes the dominant memory cost, and every generated token must scan it, so decoding slows as context grows. This is why "1M context" claims are cheap to print and expensive to serve — and why K3's attention layer is the most consequential design choice in the model.</p>
+        <h3 id="basics-linear">3. Linear attention — a fixed-size memory instead of a growing one</h3>
+        <p><strong>Linear attention</strong> variants replace the look-at-everything mechanism with a running, <em>fixed-size</em> state that is updated as each token arrives — like keeping a continuously-revised summary instead of a full transcript. Cost per token stays constant regardless of context length. The catch: a fixed-size state must <em>overwrite</em> something to learn something new, so naive linear attention forgets — the exact trade the <a href="frontier-digest-003.html">HOLA paper in Digest #3</a> attacks from another angle. The <strong>delta rule</strong> family fixes much of this by updating the state only by the <em>error</em> between what the state predicts and what actually arrived — writing the new, not rewriting everything.</p>
+
+        <h2 id="numbers">K3 by the numbers, next to K2</h2>
+        <table class="papers">
+          <tr><th>Dimension</th><th>Kimi K2</th><th>Kimi K3</th></tr>
+          <tr><td>Total parameters</td><td>~1T</td><td><strong>2.8T</strong></td></tr>
+          <tr><td>Experts</td><td>384 routed + 1 shared</td><td><strong>896</strong>, 16 active per token (Stable LatentMoE)</td></tr>
+          <tr><td>Attention</td><td>MLA (K2) / KDA hybrid (Kimi Linear line)</td><td><strong>KDA + Attention Residuals + Gated MLA</strong></td></tr>
+          <tr><td>Context window</td><td>256K class</td><td><strong>1M tokens</strong></td></tr>
+          <tr><td>Modality</td><td>Text</td><td><strong>Native vision</strong> + text</td></tr>
+          <tr><td>Scaling efficiency</td><td>baseline</td><td>~<strong>2.5×</strong> better (per Moonshot)</td></tr>
+          <tr><td>Weights format</td><td>bf16/int lines</td><td><strong>MXFP4</strong> weights, MXFP8 activations (QAT)</td></tr>
+        </table>
+        <div class="bm-note"><strong>Vendor numbers caveat.</strong> The 2.5× scaling-efficiency claim, benchmark scores, and cache-hit rates below are Moonshot's own, from the <a href="https://www.kimi.com/blog/kimi-k3" target="_blank" rel="noopener">K3 launch post</a>. Directionally credible (the K2 and Kimi Linear lineage is published and open), but treat launch-day tables the way you'd treat any vendor benchmark.</div>
+
+        <h2 id="moe">The MoE design: 16 of 896, and why sparser won</h2>
+        <p>K2 already showed Moonshot's preference for <em>wide</em> sparsity — 384 experts with very few active. K3 pushes the same axis harder: <strong>896 experts, 16 active</strong>, under a framework they call <strong>Stable LatentMoE</strong>. The intuition for why sparser-and-wider keeps winning: every expert added grows what the model can store, while the per-token bill only depends on how many fire. As long as the router gets <em>better</em> at picking the right 16, capacity is nearly free at inference time.</p>
+        <p>That "as long as" is where MoE designs live or die, and two named K3 components target it directly:</p>
+        <ul>
+          <li><strong>Quantile Balancing</strong> — expert load-balancing derived from the <em>quantiles of router scores</em> rather than blunt auxiliary losses. The classic MoE failure is collapse: a few popular experts absorb all traffic while the rest atrophy. Balancing on score quantiles pushes traffic toward even utilization without distorting what the router actually wants to choose.</li>
+          <li><strong>Sigmoid Tanh Unit (SiTU)</strong> — a gated activation used for finer control over what flows through, part of the stability story that lets a 2.8T model with this much sparsity train without the router oscillating.</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">One token through K3's MoE layer: capacity vs compute</text>
+            <rect x="20" y="45" width="120" height="44" class="boxy"/><text x="80" y="63" class="smk" text-anchor="middle">token</text><text x="80" y="80" class="sm" text-anchor="middle">hidden state</text>
+            <rect x="185" y="45" width="120" height="44" class="boxg"/><text x="245" y="63" class="smk" text-anchor="middle">router</text><text x="245" y="80" class="sm" text-anchor="middle">quantile-balanced</text>
+            <path d="M140 67 L183 67" stroke="#2a2620" stroke-width="1.5" fill="none"/>
+            <g>
+              <rect x="360" y="38" width="42" height="26" class="boxg"/><rect x="408" y="38" width="42" height="26" class="box"/><rect x="456" y="38" width="42" height="26" class="box"/><rect x="504" y="38" width="42" height="26" class="boxg"/><rect x="552" y="38" width="42" height="26" class="box"/><rect x="600" y="38" width="42" height="26" class="box"/>
+              <rect x="360" y="70" width="42" height="26" class="box"/><rect x="408" y="70" width="42" height="26" class="boxg"/><rect x="456" y="70" width="42" height="26" class="box"/><rect x="504" y="70" width="42" height="26" class="box"/><rect x="552" y="70" width="42" height="26" class="box"/><rect x="600" y="70" width="42" height="26" class="boxg"/>
+              <rect x="360" y="102" width="42" height="26" class="box"/><rect x="408" y="102" width="42" height="26" class="box"/><rect x="456" y="102" width="42" height="26" class="boxg"/><rect x="504" y="102" width="42" height="26" class="box"/><rect x="552" y="102" width="42" height="26" class="boxg"/><rect x="600" y="102" width="42" height="26" class="box"/>
+            </g>
+            <path d="M305 67 L355 67" stroke="#2a2620" stroke-width="1.5" fill="none"/>
+            <text x="500" y="150" class="sm" text-anchor="middle">… 896 experts total (green = the 16 selected for this token)</text>
+            <text x="340" y="190" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">2.8T parameters of capacity; only the selected experts' compute is paid per token.</text>
+            <text x="340" y="212" class="sm" text-anchor="middle">Next token: a different 16. The knowledge is always there; the bill is only for what fires.</text>
+          </svg>
+          <p class="diagram-label">Fig 1 — Sparse routing is the entire economics of K3: total parameters set capacity, active parameters set cost.</p>
+        </div>
+
+        <h2 id="kda">Kimi Delta Attention: the load-bearing choice</h2>
+        <p>KDA is not new with K3 — it debuted in Moonshot's <strong>Kimi Linear</strong> research line (the published 48B-A3B models and the Kimi Linear paper), which is exactly why it's credible at this scale: K3 is the production bet on an architecture they de-risked in the open first.</p>
+        <p>Building on the linear-attention basics above, KDA's specific contributions:</p>
+        <ul>
+          <li><strong>Channel-wise gated delta rule.</strong> Plain delta-rule attention decides how much to forget with one gate per attention head. KDA gates <em>per channel</em> — each dimension of the state can independently hold or decay its memory. Fine-grained forgetting means the state keeps what matters longer, which is where linear attention usually loses to full attention on recall.</li>
+          <li><strong>Hardware-shaped computation.</strong> KDA's update is organized blockwise and context-parallel so it maps onto GPU matrix units efficiently — an architecture designed <em>around</em> the accelerator, not just around the math.</li>
+          <li><strong>Constant-size state ⇒ long-context economics.</strong> No million-token KV cache to store and scan. Decoding throughput stays roughly flat as context grows — the property that makes a 1M-token window servable rather than just advertisable.</li>
+        </ul>
+        <h3 id="attnres">Attention Residuals and Gated MLA</h3>
+        <p>Two companions round out the attention stack. <strong>Attention Residuals (AttnRes)</strong> lets a layer <em>selectively retrieve</em> representations from earlier depths rather than uniformly accumulating them through the residual stream — at 2.8T-scale depth, "everything piles up equally" stops being a virtue, and selective cross-depth retrieval keeps deep layers from drowning in accumulated signal. <strong>Gated MLA</strong> keeps a slice of full (Multi-head Latent) attention in the mix with added gating for selectivity — the hybrid pattern from Kimi Linear, where a mostly-linear stack retains some full-attention layers for the exact-recall cases where a fixed-size state genuinely can't compete. There's also <strong>Per-Head Muon</strong>: Moonshot's Muon optimizer line (used since K2) applied per attention head, so each head's updates are conditioned independently.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">Full attention vs KDA at long context</text>
+            <rect x="30" y="40" width="290" height="160" class="box"/>
+            <text x="175" y="64" class="smk" text-anchor="middle">Full attention + KV cache</text>
+            <rect x="55" y="80" width="30" height="18" class="boxy"/><rect x="55" y="102" width="70" height="18" class="boxy"/><rect x="55" y="124" width="130" height="18" class="boxy"/><rect x="55" y="146" width="210" height="18" class="boxy"/>
+            <text x="175" y="185" class="sm" text-anchor="middle">memory grows with every token — 1M tokens = huge cache</text>
+            <rect x="360" y="40" width="290" height="160" class="box"/>
+            <text x="505" y="64" class="smk" text-anchor="middle">KDA (linear, delta rule)</text>
+            <rect x="420" y="80" width="170" height="18" class="boxg"/><rect x="420" y="102" width="170" height="18" class="boxg"/><rect x="420" y="124" width="170" height="18" class="boxg"/><rect x="420" y="146" width="170" height="18" class="boxg"/>
+            <text x="505" y="185" class="sm" text-anchor="middle">fixed-size state, updated by prediction error per channel</text>
+            <text x="340" y="228" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">K3 hybrid: mostly KDA for economics + gated full-attention layers for exact recall.</text>
+          </svg>
+          <p class="diagram-label">Fig 2 — The KV cache grows with context; KDA's state doesn't. The hybrid keeps some full attention where exactness matters.</p>
+        </div>
+
+        <h2 id="vision-context">Native vision and the 1M window</h2>
+        <p>K3 is natively multimodal — vision is trained in, not bolted on through a separate encoder-adapter released later. Combined with the 1M-token window, the practical shape of the model is: entire codebases, hours of transcripts, or document piles <em>plus screenshots and figures</em> in one context. The launch post leans on this for the agentic demos — video editing with frame-accurate cuts, dashboards generated from raw data — tasks where text-only models need lossy detours.</p>
+
+        <h2 id="training">Training infrastructure: quantization-aware from SFT onward</h2>
+        <p>The most operationally interesting training decision: K3 runs <strong>quantization-aware training (QAT) from the supervised fine-tuning stage onward</strong>, targeting <strong>MXFP4 weights with MXFP8 activations</strong>.</p>
+        <p>Basics, briefly: models train in 16-bit precision, but serving in 4-bit cuts memory ~4× and speeds inference. The usual route — quantize <em>after</em> training — always costs some quality, because the model never learned to live inside 4-bit precision. QAT flips this: the model trains <em>with</em> quantization in the loop, learning weights that are already robust to the low-precision grid. MX (microscaling) formats make this practical by attaching a shared scale to each small block of values, so 4-bit numbers cover a usable dynamic range — and they're the formats current accelerator generations execute natively.</p>
+        <ul>
+          <li><strong>Why it matters at 2.8T:</strong> in MXFP4, the weights are ~4× smaller than bf16 — the difference between "needs a football field of accelerators" and "fits a supernode." The 4-bit release <em>is</em> the model, not a degraded copy.</li>
+          <li><strong>"Broad hardware compatibility"</strong> is Moonshot's stated goal — MXFP4/MXFP8 are open microscaling standards adopted across vendors, which matters for a lab whose accelerator supply has geopolitical constraints.</li>
+          <li><strong>~2.5× scaling efficiency vs K2</strong> is the compound claim: the architecture (sparser MoE + KDA), the data recipe, and the training-method changes together yield ~2.5× more capability per unit of training compute. That multiplier, not any single benchmark, is the strategic number in the launch post.</li>
+        </ul>
+
+        <h2 id="serving">Serving infrastructure: supernodes and the prefill cache</h2>
+        <p>Moonshot recommends serving K3 on <strong>supernode configurations of 64 or more accelerators</strong> — a tightly-coupled, high-bandwidth-interconnect domain, in the spirit of NVL72-class rack systems or comparable scale-up fabrics. Why the model wants that shape:</p>
+        <ul>
+          <li><strong>Expert parallelism:</strong> 896 experts spread across the node; every token's hidden state must reach its 16 chosen experts and return. That all-to-all exchange is the MoE serving tax, and it's only cheap inside one fast interconnect domain — cross the node boundary and latency eats the sparsity win.</li>
+          <li><strong>Even in MXFP4, 2.8T ≈ 1.4TB of weights</strong> — far beyond one accelerator's memory, so the weights physically need the node.</li>
+        </ul>
+        <p>The second pillar is the <strong>prefill cache riding on KDA</strong>. Agentic workloads resend nearly-identical context every turn — system prompt, repo state, conversation so far. Caching the computed prefill state means a returning request only pays for the new suffix. Because KDA's state is compact (no giant per-token KV tensors), cached prefill states are cheap to keep and restore at 1M-token scale. Moonshot reports the official API's cache hit rate <strong>above 90% in coding workloads</strong> — and prices accordingly:</p>
+        <table class="papers">
+          <tr><th>Meter</th><th>Price / MTok</th><th>Read</th></tr>
+          <tr><td>Input, cache hit</td><td><strong>$0.30</strong></td><td>the price agentic loops mostly pay (&gt;90% hits in coding)</td></tr>
+          <tr><td>Input, cache miss</td><td>$3.00</td><td>10× the hit price — cache design is now product design</td></tr>
+          <tr><td>Output</td><td>$15.00</td><td>frontier-tier output pricing</td></tr>
+        </table>
+        <div class="bm-fix"><strong>Builder takeaway:</strong> the 10× hit/miss spread means prompt <em>stability</em> is money. Keep system prompts and tool definitions byte-identical across turns, append rather than rewrite history, and isolate anything that changes per-request at the end of the prompt. That's true on every cached API; K3's pricing just makes it unusually explicit.</div>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="smk" text-anchor="middle" style="font-weight:bold">K3 serving: one supernode, weights sharded, prefill cache in front</text>
+            <rect x="30" y="40" width="420" height="150" class="box"/>
+            <text x="240" y="64" class="smk" text-anchor="middle">Supernode — 64+ accelerators, one fast interconnect domain</text>
+            <g>
+              <rect x="55" y="80" width="80" height="40" class="boxy"/><text x="95" y="104" class="sm" text-anchor="middle">experts 1..k</text>
+              <rect x="145" y="80" width="80" height="40" class="boxy"/><text x="185" y="104" class="sm" text-anchor="middle">experts ..</text>
+              <rect x="235" y="80" width="80" height="40" class="boxy"/><text x="275" y="104" class="sm" text-anchor="middle">experts ..</text>
+              <rect x="325" y="80" width="80" height="40" class="boxy"/><text x="365" y="104" class="sm" text-anchor="middle">experts ..896</text>
+            </g>
+            <text x="240" y="145" class="sm" text-anchor="middle">all-to-all: each token visits its 16 experts and returns</text>
+            <text x="240" y="168" class="sm" text-anchor="middle">MXFP4 weights ≈ 1.4TB sharded across the node</text>
+            <rect x="500" y="70" width="150" height="90" class="boxg"/>
+            <text x="575" y="98" class="smk" text-anchor="middle">Prefill cache</text>
+            <text x="575" y="120" class="sm" text-anchor="middle">KDA compact states</text>
+            <text x="575" y="140" class="sm" text-anchor="middle">&gt;90% hits (coding)</text>
+            <path d="M498 115 L452 115" stroke="#2a2620" stroke-width="1.5" fill="none"/>
+            <text x="340" y="215" class="ink" text-anchor="middle" font-size="12" style="font-weight:bold">$0.30 cache-hit pricing exists because KDA states are small enough to cache at 1M-token scale.</text>
+          </svg>
+          <p class="diagram-label">Fig 3 — The serving story: expert parallelism needs the supernode; the prefill cache needs KDA's compact state; the pricing needs both.</p>
+        </div>
+
+        <h2 id="agentic">What it does in practice — and the honest limits</h2>
+        <p>The launch post's demos target the agentic frontier: K3 built a <strong>MiniTriton compiler from scratch</strong> with performance on par with or better than Triton, optimized GPU kernels competitively with Claude Fable 5, and produced a complete <strong>45nm chip design in a single 48-hour autonomous run</strong> (with an 8,700 tokens/s decode figure attached to that workload). Benchmarks put it at 88.3 on Terminal-Bench 2.1 (GPT-5.6 Sol: 88.8), 67.5 on DeepSWE (Sol: 73.0), 42.0 on SWE Marathon (ahead of Fable 5's 35.0), 93.5 GPQA-Diamond, and strong multimodal scores (81.6 MMMU-Pro, 94.3 MathVision).</p>
+        <p>Unusually for a launch post, Moonshot lists limits plainly: <strong>sensitivity to thinking history</strong> (the harness must manage reasoning traces carefully — mishandled history degrades it), <strong>excessive proactiveness</strong> (it may take unrequested decisions mid-task), and a <strong>"noticeable gap in user experience"</strong> versus Claude Fable 5 and GPT-5.6 Sol despite the benchmark parity. That candor tracks exactly with <a href="frontier-digest-003.html">Digest #3's Harness Effect</a> finding: the model is the engine, and Moonshot is telling you the engine needs a good car.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is Kimi K3 actually open?</summary><p>Full model weights released July 27, 2026 — at 2.8T parameters, the largest open-weights release to date. "Open weights" means you can download and run it (on a 64+-accelerator supernode…), not that the training data or full recipe is open.</p></details>
+        <details class="faq"><summary>What's genuinely new here vs K2?</summary><p>Scale (2.8T vs ~1T), much wider sparsity (896 vs 385 experts), the KDA + AttnRes + Gated MLA attention stack replacing K2's MLA, native vision, the 1M window, and MXFP4 quantization-aware training. The Muon-optimizer lineage and the wide-sparse-MoE philosophy carry over.</p></details>
+        <details class="faq"><summary>Why does linear attention matter more than the parameter count?</summary><p>Because the parameter count sets a one-time hardware bar, but attention sets the <em>per-request</em> economics. A 1M-token window with a growing KV cache is mostly a demo; with KDA's constant-size state plus prefill caching it's a $0.30/MTok product surface.</p></details>
+        <details class="faq"><summary>Can I run it locally?</summary><p>Realistically, no — ~1.4TB of MXFP4 weights and an all-to-all expert exchange want a supernode. The open weights matter for labs, clouds, and researchers (distillation, fine-tunes, serving providers), not laptops.</p></details>
+        <details class="faq"><summary>Should I trust the benchmark table?</summary><p>Treat it like every launch table: vendor-run, snapshot-in-time, own harness. The credible core is the architecture lineage (KDA is published research with open smaller models) and the pricing, which is a falsifiable public commitment.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>K3 is an economics design, not just a scale flex:</strong> every headline component — 16-of-896 sparsity, KDA's fixed-size state, MXFP4 QAT, the prefill cache — exists to make 2.8T parameters and 1M context <em>servable at a price</em>.</li>
+          <li><strong>KDA is the load-bearing choice:</strong> a channel-wise gated delta-rule linear attention, de-risked publicly in the Kimi Linear line, now carrying a frontier flagship — the strongest production endorsement linear attention has ever had.</li>
+          <li><strong>Quantization moved into training:</strong> QAT from SFT onward means the 4-bit model is the model — the open-weights release and the served product are the same artifact.</li>
+          <li><strong>The pricing teaches the architecture:</strong> $0.30 hit / $3.00 miss / $15 out is the whole infrastructure story compressed into three numbers — build agents that keep prefixes stable.</li>
+          <li><strong>Moonshot's own caveats are the roadmap:</strong> thinking-history sensitivity, over-proactiveness, and a UX gap vs Fable 5/GPT-5.6 Sol — capability arrived; harness polish is the open front.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.kimi.com/blog/kimi-k3" target="_blank" rel="noopener">Moonshot AI — Kimi K3 launch post</a> <span>— the primary source for every spec, benchmark, and pricing figure here.</span></li>
+          <li><a href="https://arxiv.org/pdf/2510.26692" target="_blank" rel="noopener">Kimi Linear: An Expressive, Efficient Attention Architecture</a> <span>— the published research behind KDA.</span></li>
+          <li><a href="https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct" target="_blank" rel="noopener">Kimi-Linear-48B-A3B-Instruct</a> <span>— the open smaller model where the KDA hybrid was de-risked.</span></li>
+          <li><a href="https://platform.kimi.com/docs/guide/kimi-k3-quickstart" target="_blank" rel="noopener">Kimi API — K3 quickstart</a> <span>— model id <code>kimi-k3</code>, thinking-effort modes, API details.</span></li>
+          <li><a href="frontier-digest-003.html">cvam.sight — Frontier Digest #3</a> <span>— the Harness Effect context for K3's own harness caveats.</span></li>
+          <li><a href="pagedattention.html">cvam.sight — PagedAttention deep dive</a> <span>— the KV-cache problem KDA sidesteps, explained at length.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../archive.html">← browse the archive</a>
+        <a href="../index.html">home →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=30"></script>
+  <script defer src="../settings.js?v=10"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

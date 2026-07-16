@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "kimi-k3-architecture-and-infrastructure",
+    title: "Kimi K3 — the architecture and infrastructure, explained.",
+    date: "Aug 5, 2026",
+    cat: "ml",
+    tags: ["ml", "llm-architecture", "moe", "kimi", "inference"],
+    time: 24,
+    words: 4200,
+    excerpt: "A plain-language deep dive into Moonshot's Kimi K3: the 2.8T-parameter Mixture-of-Experts design (16 of 896 experts active under Stable LatentMoE), Kimi Delta Attention's channel-wise gated delta rule and why linear attention is the load-bearing choice behind the 1M-token window, Attention Residuals and Gated MLA, MXFP4/MXFP8 quantization-aware training from SFT onward, the 64+-accelerator serving supernodes, and the prefill-cache economics behind $0.30 cache-hit pricing — with MoE, KV-cache, and linear-attention basics built from scratch so anyone can follow."
+  },
+  {
     slug: "grok-build-14-build-your-own-harness",
     title: "Building your own harness — lessons from Grok Build.",
     date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "harness-engineering", "architecture"],

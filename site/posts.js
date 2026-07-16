@@ -16,6 +16,118 @@
 
 const POSTS = [
   {
+    slug: "grok-build-14-build-your-own-harness",
+    title: "Building your own harness — lessons from Grok Build.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "harness-engineering", "architecture"],
+    time: 22, words: 4227,
+    excerpt: "The series finale: derive a minimal production coding-agent architecture, hardening checklist, evidence model, and evaluation strategy from Grok Build — copying contracts and invariants rather than repository complexity.",
+    series: "grok-build", seriesNum: "14"
+  },
+  {
+    slug: "grok-build-13-comparison",
+    title: "Grok Build vs Pi Agent vs Hermes.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "pi-agent", "hermes"],
+    time: 23, words: 4466,
+    excerpt: "A date-pinned architectural comparison of three harness philosophies: Grok Build's integrated coding workspace, Pi's minimal programmable core, and Hermes' broad persistent operator.",
+    series: "grok-build", seriesNum: "13"
+  },
+  {
+    slug: "grok-build-12-acp",
+    title: "ACP and Grok Build as an embeddable agent runtime.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "acp", "ide"],
+    time: 22, words: 4220,
+    excerpt: "How ACP separates client UX from the shell runtime: initialization, authentication, session lifecycle, structured updates, permissions, stdio/server/relay modes, and custom-client trust boundaries.",
+    series: "grok-build", seriesNum: "12"
+  },
+  {
+    slug: "grok-build-11-headless-ci",
+    title: "Headless Grok Build for DevOps and CI/CD.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "devops", "ci-cd"],
+    time: 23, words: 4471,
+    excerpt: "A controlled pull-request repair agent: machine-readable output, least-privilege tools, ephemeral checkout, independent verification, provenance, protected publication, human approval, and cleanup.",
+    series: "grok-build", seriesNum: "11"
+  },
+  {
+    slug: "grok-build-10-safety",
+    title: "Permissions, sandboxing, and agent safety.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "security", "sandbox"],
+    time: 25, words: 4838,
+    excerpt: "A real trust-boundary analysis: hook and rule ordering, permission modes, built-in approvals, sandbox profiles, Linux/macOS differences, prompt injection, and the controls CI must supply.",
+    series: "grok-build", seriesNum: "10"
+  },
+  {
+    slug: "grok-build-9-sessions-rewind",
+    title: "Sessions, persistence, rewind, and recovery.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "sessions", "recovery"],
+    time: 25, words: 4887,
+    excerpt: "Inside the durable evidence bundle: JSONL updates and history, create/resume/continue semantics, compaction, prompt-level file rewind, interruption recovery, sandbox continuity, and audit limits.",
+    series: "grok-build", seriesNum: "9"
+  },
+  {
+    slug: "grok-build-8-planning-subagents",
+    title: "Planning, subagents, and background work.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "subagents", "orchestration"],
+    time: 23, words: 4502,
+    excerpt: "Plan review, independent child contexts, agent types versus personas, capability filters, one-level depth, worktree isolation, background processes, monitors, and coordination failure modes.",
+    series: "grok-build", seriesNum: "8"
+  },
+  {
+    slug: "grok-build-7-extensions",
+    title: "MCP, plugins, hooks, and the extension architecture.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "mcp", "plugins"],
+    time: 24, words: 4707,
+    excerpt: "Choose the right extension mechanism by invocation, lifecycle, and authority: skills for procedure, MCP for external tools, hooks for deterministic reactions, and plugins for packaging and trust.",
+    series: "grok-build", seriesNum: "7"
+  },
+  {
+    slug: "grok-build-6-context-memory",
+    title: "Context engineering with rules, skills, and memory.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "context-engineering", "memory"],
+    time: 23, words: 4581,
+    excerpt: "Trace AGENTS.md precedence, task-selected skills, compaction, and experimental Markdown-backed project memory — including stale context, conflict, privacy, and retrieval risks.",
+    series: "grok-build", seriesNum: "6"
+  },
+  {
+    slug: "grok-build-5-workspace",
+    title: "The workspace is the agent's operating system.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "workspace", "rewind"],
+    time: 25, words: 4820,
+    excerpt: "Why workspace design determines reliability: local and proxy execution, session toolsets, repository state, prompt-level file tracking, checkpoint gates, rewind, worktrees, and external-effect limits.",
+    series: "grok-build", seriesNum: "5"
+  },
+  {
+    slug: "grok-build-4-tool-layer",
+    title: "The tool layer — shell, files, search, and execution.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "tools", "execution"],
+    time: 26, words: 5147,
+    excerpt: "From model-facing JSON schema to side effect: effective toolsets, argument normalization, plan and policy gates, local/proxy dispatch, concurrency, output bounds, and precise Codex/OpenCode provenance.",
+    series: "grok-build", seriesNum: "4"
+  },
+  {
+    slug: "grok-build-3-runtime-loop",
+    title: "From prompt to action — the Grok Build runtime loop.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "runtime", "rust"],
+    time: 27, words: 5206,
+    excerpt: "Trace one prompt through session state, context assembly, model sampling, tool execution, observations, interjections, compaction, recovery, structural stopping, and independent verification.",
+    series: "grok-build", seriesNum: "3"
+  },
+  {
+    slug: "grok-build-2-rust-workspace",
+    title: "Reading the Grok Build Rust workspace.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "rust", "architecture"],
+    time: 26, words: 5138,
+    excerpt: "A responsibility map of pager-bin, clients, shell runtime, chat state, sampler, tools, workspace, memory, MCP, hooks, sandbox, rendering, and ACP — read as runtime contracts, not a crate catalogue.",
+    series: "grok-build", seriesNum: "2"
+  },
+  {
+    slug: "grok-build-1-more-than-cli",
+    title: "Grok Build is more than a coding CLI.",
+    date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "harness-engineering", "architecture"],
+    time: 29, words: 5611,
+    excerpt: "The complete model–harness–environment–verification system: TUI, headless and ACP clients, shell runtime, tool contracts, workspace side effects, policy, sessions, rewind, safety boundaries, and a source-backed roadmap.",
+    series: "grok-build", seriesNum: "1"
+  },
+  {
     slug: "frontier-digest-003",
     title: "Frontier Digest #3 — the week the harness became the product.",
     date: "Jul 12, 2026",

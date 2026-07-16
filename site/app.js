@@ -298,6 +298,7 @@
       "yc-paper-club": "YC Paper Club",
       gpu: "Silicon to Scale",
       harness: "Harness Engineering",
+      "grok-build": "Inside Grok Build",
       consensus: "Consensus Algorithms"
     };
     const seenSeries = {};
@@ -340,6 +341,7 @@
           "yc-paper-club": "series-yc-paper-club.html",
           gpu: "series-gpu.html",
           harness: "series-harness.html",
+          "grok-build": "series-grok-build.html",
           consensus: "series-consensus.html"
         };
         const href = seriesHubs[item.key] || `posts/${escapeHtml(p.slug)}.html`;

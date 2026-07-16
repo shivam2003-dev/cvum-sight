@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Sessions, Persistence, Rewind, and Recovery — Inside Grok Build — cvam.sight</title><meta name="description" content="Inspect Grok Build session artifacts, resume, compaction, file rewind, interruption behavior, and audit limits.">
+<link rel="stylesheet" href="../style.css?v=39"><script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);document.documentElement.classList.add("view-modern");})()</script><link rel="icon" type="image/svg+xml" href="../assets/favicon.svg"><script defer src="/_vercel/speed-insights/script.js"></script><script defer src="/_vercel/insights/script.js"></script><style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}.diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}.reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}.reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}.reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}h3{margin-top:24px}table.papers{width:100%;border-collapse:collapse;margin:18px 0}table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}details.faq[open]{border-color:#f0c040}details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink)}details.faq summary::-webkit-details-marker{display:none}details.faq summary::before{content:"+";font-family:var(--font-mono);color:#c96442;margin-right:10px}details.faq[open] summary::before{content:"–"}details.faq>p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
+  .post-header .tag:not(.fill){color:#102016!important}
+</style></head>
+<body><div class="progress-bar"></div><div class="layout has-toc">
+<aside class="sidebar"><a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a><p class="sidebar-sub">blog from a devops + ml apprentice</p><nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav><div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p><a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a><a href="mailto:shivam.sk2003@gmail.com">Email</a></div></aside>
+<div class="page"><article><div class="series-banner">
+    <p class="series-banner-label">Inside Grok Build · Article 9</p>
+    <p class="series-banner-title">What survives</p>
+    <div class="series-banner-progress"><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip current"></div><div class="series-pip "></div><div class="series-pip "></div><div class="series-pip "></div><div class="series-pip "></div><div class="series-pip "></div></div>
+    <p class="series-banner-meta">Article 9 of 14</p>
+    <div class="series-banner-nav"><a href="grok-build-1-more-than-cli.html" class="done">01 System</a>
+<a href="grok-build-2-rust-workspace.html" class="done">02 Workspace map</a>
+<a href="grok-build-3-runtime-loop.html" class="done">03 Runtime loop</a>
+<a href="grok-build-4-tool-layer.html" class="done">04 Tools</a>
+<a href="grok-build-5-workspace.html" class="done">05 Workspace</a>
+<a href="grok-build-6-context-memory.html" class="done">06 Context</a>
+<a href="grok-build-7-extensions.html" class="done">07 Extensions</a>
+<a href="grok-build-8-planning-subagents.html" class="done">08 Orchestration</a>
+<a href="grok-build-9-sessions-rewind.html" class="active">09 Sessions</a>
+<a href="grok-build-10-safety.html" class="">10 Safety</a>
+<a href="grok-build-11-headless-ci.html" class="">11 Headless CI</a>
+<a href="grok-build-12-acp.html" class="">12 ACP</a>
+<a href="grok-build-13-comparison.html" class="">13 Comparison</a>
+<a href="grok-build-14-build-your-own-harness.html" class="">14 Blueprint</a></div>
+  </div>
+<div class="post-header"><p class="meta">Jul 16, 2026 · ml · 25 min read · 4887 words <span class="difficulty advanced">advanced</span></p><h1>Sessions, Persistence, Rewind, and Recovery.</h1><div class="tag-row"><span class="tag fill">ml</span><span class="tag">agents</span><span class="tag">grok-build</span><span class="tag">harness-engineering</span></div></div>
+<div class="post-body">
+    <p class="bm-tldr">A session is a durable evidence bundle, not merely a chat transcript. Grok Build stores append-oriented updates and chat history plus plans, rewind points, signals, feedback, compaction, and child data. Resume restores conversational work; rewind aligns tracked files and conversation. Neither reverses arbitrary external effects.</p>
+    <p>Durability changes the failure model of an agent. Without it, a killed process erases context and leaves mutations difficult to explain. With it, interruption can become a resumable transition.</p>
+<p>The user guide describes per-project session directories under <code>~/.grok/sessions</code>. JSONL streams preserve incremental events; summary and plan files expose current state; rewind and compaction artifacts connect recovery to prompt boundaries.</p>
+<p>The engineering question is not only what is saved. It is which file is authoritative, what resume reconstructs, what rewind restores, and which effects stay outside the session envelope.</p>
+    <div class="bm-note"><strong>Series equation.</strong> Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the <em>state-management</em> term without pretending the other three disappear.</div>
+    <h2 id="mental-model">The mental model</h2>
+    <p>Separate durability from reversibility and reproducibility. Durability means evidence survives a process. Reversibility means selected state can be restored. Reproducibility means another environment can obtain the same result. A session helps all three but guarantees only its documented contracts.</p>
+<p>Use append-oriented events as the causal log and summaries as indexes/projections. Never replace raw evidence with a compacted narrative when incident review needs exact tool output.</p>
+<p>Bind resumed sessions to their original safety assumptions. The sandbox profile is persisted and cannot be changed on resume, preventing silent widening or incompatible narrowing.</p>
+
+<div class="diagram-container">
+  <svg viewBox="0 0 760 238" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Session artifacts support resume and rewind without enclosing every external effect.">
+    <style>
+      .g-box{fill:#f5f5f0;stroke:#888880;stroke-width:1.5}.g-hot{fill:#fffdf0;stroke:#b8860b;stroke-width:2}
+      .g-title{font-family:'Kalam',cursive;font-size:15px;font-weight:700;fill:#1a1a1a}.g-copy{font-family:'Kalam',cursive;font-size:12px;fill:#444444}
+      .g-arrow{stroke:#b8860b;stroke-width:2;fill:none}.g-note{font-family:'Kalam',cursive;font-size:12px;fill:#555555}
+    </style>
+    <defs><marker id="g-arrow-9" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#b8860b"/></marker></defs>
+    <rect x="22" y="54" width="126" height="76" rx="7" class="g-box"/>
+        <text x="85" y="80" text-anchor="middle" class="g-title">Prompt</text>
+        <text x="85" y="103" text-anchor="middle" class="g-copy">begin state</text><path d="M148 92 L162 92" class="g-arrow" marker-end="url(#g-arrow-9)"/>
+<rect x="165.2" y="54" width="126" height="76" rx="7" class="g-box"/>
+        <text x="228.2" y="80" text-anchor="middle" class="g-title">JSONL</text>
+        <text x="228.2" y="103" text-anchor="middle" class="g-copy">append events</text><path d="M291.2 92 L305.2 92" class="g-arrow" marker-end="url(#g-arrow-9)"/>
+<rect x="308.4" y="54" width="126" height="76" rx="7" class="g-hot"/>
+        <text x="371.4" y="80" text-anchor="middle" class="g-title">Checkpoint</text>
+        <text x="371.4" y="103" text-anchor="middle" class="g-copy">file before/after</text><path d="M434.4 92 L448.4 92" class="g-arrow" marker-end="url(#g-arrow-9)"/>
+<rect x="451.59999999999997" y="54" width="126" height="76" rx="7" class="g-box"/>
+        <text x="514.5999999999999" y="80" text-anchor="middle" class="g-title">Resume</text>
+        <text x="514.5999999999999" y="103" text-anchor="middle" class="g-copy">rebuild session</text><path d="M577.5999999999999 92 L591.5999999999999 92" class="g-arrow" marker-end="url(#g-arrow-9)"/>
+<rect x="594.8" y="54" width="126" height="76" rx="7" class="g-box"/>
+        <text x="657.8" y="80" text-anchor="middle" class="g-title">Rewind</text>
+        <text x="657.8" y="103" text-anchor="middle" class="g-copy">restore + truncate</text>
+    <text x="380" y="181" text-anchor="middle" class="g-note">raw events remain more authoritative than summaries</text>
+    <path d="M655 198 Q380 225 104 198" class="g-arrow" marker-end="url(#g-arrow-9)"/>
+    <text x="380" y="218" text-anchor="middle" class="g-note">feedback changes the next turn</text>
+  </svg>
+  <p class="diagram-label">Fig 9.1 — Session artifacts support resume and rewind without enclosing every external effect.</p>
+</div>
+    <h2 id="source-walk">Source walk — the contracts that matter</h2>
+    <p>The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.</p>
+
+    <h2>1. Store sessions by project and ID</h2>
+    <p><strong>The contract.</strong> Each workspace needs a stable directory and unique session identity.</p>
+    <p><strong>What the source shows.</strong> The guide documents encoded-cwd/session-ID directories beneath <code>~/.grok/sessions</code>. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.</p>
+    <p><strong>Why it matters.</strong> Resume and search can scope work to the repository instead of mixing unrelated histories. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.</p>
+    <p><strong>Failure drill.</strong> Moving or cloning repositories can change identity assumptions; do not rely on path alone for audit provenance. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.</p>
+    <blockquote><strong>Source note:</strong> User guide <code>17-sessions.md</code>. Researched at Grok Build commit <code>c68e39f60462f28d9be5e683d9cbe2c57b1a5027</code>.</blockquote>
+
+
+    <h2>2. Use append-oriented JSONL</h2>
+    <p><strong>The contract.</strong> Conversation and UI updates should persist incrementally instead of rewriting one fragile document.</p>
+    <p><strong>What the source shows.</strong> The session format includes <code>updates.jsonl</code> and <code>chat_history.jsonl</code>; the guide calls updates authoritative for resume. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.</p>
+    <p><strong>Why it matters.</strong> A partial final line is easier to detect/recover than a corrupted monolithic file. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.</p>
+    <p><strong>Failure drill.</strong> Disk-full or abrupt termination still requires validation and clear error reporting. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.</p>
+    <blockquote><strong>Source note:</strong> Session guide file-format section. Researched at Grok Build commit <code>c68e39f60462f28d9be5e683d9cbe2c57b1a5027</code>.</blockquote>
+
+
+    <h2>3. Persist plans and control metadata</h2>
+    <p><strong>The contract.</strong> Plan state, signals, feedback, compaction, and child sessions need durable artifacts beside chat.</p>
+    <p><strong>What the source shows.</strong> The guide lists <code>plan.json</code>, rewind JSONL, signals, feedback, checkpoints, and subagent folders. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.</p>
+    <p><strong>Why it matters.</strong> A resumed agent needs more than words to reconstruct operational state. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.</p>
+    <p><strong>Failure drill.</strong> Artifacts can disagree after partial failure; loaders need ordering and authoritative-source rules. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.</p>
+    <blockquote><strong>Source note:</strong> Session guide directory inventory. Researched at Grok Build commit <code>c68e39f60462f28d9be5e683d9cbe2c57b1a5027</code>.</blockquote>
+
+
+    <h2>4. Distinguish create, resume, and continue</h2>
+    <p><strong>The contract.</strong> CLI flags must not silently upsert or overwrite a session.</p>
+    <p><strong>What the source shows.</strong> Headless <code>-s</code> creates a new UUID session; <code>-r</code> resumes an existing ID; <code>-c</code> continues the latest; fork creates a new lineage. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.</p>
+    <p><strong>Why it matters.</strong> Explicit semantics prevent accidental history merging in scripts. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.</p>
+    <p><strong>Failure drill.</strong> Using an old assumption that <code>-s</code> resumes now produces errors; automation must follow current docs. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.</p>
+    <blockquote><strong>Source note:</strong> Headless guide session-management section. Researched at Grok Build commit <code>c68e39f60462f28d9be5e683d9cbe2c57b1a5027</code>.</blockquote>
+
+
+    <h2>5. Compact as a checkpointed projection</h2>
+    <p><strong>The contract.</strong> Context reduction should retain a recoverable raw history and record its summary boundary.</p>
+    <p><strong>What the source shows.</strong> Session folders include compaction checkpoints; the loop can auto-compact and the user can invoke <code>/compact</code>. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.</p>
+    <p><strong>Why it matters.</strong> The model continues under a smaller context without deleting the audit trail. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.</p>
+    <p><strong>Failure drill.</strong> The next model sees the projection, not raw detail; critical constraints need durable reinjection or artifacts. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.</p>
+    <blockquote><strong>Source note:</strong> Session and compaction guides/source. Researched at Grok Build commit <code>c68e39f60462f28d9be5e683d9cbe2c57b1a5027</code>.</blockquote>
+
+
+    <h2>6. Capture prompt-level rewind points</h2>
+    <p><strong>The contract.</strong> A selected prompt should map to before/after tracked files and a conversation boundary.</p>
+    <p><strong>What the source shows.</strong> <code>RewindPoint</code> stores prompt-indexed file state and <code>/rewind</code> restores files/truncates conversation. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.</p>
+    <p><strong>Why it matters.</strong> The user can abandon a failed branch of work without asking the model to reverse itself manually. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.</p>
+    <p><strong>Failure drill.</strong> External or untracked effects remain; modifications made outside the agent can conflict with restoration. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.</p>
+    <blockquote><strong>Source note:</strong> <code>xai-grok-workspace/src/session/file_state.rs</code> and session guide. Researched at Grok Build commit <code>c68e39f60462f28d9be5e683d9cbe2c57b1a5027</code>.</blockquote>
+
+
+    <h2>7. Handle interrupts with explicit exit semantics</h2>
+    <p><strong>The contract.</strong> SIGINT/SIGTERM should cancel work, persist what is safe, and return distinguishable exit codes.</p>
+    <p><strong>What the source shows.</strong> The headless guide documents 130 for SIGINT, 143 for SIGTERM, session resume commands, and cancellation behavior. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.</p>
+    <p><strong>Why it matters.</strong> CI can distinguish interruption from ordinary failure and choose a controlled resume policy. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.</p>
+    <p><strong>Failure drill.</strong> Automatically resuming every interrupted mutation can duplicate side effects; inspect last admitted tool state first. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.</p>
+    <blockquote><strong>Source note:</strong> Headless guide interrupted-runs section. Researched at Grok Build commit <code>c68e39f60462f28d9be5e683d9cbe2c57b1a5027</code>.</blockquote>
+
+
+    <h2>8. Keep sandbox identity fixed on resume</h2>
+    <p><strong>The contract.</strong> A session must not silently return under a broader OS capability profile.</p>
+    <p><strong>What the source shows.</strong> The sandbox guide says the starting profile is stored and differing resume profiles are refused. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.</p>
+    <p><strong>Why it matters.</strong> Durability preserves the original trust boundary as well as chat state. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.</p>
+    <p><strong>Failure drill.</strong> A changed custom-profile definition can still affect interpretation; pin configuration and start a new session when policy changes materially. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.</p>
+    <blockquote><strong>Source note:</strong> User guide <code>18-sandbox.md</code>, resuming sessions. Researched at Grok Build commit <code>c68e39f60462f28d9be5e683d9cbe2c57b1a5027</code>.</blockquote>
+
+
+    <h2 id="worked-example">Worked example — interrupt and safely resume a headless review</h2>
+    <p>Create a session, capture its ID early, interrupt a long read-only review, and resume only after inspecting state.</p>
+    <ol><li>Use an isolated checkout and read-only tool set.</li>
+<li>Start streaming JSON and capture the session ID/end/error events.</li>
+<li>Send SIGINT through the CI cancellation mechanism.</li>
+<li>Require exit status 130.</li>
+<li>Inspect working tree and session tail.</li>
+<li>Confirm no mutation-capable task remains alive.</li>
+<li>Resume by explicit ID with a prompt that restates acceptance criteria.</li>
+<li>Archive both event streams and final evidence.</li></ol>
+    <pre class="code" data-lang="bash">grok -p &quot;Audit this package and cite each finding.&quot; \
+  --tools &quot;read_file,grep,list_dir&quot; \
+  --output-format streaming-json
+# After a controlled interrupt:
+grok -p &quot;Continue the audit; first summarize persisted state.&quot; --resume &quot;$SESSION_ID&quot;</pre>
+    <p>The control system must extract a real session ID from output. The example does not imply an ID exists before session creation succeeds.</p>
+    <div class="bm-fix"><strong>Verification gate.</strong> Check exit code, unchanged Git tree, session tail integrity, explicit resumed ID, and no duplicated findings caused by replay.</div>
+    <p>The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.</p>
+
+
+    <h2 id="engineering-audit">Engineering audit — boundaries, evidence, and failure</h2>
+    <table class="papers">
+      <thead><tr><th>Review question</th><th>Source-backed answer</th><th>Operational consequence</th></tr></thead>
+      <tbody><tr><td><strong>What is authoritative?</strong></td><td>Append-oriented updates for resume; summaries are projections.</td><td>Keep raw logs.</td></tr>
+<tr><td><strong>What resumes?</strong></td><td>Conversation/session state under the same profile.</td><td>Restate acceptance conditions after inspection.</td></tr>
+<tr><td><strong>What rewinds?</strong></td><td>Tracked files and conversation boundary.</td><td>Inventory external effects separately.</td></tr>
+<tr><td><strong>What reproduces?</strong></td><td>Only what environment and artifacts make repeatable.</td><td>Pin dependencies and base SHA.</td></tr></tbody>
+    </table>
+    <p>Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.</p>
+    <h3>What to observe in production</h3>
+    <ul><li>Session/project identity, base commit, creation/resume/fork lineage.</li>
+<li>Last complete JSONL event and flush outcome.</li>
+<li>Compaction/rewind point IDs and affected files.</li>
+<li>Interrupt signal, exit code, live task inventory, and resume decision.</li></ul>
+    <p>These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.</p>
+
+
+    <h2 id="production-review">Production review checklist</h2>
+  <p>A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.</p>
+  <p>Test the negative path. A high-value drill for this chapter is: <strong>Moving or cloning repositories can change identity assumptions; do not rely on path alone for audit provenance.</strong> Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.</p>
+  <p>Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.</p>
+  <p>Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.</p>
+  <p>Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.</p>
+  <h3>Source verification notebook</h3><ol><li><strong>Store sessions by project and ID:</strong> reopen User guide <code>17-sessions.md</code>. Confirm the symbol or field still exists, then reproduce this boundary: Moving or cloning repositories can change identity assumptions; do not rely on path alone for audit provenance.</li>
+<li><strong>Use append-oriented JSONL:</strong> reopen Session guide file-format section. Confirm the symbol or field still exists, then reproduce this boundary: Disk-full or abrupt termination still requires validation and clear error reporting.</li>
+<li><strong>Persist plans and control metadata:</strong> reopen Session guide directory inventory. Confirm the symbol or field still exists, then reproduce this boundary: Artifacts can disagree after partial failure; loaders need ordering and authoritative-source rules.</li>
+<li><strong>Distinguish create, resume, and continue:</strong> reopen Headless guide session-management section. Confirm the symbol or field still exists, then reproduce this boundary: Using an old assumption that <code>-s</code> resumes now produces errors; automation must follow current docs.</li>
+<li><strong>Compact as a checkpointed projection:</strong> reopen Session and compaction guides/source. Confirm the symbol or field still exists, then reproduce this boundary: The next model sees the projection, not raw detail; critical constraints need durable reinjection or artifacts.</li>
+<li><strong>Capture prompt-level rewind points:</strong> reopen <code>xai-grok-workspace/src/session/file_state.rs</code> and session guide. Confirm the symbol or field still exists, then reproduce this boundary: External or untracked effects remain; modifications made outside the agent can conflict with restoration.</li>
+<li><strong>Handle interrupts with explicit exit semantics:</strong> reopen Headless guide interrupted-runs section. Confirm the symbol or field still exists, then reproduce this boundary: Automatically resuming every interrupted mutation can duplicate side effects; inspect last admitted tool state first.</li>
+<li><strong>Keep sandbox identity fixed on resume:</strong> reopen User guide <code>18-sandbox.md</code>, resuming sessions. Confirm the symbol or field still exists, then reproduce this boundary: A changed custom-profile definition can still affect interpretation; pin configuration and start a new session when policy changes materially.</li></ol>
+  <p>Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.</p>
+  <h2 id="contract-lab">Contract validation lab</h2>
+  <p>The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.</p>
+  <p>For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.</p>
+  <h3>Exercise 1 — Store sessions by project and ID</h3>
+    <p><strong>Setup and stimulus.</strong> Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Each workspace needs a stable directory and unique session identity. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.</p>
+    <p><strong>Expected evidence.</strong> The implementation evidence is The guide documents encoded-cwd/session-ID directories beneath <code>~/.grok/sessions</code>. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Moving or cloning repositories can change identity assumptions; do not rely on path alone for audit provenance. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.</p>
+    <p><strong>Engineering interpretation.</strong> Resume and search can scope work to the repository instead of mixing unrelated histories. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.</p>
+<h3>Exercise 2 — Use append-oriented JSONL</h3>
+    <p><strong>Setup and stimulus.</strong> Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Conversation and UI updates should persist incrementally instead of rewriting one fragile document. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.</p>
+    <p><strong>Expected evidence.</strong> The implementation evidence is The session format includes <code>updates.jsonl</code> and <code>chat_history.jsonl</code>; the guide calls updates authoritative for resume. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Disk-full or abrupt termination still requires validation and clear error reporting. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.</p>
+    <p><strong>Engineering interpretation.</strong> A partial final line is easier to detect/recover than a corrupted monolithic file. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.</p>
+<h3>Exercise 3 — Persist plans and control metadata</h3>
+    <p><strong>Setup and stimulus.</strong> Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Plan state, signals, feedback, compaction, and child sessions need durable artifacts beside chat. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.</p>
+    <p><strong>Expected evidence.</strong> The implementation evidence is The guide lists <code>plan.json</code>, rewind JSONL, signals, feedback, checkpoints, and subagent folders. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Artifacts can disagree after partial failure; loaders need ordering and authoritative-source rules. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.</p>
+    <p><strong>Engineering interpretation.</strong> A resumed agent needs more than words to reconstruct operational state. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.</p>
+<h3>Exercise 4 — Distinguish create, resume, and continue</h3>
+    <p><strong>Setup and stimulus.</strong> Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: CLI flags must not silently upsert or overwrite a session. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.</p>
+    <p><strong>Expected evidence.</strong> The implementation evidence is Headless <code>-s</code> creates a new UUID session; <code>-r</code> resumes an existing ID; <code>-c</code> continues the latest; fork creates a new lineage. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Using an old assumption that <code>-s</code> resumes now produces errors; automation must follow current docs. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.</p>
+    <p><strong>Engineering interpretation.</strong> Explicit semantics prevent accidental history merging in scripts. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.</p>
+<h3>Exercise 5 — Compact as a checkpointed projection</h3>
+    <p><strong>Setup and stimulus.</strong> Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Context reduction should retain a recoverable raw history and record its summary boundary. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.</p>
+    <p><strong>Expected evidence.</strong> The implementation evidence is Session folders include compaction checkpoints; the loop can auto-compact and the user can invoke <code>/compact</code>. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: The next model sees the projection, not raw detail; critical constraints need durable reinjection or artifacts. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.</p>
+    <p><strong>Engineering interpretation.</strong> The model continues under a smaller context without deleting the audit trail. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.</p>
+<h3>Exercise 6 — Capture prompt-level rewind points</h3>
+    <p><strong>Setup and stimulus.</strong> Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A selected prompt should map to before/after tracked files and a conversation boundary. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.</p>
+    <p><strong>Expected evidence.</strong> The implementation evidence is <code>RewindPoint</code> stores prompt-indexed file state and <code>/rewind</code> restores files/truncates conversation. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: External or untracked effects remain; modifications made outside the agent can conflict with restoration. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.</p>
+    <p><strong>Engineering interpretation.</strong> The user can abandon a failed branch of work without asking the model to reverse itself manually. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.</p>
+<h3>Exercise 7 — Handle interrupts with explicit exit semantics</h3>
+    <p><strong>Setup and stimulus.</strong> Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: SIGINT/SIGTERM should cancel work, persist what is safe, and return distinguishable exit codes. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.</p>
+    <p><strong>Expected evidence.</strong> The implementation evidence is The headless guide documents 130 for SIGINT, 143 for SIGTERM, session resume commands, and cancellation behavior. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Automatically resuming every interrupted mutation can duplicate side effects; inspect last admitted tool state first. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.</p>
+    <p><strong>Engineering interpretation.</strong> CI can distinguish interruption from ordinary failure and choose a controlled resume policy. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.</p>
+<h3>Exercise 8 — Keep sandbox identity fixed on resume</h3>
+    <p><strong>Setup and stimulus.</strong> Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A session must not silently return under a broader OS capability profile. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.</p>
+    <p><strong>Expected evidence.</strong> The implementation evidence is The sandbox guide says the starting profile is stored and differing resume profiles are refused. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A changed custom-profile definition can still affect interpretation; pin configuration and start a new session when policy changes materially. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.</p>
+    <p><strong>Engineering interpretation.</strong> Durability preserves the original trust boundary as well as chat state. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.</p>
+  <p>Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.</p><h2 id="limits">Limits and uncertainty</h2>
+    <div class="bm-warn"><strong>Audit completeness.</strong> A session cannot record opaque hosted internals or side effects from tools that do not report them.</div>
+<div class="bm-warn"><strong>Rewind conflicts.</strong> External file modifications can make restoration destructive; preview affected paths.</div>
+<div class="bm-warn"><strong>Reproducibility.</strong> Saved chat does not freeze dependencies, services, clocks, or credentials.</div>
+    <p>The public repository is unusually detailed, but it is not the complete deployed product. The snapshot has one visible public commit, so it cannot support a rich historical explanation of why every boundary evolved. Hosted xAI model serving, account systems, and production topology remain outside this study. Where code and guide differ, this series gives the pinned implementation priority and marks documentation-only behavior instead of silently merging versions.</p>
+
+
+    <h2 id="faq">FAQ</h2>
+    <details class="faq"><summary>Does -s resume?</summary><p>No. In the researched guide it creates a new UUID session. Use <code>-r</code> or <code>-c</code>.</p></details>
+<details class="faq"><summary>Is updates.jsonl a UI log only?</summary><p>The guide describes it as authoritative for resume, making it part of runtime state.</p></details>
+<details class="faq"><summary>Does rewind restore remote actions?</summary><p>No. It targets tracked file and conversation state.</p></details>
+<details class="faq"><summary>Can I resume with a different sandbox?</summary><p>No. A differing profile is refused; start a new session.</p></details>
+<details class="faq"><summary>Is compaction deletion?</summary><p>It changes the model-visible projection while raw session artifacts/checkpoints support audit and recovery.</p></details>
+
+
+    <h2 id="takeaways">Key takeaways</h2>
+    <ul><li>Sessions are durable evidence bundles.</li>
+<li>Create, resume, continue, and fork have distinct semantics.</li>
+<li>Compaction is a lossy model projection over retained artifacts.</li>
+<li>Rewind covers tracked files and conversation, not the world.</li>
+<li>Resume should preserve original safety assumptions.</li></ul>
+    <h2 id="references">References &amp; source notes</h2>
+    <ul class="reflist"><li><a href="https://github.com/xai-org/grok-build/tree/c68e39f60462f28d9be5e683d9cbe2c57b1a5027" target="_blank" rel="noopener">Pinned Grok Build repository</a> <span>— default branch snapshot researched July 16, 2026.</span></li>
+<li><a href="https://github.com/xai-org/grok-build/blob/c68e39f60462f28d9be5e683d9cbe2c57b1a5027/README.md" target="_blank" rel="noopener">Grok Build README</a> <span>— first-party overview and source-build entry points.</span></li>
+<li><a href="https://github.com/xai-org/grok-build/blob/c68e39f60462f28d9be5e683d9cbe2c57b1a5027/crates/codegen/xai-grok-pager/docs/user-guide/17-sessions.md" target="_blank" rel="noopener">Session guide</a> <span>— format, resume, compact, rewind.</span></li>
+<li><a href="https://github.com/xai-org/grok-build/blob/c68e39f60462f28d9be5e683d9cbe2c57b1a5027/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md" target="_blank" rel="noopener">Headless guide</a> <span>— session and interrupt semantics.</span></li></ul>
+    <p class="bm-note"><strong>Freshness boundary.</strong> Grok Build claims in this article are pinned to <code>c68e39f60462f28d9be5e683d9cbe2c57b1a5027</code>. Pi comparison claims, where present, are pinned to <code>97f9978fa66685f78d2da19ae22e20c46d125f74</code>; Hermes claims are pinned to <code>c9c9bb33fcc6ab479846a1c496a6e9efe2c1c7d4</code>. Recheck paths, symbols, commands, and defaults if those branches advance.</p>
+
+  </div><div class="post-nav"><a href="grok-build-8-planning-subagents.html">← Article 8 — Orchestration</a><a href="grok-build-10-safety.html">Article 10 — Safety →</a></div></article><footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div>
+<aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside></div>
+<script src="../posts.js?v=2"></script><script src="../stats.js"></script><script src="../app.js?v=30"></script><script defer src="../settings.js?v=10"></script><script type="module" src="../highlighter.js"></script><script defer src="../reader.js"></script></body></html>

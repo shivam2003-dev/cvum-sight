@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # Context Engineering with Rules, Skills, and Memory
 
-Grok Build context is assembled, not pasted. Layered project rules, skills, history, retrieved memory, tool schemas, and compaction compete for a finite request. They differ in authority, lifetime, and trust; merging them into one 'prompt' hides the engineering problem.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 06
+
+The agent follows an old build instruction even though the repository has moved to a new command. Mira finds the stale rule in project context. The model did not forget randomly; it was faithfully given the wrong memory.
+
+</div>
+
+**The question:** How does the harness decide what the model should know right now?
+
+## Start from first principles
+
+Context is a packing problem. A traveler cannot carry the whole house, so someone chooses the passport, map, tools, and notes. Bad selection can defeat even an excellent traveler.
 
 The earlier context chapter defined `prompt ⊂ context ⊂ harness`. Grok Build exposes the machinery behind that relation.
 
@@ -16,13 +28,41 @@ The earlier context chapter defined `prompt ⊂ context ⊂ harness`. Grok Build
 
 Skills add procedure. Experimental memory adds cross-session recall. Compaction preserves usability by losing detail and reinjecting selected durable instructions. Every mechanism can help, conflict, or be poisoned.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *context-selection* term without pretending the other three disappear.
+**In one sentence.** Grok Build context is assembled, not pasted. Layered project rules, skills, history, retrieved memory, tool schemas, and compaction compete for a finite request. They differ in authority, lifetime, and trust; merging them into one 'prompt' hides the engineering problem.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**How does the harness decide what the model should know right now?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear context-selection boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *context-selection*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Separate context by provenance and lifetime. Rules are filesystem instructions; skills are reusable procedures; history is causal evidence; memory is retrieved recall; tool schemas are available actions; compaction is a projection.
 
@@ -38,109 +78,141 @@ Fig 6.1 — Several provenance layers are selected into one finite model request
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Build an explicit PromptContext
+## 1. The next clue — Build an explicit PromptContext
 
-**The contract.** Prompt assembly should name sources and audience instead of concatenating invisible strings.
+Mira now needs one small mechanism: Prompt assembly should name sources and audience instead of concatenating invisible strings.
 
-**What the source shows.** `PromptContext` includes main/subagent audience, body/template, discovered files, personas, memory, and cwd. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. `PromptContext` includes main/subagent audience, body/template, discovered files, personas, memory, and cwd. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** A structure makes missing or misordered context diagnosable. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Logging one rendered prompt can expose secrets; preserve provenance/size with redaction. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** A structure makes missing or misordered context diagnosable.
 
-> **Source note:** `xai-grok-agent/src/prompt/context.rs::PromptContext`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Discover rules broad to specific
+Then she tests the unhappy path: Logging one rendered prompt can expose secrets; preserve provenance/size with redaction. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Global, repo-root, intermediate, and cwd guidance should compose predictably.
+> **Source:** `xai-grok-agent/src/prompt/context.rs::PromptContext`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** `agents_md.rs` orders root toward cwd, deduplicates canonical paths, and formats deeper precedence reminders. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Discover rules broad to specific
 
-**Why it matters.** Monorepos need organization rules plus local overrides. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Global, repo-root, intermediate, and cwd guidance should compose predictably.
 
-**Failure drill.** Symlinks and compatibility files can create unexpected duplicates or origins; inspect effective discovery. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. `agents_md.rs` orders root toward cwd, deduplicates canonical paths, and formats deeper precedence reminders. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `xai-grok-agent/src/prompt/agents_md.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Treat repository instructions as untrusted
+**Why the story changes here.** Monorepos need organization rules plus local overrides.
 
-**The contract.** Loaded instructions can shape behavior but should not grant OS authority by themselves.
+</div>
 
-**What the source shows.** Rules enter context while actions still pass exposure, hooks, permissions, workspace, and sandbox boundaries. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Symlinks and compatibility files can create unexpected duplicates or origins; inspect effective discovery. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Instruction and capability are correctly separated. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `xai-grok-agent/src/prompt/agents_md.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** A malicious repository can request secrets; broad approval plus ambient credentials converts injection into impact. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Treat repository instructions as untrusted
 
-> **Source note:** AGENTS discovery and tool authorization paths. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Loaded instructions can shape behavior but should not grant OS authority by themselves.
 
-## 4. Use skills for procedural context
+She follows that responsibility into the repository. Rules enter context while actions still pass exposure, hooks, permissions, workspace, and sandbox boundaries. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** A skill packages `SKILL.md` frontmatter/instructions and optional resources.
+<div class="story-lesson">
 
-**What the source shows.** The guide lists Grok, agents, Claude, Cursor, cwd/repo/user discovery with priority and name deduplication. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Instruction and capability are correctly separated.
 
-**Why it matters.** Task procedures stay out of permanent context until relevant. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** A vague description triggers too broadly; scripts still require normal tool policy. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: A malicious repository can request secrets; broad approval plus ambient credentials converts injection into impact. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** User guide `08-skills.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** AGENTS discovery and tool authorization paths. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Compact honestly
+## 4. The next clue — Use skills for procedural context
 
-**The contract.** Long sessions need a bounded projection plus durable instruction reintroduction.
+Mira now needs one small mechanism: A skill packages `SKILL.md` frontmatter/instructions and optional resources.
 
-**What the source shows.** The turn loop triggers compaction; `xai-grok-compaction` assembles compacted context with AGENTS material. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. The guide lists Grok, agents, Claude, Cursor, cwd/repo/user discovery with priority and name deduplication. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Continuation remains possible without carrying every old token. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Exact logs, rejected hypotheses, and subtle constraints can disappear. Persist raw artifacts. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Task procedures stay out of permanent context until relevant.
 
-> **Source note:** `xai-grok-compaction/src/code_compaction/assemble.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Gate experimental memory
+Then she tests the unhappy path: A vague description triggers too broadly; scripts still require normal tool policy. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Cross-session storage and retrieval should be opt-in.
+> **Source:** User guide `08-skills.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** The memory guide marks the feature experimental and disabled by default; storage uses Markdown plus indexes. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Compact honestly
 
-**Why it matters.** Persistence changes privacy, staleness, and injection risk beyond one session. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Long sessions need a bounded projection plus durable instruction reintroduction.
 
-**Failure drill.** Users can mistake recalled text for truth or forget sensitive material survives. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The turn loop triggers compaction; `xai-grok-compaction` assembles compacted context with AGENTS material. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** User guide `13-memory.md` and `xai-grok-memory/src/storage.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Interpret hybrid search carefully
+**Why the story changes here.** Continuation remains possible without carrying every old token.
 
-**The contract.** Lexical and optional vector evidence should retain source identity and scoring context.
+</div>
 
-**What the source shows.** `search.rs` merges FTS/vector candidates with weights, decay, and optional MMR; branches differ when only one signal exists. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Exact logs, rejected hypotheses, and subtle constraints can disappear. Persist raw artifacts. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Identifiers and semantic similarity require different retrieval strengths. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `xai-grok-compaction/src/code_compaction/assemble.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** A single score is not calibrated probability of truth. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Gate experimental memory
 
-> **Source note:** `xai-grok-memory/src/search.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Cross-session storage and retrieval should be opt-in.
 
-## 8. Consolidate under quality gates
+She follows that responsibility into the repository. The memory guide marks the feature experimental and disabled by default; storage uses Markdown plus indexes. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Long-term synthesis needs time/session gates, bounded input/output, and validation.
+<div class="story-lesson">
 
-**What the source shows.** `dream.rs` gates consolidation, invokes an LLM prompt, caps material, and checks quality. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Persistence changes privacy, staleness, and injection risk beyond one session.
 
-**Why it matters.** Consolidation can reduce duplication and surface durable lessons. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** A summary can amplify a bad memory; retain provenance and correction/deletion paths. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Users can mistake recalled text for truth or forget sensitive material survives. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `xai-grok-memory/src/dream.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** User guide `13-memory.md` and `xai-grok-memory/src/storage.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — project rules plus one narrow skill
+## 7. The next clue — Interpret hybrid search carefully
 
-Create durable repository guidance and a task package that activates only for release notes.
+Mira now needs one small mechanism: Lexical and optional vector evidence should retain source identity and scoring context.
+
+She follows that responsibility into the repository. `search.rs` merges FTS/vector candidates with weights, decay, and optional MMR; branches differ when only one signal exists. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Identifiers and semantic similarity require different retrieval strengths.
+
+</div>
+
+Then she tests the unhappy path: A single score is not calibrated probability of truth. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `xai-grok-memory/src/search.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Consolidate under quality gates
+
+Mira now needs one small mechanism: Long-term synthesis needs time/session gates, bounded input/output, and validation.
+
+She follows that responsibility into the repository. `dream.rs` gates consolidation, invokes an LLM prompt, caps material, and checks quality. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Consolidation can reduce duplication and surface durable lessons.
+
+</div>
+
+Then she tests the unhappy path: A summary can amplify a bad memory; retain provenance and correction/deletion paths. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `xai-grok-memory/src/dream.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — project rules plus one narrow skill
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Create durable repository guidance and a task package that activates only for release notes.
 
 1.  Add root `AGENTS.md` with invariants and verification.
 2.  Add deeper component guidance only for local commands.
@@ -158,17 +230,19 @@ grok inspect
 grok
 ```
 
-`grok inspect` is documented for effective components; prose inside the files remains team-authored policy, not an official template.
+**What she learns.** `grok inspect` is documented for effective components; prose inside the files remains team-authored policy, not an official template.
 
 <div class="bm-fix">
 
-**Verification gate.** Confirm root-to-cwd order, one skill identity, no secrets, and required verification in the transcript.
+**The proof she demands.** Confirm root-to-cwd order, one skill identity, no secrets, and required verification in the transcript.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -177,113 +251,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **What survives compaction?** | Selected summary plus durable context. | Persist raw artifacts separately. |
 | **What grants authority?** | Tool/environment policy, not context alone. | Contain prompt injection with capability boundaries. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Rule path, precedence, digest, and trust origin.
 - Skill name, source, trigger, active state, and resources read.
 - Context size by source category per model round.
 - Memory query, source IDs, scores, age, and correction/deletion events.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **Logging one rendered prompt can expose secrets; preserve provenance/size with redaction.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Build an explicit PromptContext:** reopen `xai-grok-agent/src/prompt/context.rs::PromptContext`. Confirm the symbol or field still exists, then reproduce this boundary: Logging one rendered prompt can expose secrets; preserve provenance/size with redaction.
-2.  **Discover rules broad to specific:** reopen `xai-grok-agent/src/prompt/agents_md.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Symlinks and compatibility files can create unexpected duplicates or origins; inspect effective discovery.
-3.  **Treat repository instructions as untrusted:** reopen AGENTS discovery and tool authorization paths. Confirm the symbol or field still exists, then reproduce this boundary: A malicious repository can request secrets; broad approval plus ambient credentials converts injection into impact.
-4.  **Use skills for procedural context:** reopen User guide `08-skills.md`. Confirm the symbol or field still exists, then reproduce this boundary: A vague description triggers too broadly; scripts still require normal tool policy.
-5.  **Compact honestly:** reopen `xai-grok-compaction/src/code_compaction/assemble.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Exact logs, rejected hypotheses, and subtle constraints can disappear. Persist raw artifacts.
-6.  **Gate experimental memory:** reopen User guide `13-memory.md` and `xai-grok-memory/src/storage.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Users can mistake recalled text for truth or forget sensitive material survives.
-7.  **Interpret hybrid search carefully:** reopen `xai-grok-memory/src/search.rs`. Confirm the symbol or field still exists, then reproduce this boundary: A single score is not calibrated probability of truth.
-8.  **Consolidate under quality gates:** reopen `xai-grok-memory/src/dream.rs`. Confirm the symbol or field still exists, then reproduce this boundary: A summary can amplify a bad memory; retain provenance and correction/deletion paths.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Build an explicit PromptContext
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Prompt assembly should name sources and audience instead of concatenating invisible strings. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `PromptContext` includes main/subagent audience, body/template, discovered files, personas, memory, and cwd. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Logging one rendered prompt can expose secrets; preserve provenance/size with redaction. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** A structure makes missing or misordered context diagnosable. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Discover rules broad to specific
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Global, repo-root, intermediate, and cwd guidance should compose predictably. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `agents_md.rs` orders root toward cwd, deduplicates canonical paths, and formats deeper precedence reminders. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Symlinks and compatibility files can create unexpected duplicates or origins; inspect effective discovery. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Monorepos need organization rules plus local overrides. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Treat repository instructions as untrusted
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Loaded instructions can shape behavior but should not grant OS authority by themselves. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Rules enter context while actions still pass exposure, hooks, permissions, workspace, and sandbox boundaries. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A malicious repository can request secrets; broad approval plus ambient credentials converts injection into impact. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Instruction and capability are correctly separated. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Use skills for procedural context
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A skill packages `SKILL.md` frontmatter/instructions and optional resources. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide lists Grok, agents, Claude, Cursor, cwd/repo/user discovery with priority and name deduplication. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A vague description triggers too broadly; scripts still require normal tool policy. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Task procedures stay out of permanent context until relevant. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Compact honestly
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Long sessions need a bounded projection plus durable instruction reintroduction. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The turn loop triggers compaction; `xai-grok-compaction` assembles compacted context with AGENTS material. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Exact logs, rejected hypotheses, and subtle constraints can disappear. Persist raw artifacts. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Continuation remains possible without carrying every old token. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Gate experimental memory
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Cross-session storage and retrieval should be opt-in. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The memory guide marks the feature experimental and disabled by default; storage uses Markdown plus indexes. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Users can mistake recalled text for truth or forget sensitive material survives. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Persistence changes privacy, staleness, and injection risk beyond one session. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Interpret hybrid search carefully
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Lexical and optional vector evidence should retain source identity and scoring context. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `search.rs` merges FTS/vector candidates with weights, decay, and optional MMR; branches differ when only one signal exists. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A single score is not calibrated probability of truth. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Identifiers and semantic similarity require different retrieval strengths. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Consolidate under quality gates
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Long-term synthesis needs time/session gates, bounded input/output, and validation. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `dream.rs` gates consolidation, invokes an LLM prompt, caps material, and checks quality. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A summary can amplify a bad memory; retain provenance and correction/deletion paths. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Consolidation can reduce duplication and surface durable lessons. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -328,6 +305,12 @@ No. It means semantic proximity under an index. Verify against current sources.
 Can compaction lose a requirement?
 
 Yes. Repeat critical acceptance criteria and preserve raw evidence.
+
+## What changed for Mira
+
+Mira treats rules, skills, session history, compaction, and memory as separate context sources with precedence and freshness risks.
+
+**Next:** Once context can be extended, the team needs to choose among skills, hooks, plugins, and MCP.
 
 ## Key takeaways
 

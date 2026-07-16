@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # ACP and Grok Build as an Embeddable Agent Runtime
 
-ACP separates agent semantics from one UI. Grok Build can run persistent JSON-RPC over stdio, expose server/relay modes, create or load sessions, stream structured updates, and request permission through clients. Its own headless mode is a concrete ACP consumer.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 12
+
+An editor team wants Grok Build inside its own interface. Reimplementing the agent loop would fork behavior and safety policy. They need a protocol that lets the editor remain the client while Grok Build remains the runtime.
+
+</div>
+
+**The question:** How can another application drive an agent without becoming that agent?
+
+## Start from first principles
+
+ACP is like a standardized cockpit connection. The client owns buttons and displays; the runtime owns the engine and flight logic; messages define what can cross between them.
 
 An agent becomes infrastructure when editors, CI, and custom applications can drive it without scraping terminal output.
 
@@ -16,13 +28,41 @@ The Agent Client Protocol supplies that boundary. The shell hosts sessions; clie
 
 Embedding transfers authority to the client. A caller choosing cwd, plugins, metadata, and approvals belongs in the trusted computing base.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *protocol-integration* term without pretending the other three disappear.
+**In one sentence.** ACP separates agent semantics from one UI. Grok Build can run persistent JSON-RPC over stdio, expose server/relay modes, create or load sessions, stream structured updates, and request permission through clients. Its own headless mode is a concrete ACP consumer.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**How can another application drive an agent without becoming that agent?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear protocol-integration boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *protocol-integration*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 ACP is a control-plane protocol around the turn loop. It carries lifecycle and notifications; it does not itself execute tools.
 
@@ -38,109 +78,141 @@ Fig 12.1 — ACP decouples clients from the shared shell, tool, and workspace ru
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Run persistent stdio
+## 1. The next clue — Run persistent stdio
 
-**The contract.** Exchange JSON-RPC over stdin/stdout across turns.
+Mira now needs one small mechanism: Exchange JSON-RPC over stdin/stdout across turns.
 
-**What the source shows.** The guide documents `grok agent stdio` as primary integration. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. The guide documents `grok agent stdio` as primary integration. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Clients receive structured sessions without embedding Rust. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Stray stdout logging corrupts framing; use stderr. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Clients receive structured sessions without embedding Rust.
 
-> **Source note:** User guide `15-agent-mode.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Negotiate capabilities
+Then she tests the unhappy path: Stray stdout logging corrupts framing; use stderr. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Initialize version/features before session work.
+> **Source:** User guide `15-agent-mode.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** The client example sends initialize data and lists SDKs. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Negotiate capabilities
 
-**Why it matters.** Negotiation prevents unsupported assumptions. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Initialize version/features before session work.
 
-**Failure drill.** Ignoring response yields malformed calls or missing UI behavior. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The client example sends initialize data and lists SDKs. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** ACP basics/example. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Authenticate before prompt
+**Why the story changes here.** Negotiation prevents unsupported assumptions.
 
-**The contract.** Complete supported auth lifecycle outside model reasoning.
+</div>
 
-**What the source shows.** The headless client sends initialize/auth before session materialization. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Ignoring response yields malformed calls or missing UI behavior. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Auth is reusable across clients and not prompt content. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** ACP basics/example. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Do not leak long-lived secrets to prompt/tool environments. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Authenticate before prompt
 
-> **Source note:** `headless.rs::run_single_turn`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Complete supported auth lifecycle outside model reasoning.
 
-## 4. Create or load explicit sessions
+She follows that responsibility into the repository. The headless client sends initialize/auth before session materialization. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Choose validated cwd and lifecycle around a concrete ID.
+<div class="story-lesson">
 
-**What the source shows.** ACP session/new/load flows and metadata configure session behavior. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Auth is reusable across clients and not prompt content.
 
-**Why it matters.** Continuity is a protocol choice, not process accident. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Prevent cross-tenant session IDs and path traversal. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Do not leak long-lived secrets to prompt/tool environments. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** Agent-mode guide and ACP implementation. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `headless.rs::run_single_turn`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Stream typed updates
+## 4. The next clue — Create or load explicit sessions
 
-**The contract.** Text, thought, tool, plan, permission, and terminal events remain structured.
+Mira now needs one small mechanism: Choose validated cwd and lifecycle around a concrete ID.
 
-**What the source shows.** The guide lists `session/update` variants and notifications. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. ACP session/new/load flows and metadata configure session behavior. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Clients render and persist without terminal parsing. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Tolerate unknown variants and preserve ordering/correlation. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Continuity is a protocol choice, not process accident.
 
-> **Source note:** Agent-mode streaming section. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Route permission through client
+Then she tests the unhappy path: Prevent cross-tenant session IDs and path traversal. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Interactive clients display/answer requests while hard policy remains server-side.
+> **Source:** Agent-mode guide and ACP implementation. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** ACP carries permission interaction and the shell uses shared permission manager. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Stream typed updates
 
-**Why it matters.** Approval UX belongs to the active client. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Text, thought, tool, plan, permission, and terminal events remain structured.
 
-**Failure drill.** A malicious client can auto-approve; rules and sandbox enforce hard limits. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The guide lists `session/update` variants and notifications. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** ACP session and permissions code. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Feature-detect x.ai extensions
+**Why the story changes here.** Clients render and persist without terminal parsing.
 
-**The contract.** Vendor methods remain namespaced and optional.
+</div>
 
-**What the source shows.** The guide lists methods/notifications under `x.ai/`. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Tolerate unknown variants and preserve ordering/correlation. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Base interoperability survives alongside richer features. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** Agent-mode streaming section. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Hard dependency makes a client Grok-specific and should be declared. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Route permission through client
 
-> **Source note:** Agent-mode extensions section. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Interactive clients display/answer requests while hard policy remains server-side.
 
-## 8. Study headless as reference client
+She follows that responsibility into the repository. ACP carries permission interaction and the shell uses shared permission manager. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** A real in-repo client should exercise lifecycle and projection.
+<div class="story-lesson">
 
-**What the source shows.** `headless.rs` starts the shell in-process and drives ACP to completion. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Approval UX belongs to the active client.
 
-**Why it matters.** It demonstrates task tracking, cancellation, and result construction. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** External clients must not assume internal in-process shortcuts. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: A malicious client can auto-approve; rules and sandbox enforce hard limits. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `xai-grok-pager/src/headless.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** ACP session and permissions code. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — minimal read-only review client
+## 7. The next clue — Feature-detect x.ai extensions
 
-Open Grok over stdio, create a repository session, stream findings, and refuse mutation permissions.
+Mira now needs one small mechanism: Vendor methods remain namespaced and optional.
+
+She follows that responsibility into the repository. The guide lists methods/notifications under `x.ai/`. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Base interoperability survives alongside richer features.
+
+</div>
+
+Then she tests the unhappy path: Hard dependency makes a client Grok-specific and should be declared. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Agent-mode extensions section. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Study headless as reference client
+
+Mira now needs one small mechanism: A real in-repo client should exercise lifecycle and projection.
+
+She follows that responsibility into the repository. `headless.rs` starts the shell in-process and drives ACP to completion. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** It demonstrates task tracking, cancellation, and result construction.
+
+</div>
+
+Then she tests the unhappy path: External clients must not assume internal in-process shortcuts. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `xai-grok-pager/src/headless.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — minimal read-only review client
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Open Grok over stdio, create a repository session, stream findings, and refuse mutation permissions.
 
 1.  Spawn stdio with stderr separate.
 2.  Initialize and inspect capabilities.
@@ -159,17 +231,19 @@ const session = await client.newSession({ cwd: checkedPath });
 await client.prompt(session.id, [{ type: "text", text: reviewPrompt }]);
 ```
 
-Illustrative pseudocode based on the guide, not a copy-paste SDK program.
+**What she learns.** Illustrative pseudocode based on the guide, not a copy-paste SDK program.
 
 <div class="bm-fix">
 
-**Verification gate.** Test framing, negotiation, unknown updates, denial, cancellation, cleanup, and correlation.
+**The proof she demands.** Test framing, negotiation, unknown updates, denial, cancellation, cleanup, and correlation.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question       | Source-backed answer   | Operational consequence   |
 |-----------------------|------------------------|---------------------------|
@@ -178,113 +252,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **Who owns UI?**      | Client.                | Render state accurately.  |
 | **Who owns effects?** | Shell/tools/workspace. | Transport is not sandbox. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Versions, negotiated capabilities, connection identity.
 - Session/cwd identity, metadata, auth method without secrets.
 - Request/call/update correlation, ordering, cancellation.
 - Permission answer, stop reason, cleanup and orphan state.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **Stray stdout logging corrupts framing; use stderr.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Run persistent stdio:** reopen User guide `15-agent-mode.md`. Confirm the symbol or field still exists, then reproduce this boundary: Stray stdout logging corrupts framing; use stderr.
-2.  **Negotiate capabilities:** reopen ACP basics/example. Confirm the symbol or field still exists, then reproduce this boundary: Ignoring response yields malformed calls or missing UI behavior.
-3.  **Authenticate before prompt:** reopen `headless.rs::run_single_turn`. Confirm the symbol or field still exists, then reproduce this boundary: Do not leak long-lived secrets to prompt/tool environments.
-4.  **Create or load explicit sessions:** reopen Agent-mode guide and ACP implementation. Confirm the symbol or field still exists, then reproduce this boundary: Prevent cross-tenant session IDs and path traversal.
-5.  **Stream typed updates:** reopen Agent-mode streaming section. Confirm the symbol or field still exists, then reproduce this boundary: Tolerate unknown variants and preserve ordering/correlation.
-6.  **Route permission through client:** reopen ACP session and permissions code. Confirm the symbol or field still exists, then reproduce this boundary: A malicious client can auto-approve; rules and sandbox enforce hard limits.
-7.  **Feature-detect x.ai extensions:** reopen Agent-mode extensions section. Confirm the symbol or field still exists, then reproduce this boundary: Hard dependency makes a client Grok-specific and should be declared.
-8.  **Study headless as reference client:** reopen `xai-grok-pager/src/headless.rs`. Confirm the symbol or field still exists, then reproduce this boundary: External clients must not assume internal in-process shortcuts.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Run persistent stdio
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Exchange JSON-RPC over stdin/stdout across turns. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide documents `grok agent stdio` as primary integration. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Stray stdout logging corrupts framing; use stderr. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Clients receive structured sessions without embedding Rust. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Negotiate capabilities
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Initialize version/features before session work. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The client example sends initialize data and lists SDKs. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Ignoring response yields malformed calls or missing UI behavior. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Negotiation prevents unsupported assumptions. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Authenticate before prompt
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Complete supported auth lifecycle outside model reasoning. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The headless client sends initialize/auth before session materialization. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Do not leak long-lived secrets to prompt/tool environments. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Auth is reusable across clients and not prompt content. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Create or load explicit sessions
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Choose validated cwd and lifecycle around a concrete ID. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is ACP session/new/load flows and metadata configure session behavior. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Prevent cross-tenant session IDs and path traversal. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Continuity is a protocol choice, not process accident. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Stream typed updates
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Text, thought, tool, plan, permission, and terminal events remain structured. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide lists `session/update` variants and notifications. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Tolerate unknown variants and preserve ordering/correlation. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Clients render and persist without terminal parsing. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Route permission through client
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Interactive clients display/answer requests while hard policy remains server-side. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is ACP carries permission interaction and the shell uses shared permission manager. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A malicious client can auto-approve; rules and sandbox enforce hard limits. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Approval UX belongs to the active client. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Feature-detect x.ai extensions
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Vendor methods remain namespaced and optional. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide lists methods/notifications under `x.ai/`. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Hard dependency makes a client Grok-specific and should be declared. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Base interoperability survives alongside richer features. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Study headless as reference client
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A real in-repo client should exercise lifecycle and projection. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `headless.rs` starts the shell in-process and drives ACP to completion. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: External clients must not assume internal in-process shortcuts. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** It demonstrates task tracking, cancellation, and result construction. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -329,6 +306,12 @@ Use documented persistent process and session lifecycle.
 Can I use base ACP only?
 
 Yes for supported base capabilities; extras require x.ai extensions.
+
+## What changed for Mira
+
+Mira sees ACP as a boundary between presentation and agent semantics, not merely another transport flag.
+
+**Next:** With the architecture understood, she can finally compare Grok Build with Pi Agent and Hermes fairly.
 
 ## Key takeaways
 

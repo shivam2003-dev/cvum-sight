@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # Sessions, Persistence, Rewind, and Recovery
 
-A session is a durable evidence bundle, not merely a chat transcript. Grok Build stores append-oriented updates and chat history plus plans, rewind points, signals, feedback, compaction, and child data. Resume restores conversational work; rewind aligns tracked files and conversation. Neither reverses arbitrary external effects.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 09
+
+The terminal disappears halfway through a repair. After restart, Mira can resume the conversation—but one background process is gone and a remote API call cannot be replayed safely. Persistence has saved a record, not frozen the universe.
+
+</div>
+
+**The question:** What must be stored to resume, inspect, compact, rewind, or reproduce an agent session?
+
+## Start from first principles
+
+A session is a flight recorder. It preserves decisions and events well enough to investigate and continue, but it does not put the aircraft back into the exact same sky.
 
 Durability changes the failure model of an agent. Without it, a killed process erases context and leaves mutations difficult to explain. With it, interruption can become a resumable transition.
 
@@ -16,13 +28,41 @@ The user guide describes per-project session directories under `~/.grok/sessions
 
 The engineering question is not only what is saved. It is which file is authoritative, what resume reconstructs, what rewind restores, and which effects stay outside the session envelope.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *state-management* term without pretending the other three disappear.
+**In one sentence.** A session is a durable evidence bundle, not merely a chat transcript. Grok Build stores append-oriented updates and chat history plus plans, rewind points, signals, feedback, compaction, and child data. Resume restores conversational work; rewind aligns tracked files and conversation. Neither reverses arbitrary external effects.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**What must be stored to resume, inspect, compact, rewind, or reproduce an agent session?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear state-management boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *state-management*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Separate durability from reversibility and reproducibility. Durability means evidence survives a process. Reversibility means selected state can be restored. Reproducibility means another environment can obtain the same result. A session helps all three but guarantees only its documented contracts.
 
@@ -38,109 +78,141 @@ Fig 9.1 — Session artifacts support resume and rewind without enclosing every 
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Store sessions by project and ID
+## 1. The next clue — Store sessions by project and ID
 
-**The contract.** Each workspace needs a stable directory and unique session identity.
+Mira now needs one small mechanism: Each workspace needs a stable directory and unique session identity.
 
-**What the source shows.** The guide documents encoded-cwd/session-ID directories beneath `~/.grok/sessions`. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. The guide documents encoded-cwd/session-ID directories beneath `~/.grok/sessions`. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Resume and search can scope work to the repository instead of mixing unrelated histories. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Moving or cloning repositories can change identity assumptions; do not rely on path alone for audit provenance. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Resume and search can scope work to the repository instead of mixing unrelated histories.
 
-> **Source note:** User guide `17-sessions.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Use append-oriented JSONL
+Then she tests the unhappy path: Moving or cloning repositories can change identity assumptions; do not rely on path alone for audit provenance. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Conversation and UI updates should persist incrementally instead of rewriting one fragile document.
+> **Source:** User guide `17-sessions.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** The session format includes `updates.jsonl` and `chat_history.jsonl`; the guide calls updates authoritative for resume. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Use append-oriented JSONL
 
-**Why it matters.** A partial final line is easier to detect/recover than a corrupted monolithic file. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Conversation and UI updates should persist incrementally instead of rewriting one fragile document.
 
-**Failure drill.** Disk-full or abrupt termination still requires validation and clear error reporting. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The session format includes `updates.jsonl` and `chat_history.jsonl`; the guide calls updates authoritative for resume. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** Session guide file-format section. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Persist plans and control metadata
+**Why the story changes here.** A partial final line is easier to detect/recover than a corrupted monolithic file.
 
-**The contract.** Plan state, signals, feedback, compaction, and child sessions need durable artifacts beside chat.
+</div>
 
-**What the source shows.** The guide lists `plan.json`, rewind JSONL, signals, feedback, checkpoints, and subagent folders. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Disk-full or abrupt termination still requires validation and clear error reporting. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** A resumed agent needs more than words to reconstruct operational state. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** Session guide file-format section. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Artifacts can disagree after partial failure; loaders need ordering and authoritative-source rules. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Persist plans and control metadata
 
-> **Source note:** Session guide directory inventory. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Plan state, signals, feedback, compaction, and child sessions need durable artifacts beside chat.
 
-## 4. Distinguish create, resume, and continue
+She follows that responsibility into the repository. The guide lists `plan.json`, rewind JSONL, signals, feedback, checkpoints, and subagent folders. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** CLI flags must not silently upsert or overwrite a session.
+<div class="story-lesson">
 
-**What the source shows.** Headless `-s` creates a new UUID session; `-r` resumes an existing ID; `-c` continues the latest; fork creates a new lineage. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** A resumed agent needs more than words to reconstruct operational state.
 
-**Why it matters.** Explicit semantics prevent accidental history merging in scripts. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Using an old assumption that `-s` resumes now produces errors; automation must follow current docs. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Artifacts can disagree after partial failure; loaders need ordering and authoritative-source rules. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** Headless guide session-management section. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** Session guide directory inventory. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Compact as a checkpointed projection
+## 4. The next clue — Distinguish create, resume, and continue
 
-**The contract.** Context reduction should retain a recoverable raw history and record its summary boundary.
+Mira now needs one small mechanism: CLI flags must not silently upsert or overwrite a session.
 
-**What the source shows.** Session folders include compaction checkpoints; the loop can auto-compact and the user can invoke `/compact`. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. Headless `-s` creates a new UUID session; `-r` resumes an existing ID; `-c` continues the latest; fork creates a new lineage. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** The model continues under a smaller context without deleting the audit trail. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** The next model sees the projection, not raw detail; critical constraints need durable reinjection or artifacts. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Explicit semantics prevent accidental history merging in scripts.
 
-> **Source note:** Session and compaction guides/source. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Capture prompt-level rewind points
+Then she tests the unhappy path: Using an old assumption that `-s` resumes now produces errors; automation must follow current docs. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** A selected prompt should map to before/after tracked files and a conversation boundary.
+> **Source:** Headless guide session-management section. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** `RewindPoint` stores prompt-indexed file state and `/rewind` restores files/truncates conversation. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Compact as a checkpointed projection
 
-**Why it matters.** The user can abandon a failed branch of work without asking the model to reverse itself manually. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Context reduction should retain a recoverable raw history and record its summary boundary.
 
-**Failure drill.** External or untracked effects remain; modifications made outside the agent can conflict with restoration. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. Session folders include compaction checkpoints; the loop can auto-compact and the user can invoke `/compact`. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `xai-grok-workspace/src/session/file_state.rs` and session guide. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Handle interrupts with explicit exit semantics
+**Why the story changes here.** The model continues under a smaller context without deleting the audit trail.
 
-**The contract.** SIGINT/SIGTERM should cancel work, persist what is safe, and return distinguishable exit codes.
+</div>
 
-**What the source shows.** The headless guide documents 130 for SIGINT, 143 for SIGTERM, session resume commands, and cancellation behavior. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: The next model sees the projection, not raw detail; critical constraints need durable reinjection or artifacts. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** CI can distinguish interruption from ordinary failure and choose a controlled resume policy. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** Session and compaction guides/source. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Automatically resuming every interrupted mutation can duplicate side effects; inspect last admitted tool state first. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Capture prompt-level rewind points
 
-> **Source note:** Headless guide interrupted-runs section. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: A selected prompt should map to before/after tracked files and a conversation boundary.
 
-## 8. Keep sandbox identity fixed on resume
+She follows that responsibility into the repository. `RewindPoint` stores prompt-indexed file state and `/rewind` restores files/truncates conversation. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** A session must not silently return under a broader OS capability profile.
+<div class="story-lesson">
 
-**What the source shows.** The sandbox guide says the starting profile is stored and differing resume profiles are refused. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** The user can abandon a failed branch of work without asking the model to reverse itself manually.
 
-**Why it matters.** Durability preserves the original trust boundary as well as chat state. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** A changed custom-profile definition can still affect interpretation; pin configuration and start a new session when policy changes materially. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: External or untracked effects remain; modifications made outside the agent can conflict with restoration. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** User guide `18-sandbox.md`, resuming sessions. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `xai-grok-workspace/src/session/file_state.rs` and session guide. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — interrupt and safely resume a headless review
+## 7. The next clue — Handle interrupts with explicit exit semantics
 
-Create a session, capture its ID early, interrupt a long read-only review, and resume only after inspecting state.
+Mira now needs one small mechanism: SIGINT/SIGTERM should cancel work, persist what is safe, and return distinguishable exit codes.
+
+She follows that responsibility into the repository. The headless guide documents 130 for SIGINT, 143 for SIGTERM, session resume commands, and cancellation behavior. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** CI can distinguish interruption from ordinary failure and choose a controlled resume policy.
+
+</div>
+
+Then she tests the unhappy path: Automatically resuming every interrupted mutation can duplicate side effects; inspect last admitted tool state first. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Headless guide interrupted-runs section. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Keep sandbox identity fixed on resume
+
+Mira now needs one small mechanism: A session must not silently return under a broader OS capability profile.
+
+She follows that responsibility into the repository. The sandbox guide says the starting profile is stored and differing resume profiles are refused. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Durability preserves the original trust boundary as well as chat state.
+
+</div>
+
+Then she tests the unhappy path: A changed custom-profile definition can still affect interpretation; pin configuration and start a new session when policy changes materially. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** User guide `18-sandbox.md`, resuming sessions. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — interrupt and safely resume a headless review
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Create a session, capture its ID early, interrupt a long read-only review, and resume only after inspecting state.
 
 1.  Use an isolated checkout and read-only tool set.
 2.  Start streaming JSON and capture the session ID/end/error events.
@@ -159,17 +231,19 @@ grok -p "Audit this package and cite each finding." \
 grok -p "Continue the audit; first summarize persisted state." --resume "$SESSION_ID"
 ```
 
-The control system must extract a real session ID from output. The example does not imply an ID exists before session creation succeeds.
+**What she learns.** The control system must extract a real session ID from output. The example does not imply an ID exists before session creation succeeds.
 
 <div class="bm-fix">
 
-**Verification gate.** Check exit code, unchanged Git tree, session tail integrity, explicit resumed ID, and no duplicated findings caused by replay.
+**The proof she demands.** Check exit code, unchanged Git tree, session tail integrity, explicit resumed ID, and no duplicated findings caused by replay.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -178,113 +252,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **What rewinds?** | Tracked files and conversation boundary. | Inventory external effects separately. |
 | **What reproduces?** | Only what environment and artifacts make repeatable. | Pin dependencies and base SHA. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Session/project identity, base commit, creation/resume/fork lineage.
 - Last complete JSONL event and flush outcome.
 - Compaction/rewind point IDs and affected files.
 - Interrupt signal, exit code, live task inventory, and resume decision.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **Moving or cloning repositories can change identity assumptions; do not rely on path alone for audit provenance.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Store sessions by project and ID:** reopen User guide `17-sessions.md`. Confirm the symbol or field still exists, then reproduce this boundary: Moving or cloning repositories can change identity assumptions; do not rely on path alone for audit provenance.
-2.  **Use append-oriented JSONL:** reopen Session guide file-format section. Confirm the symbol or field still exists, then reproduce this boundary: Disk-full or abrupt termination still requires validation and clear error reporting.
-3.  **Persist plans and control metadata:** reopen Session guide directory inventory. Confirm the symbol or field still exists, then reproduce this boundary: Artifacts can disagree after partial failure; loaders need ordering and authoritative-source rules.
-4.  **Distinguish create, resume, and continue:** reopen Headless guide session-management section. Confirm the symbol or field still exists, then reproduce this boundary: Using an old assumption that `-s` resumes now produces errors; automation must follow current docs.
-5.  **Compact as a checkpointed projection:** reopen Session and compaction guides/source. Confirm the symbol or field still exists, then reproduce this boundary: The next model sees the projection, not raw detail; critical constraints need durable reinjection or artifacts.
-6.  **Capture prompt-level rewind points:** reopen `xai-grok-workspace/src/session/file_state.rs` and session guide. Confirm the symbol or field still exists, then reproduce this boundary: External or untracked effects remain; modifications made outside the agent can conflict with restoration.
-7.  **Handle interrupts with explicit exit semantics:** reopen Headless guide interrupted-runs section. Confirm the symbol or field still exists, then reproduce this boundary: Automatically resuming every interrupted mutation can duplicate side effects; inspect last admitted tool state first.
-8.  **Keep sandbox identity fixed on resume:** reopen User guide `18-sandbox.md`, resuming sessions. Confirm the symbol or field still exists, then reproduce this boundary: A changed custom-profile definition can still affect interpretation; pin configuration and start a new session when policy changes materially.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Store sessions by project and ID
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Each workspace needs a stable directory and unique session identity. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide documents encoded-cwd/session-ID directories beneath `~/.grok/sessions`. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Moving or cloning repositories can change identity assumptions; do not rely on path alone for audit provenance. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Resume and search can scope work to the repository instead of mixing unrelated histories. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Use append-oriented JSONL
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Conversation and UI updates should persist incrementally instead of rewriting one fragile document. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The session format includes `updates.jsonl` and `chat_history.jsonl`; the guide calls updates authoritative for resume. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Disk-full or abrupt termination still requires validation and clear error reporting. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** A partial final line is easier to detect/recover than a corrupted monolithic file. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Persist plans and control metadata
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Plan state, signals, feedback, compaction, and child sessions need durable artifacts beside chat. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide lists `plan.json`, rewind JSONL, signals, feedback, checkpoints, and subagent folders. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Artifacts can disagree after partial failure; loaders need ordering and authoritative-source rules. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** A resumed agent needs more than words to reconstruct operational state. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Distinguish create, resume, and continue
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: CLI flags must not silently upsert or overwrite a session. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Headless `-s` creates a new UUID session; `-r` resumes an existing ID; `-c` continues the latest; fork creates a new lineage. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Using an old assumption that `-s` resumes now produces errors; automation must follow current docs. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Explicit semantics prevent accidental history merging in scripts. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Compact as a checkpointed projection
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Context reduction should retain a recoverable raw history and record its summary boundary. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Session folders include compaction checkpoints; the loop can auto-compact and the user can invoke `/compact`. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: The next model sees the projection, not raw detail; critical constraints need durable reinjection or artifacts. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The model continues under a smaller context without deleting the audit trail. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Capture prompt-level rewind points
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A selected prompt should map to before/after tracked files and a conversation boundary. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `RewindPoint` stores prompt-indexed file state and `/rewind` restores files/truncates conversation. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: External or untracked effects remain; modifications made outside the agent can conflict with restoration. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The user can abandon a failed branch of work without asking the model to reverse itself manually. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Handle interrupts with explicit exit semantics
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: SIGINT/SIGTERM should cancel work, persist what is safe, and return distinguishable exit codes. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The headless guide documents 130 for SIGINT, 143 for SIGTERM, session resume commands, and cancellation behavior. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Automatically resuming every interrupted mutation can duplicate side effects; inspect last admitted tool state first. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** CI can distinguish interruption from ordinary failure and choose a controlled resume policy. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Keep sandbox identity fixed on resume
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A session must not silently return under a broader OS capability profile. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The sandbox guide says the starting profile is stored and differing resume profiles are refused. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A changed custom-profile definition can still affect interpretation; pin configuration and start a new session when policy changes materially. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Durability preserves the original trust boundary as well as chat state. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -329,6 +306,12 @@ No. A differing profile is refused; start a new session.
 Is compaction deletion?
 
 It changes the model-visible projection while raw session artifacts/checkpoints support audit and recovery.
+
+## What changed for Mira
+
+Mira distinguishes durable conversation state, workspace recovery, and full environmental reproducibility.
+
+**Next:** Recovery is valuable only if dangerous actions were constrained before they happened.
 
 ## Key takeaways
 

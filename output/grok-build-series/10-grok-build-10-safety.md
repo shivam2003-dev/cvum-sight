@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # Permissions, Sandboxing, and Agent Safety
 
-Permissions decide whether a proposed tool call may run. Hooks add deterministic lifecycle policy. The sandbox restricts OS capabilities. CI supplies runner isolation, secrets, branch protection, and review. These layers solve different threats. Sandbox mode is off by default, and no feature makes an approved but logically harmful action safe.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 10
+
+During a security drill, a repository document tells the agent to upload diagnostics—including environment variables—to an external endpoint. The instruction looks helpful. Its effect would be a credential leak.
+
+</div>
+
+**The question:** Which boundary can stop a mistaken or manipulated agent before harm occurs?
+
+## Start from first principles
+
+Permission is a guard asking whether an action is allowed. Sandboxing is the locked architecture of the building. A polite guard cannot replace locked doors, and locked doors do not decide business policy.
 
 A safety feature list is not a threat model. 'Has permissions' says nothing about rule precedence. 'Has a sandbox' says nothing about default activation, network coverage, or permitted destruction inside the workspace.
 
@@ -16,13 +28,41 @@ Grok Build documents an authorization order: pre-tool hook, rules, remembered gr
 
 OS sandbox profiles are separate and off by default. Platform differences and in-process networking boundaries make exact wording essential.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *safety-and-verification* term without pretending the other three disappear.
+**In one sentence.** Permissions decide whether a proposed tool call may run. Hooks add deterministic lifecycle policy. The sandbox restricts OS capabilities. CI supplies runner isolation, secrets, branch protection, and review. These layers solve different threats. Sandbox mode is off by default, and no feature makes an approved but logically harmful action safe.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**Which boundary can stop a mistaken or manipulated agent before harm occurs?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear safety-and-verification boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *safety-and-verification*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Threats include model mistake, overbroad user task, malicious repository instructions, compromised extension, leaked credentials, and vulnerable dependencies. Map each to controls instead of choosing one universal 'safe mode.'
 
@@ -38,109 +78,141 @@ Fig 10.1 — Tool admission and OS confinement are independent layers inside a l
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Run PreToolUse first
+## 1. The next clue — Run PreToolUse first
 
-**The contract.** A deterministic hook may deny before ordinary permission evaluation.
+Mira now needs one small mechanism: A deterministic hook may deny before ordinary permission evaluation.
 
-**What the source shows.** The safety guide places `PreToolUse` first and says allow does not bypass later checks. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. The safety guide places `PreToolUse` first and says allow does not bypass later checks. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Organizations can block a dangerous pattern in every mode. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Hook failures are fail-open; enforcement code must return explicit denial on its own errors. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Organizations can block a dangerous pattern in every mode.
 
-> **Source note:** Guides `22-permissions-and-safety.md` and `10-hooks.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Apply rule severity
+Then she tests the unhappy path: Hook failures are fail-open; enforcement code must return explicit denial on its own errors. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Matching deny wins over ask, which wins over allow across sources.
+> **Source:** Guides `22-permissions-and-safety.md` and `10-hooks.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** Native config, CLI flags, Claude compatibility, and managed rules merge under severity ordering. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Apply rule severity
 
-**Why it matters.** A project allow cannot silently override an organization deny. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Matching deny wins over ask, which wins over allow across sources.
 
-**Failure drill.** A catch-all deny plus narrow allow does not create allowlisting when deny always wins; use `dontAsk` for deny-by-default. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. Native config, CLI flags, Claude compatibility, and managed rules merge under severity ordering. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** Permissions guide rule configuration. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Understand built-in approvals
+**Why the story changes here.** A project allow cannot silently override an organization deny.
 
-**The contract.** Read-only tools and a fixed command set can run without prompts unless policy or hook blocks them.
+</div>
 
-**What the source shows.** The guide lists read/search tools and shell commands, splitting chains into segments. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: A catch-all deny plus narrow allow does not create allowlisting when deny always wins; use `dontAsk` for deny-by-default. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Interactive work avoids constant approval for inspection. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** Permissions guide rule configuration. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Read access can still disclose secrets, and a supposedly read-only command may have flags or preprocessors that execute code. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Understand built-in approvals
 
-> **Source note:** Permissions guide operations that never prompt. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Read-only tools and a fixed command set can run without prompts unless policy or hook blocks them.
 
-## 4. Choose modes precisely
+She follows that responsibility into the repository. The guide lists read/search tools and shell commands, splitting chains into segments. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Default prompts, `dontAsk` denies unapproved calls, `acceptEdits` approves edits, and `bypassPermissions` broadly approves.
+<div class="story-lesson">
 
-**What the source shows.** The guide documents mode behavior and CLI/config differences; headless would-prompt calls are cancelled/reported. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Interactive work avoids constant approval for inspection.
 
-**Why it matters.** Interactive and unattended workflows need different prompt policies. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** `--yolo` is not isolation and can combine disastrously with ambient credentials. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Read access can still disclose secrets, and a supposedly read-only command may have flags or preprocessors that execute code. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** Permissions guide mode table and headless note. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** Permissions guide operations that never prompt. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Keep plan mode out of the sandbox column
+## 4. The next clue — Choose modes precisely
 
-**The contract.** Plan mode gates edit tools during review but is not an OS write boundary.
+Mira now needs one small mechanism: Default prompts, `dontAsk` denies unapproved calls, `acceptEdits` approves edits, and `bypassPermissions` broadly approves.
 
-**What the source shows.** The guide documents shell-redirection and write-capable-child exceptions. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. The guide documents mode behavior and CLI/config differences; headless would-prompt calls are cancelled/reported. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Planning improves human control without pretending to confine every process. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** A team that labels plan mode read-only can permit writes through allowed shell or child paths. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Interactive and unattended workflows need different prompt policies.
 
-> **Source note:** Plan guide edits-during-plan section. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Activate sandbox explicitly
+Then she tests the unhappy path: `--yolo` is not isolation and can combine disastrously with ambient credentials. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** New sessions resolve explicit flag/env, then config profile, then off.
+> **Source:** Permissions guide mode table and headless note. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** The sandbox guide says mode is off by default and lists workspace, devbox, read-only, strict, and custom profiles. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Keep plan mode out of the sandbox column
 
-**Why it matters.** Kernel mechanisms can constrain in-process file tools and inherited child access. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Plan mode gates edit tools during review but is not an OS write boundary.
 
-**Failure drill.** Assuming default confinement leaves the process unrestricted. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The guide documents shell-redirection and write-capable-child exceptions. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** User guide `18-sandbox.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Account for platform boundaries
+**Why the story changes here.** Planning improves human control without pretending to confine every process.
 
-**The contract.** Filesystem and child-network enforcement differ by OS and mechanism.
+</div>
 
-**What the source shows.** Landlock/bwrap/seccomp support Linux paths; Seatbelt handles macOS filesystem policy; child-network restriction is a no-op on macOS and does not block in-process HTTP. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: A team that labels plan mode read-only can permit writes through allowed shell or child paths. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Security claims must name platform and process class. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** Plan guide edits-during-plan section. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** A 'no network' profile can still allow Grok's in-process LLM/web calls and macOS child network. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Activate sandbox explicitly
 
-> **Source note:** Sandbox guide platform/network sections. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: New sessions resolve explicit flag/env, then config profile, then off.
 
-## 8. Use custom deny paths carefully
+She follows that responsibility into the repository. The sandbox guide says mode is off by default and lists workspace, devbox, read-only, strict, and custom profiles. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Sensitive paths/globs can be kernel-denied with fail-closed startup for explicit custom profiles under documented conditions.
+<div class="story-lesson">
 
-**What the source shows.** The guide details Seatbelt regexes, Linux bwrap bind-over, glob semantics, launch-time expansion on Linux, and refusal cases. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Kernel mechanisms can constrain in-process file tools and inherited child access.
 
-**Why it matters.** Blocking `.env` and key material below the tool layer covers shell and subagents too. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Linux globs cover existing launch-time matches, not later-created files; exact paths are safer for critical secrets. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Assuming default confinement leaves the process unrestricted. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** Sandbox custom-profile deny notes. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** User guide `18-sandbox.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — least-privilege CI review
+## 7. The next clue — Account for platform boundaries
 
-Run a source review that needs reads and tests but cannot edit, push, or reach secrets.
+Mira now needs one small mechanism: Filesystem and child-network enforcement differ by OS and mechanism.
+
+She follows that responsibility into the repository. Landlock/bwrap/seccomp support Linux paths; Seatbelt handles macOS filesystem policy; child-network restriction is a no-op on macOS and does not block in-process HTTP. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Security claims must name platform and process class.
+
+</div>
+
+Then she tests the unhappy path: A 'no network' profile can still allow Grok's in-process LLM/web calls and macOS child network. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Sandbox guide platform/network sections. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Use custom deny paths carefully
+
+Mira now needs one small mechanism: Sensitive paths/globs can be kernel-denied with fail-closed startup for explicit custom profiles under documented conditions.
+
+She follows that responsibility into the repository. The guide details Seatbelt regexes, Linux bwrap bind-over, glob semantics, launch-time expansion on Linux, and refusal cases. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Blocking `.env` and key material below the tool layer covers shell and subagents too.
+
+</div>
+
+Then she tests the unhappy path: Linux globs cover existing launch-time matches, not later-created files; exact paths are safer for critical secrets. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Sandbox custom-profile deny notes. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — least-privilege CI review
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Run a source review that needs reads and tests but cannot edit, push, or reach secrets.
 
 1.  Use an ephemeral runner with no cloud credentials.
 2.  Checkout a detached commit or unprivileged branch.
@@ -164,17 +236,19 @@ Run a source review that needs reads and tests but cannot edit, push, or reach s
 grok -p "Review and run the scoped tests; make no edits." --sandbox strict
 ```
 
-The rule shapes come from the guide. Exact path matching and platform behavior must be tested in the target runner.
+**What she learns.** The rule shapes come from the guide. Exact path matching and platform behavior must be tested in the target runner.
 
 <div class="bm-fix">
 
-**Verification gate.** Assert zero diff, no protected secret mount, recorded denials, expected test command only, and runner destruction.
+**The proof she demands.** Assert zero diff, no protected secret mount, recorded denials, expected test command only, and runner destruction.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -183,113 +257,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **What can process access?** | Sandbox/container/host policy. | Test on the actual platform. |
 | **Who decides correctness?** | Verifier plus human/CI policy. | Never equate admission with correctness. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Effective rules with source/scope and mode.
 - Hook outcome, remembered grant, built-in approval reason, final decision.
 - Resolved sandbox profile, platform mechanism, denied paths, network class.
 - Secret inventory, changed paths, command lineage, verifier and reviewer identity.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **Hook failures are fail-open; enforcement code must return explicit denial on its own errors.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Run PreToolUse first:** reopen Guides `22-permissions-and-safety.md` and `10-hooks.md`. Confirm the symbol or field still exists, then reproduce this boundary: Hook failures are fail-open; enforcement code must return explicit denial on its own errors.
-2.  **Apply rule severity:** reopen Permissions guide rule configuration. Confirm the symbol or field still exists, then reproduce this boundary: A catch-all deny plus narrow allow does not create allowlisting when deny always wins; use `dontAsk` for deny-by-default.
-3.  **Understand built-in approvals:** reopen Permissions guide operations that never prompt. Confirm the symbol or field still exists, then reproduce this boundary: Read access can still disclose secrets, and a supposedly read-only command may have flags or preprocessors that execute code.
-4.  **Choose modes precisely:** reopen Permissions guide mode table and headless note. Confirm the symbol or field still exists, then reproduce this boundary: `--yolo` is not isolation and can combine disastrously with ambient credentials.
-5.  **Keep plan mode out of the sandbox column:** reopen Plan guide edits-during-plan section. Confirm the symbol or field still exists, then reproduce this boundary: A team that labels plan mode read-only can permit writes through allowed shell or child paths.
-6.  **Activate sandbox explicitly:** reopen User guide `18-sandbox.md`. Confirm the symbol or field still exists, then reproduce this boundary: Assuming default confinement leaves the process unrestricted.
-7.  **Account for platform boundaries:** reopen Sandbox guide platform/network sections. Confirm the symbol or field still exists, then reproduce this boundary: A 'no network' profile can still allow Grok's in-process LLM/web calls and macOS child network.
-8.  **Use custom deny paths carefully:** reopen Sandbox custom-profile deny notes. Confirm the symbol or field still exists, then reproduce this boundary: Linux globs cover existing launch-time matches, not later-created files; exact paths are safer for critical secrets.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Run PreToolUse first
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A deterministic hook may deny before ordinary permission evaluation. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The safety guide places `PreToolUse` first and says allow does not bypass later checks. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Hook failures are fail-open; enforcement code must return explicit denial on its own errors. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Organizations can block a dangerous pattern in every mode. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Apply rule severity
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Matching deny wins over ask, which wins over allow across sources. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Native config, CLI flags, Claude compatibility, and managed rules merge under severity ordering. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A catch-all deny plus narrow allow does not create allowlisting when deny always wins; use `dontAsk` for deny-by-default. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** A project allow cannot silently override an organization deny. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Understand built-in approvals
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Read-only tools and a fixed command set can run without prompts unless policy or hook blocks them. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide lists read/search tools and shell commands, splitting chains into segments. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Read access can still disclose secrets, and a supposedly read-only command may have flags or preprocessors that execute code. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Interactive work avoids constant approval for inspection. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Choose modes precisely
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Default prompts, `dontAsk` denies unapproved calls, `acceptEdits` approves edits, and `bypassPermissions` broadly approves. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide documents mode behavior and CLI/config differences; headless would-prompt calls are cancelled/reported. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: `--yolo` is not isolation and can combine disastrously with ambient credentials. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Interactive and unattended workflows need different prompt policies. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Keep plan mode out of the sandbox column
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Plan mode gates edit tools during review but is not an OS write boundary. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide documents shell-redirection and write-capable-child exceptions. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A team that labels plan mode read-only can permit writes through allowed shell or child paths. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Planning improves human control without pretending to confine every process. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Activate sandbox explicitly
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: New sessions resolve explicit flag/env, then config profile, then off. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The sandbox guide says mode is off by default and lists workspace, devbox, read-only, strict, and custom profiles. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Assuming default confinement leaves the process unrestricted. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Kernel mechanisms can constrain in-process file tools and inherited child access. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Account for platform boundaries
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Filesystem and child-network enforcement differ by OS and mechanism. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Landlock/bwrap/seccomp support Linux paths; Seatbelt handles macOS filesystem policy; child-network restriction is a no-op on macOS and does not block in-process HTTP. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A 'no network' profile can still allow Grok's in-process LLM/web calls and macOS child network. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Security claims must name platform and process class. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Use custom deny paths carefully
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Sensitive paths/globs can be kernel-denied with fail-closed startup for explicit custom profiles under documented conditions. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide details Seatbelt regexes, Linux bwrap bind-over, glob semantics, launch-time expansion on Linux, and refusal cases. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Linux globs cover existing launch-time matches, not later-created files; exact paths are safer for critical secrets. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Blocking `.env` and key material below the tool layer covers shell and subagents too. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -334,6 +311,12 @@ No. Documented child-process restrictions are Linux-specific and in-process HTTP
 Should hooks enforce critical policy?
 
 Only with explicit deny behavior on internal errors and defense in depth, because ordinary hook failure is fail-open.
+
+## What changed for Mira
+
+Mira layers tool filtering, policy, approval, hooks, operating-system isolation, restricted credentials, and independent verification.
+
+**Next:** Those controls become even more important when no human is watching a headless CI run.
 
 ## Key takeaways
 

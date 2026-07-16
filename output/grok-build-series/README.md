@@ -1,5 +1,7 @@
 # Inside Grok Build — Editorial Package
 
+The publication edition is written as one continuous first-principles story. A platform engineer named Mira begins with a failed agent task and discovers each harness boundary only when the incident makes that mechanism necessary. Chapters target a focused 10–15 minute read; source evidence follows the intuition instead of leading it.
+
 This directory contains the requested work in publication order:
 
 1. [`00-existing-series-style-analysis.md`](00-existing-series-style-analysis.md)

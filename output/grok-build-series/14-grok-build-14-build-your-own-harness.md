@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # Building Your Own Harness: Lessons from Grok Build
 
-Copy Grok Build's contracts, not its crate count. A minimal production harness needs a client boundary, turn state machine, model adapter, effective tool registry, workspace executor, durable event log, policy engine, verifier, and observability. Add memory, subagents, plugins, and rich UI only when measured workloads justify them.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 14
+
+Months later, Mira's team starts a small internal agent. The temptation is to copy a large repository crate for crate. Instead, she writes down the smallest trustworthy loop and the invariants it must preserve.
+
+</div>
+
+**The question:** What should engineers copy from Grok Build, and what should they derive for their own environment?
+
+## Start from first principles
+
+Studying a bridge does not mean duplicating every beam. You copy the load paths, safety factors, inspection points, and failure assumptions—then design for your river.
 
 A large tree tempts two bad responses: copy everything, or dismiss it as overengineering. The useful response identifies invariants that survive a smaller implementation.
 
@@ -16,13 +28,41 @@ Grok Build exposes mature boundaries: client/runtime, schema/implementation, pol
 
 Your harness can be smaller. It should not be ambiguous about those responsibilities.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *complete-system-design* term without pretending the other three disappear.
+**In one sentence.** Copy Grok Build's contracts, not its crate count. A minimal production harness needs a client boundary, turn state machine, model adapter, effective tool registry, workspace executor, durable event log, policy engine, verifier, and observability. Add memory, subagents, plugins, and rich UI only when measured workloads justify them.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**What should engineers copy from Grok Build, and what should they derive for their own environment?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear complete-system-design boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *complete-system-design*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Start with one auditable loop and one constrained environment. Make transitions observable. Add complexity only when evaluation demonstrates a failure it fixes.
 
@@ -38,109 +78,141 @@ Fig 14.1 — A minimal production harness keeps the loop small and boundaries ex
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Define client/runtime contract
+## 1. The next clue — Define client/runtime contract
 
-**The contract.** UI, CI, or editor sends structured requests and receives typed events.
+Mira now needs one small mechanism: UI, CI, or editor sends structured requests and receives typed events.
 
-**What the source shows.** Grok reuses shell semantics through pager, headless, and ACP clients. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. Grok reuses shell semantics through pager, headless, and ACP clients. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Runtime remains testable without terminal. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Screen scraping loses IDs, permission state, and classifications. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Runtime remains testable without terminal.
 
-> **Source note:** Pager/headless/ACP boundaries. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Implement a finite state machine
+Then she tests the unhappy path: Screen scraping loses IDs, permission state, and classifications. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** One prompt contains model/tool rounds with cancellation and limits.
+> **Source:** Pager/headless/ACP boundaries. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** Shell centralizes setup, sampling, observations, compaction, interjections, stopping. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Implement a finite state machine
 
-**Why it matters.** One owner prevents inconsistent conversation mutation. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: One prompt contains model/tool rounds with cancellation and limits.
 
-**Failure drill.** Naive loops duplicate effects or run forever. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. Shell centralizes setup, sampling, observations, compaction, interjections, stopping. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `xai-grok-shell/.../turn.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Separate model adapter
+**Why the story changes here.** One owner prevents inconsistent conversation mutation.
 
-**The contract.** Provider code returns text/tool intent/usage, not side effects.
+</div>
 
-**What the source shows.** Sampling delegates while execution remains in shell/tools/workspace. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Naive loops duplicate effects or run forever. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Provider changes cannot widen filesystem authority. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `xai-grok-shell/.../turn.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Ambiguous retries need idempotency and correlation. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Separate model adapter
 
-> **Source note:** `xai-grok-sampler` call sites. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Provider code returns text/tool intent/usage, not side effects.
 
-## 4. Build effective per-session tools
+She follows that responsibility into the repository. Sampling delegates while execution remains in shell/tools/workspace. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Expose only schemas backed and allowed for the task.
+<div class="story-lesson">
 
-**What the source shows.** ToolDefinition, FinalizedToolset, capabilities, and filters demonstrate separation. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Provider changes cannot widen filesystem authority.
 
-**Why it matters.** Small surfaces save context and reduce authority. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Global registration mistaken for exposure expands risk. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Ambiguous retries need idempotency and correlation. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `xai-grok-tools`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `xai-grok-sampler` call sites. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Put effects behind workspace
+## 4. The next clue — Build effective per-session tools
 
-**The contract.** Filesystem, process, repository, and placement share one executor boundary.
+Mira now needs one small mechanism: Expose only schemas backed and allowed for the task.
 
-**What the source shows.** WorkspaceOps local/proxy and file tracking provide this role. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. ToolDefinition, FinalizedToolset, capabilities, and filters demonstrate separation. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Identity and mutation ownership become explicit. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Direct arbitrary host access defeats isolation and recovery. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Small surfaces save context and reduce authority.
 
-> **Source note:** `xai-grok-workspace`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Layer policy and confinement
+Then she tests the unhappy path: Global registration mistaken for exposure expands risk. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Normalize, evaluate deterministic policy, then execute inside OS/container limits.
+> **Source:** `xai-grok-tools`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** Hooks/permissions are separate from sandbox. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Put effects behind workspace
 
-**Why it matters.** Admission and kernel capability address different threats. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Filesystem, process, repository, and placement share one executor boundary.
 
-**Failure drill.** Prompt rules are bypassable; sandbox permits harmful allowed actions. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. WorkspaceOps local/proxy and file tracking provide this role. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** Tool-call, permission, sandbox modules. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Persist append-only evidence
+**Why the story changes here.** Identity and mutation ownership become explicit.
 
-**The contract.** Prompt/model/tool/policy/mutation/verifier events need durable IDs/order.
+</div>
 
-**What the source shows.** Sessions use JSONL and rewind artifacts. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Direct arbitrary host access defeats isolation and recovery. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Interruption and audit need raw evidence. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `xai-grok-workspace`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Final prose hides unsafe attempts and failed checks. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Layer policy and confinement
 
-> **Source note:** Session guide and modules. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Normalize, evaluate deterministic policy, then execute inside OS/container limits.
 
-## 8. Make verification first-class
+She follows that responsibility into the repository. Hooks/permissions are separate from sandbox. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Task definitions include immutable executable acceptance checks.
+<div class="story-lesson">
 
-**What the source shows.** Structural runtime stops show why repository correctness stays external. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Admission and kernel capability address different threats.
 
-**Why it matters.** Verifier makes success measurable. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Model-modifiable tests or hidden-answer leakage invalidate evaluation. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Prompt rules are bypassable; sandbox permits harmful allowed actions. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** Turn stop path plus architectural inference. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** Tool-call, permission, sandbox modules. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — minimal patch-producing repair harness
+## 7. The next clue — Persist append-only evidence
 
-Build a small harness whose output is a candidate patch plus evidence.
+Mira now needs one small mechanism: Prompt/model/tool/policy/mutation/verifier events need durable IDs/order.
+
+She follows that responsibility into the repository. Sessions use JSONL and rewind artifacts. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Interruption and audit need raw evidence.
+
+</div>
+
+Then she tests the unhappy path: Final prose hides unsafe attempts and failed checks. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Session guide and modules. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Make verification first-class
+
+Mira now needs one small mechanism: Task definitions include immutable executable acceptance checks.
+
+She follows that responsibility into the repository. Structural runtime stops show why repository correctness stays external. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Verifier makes success measurable.
+
+</div>
+
+Then she tests the unhappy path: Model-modifiable tests or hidden-answer leakage invalidate evaluation. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Turn stop path plus architectural inference. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — minimal patch-producing repair harness
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Build a small harness whose output is a candidate patch plus evidence.
 
 1.  Accept base SHA, bounded task, immutable verifier.
 2.  Create ephemeral worktree/container without publication credential.
@@ -162,17 +234,19 @@ evidence = verifier.run_immutable()
 return patch_bundle(state, evidence)  # publication is separate
 ```
 
-Conceptual pseudocode, not Grok API code. Separation, bounded authority, persistence, and independent verification are the point.
+**What she learns.** Conceptual pseudocode, not Grok API code. Separation, bounded authority, persistence, and independent verification are the point.
 
 <div class="bm-fix">
 
-**Verification gate.** Run repeated tasks, inject kills/tool failures, red-team repository instructions, and measure pass/unsafe/recovery rates.
+**The proof she demands.** Run repeated tasks, inject kills/tool failures, red-team repository instructions, and measure pass/unsafe/recovery rates.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -181,113 +255,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **Primary output?** | Patch plus evidence. | Separate publication. |
 | **Success metric?** | Repeated verified success under cost/safety constraints. | Optimize system. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Task/base/verifier immutable identities.
 - Requests, schemas, calls, policy, results, duration.
 - Environment, changed files, processes, network/secret access.
 - Verifier, regressions, correction, cost, recovery, unsafe rates.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **Screen scraping loses IDs, permission state, and classifications.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Define client/runtime contract:** reopen Pager/headless/ACP boundaries. Confirm the symbol or field still exists, then reproduce this boundary: Screen scraping loses IDs, permission state, and classifications.
-2.  **Implement a finite state machine:** reopen `xai-grok-shell/.../turn.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Naive loops duplicate effects or run forever.
-3.  **Separate model adapter:** reopen `xai-grok-sampler` call sites. Confirm the symbol or field still exists, then reproduce this boundary: Ambiguous retries need idempotency and correlation.
-4.  **Build effective per-session tools:** reopen `xai-grok-tools`. Confirm the symbol or field still exists, then reproduce this boundary: Global registration mistaken for exposure expands risk.
-5.  **Put effects behind workspace:** reopen `xai-grok-workspace`. Confirm the symbol or field still exists, then reproduce this boundary: Direct arbitrary host access defeats isolation and recovery.
-6.  **Layer policy and confinement:** reopen Tool-call, permission, sandbox modules. Confirm the symbol or field still exists, then reproduce this boundary: Prompt rules are bypassable; sandbox permits harmful allowed actions.
-7.  **Persist append-only evidence:** reopen Session guide and modules. Confirm the symbol or field still exists, then reproduce this boundary: Final prose hides unsafe attempts and failed checks.
-8.  **Make verification first-class:** reopen Turn stop path plus architectural inference. Confirm the symbol or field still exists, then reproduce this boundary: Model-modifiable tests or hidden-answer leakage invalidate evaluation.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Define client/runtime contract
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: UI, CI, or editor sends structured requests and receives typed events. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Grok reuses shell semantics through pager, headless, and ACP clients. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Screen scraping loses IDs, permission state, and classifications. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Runtime remains testable without terminal. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Implement a finite state machine
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: One prompt contains model/tool rounds with cancellation and limits. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Shell centralizes setup, sampling, observations, compaction, interjections, stopping. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Naive loops duplicate effects or run forever. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** One owner prevents inconsistent conversation mutation. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Separate model adapter
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Provider code returns text/tool intent/usage, not side effects. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Sampling delegates while execution remains in shell/tools/workspace. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Ambiguous retries need idempotency and correlation. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Provider changes cannot widen filesystem authority. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Build effective per-session tools
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Expose only schemas backed and allowed for the task. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is ToolDefinition, FinalizedToolset, capabilities, and filters demonstrate separation. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Global registration mistaken for exposure expands risk. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Small surfaces save context and reduce authority. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Put effects behind workspace
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Filesystem, process, repository, and placement share one executor boundary. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is WorkspaceOps local/proxy and file tracking provide this role. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Direct arbitrary host access defeats isolation and recovery. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Identity and mutation ownership become explicit. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Layer policy and confinement
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Normalize, evaluate deterministic policy, then execute inside OS/container limits. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Hooks/permissions are separate from sandbox. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Prompt rules are bypassable; sandbox permits harmful allowed actions. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Admission and kernel capability address different threats. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Persist append-only evidence
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Prompt/model/tool/policy/mutation/verifier events need durable IDs/order. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Sessions use JSONL and rewind artifacts. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Final prose hides unsafe attempts and failed checks. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Interruption and audit need raw evidence. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Make verification first-class
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Task definitions include immutable executable acceptance checks. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Structural runtime stops show why repository correctness stays external. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Model-modifiable tests or hidden-answer leakage invalidate evaluation. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Verifier makes success measurable. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -332,6 +309,12 @@ Policy, environment, verifier, logging, limits, cancellation, publication gates.
 Hardest unsolved part?
 
 Knowing semantic completion as context, environment, and goals evolve.
+
+## What changed for Mira
+
+The team leaves with a minimal architecture, a hardening path, an evaluation plan, and a list of questions that remain open.
+
+**Next:** The story ends where real harness engineering begins: with one bounded task and evidence that the system did what it claimed.
 
 ## Key takeaways
 

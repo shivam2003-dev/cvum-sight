@@ -24,6 +24,111 @@ const PI_SHA = "97f9978fa66685f78d2da19ae22e20c46d125f74";
 const HERMES_SHA = "c9c9bb33fcc6ab479846a1c496a6e9efe2c1c7d4";
 const RESEARCH_DATE = "July 16, 2026";
 
+// One continuous story gives readers a reason to learn each boundary. The
+// source-backed article data remains authoritative; these scenes only provide
+// the human problem that makes each mechanism necessary.
+const storyFrames = [
+  null,
+  {
+    scene: "It is 4:47 p.m. on a Friday. Mira, a platform engineer, asks Grok Build to find a failing Rust test, fix it, and prove the fix. The terminal answers that the work is complete. But the test is still red. One sentence from a model and one changed repository are clearly not the same thing.",
+    question: "What has to exist between a useful model answer and a trustworthy software change?",
+    analogy: "Think of the model as a brilliant engineer speaking through a radio. The harness is the teammate holding the repository, terminal, notebook, safety checklist, and test results. Intelligence travels over the radio; work happens through the teammate.",
+    outcome: "By the end of the evening, Mira stops asking whether the model is smart enough. She starts tracing the complete system that turns an intention into evidence.",
+    bridge: "To trace that system, she first needs a map of the Rust workspace."
+  },
+  {
+    scene: "Mira clones the repository and opens the root Cargo workspace. Dozens of crates stare back at her. Reading them alphabetically feels like studying a city by memorizing every street name. She needs to know where a request enters, where decisions happen, and where side effects leave the process.",
+    question: "How do you turn a large Rust workspace into a small mental map?",
+    analogy: "A railway map omits buildings and trees. It keeps stations, lines, and transfers because those explain movement. A useful crate map does the same: it keeps runtime responsibilities and the boundaries between them.",
+    outcome: "The workspace becomes five understandable neighborhoods: clients, runtime, actions, state, and cross-cutting services.",
+    bridge: "With the map drawn, Mira can follow one request as it moves through the runtime."
+  },
+  {
+    scene: "Mira retries the failing-test task and watches closely. The model asks to read a file, receives text, asks to run a test, receives an error, edits code, and asks to run the test again. What looked like one answer is actually a conversation between reasoning and reality.",
+    question: "What is the smallest loop that can turn a prompt into a verified action?",
+    analogy: "It works like debugging with a remote colleague: ask, observe, act, report, and repeat. The loop stops only when the colleague has no more actions to request—or when the surrounding system forces it to stop.",
+    outcome: "Mira can now point to each turn of the loop and explain why a failed tool call is useful information rather than merely an error.",
+    bridge: "The next mystery is the tool boundary that converts JSON-shaped intent into real machine effects."
+  },
+  {
+    scene: "The model requests a shell command. Mira realizes the request itself cannot execute anything. Somewhere, code must describe the command to the model, parse its arguments, decide whether it is allowed, run it in a specific place, and return an honest result.",
+    question: "How does a text prediction become a file read, edit, search, or process?",
+    analogy: "A tool schema is a restaurant menu, not a kitchen. It tells a diner what can be ordered. The implementation is the kitchen, permissions are the waiter checking the order, and the tool result is the plate that actually returns.",
+    outcome: "Mira learns to inspect four things for every tool: its promise, authority, execution location, and result contract.",
+    bridge: "Those tools still need a place to act, which makes the workspace more than a directory path."
+  },
+  {
+    scene: "A bad edit is easy to undo. A command that deleted an external object is not. When Mira tests rewind, she discovers that chat history, local files, processes, Git state, and remote services do not all travel backward together.",
+    question: "What state does the agent actually own, and which state lies outside its reach?",
+    analogy: "The workspace is the agent's operating system in miniature. It provides files, processes, environment, repository state, and recovery points—but it cannot magically reverse the rest of the world.",
+    outcome: "Mira separates recoverable workspace mutations from irreversible environmental side effects before she trusts rewind.",
+    bridge: "Now that actions have a home, she asks how the agent knows the rules of that home."
+  },
+  {
+    scene: "The agent follows an old build instruction even though the repository has moved to a new command. Mira finds the stale rule in project context. The model did not forget randomly; it was faithfully given the wrong memory.",
+    question: "How does the harness decide what the model should know right now?",
+    analogy: "Context is a packing problem. A traveler cannot carry the whole house, so someone chooses the passport, map, tools, and notes. Bad selection can defeat even an excellent traveler.",
+    outcome: "Mira treats rules, skills, session history, compaction, and memory as separate context sources with precedence and freshness risks.",
+    bridge: "Once context can be extended, the team needs to choose among skills, hooks, plugins, and MCP."
+  },
+  {
+    scene: "A teammate says, ‘Let us make it a plugin.’ Another says MCP. A third proposes a skill and a fourth reaches for a hook. They are using four different mechanisms as if they were synonyms.",
+    question: "Which extension point belongs to instructions, external capabilities, packaging, and lifecycle policy?",
+    analogy: "A skill is a playbook, MCP is a loading dock to another system, a hook is a checkpoint at a lifecycle boundary, and a plugin is the box that can ship several of those pieces together.",
+    outcome: "Mira chooses extension mechanisms by required authority and lifecycle instead of by whichever name sounds most powerful.",
+    bridge: "The project is now extensible, but a larger task raises a new question: how should work be divided?"
+  },
+  {
+    scene: "Mira asks two subagents to repair separate modules. Both edit the same shared configuration, while a background test keeps running against an older tree. Parallelism has made the work faster and the result less coherent.",
+    question: "When do planning, delegation, and background work help rather than create races?",
+    analogy: "Adding subagents is like adding cooks to a kitchen. Speed improves only when stations, ingredients, timing, and the head chef's integration step are explicit.",
+    outcome: "Mira designs tasks around ownership, isolation, dependency order, and a single integration point.",
+    bridge: "Then her laptop crashes, forcing the team to ask what work survives."
+  },
+  {
+    scene: "The terminal disappears halfway through a repair. After restart, Mira can resume the conversation—but one background process is gone and a remote API call cannot be replayed safely. Persistence has saved a record, not frozen the universe.",
+    question: "What must be stored to resume, inspect, compact, rewind, or reproduce an agent session?",
+    analogy: "A session is a flight recorder. It preserves decisions and events well enough to investigate and continue, but it does not put the aircraft back into the exact same sky.",
+    outcome: "Mira distinguishes durable conversation state, workspace recovery, and full environmental reproducibility.",
+    bridge: "Recovery is valuable only if dangerous actions were constrained before they happened."
+  },
+  {
+    scene: "During a security drill, a repository document tells the agent to upload diagnostics—including environment variables—to an external endpoint. The instruction looks helpful. Its effect would be a credential leak.",
+    question: "Which boundary can stop a mistaken or manipulated agent before harm occurs?",
+    analogy: "Permission is a guard asking whether an action is allowed. Sandboxing is the locked architecture of the building. A polite guard cannot replace locked doors, and locked doors do not decide business policy.",
+    outcome: "Mira layers tool filtering, policy, approval, hooks, operating-system isolation, restricted credentials, and independent verification.",
+    bridge: "Those controls become even more important when no human is watching a headless CI run."
+  },
+  {
+    scene: "The team wants a bot that repairs failing pull requests overnight. Mira writes the happy path in minutes. Then she lists the hard parts: secrets, untrusted code, branch protection, timeouts, artifacts, exit status, and proof that tests actually passed.",
+    question: "What must CI provide around a headless coding agent?",
+    analogy: "Headless mode is an engine on a factory line. CI supplies the fenced cell, emergency stop, material controls, inspection station, and immutable production gate.",
+    outcome: "Mira builds a workflow where the agent can propose and test a patch but cannot silently promote itself to production.",
+    bridge: "The runtime works without the terminal UI, so the team asks whether an editor can drive it too."
+  },
+  {
+    scene: "An editor team wants Grok Build inside its own interface. Reimplementing the agent loop would fork behavior and safety policy. They need a protocol that lets the editor remain the client while Grok Build remains the runtime.",
+    question: "How can another application drive an agent without becoming that agent?",
+    analogy: "ACP is like a standardized cockpit connection. The client owns buttons and displays; the runtime owns the engine and flight logic; messages define what can cross between them.",
+    outcome: "Mira sees ACP as a boundary between presentation and agent semantics, not merely another transport flag.",
+    bridge: "With the architecture understood, she can finally compare Grok Build with Pi Agent and Hermes fairly."
+  },
+  {
+    scene: "A manager asks which harness is best. Mira refuses the leaderboard. One workload needs a compact programmable core, another needs an integrated coding workspace, and another needs broad personal automation.",
+    question: "How do you compare agent harnesses without turning architecture into a popularity contest?",
+    analogy: "A cargo bike, pickup truck, and workshop crane all move things. The useful comparison starts with load, terrain, controls, maintenance, and risk—not a universal score.",
+    outcome: "Mira compares Pi, Grok Build, and Hermes by boundaries, extension philosophy, state, safety, and operating environment.",
+    bridge: "The final step is to turn those observations into a harness design of her own."
+  },
+  {
+    scene: "Months later, Mira's team starts a small internal agent. The temptation is to copy a large repository crate for crate. Instead, she writes down the smallest trustworthy loop and the invariants it must preserve.",
+    question: "What should engineers copy from Grok Build, and what should they derive for their own environment?",
+    analogy: "Studying a bridge does not mean duplicating every beam. You copy the load paths, safety factors, inspection points, and failure assumptions—then design for your river.",
+    outcome: "The team leaves with a minimal architecture, a hardening path, an evaluation plan, and a list of questions that remain open.",
+    bridge: "The story ends where real harness engineering begins: with one bounded task and evidence that the system did what it claimed."
+  }
+];
+
 const esc = (value) => String(value)
   .replaceAll("&", "&amp;")
   .replaceAll("<", "&lt;")
@@ -71,38 +176,39 @@ const diagram = (article) => `
 
 function evidenceCards(article) {
   return article.cards.map((card, index) => `
-    <h2>${index + 1}. ${card.title}</h2>
-    <p><strong>The contract.</strong> ${card.contract}</p>
-    <p><strong>What the source shows.</strong> ${card.evidence} This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.</p>
-    <p><strong>Why it matters.</strong> ${card.why} In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.</p>
-    <p><strong>Failure drill.</strong> ${card.failure} A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.</p>
-    <blockquote><strong>Source note:</strong> ${card.source} Researched at Grok Build commit <code>${GROK_SHA}</code>.</blockquote>
+    <h2>${index + 1}. The next clue — ${card.title}</h2>
+    <p>Mira now needs one small mechanism: ${card.contract}</p>
+    <p>She follows that responsibility into the repository. ${card.evidence} The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.</p>
+    <div class="story-lesson"><strong>Why the story changes here.</strong> ${card.why}</div>
+    <p>Then she tests the unhappy path: ${card.failure} If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.</p>
+    <blockquote><strong>Source:</strong> ${card.source} Verified against Grok Build <code>${GROK_SHA}</code>.</blockquote>
   `).join("\n");
 }
 
 function exampleSection(article) {
   return `
-    <h2 id="worked-example">Worked example — ${article.example.title}</h2>
-    <p>${article.example.intro}</p>
+    <h2 id="worked-example">Mira runs the experiment — ${article.example.title}</h2>
+    <p>Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. ${article.example.intro}</p>
     <ol>${article.example.steps.map((step) => `<li>${step}</li>`).join("\n")}</ol>
     ${article.example.code ? `<pre class="code" data-lang="${esc(article.example.lang || "text")}">${esc(article.example.code)}</pre>` : ""}
-    <p>${article.example.interpretation}</p>
-    <div class="bm-fix"><strong>Verification gate.</strong> ${article.example.verify}</div>
-    <p>The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.</p>
+    <p><strong>What she learns.</strong> ${article.example.interpretation}</p>
+    <div class="bm-fix"><strong>The proof she demands.</strong> ${article.example.verify}</div>
+    <p>That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.</p>
   `;
 }
 
 function auditSection(article) {
   return `
-    <h2 id="engineering-audit">Engineering audit — boundaries, evidence, and failure</h2>
+    <h2 id="engineering-audit">The whiteboard test</h2>
+    <p>Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?</p>
     <table class="papers">
       <thead><tr><th>Review question</th><th>Source-backed answer</th><th>Operational consequence</th></tr></thead>
       <tbody>${article.audit.map((row) => `<tr><td><strong>${row.q}</strong></td><td>${row.a}</td><td>${row.effect}</td></tr>`).join("\n")}</tbody>
     </table>
-    <p>Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.</p>
-    <h3>What to observe in production</h3>
+    <p>This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.</p>
+    <h3>Signals Mira keeps</h3>
     <ul>${article.observe.map((item) => `<li>${item}</li>`).join("\n")}</ul>
-    <p>These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.</p>
+    <p>Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.</p>
   `;
 }
 
@@ -136,33 +242,51 @@ function refsSection(article) {
 }
 
 function articleBody(article) {
+  const story = storyFrames[article.num];
   return `
-    <p class="bm-tldr">${article.tldr}</p>
+    <div class="story-opening" id="incident"><p class="story-kicker">THE INCIDENT · CHAPTER ${String(article.num).padStart(2, "0")}</p><p>${story.scene}</p></div>
+    <p class="bm-tldr"><strong>The question:</strong> ${story.question}</p>
+    <h2 id="first-principles">Start from first principles</h2>
+    <p>${story.analogy}</p>
     ${article.intro.map((p) => `<p>${p}</p>`).join("\n")}
-    <div class="bm-note"><strong>Series equation.</strong> Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the <em>${article.factor}</em> term without pretending the other three disappear.</div>
-    <h2 id="mental-model">The mental model</h2>
+    <div class="story-lesson"><strong>In one sentence.</strong> ${article.tldr}</div>
+    <div class="principles-grid">
+      <div><span>1 · NEED</span><strong>${story.question}</strong></div>
+      <div><span>2 · MECHANISM</span><strong>The harness must own a clear ${article.factor} boundary.</strong></div>
+      <div><span>3 · PROOF</span><strong>Observe the model, harness, environment, and verifier separately.</strong></div>
+    </div>
+    <div class="bm-note"><strong>The equation for the whole series.</strong> Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates <em>${article.factor}</em>, then reconnects it to the complete system.</div>
+    <h2 id="mental-model">Build the smallest useful mental model</h2>
     ${article.mentalModel.map((p) => `<p>${p}</p>`).join("\n")}
     ${diagram(article)}
-    <h2 id="source-walk">Source walk — the contracts that matter</h2>
-    <p>The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.</p>
+    <h2 id="source-walk">Now open the hood</h2>
+    <p>Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.</p>
     ${evidenceCards(article)}
     ${exampleSection(article)}
     ${auditSection(article)}
     ${limitationsSection(article)}
     ${faqSection(article)}
+    <h2 id="story-resolution">What changed for Mira</h2>
+    <p>${story.outcome}</p>
+    <p class="story-bridge"><strong>Next:</strong> ${story.bridge}</p>
     ${refsSection(article)}
   `;
 }
 
 const commonStyles = `
   .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .story-opening{border:1px solid var(--rule,#d8cfb8);border-radius:12px;padding:22px 24px;margin:0 0 22px;background:linear-gradient(135deg,rgba(240,192,64,.14),rgba(201,100,66,.06));font-size:1.08rem;line-height:1.75}
+  .story-opening p:last-child{margin-bottom:0}.story-kicker{font-family:var(--font-mono);font-size:.76rem;letter-spacing:.08em;color:#9a4f32;margin:0 0 10px;font-weight:700}
+  .story-lesson{border-left:3px solid #6a8f5f;padding:12px 15px;margin:18px 0;background:rgba(106,143,95,.08);border-radius:0 7px 7px 0}
+  .story-bridge{border-top:1px dashed var(--ink-faint);padding-top:16px;font-size:1.02rem}.story-bridge strong{color:#9a4f32}
+  .principles-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:22px 0}.principles-grid>div{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:13px;background:var(--paper)}.principles-grid span{display:block;font-family:var(--font-mono);font-size:.7rem;letter-spacing:.06em;color:#9a4f32;margin-bottom:7px}.principles-grid strong{font-size:.9rem;line-height:1.45}.principles-grid strong:first-letter{text-transform:uppercase}@media(max-width:700px){.principles-grid{grid-template-columns:1fr}}
   .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
   .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.10)}
   .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
   .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
   .diagram-container svg{width:100%;height:auto;display:block}.diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
   .reflist{list-style:none;padding:0;margin:0}.reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}.reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}.reflist li span{color:var(--ink-faint)}
-  h2{scroll-margin-top:20px;margin-top:34px}h3{margin-top:24px}table.papers{width:100%;border-collapse:collapse;margin:18px 0}table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:42px}h3{margin-top:24px}table.papers{width:100%;border-collapse:collapse;margin:18px 0}table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 8px;text-align:left;vertical-align:top;line-height:1.5}table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
   details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}details.faq[open]{border-color:#f0c040}details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink)}details.faq summary::-webkit-details-marker{display:none}details.faq summary::before{content:"+";font-family:var(--font-mono);color:#c96442;margin-right:10px}details.faq[open] summary::before{content:"–"}details.faq>p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
   pre.code{background:#2a2620;color:#ebe3cf;border-radius:7px;padding:14px 16px;overflow-x:auto;font-family:var(--font-mono);font-size:.82rem;line-height:1.6;margin:18px 0}
   .post-header .tag:not(.fill){color:#102016!important}
@@ -207,7 +331,7 @@ const articles = [];
 
 function makeArticle(def) {
   return {
-    difficulty: "advanced",
+    difficulty: "intermediate",
     tags: ["agents", "grok-build", "harness-engineering"],
     refs: [],
     ...def,
@@ -400,34 +524,10 @@ articles.push(makeArticle({
 articles.push(...laterArticles);
 articles.sort((a, b) => a.num - b.num);
 
-function productionReview(article) {
-  return `<h2 id="production-review">Production review checklist</h2>
-  <p>A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.</p>
-  <p>Test the negative path. A high-value drill for this chapter is: <strong>${article.cards[0].failure}</strong> Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.</p>
-  <p>Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.</p>
-  <p>Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.</p>
-  <p>Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.</p>
-  <h3>Source verification notebook</h3><ol>${article.cards.map((card) => `<li><strong>${card.title}:</strong> reopen ${card.source} Confirm the symbol or field still exists, then reproduce this boundary: ${card.failure}</li>`).join("\n")}</ol>
-  <p>Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.</p>
-  <h2 id="contract-lab">Contract validation lab</h2>
-  <p>The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.</p>
-  <p>For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.</p>
-  ${article.cards.map((card, index) => `<h3>Exercise ${index + 1} — ${card.title}</h3>
-    <p><strong>Setup and stimulus.</strong> Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: ${card.contract} Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.</p>
-    <p><strong>Expected evidence.</strong> The implementation evidence is ${card.evidence} Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: ${card.failure} A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.</p>
-    <p><strong>Engineering interpretation.</strong> ${card.why} Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.</p>`).join("\n")}
-  <p>Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.</p>`;
-}
-
-const baseArticleBody = articleBody;
-articleBody = function expandedArticleBody(article) {
-  return baseArticleBody(article).replace('<h2 id="limits">', `${productionReview(article)}<h2 id="limits">`);
-};
-
 function landingHtml(built) {
   const totalWords = built.reduce((sum, item) => sum + item.words, 0);
-  const cards = built.map(({article, words}) => `<section class="series-phase" id="a${article.num}"><div class="phase-header"><div class="phase-badge done">${String(article.num).padStart(2,"0")}</div><div><h2 class="phase-title">${esc(article.title)}</h2><p class="phase-desc">${esc(article.description)}</p></div></div><div class="phase-articles"><a href="posts/${article.slug}.html" class="phase-article"><span class="phase-article-num">${String(article.num).padStart(2,"0")}</span><div class="phase-article-body"><h3>${esc(article.shortTitle)}</h3><p><strong>Source-backed chapter</strong> — pinned to <code>${GROK_SHA.slice(0,8)}</code>.</p></div><span class="difficulty ${article.difficulty}">${article.difficulty}</span><span class="phase-article-time">${readMinutes(words)} min</span></a></div></section><hr class="rule">`).join("\n");
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Inside Grok Build — the series — cvam.sight</title><meta name="description" content="A 14-part source-code study of Grok Build's Rust runtime, tools, workspace, context, safety, persistence, headless CI, ACP, and harness-design lessons."><link rel="stylesheet" href="style.css?v=39">${themeScript}<link rel="icon" type="image/svg+xml" href="assets/favicon.svg"></head><body><div class="layout"><aside class="sidebar"><a href="index.html" class="logo"><span class="dot"></span> cvam.sight</a><p class="sidebar-sub">blog from a devops + ml apprentice</p><nav><a href="index.html">Home</a><a href="series.html" class="active">Series</a><a href="ai-native.html">AI Native</a><a href="archive.html">Archive</a><a href="paperjuice.html">Paper Juice</a><a href="discover.html">Discover</a><a href="about.html">About</a></nav><div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p><a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a><a href="mailto:shivam.sk2003@gmail.com">Email</a></div></aside><div class="page"><p class="meta" style="margin-bottom:8px"><a href="series.html" style="color:var(--ink-faint);text-decoration:none">← All Series</a></p><div class="series-page-header"><p class="meta">SERIES // 14 ARTICLES · SOURCE-BACKED · RUST HARNESS ENGINEERING</p><h1 class="series-page-title">Inside Grok Build.</h1><p class="series-page-desc">A coding model can propose a patch. A harness decides what the model sees, which actions exist, where they execute, how failures return, what state survives, and when a human intervenes. This series reads xAI's Grok Build repository as that complete system. Claims are pinned to <code>${GROK_SHA}</code>, researched ${RESEARCH_DATE}.</p><div class="series-page-stats"><div class="series-stat"><strong>14</strong><span>articles</span></div><div class="series-stat"><strong>${Math.round(totalWords/1000)}k+</strong><span>words</span></div><div class="series-stat"><strong>1 SHA</strong><span>pinned source</span></div><div class="series-stat"><strong>live</strong><span>complete</span></div></div></div><hr class="rule"><div style="border:1px solid var(--rule);padding:16px;border-radius:8px;margin:22px 0"><strong>Core equation:</strong> Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. Start with <a href="series-harness.html">Harness Engineering</a>, then use this series for the implementation trace.</div>${cards}<footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div></div><script src="posts.js?v=2"></script><script src="stats.js"></script><script src="app.js?v=30"></script><script defer src="settings.js?v=10"></script></body></html>`;
+  const cards = built.map(({article, words}) => `<section class="series-phase" id="a${article.num}"><div class="phase-header"><div class="phase-badge done">${String(article.num).padStart(2,"0")}</div><div><h2 class="phase-title">${esc(article.title)}</h2><p class="phase-desc">${esc(storyFrames[article.num].question)}</p></div></div><div class="phase-articles"><a href="posts/${article.slug}.html" class="phase-article"><span class="phase-article-num">${String(article.num).padStart(2,"0")}</span><div class="phase-article-body"><h3>${esc(article.shortTitle)}</h3><p><strong>Mira's next discovery</strong> — intuition first, pinned source second.</p></div><span class="difficulty ${article.difficulty}">${article.difficulty}</span><span class="phase-article-time">${readMinutes(words)} min</span></a></div></section><hr class="rule">`).join("\n");
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Inside Grok Build — the series — cvam.sight</title><meta name="description" content="A first-principles engineering story through Grok Build's Rust runtime, tools, workspace, context, safety, persistence, headless CI, and ACP."><link rel="stylesheet" href="style.css?v=39">${themeScript}<link rel="icon" type="image/svg+xml" href="assets/favicon.svg"></head><body><div class="layout"><aside class="sidebar"><a href="index.html" class="logo"><span class="dot"></span> cvam.sight</a><p class="sidebar-sub">blog from a devops + ml apprentice</p><nav><a href="index.html">Home</a><a href="series.html" class="active">Series</a><a href="ai-native.html">AI Native</a><a href="archive.html">Archive</a><a href="paperjuice.html">Paper Juice</a><a href="discover.html">Discover</a><a href="about.html">About</a></nav><div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p><a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a><a href="mailto:shivam.sk2003@gmail.com">Email</a></div></aside><div class="page"><p class="meta" style="margin-bottom:8px"><a href="series.html" style="color:var(--ink-faint);text-decoration:none">← All Series</a></p><div class="series-page-header"><p class="meta">SERIES // 14 CHAPTERS · ONE STORY · SOURCE-BACKED</p><h1 class="series-page-title">Inside Grok Build.</h1><p class="series-page-desc">At 4:47 p.m. on a Friday, Mira asks an agent to fix a failing test. It says “done.” The test is still red. Follow her as she works backward from that failure and discovers—one necessity at a time—why a coding agent needs a runtime loop, tools, a workspace, context, memory, permissions, recovery, CI controls, and protocol boundaries. The intuition comes first; the Rust source proves it afterward.</p><div class="series-page-stats"><div class="series-stat"><strong>14</strong><span>chapters</span></div><div class="series-stat"><strong>${Math.round(totalWords/1000)}k+</strong><span>focused words</span></div><div class="series-stat"><strong>1 story</strong><span>start to finish</span></div><div class="series-stat"><strong>1 SHA</strong><span>pinned source</span></div></div></div><hr class="rule"><div style="border:1px solid var(--rule);padding:16px;border-radius:8px;margin:22px 0"><strong>The idea we derive:</strong> coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. No Rust background is required. Every chapter starts with a concrete incident, builds the smallest mental model, and only then opens the source.</div>${cards}<footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div></div><script src="posts.js?v=2"></script><script src="stats.js"></script><script src="app.js?v=30"></script><script defer src="settings.js?v=10"></script></body></html>`;
 }
 
 fs.mkdirSync(postsDir, {recursive:true});
@@ -444,6 +544,8 @@ for (const article of articles) {
 }
 fs.writeFileSync(path.join(site, "series-grok-build.html"), cleanText(landingHtml(built)));
 
-const failures = built.filter(({words}) => words < 4000);
+// The original drafts exceeded 4,000 words but read like reference manuals.
+// The story edition deliberately targets a focused 9–15 minute chapter.
+const failures = built.filter(({words}) => words < 1800);
 console.log(JSON.stringify({articles:built.map(({article,words}) => ({num:article.num,slug:article.slug,words,minutes:readMinutes(words)})),failures:failures.map(({article,words}) => ({slug:article.slug,words}))},null,2));
 if (failures.length) process.exitCode = 2;

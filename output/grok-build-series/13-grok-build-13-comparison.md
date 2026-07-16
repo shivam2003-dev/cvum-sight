@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # Grok Build vs Pi Agent vs Hermes
 
-The three systems share model-plus-harness anatomy but optimize different boundaries. Grok Build integrates a coding workspace, policy, sessions, TUI/headless/ACP, and Rust subsystems. Pi keeps a small TypeScript core and pushes behavior into extensions and SDKs. Hermes targets a broad persistent agent across coding, messaging, memory, recurring work, and several execution backends.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 13
+
+A manager asks which harness is best. Mira refuses the leaderboard. One workload needs a compact programmable core, another needs an integrated coding workspace, and another needs broad personal automation.
+
+</div>
+
+**The question:** How do you compare agent harnesses without turning architecture into a popularity contest?
+
+## Start from first principles
+
+A cargo bike, pickup truck, and workshop crane all move things. The useful comparison starts with load, terrain, controls, maintenance, and risk—not a universal score.
 
 Comparisons age quickly. The prior Harness Engineering articles captured older Pi and Hermes snapshots. This chapter rechecks current default branches and pins its conclusions to July 16, 2026.
 
@@ -16,13 +28,41 @@ Grok Build is `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`; Pi is `97f9978fa66685f
 
 The objective is workload fit, not a leaderboard. A small core can be easier to audit and require more integration; a broad system can reduce setup and increase governance surface.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *architectural-fit* term without pretending the other three disappear.
+**In one sentence.** The three systems share model-plus-harness anatomy but optimize different boundaries. Grok Build integrates a coding workspace, policy, sessions, TUI/headless/ACP, and Rust subsystems. Pi keeps a small TypeScript core and pushes behavior into extensions and SDKs. Hermes targets a broad persistent agent across coding, messaging, memory, recurring work, and several execution backends.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**How do you compare agent harnesses without turning architecture into a popularity contest?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear architectural-fit boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *architectural-fit*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Compare intended purpose before features. Pi is a programmable terminal harness/SDK. Grok Build is an integrated coding workspace. Hermes is a persistent multi-channel automation agent that also codes.
 
@@ -38,109 +78,141 @@ Fig 13.1 — The same harness anatomy is packaged around different primary scope
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Compare primary purpose
+## 1. The next clue — Compare primary purpose
 
-**The contract.** Feature differences must be interpreted through target workload.
+Mira now needs one small mechanism: Feature differences must be interpreted through target workload.
 
-**What the source shows.** Current READMEs describe minimal terminal coding/SDK, integrated terminal coding, and broad self-improving multi-channel roles. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. Current READMEs describe minimal terminal coding/SDK, integrated terminal coding, and broad self-improving multi-channel roles. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Messaging is central for Hermes and intentionally outside Pi's minimal core. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Feature counting rewards surface area rather than coherent design. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Messaging is central for Hermes and intentionally outside Pi's minimal core.
 
-> **Source note:** Pinned README files for all repositories. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Compare runtime structure
+Then she tests the unhappy path: Feature counting rewards surface area rather than coherent design. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Language and module boundaries shape embedding and ownership.
+> **Source:** Pinned README files for all repositories. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** Grok Build is a large Rust workspace; Pi packages are TypeScript; Hermes is primarily Python. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Compare runtime structure
 
-**Why it matters.** The choices favor explicit subsystems, extension/SDK ergonomics, and integration velocity respectively. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Language and module boundaries shape embedding and ownership.
 
-**Failure drill.** Language does not determine reliability; test the contracts. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. Grok Build is a large Rust workspace; Pi packages are TypeScript; Hermes is primarily Python. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** Pinned trees and manifests. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Compare tool philosophy
+**Why the story changes here.** The choices favor explicit subsystems, extension/SDK ergonomics, and integration velocity respectively.
 
-**The contract.** Default model-visible actions reflect different minimalism choices.
+</div>
 
-**What the source shows.** Pi documents four default tools; Grok builds dynamic integrated toolsets; Hermes advertises a broad suite. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Language does not determine reliability; test the contracts. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Small surfaces reduce context and authority; broad surfaces reduce setup. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** Pinned trees and manifests. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Tool count does not measure implementation quality or permissions. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Compare tool philosophy
 
-> **Source note:** Pinned docs and Grok tool registry. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Default model-visible actions reflect different minimalism choices.
 
-## 4. Compare extension philosophy
+She follows that responsibility into the repository. Pi documents four default tools; Grok builds dynamic integrated toolsets; Hermes advertises a broad suite. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Customization can be language-native, typed mechanisms, or broad modules/integrations.
+<div class="story-lesson">
 
-**What the source shows.** Pi emphasizes TypeScript extensions/skills/RPC/SDK; Grok separates skills/plugins/hooks/MCP/agents; Hermes combines skills, tools, providers, backends. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Small surfaces reduce context and authority; broad surfaces reduce setup.
 
-**Why it matters.** Teams choose a programmable substrate or a curated control surface. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Powerful extensions often have host authority and require governance. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Tool count does not measure implementation quality or permissions. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** Pinned project docs. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** Pinned docs and Grok tool registry. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Compare state and memory
+## 4. The next clue — Compare extension philosophy
 
-**The contract.** Session history, compaction, persistent recall, and self-improvement are distinct.
+Mira now needs one small mechanism: Customization can be language-native, typed mechanisms, or broad modules/integrations.
 
-**What the source shows.** Pi uses JSONL session trees; Grok has detailed sessions and optional memory; Hermes emphasizes persistent memory/skill improvement. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. Pi emphasizes TypeScript extensions/skills/RPC/SDK; Grok separates skills/plugins/hooks/MCP/agents; Hermes combines skills, tools, providers, backends. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Coding sessions and always-on operators have different continuity needs. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Persistent memory increases privacy, staleness, and poisoning risk everywhere. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Teams choose a programmable substrate or a curated control surface.
 
-> **Source note:** Pinned session and memory docs. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Compare planning and delegation
+Then she tests the unhappy path: Powerful extensions often have host authority and require governance. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Plan/subagent orchestration can be core, extension-built, or broad platform behavior.
+> **Source:** Pinned project docs. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** Grok has explicit plan/subagent/background machinery; Pi omits plan/subagents from core; Hermes advertises subagents/recurring work. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Compare state and memory
 
-**Why it matters.** Core support standardizes UX; omission preserves minimalism. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Session history, compaction, persistent recall, and self-improvement are distinct.
 
-**Failure drill.** Built-in does not guarantee coordination safety; omitted core does not mean impossible. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. Pi uses JSONL session trees; Grok has detailed sessions and optional memory; Hermes emphasizes persistent memory/skill improvement. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** Pinned docs. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Compare interfaces
+**Why the story changes here.** Coding sessions and always-on operators have different continuity needs.
 
-**The contract.** TUI, headless, RPC/SDK, ACP, messaging, and gateway surfaces reveal lifecycle intent.
+</div>
 
-**What the source shows.** Grok offers TUI/headless/ACP; Pi interactive/print/JSON/RPC/SDK; Hermes CLI plus gateways/messaging/cron. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Persistent memory increases privacy, staleness, and poisoning risk everywhere. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Interface should match operator location and session lifetime. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** Pinned session and memory docs. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Each surface expands auth, state, and compatibility obligations. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Compare planning and delegation
 
-> **Source note:** Pinned guides and READMEs. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Plan/subagent orchestration can be core, extension-built, or broad platform behavior.
 
-## 8. Compare safety responsibility
+She follows that responsibility into the repository. Grok has explicit plan/subagent/background machinery; Pi omits plan/subagents from core; Hermes advertises subagents/recurring work. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Each system splits policy/isolation between core and host differently.
+<div class="story-lesson">
 
-**What the source shows.** Grok has detailed permission/sandbox features; Pi expects host/extension/container choices; Hermes depends on tool/backend deployment configuration. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Core support standardizes UX; omission preserves minimalism.
 
-**Why it matters.** Teams must inventory supplied and missing controls. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** A universal safety winner ignores actual identity, credentials, and containment. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Built-in does not guarantee coordination safety; omitted core does not mean impossible. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** Pinned first-party docs; conclusion is architectural and subjective. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** Pinned docs. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — choose for three workloads
+## 7. The next clue — Compare interfaces
 
-Apply the comparison to concrete work instead of a feature checklist.
+Mira now needs one small mechanism: TUI, headless, RPC/SDK, ACP, messaging, and gateway surfaces reveal lifecycle intent.
+
+She follows that responsibility into the repository. Grok offers TUI/headless/ACP; Pi interactive/print/JSON/RPC/SDK; Hermes CLI plus gateways/messaging/cron. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Interface should match operator location and session lifetime.
+
+</div>
+
+Then she tests the unhappy path: Each surface expands auth, state, and compatibility obligations. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Pinned guides and READMEs. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Compare safety responsibility
+
+Mira now needs one small mechanism: Each system splits policy/isolation between core and host differently.
+
+She follows that responsibility into the repository. Grok has detailed permission/sandbox features; Pi expects host/extension/container choices; Hermes depends on tool/backend deployment configuration. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Teams must inventory supplied and missing controls.
+
+</div>
+
+Then she tests the unhappy path: A universal safety winner ignores actual identity, credentials, and containment. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Pinned first-party docs; conclusion is architectural and subjective. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — choose for three workloads
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Apply the comparison to concrete work instead of a feature checklist.
 
 1.  For local refactor, prioritize coding loop, diff/test, sessions, interactive control.
 2.  For embedded domain agent, prioritize SDK/RPC/ACP and small custom surface.
@@ -156,17 +228,19 @@ Decision = workload fit + required controls + extension burden + operational own
 # Do not reduce the decision to stars, tool count, or one benchmark.
 ```
 
-This is a decision heuristic, not a repository claim or quantitative formula.
+**What she learns.** This is a decision heuristic, not a repository claim or quantitative formula.
 
 <div class="bm-fix">
 
-**Verification gate.** Record assumptions, commits, task suite, pass/failure rates, cost, and subjective weights.
+**The proof she demands.** Record assumptions, commits, task suite, pass/failure rates, cost, and subjective weights.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -175,113 +249,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **Persistent multi-channel?** | Hermes. | Govern broad identity/memory. |
 | **Universal winner?** | None. | Choose workload fit. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Commits, configs, models, toolsets, environments, and tasks.
 - Repeated success rate, not one demo.
 - Tokens/cost/time, interventions, unsafe attempts, recovery.
 - Extension and control work needed for equivalent behavior.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **Feature counting rewards surface area rather than coherent design.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Compare primary purpose:** reopen Pinned README files for all repositories. Confirm the symbol or field still exists, then reproduce this boundary: Feature counting rewards surface area rather than coherent design.
-2.  **Compare runtime structure:** reopen Pinned trees and manifests. Confirm the symbol or field still exists, then reproduce this boundary: Language does not determine reliability; test the contracts.
-3.  **Compare tool philosophy:** reopen Pinned docs and Grok tool registry. Confirm the symbol or field still exists, then reproduce this boundary: Tool count does not measure implementation quality or permissions.
-4.  **Compare extension philosophy:** reopen Pinned project docs. Confirm the symbol or field still exists, then reproduce this boundary: Powerful extensions often have host authority and require governance.
-5.  **Compare state and memory:** reopen Pinned session and memory docs. Confirm the symbol or field still exists, then reproduce this boundary: Persistent memory increases privacy, staleness, and poisoning risk everywhere.
-6.  **Compare planning and delegation:** reopen Pinned docs. Confirm the symbol or field still exists, then reproduce this boundary: Built-in does not guarantee coordination safety; omitted core does not mean impossible.
-7.  **Compare interfaces:** reopen Pinned guides and READMEs. Confirm the symbol or field still exists, then reproduce this boundary: Each surface expands auth, state, and compatibility obligations.
-8.  **Compare safety responsibility:** reopen Pinned first-party docs; conclusion is architectural and subjective. Confirm the symbol or field still exists, then reproduce this boundary: A universal safety winner ignores actual identity, credentials, and containment.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Compare primary purpose
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Feature differences must be interpreted through target workload. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Current READMEs describe minimal terminal coding/SDK, integrated terminal coding, and broad self-improving multi-channel roles. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Feature counting rewards surface area rather than coherent design. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Messaging is central for Hermes and intentionally outside Pi's minimal core. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Compare runtime structure
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Language and module boundaries shape embedding and ownership. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Grok Build is a large Rust workspace; Pi packages are TypeScript; Hermes is primarily Python. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Language does not determine reliability; test the contracts. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The choices favor explicit subsystems, extension/SDK ergonomics, and integration velocity respectively. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Compare tool philosophy
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Default model-visible actions reflect different minimalism choices. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Pi documents four default tools; Grok builds dynamic integrated toolsets; Hermes advertises a broad suite. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Tool count does not measure implementation quality or permissions. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Small surfaces reduce context and authority; broad surfaces reduce setup. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Compare extension philosophy
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Customization can be language-native, typed mechanisms, or broad modules/integrations. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Pi emphasizes TypeScript extensions/skills/RPC/SDK; Grok separates skills/plugins/hooks/MCP/agents; Hermes combines skills, tools, providers, backends. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Powerful extensions often have host authority and require governance. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Teams choose a programmable substrate or a curated control surface. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Compare state and memory
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Session history, compaction, persistent recall, and self-improvement are distinct. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Pi uses JSONL session trees; Grok has detailed sessions and optional memory; Hermes emphasizes persistent memory/skill improvement. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Persistent memory increases privacy, staleness, and poisoning risk everywhere. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Coding sessions and always-on operators have different continuity needs. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Compare planning and delegation
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Plan/subagent orchestration can be core, extension-built, or broad platform behavior. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Grok has explicit plan/subagent/background machinery; Pi omits plan/subagents from core; Hermes advertises subagents/recurring work. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Built-in does not guarantee coordination safety; omitted core does not mean impossible. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Core support standardizes UX; omission preserves minimalism. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Compare interfaces
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: TUI, headless, RPC/SDK, ACP, messaging, and gateway surfaces reveal lifecycle intent. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Grok offers TUI/headless/ACP; Pi interactive/print/JSON/RPC/SDK; Hermes CLI plus gateways/messaging/cron. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Each surface expands auth, state, and compatibility obligations. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Interface should match operator location and session lifetime. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Compare safety responsibility
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Each system splits policy/isolation between core and host differently. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Grok has detailed permission/sandbox features; Pi expects host/extension/container choices; Hermes depends on tool/backend deployment configuration. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A universal safety winner ignores actual identity, credentials, and containment. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Teams must inventory supplied and missing controls. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -326,6 +303,12 @@ It has detailed built-ins; safety still depends on config, platform, environment
 Why update old articles?
 
 Pi and Hermes evolved; fair comparison needs current snapshots.
+
+## What changed for Mira
+
+Mira compares Pi, Grok Build, and Hermes by boundaries, extension philosophy, state, safety, and operating environment.
+
+**Next:** The final step is to turn those observations into a harness design of her own.
 
 ## Key takeaways
 

@@ -1,5 +1,7 @@
 # Series Architecture, SEO Plan, and Detailed Outlines
 
+> **Publication revision, July 16, 2026:** The final series keeps this source and topic architecture but presents it as one continuous first-principles story. Mira, a platform engineer, starts with an agent that claims a failing test is fixed when it is not. Each chapter introduces one new harness responsibility only when her investigation needs it, explains the idea with a concrete analogy, and opens the Rust source afterward. Published chapters target 10–15 minutes rather than the longer reference-manual estimates below.
+
 ## Proposed series architecture
 
 The 14-article structure is retained because the source tree supports each boundary. The sequence moves from system model, to runtime mechanics, to state and context, to extensions and orchestration, to safety and automation, and finally to comparison and synthesis.

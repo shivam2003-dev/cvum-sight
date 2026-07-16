@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # The Workspace Is the Agent's Operating System
 
-The workspace is not a directory helper. It is the placement and state boundary for tools, files, processes, repository metadata, prompt-level file tracking, and local-versus-proxy execution. Its design determines which mutations can be observed, resumed, rewound, and audited.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 05
+
+A bad edit is easy to undo. A command that deleted an external object is not. When Mira tests rewind, she discovers that chat history, local files, processes, Git state, and remote services do not all travel backward together.
+
+</div>
+
+**The question:** What state does the agent actually own, and which state lies outside its reach?
+
+## Start from first principles
+
+The workspace is the agent's operating system in miniature. It provides files, processes, environment, repository state, and recovery points—but it cannot magically reverse the rest of the world.
 
 Many coding-agent failures are environmental: wrong cwd, stale checkout, missing dependency, concurrent edit, lingering process, or a mutation the transcript cannot reconstruct.
 
@@ -16,13 +28,41 @@ Many coding-agent failures are environmental: wrong cwd, stale checkout, missing
 
 Call it the agent's operating system because it mediates capability and state. Do not call it a transaction manager: remote APIs, databases, deployments, and other external effects can escape file rewind.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *environment-quality* term without pretending the other three disappear.
+**In one sentence.** The workspace is not a directory helper. It is the placement and state boundary for tools, files, processes, repository metadata, prompt-level file tracking, and local-versus-proxy execution. Its design determines which mutations can be observed, resumed, rewound, and audited.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**What state does the agent actually own, and which state lies outside its reach?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear environment-quality boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *environment-quality*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Divide state into conversation, local filesystem, process runtime, and external services. Sessions cover the first; rewind covers selected file state; task management covers process lifetime; external systems need separate provenance and compensation.
 
@@ -38,109 +78,141 @@ Fig 5.1 — The workspace mediates several state domains, while rewind covers on
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Choose local or proxy placement
+## 1. The next clue — Choose local or proxy placement
 
-**The contract.** Operations should have one typed API while environmental placement remains explicit.
+Mira now needs one small mechanism: Operations should have one typed API while environmental placement remains explicit.
 
-**What the source shows.** `WorkspaceOps` contains `Local` and `Proxy` variants and dispatches methods through the selected mode. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. `WorkspaceOps` contains `Local` and `Proxy` variants and dispatches methods through the selected mode. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** The turn loop remains stable when execution moves to a workspace service. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** A proxy transport error can occur after remote admission; classify ambiguous completion before retrying a mutation. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** The turn loop remains stable when execution moves to a workspace service.
 
-> **Source note:** `xai-grok-workspace/src/workspace_ops.rs::WorkspaceOps`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Bind capabilities to a session
+Then she tests the unhappy path: A proxy transport error can occur after remote admission; classify ambiguous completion before retrying a mutation. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** A workspace session needs a finalized toolset, capability mode, environment, and identity before calls execute.
+> **Source:** `xai-grok-workspace/src/workspace_ops.rs::WorkspaceOps`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** `bind_local_session` installs the agent toolset on a local session; binding metadata carries capability information. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Bind capabilities to a session
 
-**Why it matters.** Session binding prevents a global registry from silently granting every workspace identical authority. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: A workspace session needs a finalized toolset, capability mode, environment, and identity before calls execute.
 
-**Failure drill.** Fallback behavior must fail closed when a required toolset or strict capability configuration is missing. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. `bind_local_session` installs the agent toolset on a local session; binding metadata carries capability information. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `workspace_ops.rs::bind_local_session` and `xai-grok-workspace/src/config.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Dispatch typed workspace operations
+**Why the story changes here.** Session binding prevents a global registry from silently granting every workspace identical authority.
 
-**The contract.** Filesystem, repository, execution, and tool calls need consistent errors across placements.
+</div>
 
-**What the source shows.** Workspace methods use a typed operation pattern; `call_tool` invokes the local finalized toolset or remote hub. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Fallback behavior must fail closed when a required toolset or strict capability configuration is missing. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** A stable boundary keeps transport details out of the model loop. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `workspace_ops.rs::bind_local_session` and `xai-grok-workspace/src/config.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Flattening remote, policy, and implementation failures into one string invites unsafe blind retry. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Dispatch typed workspace operations
 
-> **Source note:** `xai-grok-workspace/src/workspace_ops.rs::call_tool`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Filesystem, repository, execution, and tool calls need consistent errors across placements.
 
-## 4. Track files around each prompt
+She follows that responsibility into the repository. Workspace methods use a typed operation pattern; `call_tool` invokes the local finalized toolset or remote hub. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Rewind requires a baseline before model-driven mutations and an end state after the prompt.
+<div class="story-lesson">
 
-**What the source shows.** The shell calls `file_state_tracker.begin_prompt`; completion flushes state and persists a rewind point. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** A stable boundary keeps transport details out of the model loop.
 
-**Why it matters.** Prompt indices let the user restore a coherent conversational and filesystem point. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Unrelated local processes can mutate files in the same interval, complicating causal attribution. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Flattening remote, policy, and implementation failures into one string invites unsafe blind retry. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** Shell `turn.rs` and workspace session file-state code. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `xai-grok-workspace/src/workspace_ops.rs::call_tool`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Represent before and after state
+## 4. The next clue — Track files around each prompt
 
-**The contract.** A rewind record must identify the prompt and retain enough material for restoration.
+Mira now needs one small mechanism: Rewind requires a baseline before model-driven mutations and an end state after the prompt.
 
-**What the source shows.** `RewindPoint` stores before/after file snapshots; `RewindCheckpoint` can bundle filesystem and optional hunk state. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. The shell calls `file_state_tracker.begin_prompt`; completion flushes state and persists a rewind point. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Explicit snapshots beat asking the model to reconstruct an earlier patch from prose. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Large files, external changes, and gated checkpoint modes require conflict handling and honest UI warnings. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Prompt indices let the user restore a coherent conversational and filesystem point.
 
-> **Source note:** `xai-grok-workspace/src/session/file_state.rs` and `checkpoint.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Keep advanced checkpoint claims narrow
+Then she tests the unhappy path: Unrelated local processes can mutate files in the same interval, complicating causal attribution. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Source flags and release defaults must support any claim that hunk, durable, or Git checkpointing is active.
+> **Source:** Shell `turn.rs` and workspace session file-state code. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** Checkpoint code contains feature/environment gates whose defaults leave some broader mechanisms disabled. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Represent before and after state
 
-**Why it matters.** Code presence is not released-path activation. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: A rewind record must identify the prompt and retain enough material for restoration.
 
-**Failure drill.** Overstating checkpoint coverage leads operators to assume repository or remote state is reversible when it is not. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. `RewindPoint` stores before/after file snapshots; `RewindCheckpoint` can bundle filesystem and optional hunk state. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `xai-grok-workspace/src/session/checkpoint.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Use worktrees for task isolation
+**Why the story changes here.** Explicit snapshots beat asking the model to reconstruct an earlier patch from prose.
 
-**The contract.** Concurrent write-capable tasks should not share one working tree.
+</div>
 
-**What the source shows.** Headless and subagent flows expose worktree options and report isolated paths. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Large files, external changes, and gated checkpoint modes require conflict handling and honest UI warnings. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Git worktrees isolate files and index state while preserving shared history. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `xai-grok-workspace/src/session/file_state.rs` and `checkpoint.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** They do not isolate credentials, ports, caches, databases, home directories, or external services. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Keep advanced checkpoint claims narrow
 
-> **Source note:** Headless worktree flags and subagent isolation guide. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Source flags and release defaults must support any claim that hunk, durable, or Git checkpointing is active.
 
-## 8. Measure environment quality
+She follows that responsibility into the repository. Checkpoint code contains feature/environment gates whose defaults leave some broader mechanisms disabled. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** A workspace should expose commit, dirty state, cwd, toolchain, environment, and process evidence needed to reproduce a result.
+<div class="story-lesson">
 
-**What the source shows.** Session context/workspace metadata carry cwd and environment; command results carry output/status. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Code presence is not released-path activation.
 
-**Why it matters.** A patch that works only through hidden developer-machine state is not reliable. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Ambient credentials and caches can make unsafe or incomplete work appear successful. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Overstating checkpoint coverage leads operators to assume repository or remote state is reversible when it is not. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `xai-grok-tools::SessionContext` and workspace session/config modules. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `xai-grok-workspace/src/session/checkpoint.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — rewind a failed refactor without overstating rollback
+## 7. The next clue — Use worktrees for task isolation
 
-Use a disposable Git worktree so the experiment and original checkout have distinct file state.
+Mira now needs one small mechanism: Concurrent write-capable tasks should not share one working tree.
+
+She follows that responsibility into the repository. Headless and subagent flows expose worktree options and report isolated paths. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Git worktrees isolate files and index state while preserving shared history.
+
+</div>
+
+Then she tests the unhappy path: They do not isolate credentials, ports, caches, databases, home directories, or external services. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Headless worktree flags and subagent isolation guide. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Measure environment quality
+
+Mira now needs one small mechanism: A workspace should expose commit, dirty state, cwd, toolchain, environment, and process evidence needed to reproduce a result.
+
+She follows that responsibility into the repository. Session context/workspace metadata carry cwd and environment; command results carry output/status. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** A patch that works only through hidden developer-machine state is not reliable.
+
+</div>
+
+Then she tests the unhappy path: Ambient credentials and caches can make unsafe or incomplete work appear successful. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `xai-grok-tools::SessionContext` and workspace session/config modules. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — rewind a failed refactor without overstating rollback
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Use a disposable Git worktree so the experiment and original checkout have distinct file state.
 
 1.  Record base commit and clean status.
 2.  Start a session inside a dedicated worktree.
@@ -158,17 +230,19 @@ grok
 # In the TUI: make a scoped change, inspect it, then use /rewind.
 ```
 
-Git supplies checkout isolation; Grok Build supplies session rewind. The example does not claim `/rewind` deletes the worktree or undoes network effects.
+**What she learns.** Git supplies checkout isolation; Grok Build supplies session rewind. The example does not claim `/rewind` deletes the worktree or undoes network effects.
 
 <div class="bm-fix">
 
-**Verification gate.** Compare Git status and contents with the chosen point, then inventory child processes and external actions separately.
+**The proof she demands.** Compare Git status and contents with the chosen point, then inventory child processes and external actions separately.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -177,113 +251,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **What selects placement?** | Local/proxy configuration and session binding. | Include placement in provenance. |
 | **What proves reproducibility?** | Environment fingerprint and independent verification. | Archive toolchain and dependencies. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Base commit, worktree path, dirty state, and workspace mode.
 - Prompt index with before/after changed-file inventory.
 - Command cwd, process/task ID, exit status, and full logs.
 - Rewind selection, restored paths, conflicts, and unhandled external effects.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **A proxy transport error can occur after remote admission; classify ambiguous completion before retrying a mutation.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Choose local or proxy placement:** reopen `xai-grok-workspace/src/workspace_ops.rs::WorkspaceOps`. Confirm the symbol or field still exists, then reproduce this boundary: A proxy transport error can occur after remote admission; classify ambiguous completion before retrying a mutation.
-2.  **Bind capabilities to a session:** reopen `workspace_ops.rs::bind_local_session` and `xai-grok-workspace/src/config.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Fallback behavior must fail closed when a required toolset or strict capability configuration is missing.
-3.  **Dispatch typed workspace operations:** reopen `xai-grok-workspace/src/workspace_ops.rs::call_tool`. Confirm the symbol or field still exists, then reproduce this boundary: Flattening remote, policy, and implementation failures into one string invites unsafe blind retry.
-4.  **Track files around each prompt:** reopen Shell `turn.rs` and workspace session file-state code. Confirm the symbol or field still exists, then reproduce this boundary: Unrelated local processes can mutate files in the same interval, complicating causal attribution.
-5.  **Represent before and after state:** reopen `xai-grok-workspace/src/session/file_state.rs` and `checkpoint.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Large files, external changes, and gated checkpoint modes require conflict handling and honest UI warnings.
-6.  **Keep advanced checkpoint claims narrow:** reopen `xai-grok-workspace/src/session/checkpoint.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Overstating checkpoint coverage leads operators to assume repository or remote state is reversible when it is not.
-7.  **Use worktrees for task isolation:** reopen Headless worktree flags and subagent isolation guide. Confirm the symbol or field still exists, then reproduce this boundary: They do not isolate credentials, ports, caches, databases, home directories, or external services.
-8.  **Measure environment quality:** reopen `xai-grok-tools::SessionContext` and workspace session/config modules. Confirm the symbol or field still exists, then reproduce this boundary: Ambient credentials and caches can make unsafe or incomplete work appear successful.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Choose local or proxy placement
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Operations should have one typed API while environmental placement remains explicit. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `WorkspaceOps` contains `Local` and `Proxy` variants and dispatches methods through the selected mode. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A proxy transport error can occur after remote admission; classify ambiguous completion before retrying a mutation. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The turn loop remains stable when execution moves to a workspace service. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Bind capabilities to a session
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A workspace session needs a finalized toolset, capability mode, environment, and identity before calls execute. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `bind_local_session` installs the agent toolset on a local session; binding metadata carries capability information. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Fallback behavior must fail closed when a required toolset or strict capability configuration is missing. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Session binding prevents a global registry from silently granting every workspace identical authority. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Dispatch typed workspace operations
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Filesystem, repository, execution, and tool calls need consistent errors across placements. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Workspace methods use a typed operation pattern; `call_tool` invokes the local finalized toolset or remote hub. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Flattening remote, policy, and implementation failures into one string invites unsafe blind retry. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** A stable boundary keeps transport details out of the model loop. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Track files around each prompt
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Rewind requires a baseline before model-driven mutations and an end state after the prompt. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The shell calls `file_state_tracker.begin_prompt`; completion flushes state and persists a rewind point. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Unrelated local processes can mutate files in the same interval, complicating causal attribution. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Prompt indices let the user restore a coherent conversational and filesystem point. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Represent before and after state
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A rewind record must identify the prompt and retain enough material for restoration. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `RewindPoint` stores before/after file snapshots; `RewindCheckpoint` can bundle filesystem and optional hunk state. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Large files, external changes, and gated checkpoint modes require conflict handling and honest UI warnings. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Explicit snapshots beat asking the model to reconstruct an earlier patch from prose. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Keep advanced checkpoint claims narrow
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Source flags and release defaults must support any claim that hunk, durable, or Git checkpointing is active. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Checkpoint code contains feature/environment gates whose defaults leave some broader mechanisms disabled. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Overstating checkpoint coverage leads operators to assume repository or remote state is reversible when it is not. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Code presence is not released-path activation. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Use worktrees for task isolation
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Concurrent write-capable tasks should not share one working tree. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Headless and subagent flows expose worktree options and report isolated paths. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: They do not isolate credentials, ports, caches, databases, home directories, or external services. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Git worktrees isolate files and index state while preserving shared history. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Measure environment quality
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A workspace should expose commit, dirty state, cwd, toolchain, environment, and process evidence needed to reproduce a result. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Session context/workspace metadata carry cwd and environment; command results carry output/status. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Ambient credentials and caches can make unsafe or incomplete work appear successful. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** A patch that works only through hidden developer-machine state is not reliable. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -328,6 +305,12 @@ Only according to captured file state. Test the released behavior before trustin
 What should CI preserve?
 
 Base SHA, diff, commands, verifier results, session IDs, effective config, and reproduction artifacts.
+
+## What changed for Mira
+
+Mira separates recoverable workspace mutations from irreversible environmental side effects before she trusts rewind.
+
+**Next:** Now that actions have a home, she asks how the agent knows the rules of that home.
 
 ## Key takeaways
 

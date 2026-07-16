@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # From Prompt to Action: The Grok Build Runtime Loop
 
-A Grok Build turn is not one model request. It is a state machine that resolves prompt context, samples the model, authorizes and executes tool calls, appends observations, handles interjections and compaction, and stops on protocol conditions. Verification remains a separate engineering responsibility.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 03
+
+Mira retries the failing-test task and watches closely. The model asks to read a file, receives text, asks to run a test, receives an error, edits code, and asks to run the test again. What looked like one answer is actually a conversation between reasoning and reality.
+
+</div>
+
+**The question:** What is the smallest loop that can turn a prompt into a verified action?
+
+## Start from first principles
+
+It works like debugging with a remote colleague: ask, observe, act, report, and repeat. The loop stops only when the colleague has no more actions to request—or when the surrounding system forces it to stop.
 
 The runtime loop is where agent language becomes systems engineering. Every round must maintain a coherent transcript while asynchronous tools, user interjections, background tasks, memory, and context pressure change the state around it.
 
@@ -16,13 +28,41 @@ The source path begins in `handle_prompt`, not at a generic provider API. That f
 
 The loop is also where overclaiming is easiest. Retrying an authentication error is not task recovery. Compaction is not lossless. A no-tool answer is not proof that the requested test ran.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *harness-state-machine* term without pretending the other three disappear.
+**In one sentence.** A Grok Build turn is not one model request. It is a state machine that resolves prompt context, samples the model, authorizes and executes tool calls, appends observations, handles interjections and compaction, and stops on protocol conditions. Verification remains a separate engineering responsibility.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**What is the smallest loop that can turn a prompt into a verified action?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear harness-state-machine boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *harness-state-machine*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Model each prompt as an outer transaction-like lifecycle containing several model rounds. The runtime can persist and rewind file state around the prompt, but individual tools can still cause external side effects beyond that local boundary.
 
@@ -38,109 +78,141 @@ Fig 3.1 — A prompt contains several model and tool rounds before a terminal se
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Begin prompt state before sampling
+## 1. The next clue — Begin prompt state before sampling
 
-**The contract.** User input, prompt index, file tracking, hooks, and persistence must agree on where the turn begins.
+Mira now needs one small mechanism: User input, prompt index, file tracking, hooks, and persistence must agree on where the turn begins.
 
-**What the source shows.** `handle_prompt` resets active skill state, reconciles planning, increments prompt index, calls `file_state_tracker.begin_prompt`, persists ACP chunks, and pushes the user message. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. `handle_prompt` resets active skill state, reconciles planning, increments prompt index, calls `file_state_tracker.begin_prompt`, persists ACP chunks, and pushes the user message. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Recovery and rewind require a deterministic boundary around the mutations attributed to this request. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** If initialization fails after partial persistence, resume code must distinguish a recorded prompt from one that reached the model. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Recovery and rewind require a deterministic boundary around the mutations attributed to this request.
 
-> **Source note:** `xai-grok-shell/src/session/acp_session_impl/turn.rs::handle_prompt`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Resolve commands and skills before ordinary chat
+Then she tests the unhappy path: If initialization fails after partial persistence, resume code must distinguish a recorded prompt from one that reached the model. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Slash commands and explicit skill invocations can change how the prompt is interpreted before it becomes a model message.
+> **Source:** `xai-grok-shell/src/session/acp_session_impl/turn.rs::handle_prompt`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** The prompt handler resolves command/skill paths, sets active skill context, and parses text/context/image chunks. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Resolve commands and skills before ordinary chat
 
-**Why it matters.** The visible user string is not always the exact model request; the harness can add task-specific instructions and resources. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Slash commands and explicit skill invocations can change how the prompt is interpreted before it becomes a model message.
 
-**Failure drill.** A name collision or stale discovered skill can route the turn differently; effective skill identity belongs in diagnostics. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The prompt handler resolves command/skill paths, sets active skill context, and parses text/context/image chunks. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `turn.rs` prompt parsing and skill resolution paths. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Inject first-turn memory conditionally
+**Why the story changes here.** The visible user string is not always the exact model request; the harness can add task-specific instructions and resources.
 
-**The contract.** Cross-session recall should be bounded, observable, and optional rather than silently loading an entire store.
+</div>
 
-**What the source shows.** `first_turn_memory_reminder` queries memory, uses a fallback greeting query, and limits returned snippets before injection. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: A name collision or stale discovered skill can route the turn differently; effective skill identity belongs in diagnostics. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Retrieval can add useful continuity without making persistent memory identical to conversation history. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `turn.rs` prompt parsing and skill resolution paths. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Stale or conflicting snippets can bias the first model round; users need source and disable controls. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Inject first-turn memory conditionally
 
-> **Source note:** `turn.rs::first_turn_memory_reminder`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Cross-session recall should be bounded, observable, and optional rather than silently loading an entire store.
 
-## 4. Prepare effective tool definitions each turn
+She follows that responsibility into the repository. `first_turn_memory_reminder` queries memory, uses a fallback greeting query, and limits returned snippets before injection. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** The model request should expose only tools active for this agent, capability mode, configuration, and integration state.
+<div class="story-lesson">
 
-**What the source shows.** `process_conversation_turn` prepares tool definitions before building the chat-state request. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Retrieval can add useful continuity without making persistent memory identical to conversation history.
 
-**Why it matters.** Installed tools and model-visible tools are different sets; minimizing exposure saves context and authority. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** A requested capability can be absent by design. The model must receive a clear unavailable/denied observation instead of fabricating success. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Stale or conflicting snippets can bias the first model round; users need source and disable controls. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `turn.rs::process_conversation_turn` tool preparation path. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `turn.rs::first_turn_memory_reminder`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Drain interjections and reminders
+## 4. The next clue — Prepare effective tool definitions each turn
 
-**The contract.** A long-running turn must accept user steering and lifecycle events without corrupting message order.
+Mira now needs one small mechanism: The model request should expose only tools active for this agent, capability mode, configuration, and integration state.
 
-**What the source shows.** The main loop drains interjections, reminders, monitor events, memory injection, MCP reminders, and compaction checks before sampling. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. `process_conversation_turn` prepares tool definitions before building the chat-state request. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Agent work is not always a blocking request/response pair; operators need a safe way to redirect or annotate it. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Late interjections can arrive near a stop boundary; tests must pin ordering and whether they trigger another sample. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Installed tools and model-visible tools are different sets; minimizing exposure saves context and authority.
 
-> **Source note:** `turn.rs` main conversation loop. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Sample with bounded recovery
+Then she tests the unhappy path: A requested capability can be absent by design. The model must receive a clear unavailable/denied observation instead of fabricating success. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Transport, auth, and context-size failures need targeted recovery rather than blind replay of every error.
+> **Source:** `turn.rs::process_conversation_turn` tool preparation path. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** `run_turn_via_sampler` is wrapped by compact-and-resubmit and authentication refresh paths. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Drain interjections and reminders
 
-**Why it matters.** Recovery should preserve conversational intent while avoiding duplicate external tool effects. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: A long-running turn must accept user steering and lifecycle events without corrupting message order.
 
-**Failure drill.** Retrying after an ambiguous provider response can duplicate model output; only tool calls actually admitted to execution should cause side effects. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The main loop drains interjections, reminders, monitor events, memory injection, MCP reminders, and compaction checks before sampling. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `turn.rs` sampler invocation and recovery branches. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Execute calls and append observations
+**Why the story changes here.** Agent work is not always a blocking request/response pair; operators need a safe way to redirect or annotate it.
 
-**The contract.** Every normalized call must produce a chat-visible result, including denial and failure, before the next model round.
+</div>
 
-**What the source shows.** Tool calls are converted and passed to `execute_tool_calls`; returned results are recorded in conversation state. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Late interjections can arrive near a stop boundary; tests must pin ordering and whether they trigger another sample. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** The model repairs from evidence. Hiding a nonzero exit code turns a recoverable failure into false context. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `turn.rs` main conversation loop. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Concurrent tool results must remain associated with their call IDs; same-path operations require serialization to prevent racing edits. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Sample with bounded recovery
 
-> **Source note:** `turn.rs`, `tool_calls.rs`, and `tool_dispatch.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Transport, auth, and context-size failures need targeted recovery rather than blind replay of every error.
 
-## 8. Stop structurally, then verify externally
+She follows that responsibility into the repository. `run_turn_via_sampler` is wrapped by compact-and-resubmit and authentication refresh paths. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** The runtime needs a finite turn even when semantic task completion is open-ended.
+<div class="story-lesson">
 
-**What the source shows.** A response without tool calls moves through todo/goal/interjection checks to finalization; max-turn and optional completion-requirement paths add other stops. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Recovery should preserve conversational intent while avoiding duplicate external tool effects.
 
-**Why it matters.** Structural termination is deterministic enough for a protocol while acceptance criteria remain task-specific. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** A model can stop early, loop until a cap, or satisfy a required tool without producing a correct patch. Capture verifier evidence separately. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Retrying after an ambiguous provider response can duplicate model output; only tool calls actually admitted to execution should cause side effects. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `process_conversation_turn_with_recovery` and no-tool branch. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `turn.rs` sampler invocation and recovery branches. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — failure, edit, retest, and stop
+## 7. The next clue — Execute calls and append observations
 
-Trace the minimum feedback loop for a failing unit test while keeping protocol and semantic completion separate.
+Mira now needs one small mechanism: Every normalized call must produce a chat-visible result, including denial and failure, before the next model round.
+
+She follows that responsibility into the repository. Tool calls are converted and passed to `execute_tool_calls`; returned results are recorded in conversation state. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** The model repairs from evidence. Hiding a nonzero exit code turns a recoverable failure into false context.
+
+</div>
+
+Then she tests the unhappy path: Concurrent tool results must remain associated with their call IDs; same-path operations require serialization to prevent racing edits. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `turn.rs`, `tool_calls.rs`, and `tool_dispatch.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Stop structurally, then verify externally
+
+Mira now needs one small mechanism: The runtime needs a finite turn even when semantic task completion is open-ended.
+
+She follows that responsibility into the repository. A response without tool calls moves through todo/goal/interjection checks to finalization; max-turn and optional completion-requirement paths add other stops. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Structural termination is deterministic enough for a protocol while acceptance criteria remain task-specific.
+
+</div>
+
+Then she tests the unhappy path: A model can stop early, loop until a cap, or satisfy a required tool without producing a correct patch. Capture verifier evidence separately. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `process_conversation_turn_with_recovery` and no-tool branch. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — failure, edit, retest, and stop
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Trace the minimum feedback loop for a failing unit test while keeping protocol and semantic completion separate.
 
 1.  Persist the user's acceptance criteria before sampling.
 2.  Expose search, read, edit, and a restricted command tool.
@@ -157,17 +229,19 @@ grok -p "Fix the failing parser test. Run that test and cargo check; do not chan
   --output-format streaming-json
 ```
 
-Tool filtering limits exposure but does not auto-approve commands. Exact tool names are version-sensitive and must be checked against the researched CLI before publication.
+**What she learns.** Tool filtering limits exposure but does not auto-approve commands. Exact tool names are version-sensitive and must be checked against the researched CLI before publication.
 
 <div class="bm-fix">
 
-**Verification gate.** Parse the streaming end event, require successful recorded commands, then independently execute the repository's checks in CI.
+**The proof she demands.** Parse the streaming end event, require successful recorded commands, then independently execute the repository's checks in CI.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -176,113 +250,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **What ends the loop?** | Structural/runtime conditions, not a universal correctness oracle. | Supply verifier gates outside final prose. |
 | **What is persisted?** | Conversation/events and prompt-level state according to session contracts. | Use resume/rewind evidence during incident review. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Prompt index, request ID, model-call count, and stop reason.
 - Tool call IDs, normalized arguments, admission decision, result, and ordering.
 - Compaction trigger, summary/checkpoint identity, and resubmission count.
 - Verifier command lineage and whether subagent usage is complete.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **If initialization fails after partial persistence, resume code must distinguish a recorded prompt from one that reached the model.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Begin prompt state before sampling:** reopen `xai-grok-shell/src/session/acp_session_impl/turn.rs::handle_prompt`. Confirm the symbol or field still exists, then reproduce this boundary: If initialization fails after partial persistence, resume code must distinguish a recorded prompt from one that reached the model.
-2.  **Resolve commands and skills before ordinary chat:** reopen `turn.rs` prompt parsing and skill resolution paths. Confirm the symbol or field still exists, then reproduce this boundary: A name collision or stale discovered skill can route the turn differently; effective skill identity belongs in diagnostics.
-3.  **Inject first-turn memory conditionally:** reopen `turn.rs::first_turn_memory_reminder`. Confirm the symbol or field still exists, then reproduce this boundary: Stale or conflicting snippets can bias the first model round; users need source and disable controls.
-4.  **Prepare effective tool definitions each turn:** reopen `turn.rs::process_conversation_turn` tool preparation path. Confirm the symbol or field still exists, then reproduce this boundary: A requested capability can be absent by design. The model must receive a clear unavailable/denied observation instead of fabricating success.
-5.  **Drain interjections and reminders:** reopen `turn.rs` main conversation loop. Confirm the symbol or field still exists, then reproduce this boundary: Late interjections can arrive near a stop boundary; tests must pin ordering and whether they trigger another sample.
-6.  **Sample with bounded recovery:** reopen `turn.rs` sampler invocation and recovery branches. Confirm the symbol or field still exists, then reproduce this boundary: Retrying after an ambiguous provider response can duplicate model output; only tool calls actually admitted to execution should cause side effects.
-7.  **Execute calls and append observations:** reopen `turn.rs`, `tool_calls.rs`, and `tool_dispatch.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Concurrent tool results must remain associated with their call IDs; same-path operations require serialization to prevent racing edits.
-8.  **Stop structurally, then verify externally:** reopen `process_conversation_turn_with_recovery` and no-tool branch. Confirm the symbol or field still exists, then reproduce this boundary: A model can stop early, loop until a cap, or satisfy a required tool without producing a correct patch. Capture verifier evidence separately.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Begin prompt state before sampling
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: User input, prompt index, file tracking, hooks, and persistence must agree on where the turn begins. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `handle_prompt` resets active skill state, reconciles planning, increments prompt index, calls `file_state_tracker.begin_prompt`, persists ACP chunks, and pushes the user message. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: If initialization fails after partial persistence, resume code must distinguish a recorded prompt from one that reached the model. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Recovery and rewind require a deterministic boundary around the mutations attributed to this request. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Resolve commands and skills before ordinary chat
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Slash commands and explicit skill invocations can change how the prompt is interpreted before it becomes a model message. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The prompt handler resolves command/skill paths, sets active skill context, and parses text/context/image chunks. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A name collision or stale discovered skill can route the turn differently; effective skill identity belongs in diagnostics. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The visible user string is not always the exact model request; the harness can add task-specific instructions and resources. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Inject first-turn memory conditionally
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Cross-session recall should be bounded, observable, and optional rather than silently loading an entire store. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `first_turn_memory_reminder` queries memory, uses a fallback greeting query, and limits returned snippets before injection. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Stale or conflicting snippets can bias the first model round; users need source and disable controls. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Retrieval can add useful continuity without making persistent memory identical to conversation history. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Prepare effective tool definitions each turn
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: The model request should expose only tools active for this agent, capability mode, configuration, and integration state. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `process_conversation_turn` prepares tool definitions before building the chat-state request. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A requested capability can be absent by design. The model must receive a clear unavailable/denied observation instead of fabricating success. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Installed tools and model-visible tools are different sets; minimizing exposure saves context and authority. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Drain interjections and reminders
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A long-running turn must accept user steering and lifecycle events without corrupting message order. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The main loop drains interjections, reminders, monitor events, memory injection, MCP reminders, and compaction checks before sampling. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Late interjections can arrive near a stop boundary; tests must pin ordering and whether they trigger another sample. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Agent work is not always a blocking request/response pair; operators need a safe way to redirect or annotate it. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Sample with bounded recovery
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Transport, auth, and context-size failures need targeted recovery rather than blind replay of every error. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `run_turn_via_sampler` is wrapped by compact-and-resubmit and authentication refresh paths. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Retrying after an ambiguous provider response can duplicate model output; only tool calls actually admitted to execution should cause side effects. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Recovery should preserve conversational intent while avoiding duplicate external tool effects. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Execute calls and append observations
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Every normalized call must produce a chat-visible result, including denial and failure, before the next model round. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Tool calls are converted and passed to `execute_tool_calls`; returned results are recorded in conversation state. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Concurrent tool results must remain associated with their call IDs; same-path operations require serialization to prevent racing edits. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The model repairs from evidence. Hiding a nonzero exit code turns a recoverable failure into false context. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Stop structurally, then verify externally
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: The runtime needs a finite turn even when semantic task completion is open-ended. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is A response without tool calls moves through todo/goal/interjection checks to finalization; max-turn and optional completion-requirement paths add other stops. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A model can stop early, loop until a cap, or satisfy a required tool without producing a correct patch. Capture verifier evidence separately. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Structural termination is deterministic enough for a protocol while acceptance criteria remain task-specific. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -327,6 +304,12 @@ The runtime produces a not-executed result visible to the model, allowing it to 
 Can the loop know which tests are sufficient?
 
 Not generically. The prompt, repository policy, CI, and human reviewer must define the acceptance set.
+
+## What changed for Mira
+
+Mira can now point to each turn of the loop and explain why a failed tool call is useful information rather than merely an error.
+
+**Next:** The next mystery is the tool boundary that converts JSON-shaped intent into real machine effects.
 
 ## Key takeaways
 

@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # MCP, Plugins, Hooks, and the Extension Architecture
 
-'Extension' is too broad to guide design. A skill adds instructions. MCP adds external tools. A hook reacts deterministically to lifecycle events. An agent definition changes a session. A plugin packages several mechanisms. Choose the narrowest mechanism whose lifecycle and authority match the problem.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 07
+
+A teammate says, ‘Let us make it a plugin.’ Another says MCP. A third proposes a skill and a fourth reaches for a hook. They are using four different mechanisms as if they were synonyms.
+
+</div>
+
+**The question:** Which extension point belongs to instructions, external capabilities, packaging, and lifecycle policy?
+
+## Start from first principles
+
+A skill is a playbook, MCP is a loading dock to another system, a hook is a checkpoint at a lifecycle boundary, and a plugin is the box that can ship several of those pieces together.
 
 Agent ecosystems become hard to secure when every customization is called a plugin. Grok Build exposes several mechanisms because they solve different operational problems.
 
@@ -16,13 +28,41 @@ Ask who invokes the extension, whether code executes, where trust is recorded, h
 
 This chapter builds that decision tree, then combines a procedure, external service, and deterministic policy without confusing their authority.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *extension-quality* term without pretending the other three disappear.
+**In one sentence.** 'Extension' is too broad to guide design. A skill adds instructions. MCP adds external tools. A hook reacts deterministically to lifecycle events. An agent definition changes a session. A plugin packages several mechanisms. Choose the narrowest mechanism whose lifecycle and authority match the problem.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**Which extension point belongs to instructions, external capabilities, packaging, and lifecycle policy?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear extension-quality boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *extension-quality*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Classify extensions on invocation and authority. Skills are selected context. MCP exposes model-callable external tools. Hooks are lifecycle-triggered commands or HTTP callbacks. Plugins distribute several components.
 
@@ -38,109 +78,141 @@ Fig 7.1 — Extension choice depends on invocation and executable authority.
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Connect MCP over explicit transports
+## 1. The next clue — Connect MCP over explicit transports
 
-**The contract.** External tools need stdio or HTTP/SSE transport, timeouts, and credential strategy.
+Mira now needs one small mechanism: External tools need stdio or HTTP/SSE transport, timeouts, and credential strategy.
 
-**What the source shows.** The MCP guide documents command/args/env and URL/headers forms plus list/add/remove/doctor commands. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. The MCP guide documents command/args/env and URL/headers forms plus list/add/remove/doctor commands. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Protocol configuration avoids embedding every service client in the core harness. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Cold starts, expired OAuth, committed headers, and timeouts fail independently of model reasoning. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Protocol configuration avoids embedding every service client in the core harness.
 
-> **Source note:** User guide `07-mcp-servers.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Namespace and discover tools
+Then she tests the unhappy path: Cold starts, expired OAuth, committed headers, and timeouts fail independently of model reasoning. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Different servers need collision-free identities and bounded discovery.
+> **Source:** User guide `07-mcp-servers.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** A server/tool becomes `server__tool`; `search_tool` and `use_tool` support discovery and invocation. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Namespace and discover tools
 
-**Why it matters.** Origin remains visible without placing every external schema in permanent context. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Different servers need collision-free identities and bounded discovery.
 
-**Failure drill.** Hooks and rules must match the qualified real name rather than an internal dispatcher alias. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. A server/tool becomes `server__tool`; `search_tool` and `use_tool` support discovery and invocation. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** MCP tool-naming/discovery sections and hook matcher notes. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Bound integration output
+**Why the story changes here.** Origin remains visible without placing every external schema in permanent context.
 
-**The contract.** Large external results need inline caps and durable spill artifacts.
+</div>
 
-**What the source shows.** The guide documents a default MCP/use_tool cap and full payload spill under the session `mcp/` folder. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Hooks and rules must match the qualified real name rather than an internal dispatcher alias. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** The model receives a manageable observation while deeper inspection remains possible. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** MCP tool-naming/discovery sections and hook matcher notes. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Truncation can hide the causal line; carry a truncation marker and artifact path. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Bound integration output
 
-> **Source note:** MCP guide output-size section. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Large external results need inline caps and durable spill artifacts.
 
-## 4. Use skills for reusable procedure
+She follows that responsibility into the repository. The guide documents a default MCP/use_tool cap and full payload spill under the session `mcp/` folder. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** A skill packages `SKILL.md`, trigger metadata, and optional supporting resources.
+<div class="story-lesson">
 
-**What the source shows.** Skill discovery supports Grok, agents, Claude, and Cursor paths with priority and name deduplication. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** The model receives a manageable observation while deeper inspection remains possible.
 
-**Why it matters.** Procedures load when needed rather than taxing every request. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Skill instructions do not bypass tool policy; executable resources still require normal authorization. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Truncation can hide the causal line; carry a truncation marker and artifact path. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** User guide `08-skills.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** MCP guide output-size section. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Use hooks for deterministic reactions
+## 4. The next clue — Use skills for reusable procedure
 
-**The contract.** Lifecycle events can invoke command or HTTP handlers; only explicit `PreToolUse` denial blocks.
+Mira now needs one small mechanism: A skill packages `SKILL.md`, trigger metadata, and optional supporting resources.
 
-**What the source shows.** The hook guide defines events, matchers, stdin/stdout JSON, timeouts, exit codes, and deny output. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. Skill discovery supports Grok, agents, Claude, and Cursor paths with priority and name deduplication. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Audit export, formatting, and hard policy should not depend on model memory. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Crashes, malformed output, and timeouts fail open; enforcement handlers must convert internal errors to explicit denial when required. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Procedures load when needed rather than taxing every request.
 
-> **Source note:** User guide `10-hooks.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Package components as plugins
+Then she tests the unhappy path: Skill instructions do not bypass tool policy; executable resources still require normal authorization. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** One distributable unit can carry skills, commands, agents, hooks, MCP, and LSP configuration.
+> **Source:** User guide `08-skills.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** The plugin guide defines convention paths, optional manifest, CLI lifecycle, and marketplaces. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Use hooks for deterministic reactions
 
-**Why it matters.** Teams can version a coherent capability set without inventing a new execution model. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Lifecycle events can invoke command or HTTP handlers; only explicit `PreToolUse` denial blocks.
 
-**Failure drill.** A bundle expands supply-chain surface; review each executable component and update origin. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The hook guide defines events, matchers, stdin/stdout JSON, timeouts, exit codes, and deny output. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** User guide `09-plugins.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Separate enabled from trusted
+**Why the story changes here.** Audit export, formatting, and hard policy should not depend on model memory.
 
-**The contract.** Project content may be visible while executable components remain blocked pending trust.
+</div>
 
-**What the source shows.** Project plugins require explicit trust; user and caller-controlled session plugin locations have different trust assumptions. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Crashes, malformed output, and timeouts fail open; enforcement handlers must convert internal errors to explicit denial when required. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Opening an untrusted checkout should not silently launch its processes. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** User guide `10-hooks.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Trust is authorization, not a security audit. A trusted package can still be malicious or compromised. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Package components as plugins
 
-> **Source note:** Plugin guide trust model. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: One distributable unit can carry skills, commands, agents, hooks, MCP, and LSP configuration.
 
-## 8. Inspect effective state
+She follows that responsibility into the repository. The plugin guide defines convention paths, optional manifest, CLI lifecycle, and marketplaces. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Operators need an inventory of source, enabled/trusted state, skills, agents, hooks, servers, and tools.
+<div class="story-lesson">
 
-**What the source shows.** `grok inspect`, plugin details, MCP doctor/list, and TUI tabs show discovered components. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Teams can version a coherent capability set without inventing a new execution model.
 
-**Why it matters.** Files on disk are not the same as active behavior when precedence and compatibility imports apply. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Reload semantics vary; confirm whether a change applies mid-session or next session. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: A bundle expands supply-chain surface; review each executable component and update origin. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** Plugin, skills, MCP, and hooks guides. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** User guide `09-plugins.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — one procedure, one external tool, one policy hook
+## 7. The next clue — Separate enabled from trusted
 
-Build a release workflow whose instructions, service access, and deterministic guard remain separate.
+Mira now needs one small mechanism: Project content may be visible while executable components remain blocked pending trust.
+
+She follows that responsibility into the repository. Project plugins require explicit trust; user and caller-controlled session plugin locations have different trust assumptions. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Opening an untrusted checkout should not silently launch its processes.
+
+</div>
+
+Then she tests the unhappy path: Trust is authorization, not a security audit. A trusted package can still be malicious or compromised. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Plugin guide trust model. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Inspect effective state
+
+Mira now needs one small mechanism: Operators need an inventory of source, enabled/trusted state, skills, agents, hooks, servers, and tools.
+
+She follows that responsibility into the repository. `grok inspect`, plugin details, MCP doctor/list, and TUI tabs show discovered components. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Files on disk are not the same as active behavior when precedence and compatibility imports apply.
+
+</div>
+
+Then she tests the unhappy path: Reload semantics vary; confirm whether a change applies mid-session or next session. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Plugin, skills, MCP, and hooks guides. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — one procedure, one external tool, one policy hook
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Build a release workflow whose instructions, service access, and deterministic guard remain separate.
 
 1.  Write a release-review skill.
 2.  Configure a project-scoped read-only tracker MCP endpoint using environment references.
@@ -157,17 +229,19 @@ grok mcp doctor tracker
 grok inspect
 ```
 
-The endpoint is illustrative; the command shapes are documented. Actual tools and authentication depend on the service.
+**What she learns.** The endpoint is illustrative; the command shapes are documented. Actual tools and authentication depend on the service.
 
 <div class="bm-fix">
 
-**Verification gate.** Record skill origin, qualified MCP name, trust state, hook decision JSON, and unchanged protected branch.
+**The proof she demands.** Record skill origin, qualified MCP name, trust state, hook decision JSON, and unchanged protected branch.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -176,113 +250,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **Need deterministic policy?** | Hook. | Handle fail-open errors. |
 | **Need distribution?** | Plugin. | Review each contained authority. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Component origin, version, enabled/trusted state.
 - MCP transport, OAuth identity, qualified tool, duration, spill artifact.
 - Hook event, matcher, timeout, exit, decision, reason.
 - Plugin source, manifest digest, update path, executable inventory.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **Cold starts, expired OAuth, committed headers, and timeouts fail independently of model reasoning.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Connect MCP over explicit transports:** reopen User guide `07-mcp-servers.md`. Confirm the symbol or field still exists, then reproduce this boundary: Cold starts, expired OAuth, committed headers, and timeouts fail independently of model reasoning.
-2.  **Namespace and discover tools:** reopen MCP tool-naming/discovery sections and hook matcher notes. Confirm the symbol or field still exists, then reproduce this boundary: Hooks and rules must match the qualified real name rather than an internal dispatcher alias.
-3.  **Bound integration output:** reopen MCP guide output-size section. Confirm the symbol or field still exists, then reproduce this boundary: Truncation can hide the causal line; carry a truncation marker and artifact path.
-4.  **Use skills for reusable procedure:** reopen User guide `08-skills.md`. Confirm the symbol or field still exists, then reproduce this boundary: Skill instructions do not bypass tool policy; executable resources still require normal authorization.
-5.  **Use hooks for deterministic reactions:** reopen User guide `10-hooks.md`. Confirm the symbol or field still exists, then reproduce this boundary: Crashes, malformed output, and timeouts fail open; enforcement handlers must convert internal errors to explicit denial when required.
-6.  **Package components as plugins:** reopen User guide `09-plugins.md`. Confirm the symbol or field still exists, then reproduce this boundary: A bundle expands supply-chain surface; review each executable component and update origin.
-7.  **Separate enabled from trusted:** reopen Plugin guide trust model. Confirm the symbol or field still exists, then reproduce this boundary: Trust is authorization, not a security audit. A trusted package can still be malicious or compromised.
-8.  **Inspect effective state:** reopen Plugin, skills, MCP, and hooks guides. Confirm the symbol or field still exists, then reproduce this boundary: Reload semantics vary; confirm whether a change applies mid-session or next session.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Connect MCP over explicit transports
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: External tools need stdio or HTTP/SSE transport, timeouts, and credential strategy. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The MCP guide documents command/args/env and URL/headers forms plus list/add/remove/doctor commands. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Cold starts, expired OAuth, committed headers, and timeouts fail independently of model reasoning. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Protocol configuration avoids embedding every service client in the core harness. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Namespace and discover tools
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Different servers need collision-free identities and bounded discovery. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is A server/tool becomes `server__tool`; `search_tool` and `use_tool` support discovery and invocation. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Hooks and rules must match the qualified real name rather than an internal dispatcher alias. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Origin remains visible without placing every external schema in permanent context. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Bound integration output
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Large external results need inline caps and durable spill artifacts. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide documents a default MCP/use_tool cap and full payload spill under the session `mcp/` folder. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Truncation can hide the causal line; carry a truncation marker and artifact path. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The model receives a manageable observation while deeper inspection remains possible. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Use skills for reusable procedure
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A skill packages `SKILL.md`, trigger metadata, and optional supporting resources. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Skill discovery supports Grok, agents, Claude, and Cursor paths with priority and name deduplication. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Skill instructions do not bypass tool policy; executable resources still require normal authorization. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Procedures load when needed rather than taxing every request. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Use hooks for deterministic reactions
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Lifecycle events can invoke command or HTTP handlers; only explicit `PreToolUse` denial blocks. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The hook guide defines events, matchers, stdin/stdout JSON, timeouts, exit codes, and deny output. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Crashes, malformed output, and timeouts fail open; enforcement handlers must convert internal errors to explicit denial when required. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Audit export, formatting, and hard policy should not depend on model memory. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Package components as plugins
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: One distributable unit can carry skills, commands, agents, hooks, MCP, and LSP configuration. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The plugin guide defines convention paths, optional manifest, CLI lifecycle, and marketplaces. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A bundle expands supply-chain surface; review each executable component and update origin. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Teams can version a coherent capability set without inventing a new execution model. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Separate enabled from trusted
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Project content may be visible while executable components remain blocked pending trust. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Project plugins require explicit trust; user and caller-controlled session plugin locations have different trust assumptions. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Trust is authorization, not a security audit. A trusted package can still be malicious or compromised. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Opening an untrusted checkout should not silently launch its processes. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Inspect effective state
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Operators need an inventory of source, enabled/trusted state, skills, agents, hooks, servers, and tools. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `grok inspect`, plugin details, MCP doctor/list, and TUI tabs show discovered components. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Reload semantics vary; confirm whether a change applies mid-session or next session. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Files on disk are not the same as active behavior when precedence and compatibility imports apply. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -327,6 +304,12 @@ Executable components require trust under the documented project model.
 What MCP name should policy match?
 
 The qualified `server__tool` identity using the permission system's documented rule syntax.
+
+## What changed for Mira
+
+Mira chooses extension mechanisms by required authority and lifecycle instead of by whichever name sounds most powerful.
+
+**Next:** The project is now extensible, but a larger task raises a new question: how should work be divided?
 
 ## Key takeaways
 

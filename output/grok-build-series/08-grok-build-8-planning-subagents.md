@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # Planning, Subagents, and Background Work
 
-Plan review, subagents, worktrees, and background execution solve different problems. Plan mode blocks ordinary edit tools but is not a complete write sandbox. Subagents get independent context and optional capability/worktree isolation at one nesting level. Background work needs explicit ownership and cleanup.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 08
+
+Mira asks two subagents to repair separate modules. Both edit the same shared configuration, while a background test keeps running against an older tree. Parallelism has made the work faster and the result less coherent.
+
+</div>
+
+**The question:** When do planning, delegation, and background work help rather than create races?
+
+## Start from first principles
+
+Adding subagents is like adding cooks to a kitchen. Speed improves only when stations, ingredients, timing, and the head chef's integration step are explicit.
 
 Long tasks fail when one conversation holds every search result, decision, test log, and monitor stream.
 
@@ -16,13 +28,41 @@ Plan mode separates design from approval. Subagents separate context. Worktrees 
 
 Those mechanisms create obligations: self-contained delegation, conflict control, result integration, and certainty that no child is still acting when the parent stops.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *orchestration-quality* term without pretending the other three disappear.
+**In one sentence.** Plan review, subagents, worktrees, and background execution solve different problems. Plan mode blocks ordinary edit tools but is not a complete write sandbox. Subagents get independent context and optional capability/worktree isolation at one nesting level. Background work needs explicit ownership and cleanup.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**When do planning, delegation, and background work help rather than create races?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear orchestration-quality boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *orchestration-quality*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Use plan mode for decision uncertainty, subagents for bounded reasoning, worktrees for write isolation, and background tasks for long process lifetime.
 
@@ -38,109 +78,141 @@ Fig 8.1 — A flat parent coordinates isolated reasoning and long-lived process 
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Enter planning for genuine ambiguity
+## 1. The next clue — Enter planning for genuine ambiguity
 
-**The contract.** Agent or user can activate planning when design choices need review.
+Mira now needs one small mechanism: Agent or user can activate planning when design choices need review.
 
-**What the source shows.** The guide documents `enter_plan_mode`, `/plan`, state transitions, and `exit_plan_mode`. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. The guide documents `enter_plan_mode`, `/plan`, state transitions, and `exit_plan_mode`. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** A visible artifact replaces hidden reasoning as the decision surface. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Planning trivial changes adds latency and can create false confidence. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** A visible artifact replaces hidden reasoning as the decision surface.
 
-> **Source note:** User guide `19-plan-mode.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Persist and review plan.md
+Then she tests the unhappy path: Planning trivial changes adds latency and can create false confidence. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** The plan must survive feedback and compaction inside the session.
+> **Source:** User guide `19-plan-mode.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** Plan mode writes `plan.md`, opens preview, accepts comments, and preserves active state through compaction. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Persist and review plan.md
 
-**Why it matters.** Implementation and audit share one approved decision record. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: The plan must survive feedback and compaction inside the session.
 
-**Failure drill.** An empty plan can reach approval; UI must make that absence explicit. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. Plan mode writes `plan.md`, opens preview, accepts comments, and preserves active state through compaction. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** Plan guide plan-file and approval sections. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Know the edit gate boundary
+**Why the story changes here.** Implementation and audit share one approved decision record.
 
-**The contract.** Plan-file edits are allowed; other edit-tool calls are rejected in active mode.
+</div>
 
-**What the source shows.** The shell applies the gate before normal execution, independent of permission mode. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: An empty plan can reach approval; UI must make that absence explicit. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Standard edit tools cannot implement while design is under review. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** Plan guide plan-file and approval sections. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Shell writes are not inspected and write-capable children use fresh trackers; add capability/sandbox controls. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Know the edit gate boundary
 
-> **Source note:** Plan guide lines 126–135 and `tool_calls.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Plan-file edits are allowed; other edit-tool calls are rejected in active mode.
 
-## 4. Give children independent context
+She follows that responsibility into the repository. The shell applies the gate before normal execution, independent of permission mode. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** A child receives a bounded task and separate context, then returns a summary.
+<div class="story-lesson">
 
-**What the source shows.** `spawn_subagent` starts an agent-type/capability-selected child session. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Standard edit tools cannot implement while design is under review.
 
-**Why it matters.** Research and review do not flood main context. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Unstated acceptance criteria lead to locally plausible but unusable output. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Shell writes are not inspected and write-capable children use fresh trackers; add capability/sandbox controls. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** User guide `16-subagents.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** Plan guide lines 126–135 and `tool_calls.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Separate agent type and persona
+## 4. The next clue — Give children independent context
 
-**The contract.** Agent definitions control model/tools; personas add behavioral instructions and IO contracts.
+Mira now needs one small mechanism: A child receives a bounded task and separate context, then returns a summary.
 
-**What the source shows.** The guide applies persona overlays during child resolution, not via a direct spawn parameter. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. `spawn_subagent` starts an agent-type/capability-selected child session. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Tone and report format should not widen capability. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Assuming a nonexistent persona parameter leaves intended behavior unapplied. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Research and review do not flood main context.
 
-> **Source note:** Subagent guide agents-versus-personas. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Filter child capabilities
+Then she tests the unhappy path: Unstated acceptance criteria lead to locally plausible but unusable output. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Children can be read-only, read-write, execute, or all in addition to type defaults.
+> **Source:** User guide `16-subagents.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** `capability_mode` is documented; explore/plan are read-oriented and general-purpose is broad. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Separate agent type and persona
 
-**Why it matters.** Research rarely needs edit authority; test runners may only need execute. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Agent definitions control model/tools; personas add behavioral instructions and IO contracts.
 
-**Failure drill.** Coarse labels do not isolate credentials or all shell reach. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The guide applies persona overlays during child resolution, not via a direct spawn parameter. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** Subagent capability table. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Isolate writers with worktrees
+**Why the story changes here.** Tone and report format should not widen capability.
 
-**The contract.** Overlapping write-capable children should use separate Git trees.
+</div>
 
-**What the source shows.** `isolation: worktree` returns the child path and is mutually exclusive with `cwd`. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Assuming a nonexistent persona parameter leaves intended behavior unapplied. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Parallel edits avoid immediate file collisions. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** Subagent guide agents-versus-personas. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** The parent must integrate; worktrees do not isolate external systems. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Filter child capabilities
 
-> **Source note:** Subagent worktree section. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Children can be read-only, read-write, execute, or all in addition to type defaults.
 
-## 8. Manage background lifecycle
+She follows that responsibility into the repository. `capability_mode` is documented; explore/plan are read-oriented and general-purpose is broad. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Long commands, monitors, schedulers, and children need IDs plus get/wait/kill.
+<div class="story-lesson">
 
-**What the source shows.** The background guide defines task APIs, persistence, volume control, and the tasks pane. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Research rarely needs edit authority; test runners may only need execute.
 
-**Why it matters.** The agent continues while builds, servers, logs, or CI progress. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** High-volume monitors stop; unfinished tasks can outlive the visible answer. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Coarse labels do not isolate credentials or all shell reach. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** User guide `20-background-tasks.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** Subagent capability table. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — research, implement, and test without conflicting writers
+## 7. The next clue — Isolate writers with worktrees
 
-Decompose a migration into reviewed plan, read-only exploration, isolated implementation, and background verification.
+Mira now needs one small mechanism: Overlapping write-capable children should use separate Git trees.
+
+She follows that responsibility into the repository. `isolation: worktree` returns the child path and is mutually exclusive with `cwd`. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Parallel edits avoid immediate file collisions.
+
+</div>
+
+Then she tests the unhappy path: The parent must integrate; worktrees do not isolate external systems. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** Subagent worktree section. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Manage background lifecycle
+
+Mira now needs one small mechanism: Long commands, monitors, schedulers, and children need IDs plus get/wait/kill.
+
+She follows that responsibility into the repository. The background guide defines task APIs, persistence, volume control, and the tasks pane. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** The agent continues while builds, servers, logs, or CI progress.
+
+</div>
+
+Then she tests the unhappy path: High-volume monitors stop; unfinished tasks can outlive the visible answer. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** User guide `20-background-tasks.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — research, implement, and test without conflicting writers
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Decompose a migration into reviewed plan, read-only exploration, isolated implementation, and background verification.
 
 1.  Enter plan mode with acceptance criteria.
 2.  Spawn a read-only explorer for call sites.
@@ -156,17 +228,19 @@ Plan the API migration. Delegate call-site discovery to a read-only explore suba
 After approval, implement in an isolated worktree and run package tests in the background.
 ```
 
-Natural language lets the agent emit source-defined tool payloads rather than relying on invented internal JSON.
+**What she learns.** Natural language lets the agent emit source-defined tool payloads rather than relying on invented internal JSON.
 
 <div class="bm-fix">
 
-**Verification gate.** Require one writer, explicit path, completed test, reviewed diff, no live tasks, and human approval.
+**The proof she demands.** Require one writer, explicit path, completed test, reviewed diff, no live tasks, and human approval.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -175,113 +249,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **Need parallel writes?** | Worktrees. | Integrate deliberately. |
 | **Need long process?** | Background task. | Own ID, timeout, cleanup. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Plan transitions, digest, comments, approval identity.
 - Child type, model, capability, cwd/worktree, parent, status.
 - Task command, ID, volume, polls, completion, kill.
 - Which results entered parent context and which stayed as artifacts.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **Planning trivial changes adds latency and can create false confidence.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Enter planning for genuine ambiguity:** reopen User guide `19-plan-mode.md`. Confirm the symbol or field still exists, then reproduce this boundary: Planning trivial changes adds latency and can create false confidence.
-2.  **Persist and review plan.md:** reopen Plan guide plan-file and approval sections. Confirm the symbol or field still exists, then reproduce this boundary: An empty plan can reach approval; UI must make that absence explicit.
-3.  **Know the edit gate boundary:** reopen Plan guide lines 126–135 and `tool_calls.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Shell writes are not inspected and write-capable children use fresh trackers; add capability/sandbox controls.
-4.  **Give children independent context:** reopen User guide `16-subagents.md`. Confirm the symbol or field still exists, then reproduce this boundary: Unstated acceptance criteria lead to locally plausible but unusable output.
-5.  **Separate agent type and persona:** reopen Subagent guide agents-versus-personas. Confirm the symbol or field still exists, then reproduce this boundary: Assuming a nonexistent persona parameter leaves intended behavior unapplied.
-6.  **Filter child capabilities:** reopen Subagent capability table. Confirm the symbol or field still exists, then reproduce this boundary: Coarse labels do not isolate credentials or all shell reach.
-7.  **Isolate writers with worktrees:** reopen Subagent worktree section. Confirm the symbol or field still exists, then reproduce this boundary: The parent must integrate; worktrees do not isolate external systems.
-8.  **Manage background lifecycle:** reopen User guide `20-background-tasks.md`. Confirm the symbol or field still exists, then reproduce this boundary: High-volume monitors stop; unfinished tasks can outlive the visible answer.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Enter planning for genuine ambiguity
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Agent or user can activate planning when design choices need review. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide documents `enter_plan_mode`, `/plan`, state transitions, and `exit_plan_mode`. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Planning trivial changes adds latency and can create false confidence. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** A visible artifact replaces hidden reasoning as the decision surface. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Persist and review plan.md
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: The plan must survive feedback and compaction inside the session. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Plan mode writes `plan.md`, opens preview, accepts comments, and preserves active state through compaction. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: An empty plan can reach approval; UI must make that absence explicit. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Implementation and audit share one approved decision record. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Know the edit gate boundary
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Plan-file edits are allowed; other edit-tool calls are rejected in active mode. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The shell applies the gate before normal execution, independent of permission mode. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Shell writes are not inspected and write-capable children use fresh trackers; add capability/sandbox controls. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Standard edit tools cannot implement while design is under review. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Give children independent context
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: A child receives a bounded task and separate context, then returns a summary. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `spawn_subagent` starts an agent-type/capability-selected child session. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Unstated acceptance criteria lead to locally plausible but unusable output. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Research and review do not flood main context. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Separate agent type and persona
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Agent definitions control model/tools; personas add behavioral instructions and IO contracts. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The guide applies persona overlays during child resolution, not via a direct spawn parameter. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Assuming a nonexistent persona parameter leaves intended behavior unapplied. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Tone and report format should not widen capability. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Filter child capabilities
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Children can be read-only, read-write, execute, or all in addition to type defaults. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `capability_mode` is documented; explore/plan are read-oriented and general-purpose is broad. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Coarse labels do not isolate credentials or all shell reach. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Research rarely needs edit authority; test runners may only need execute. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Isolate writers with worktrees
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Overlapping write-capable children should use separate Git trees. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `isolation: worktree` returns the child path and is mutually exclusive with `cwd`. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: The parent must integrate; worktrees do not isolate external systems. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Parallel edits avoid immediate file collisions. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Manage background lifecycle
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Long commands, monitors, schedulers, and children need IDs plus get/wait/kill. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The background guide defines task APIs, persistence, volume control, and the tasks pane. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: High-volume monitors stop; unfinished tasks can outlive the visible answer. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The agent continues while builds, servers, logs, or CI progress. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -326,6 +303,12 @@ For long one-shot work; use monitors for streams and schedulers for periodic wor
 Can a child resume?
 
 `resume_from` continues a completed compatible child under documented constraints.
+
+## What changed for Mira
+
+Mira designs tasks around ownership, isolation, dependency order, and a single integration point.
+
+**Next:** Then her laptop crashes, forcing the team to ask what work survives.
 
 ## Key takeaways
 

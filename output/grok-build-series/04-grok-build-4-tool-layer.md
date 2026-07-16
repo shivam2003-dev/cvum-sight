@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # The Tool Layer: Shell, Files, Search, and Execution
 
-The model never executes a shell command or edit. It emits a call against a model-visible schema. Grok Build normalizes that call, applies plan and policy gates, dispatches through a finalized toolset and workspace, then returns a structured observation. Tool quality is the quality of that entire pipeline.
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 04
+
+The model requests a shell command. Mira realizes the request itself cannot execute anything. Somewhere, code must describe the command to the model, parse its arguments, decide whether it is allowed, run it in a specific place, and return an honest result.
+
+</div>
+
+**The question:** How does a text prediction become a file read, edit, search, or process?
+
+## Start from first principles
+
+A tool schema is a restaurant menu, not a kitchen. It tells a diner what can be ordered. The implementation is the kitchen, permissions are the waiter checking the order, and the tool result is the plate that actually returns.
 
 Tool discussions often stop at a list: read, edit, bash, search. A production harness needs more than names. It needs argument contracts, output limits, timeouts, concurrency rules, permission semantics, lifecycle hooks, environmental dependencies, and errors the model can repair from.
 
@@ -16,13 +28,41 @@ Grok Build makes the two-sided contract explicit. `ToolDefinition` belongs to th
 
 The third-party notice is equally precise: specific implementations under Codex- and OpenCode-named directories are adapted. That provenance does not justify saying the entire Grok Build runtime was copied from either system.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *tool-execution* term without pretending the other three disappear.
+**In one sentence.** The model never executes a shell command or edit. It emits a call against a model-visible schema. Grok Build normalizes that call, applies plan and policy gates, dispatches through a finalized toolset and workspace, then returns a structured observation. Tool quality is the quality of that entire pipeline.
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**How does a text prediction become a file read, edit, search, or process?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear tool-execution boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *tool-execution*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Represent a tool call as a proposed capability use, not a command that is already happening. The proposal passes five stages: exposure, parsing, policy, execution, and observation.
 
@@ -38,109 +78,141 @@ Fig 4.1 — A tool call is admitted through contracts before it can cause a side
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Define the model-facing function
+## 1. The next clue — Define the model-facing function
 
-**The contract.** Every visible tool needs a stable name, useful description, and JSON parameter schema.
+Mira now needs one small mechanism: Every visible tool needs a stable name, useful description, and JSON parameter schema.
 
-**What the source shows.** `ToolDefinition` is a function definition with name, optional description, and parameters. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. `ToolDefinition` is a function definition with name, optional description, and parameters. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Descriptions and schemas spend context but reduce ambiguous calls; they are part of agent behavior, not API decoration. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** A schema can validate syntactically while allowing a dangerous semantic value, so policy must inspect normalized arguments. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Descriptions and schemas spend context but reduce ambiguous calls; they are part of agent behavior, not API decoration.
 
-> **Source note:** `xai-grok-tools/src/types/definition.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Finalize per-session implementations
+Then she tests the unhappy path: A schema can validate syntactically while allowing a dangerous semantic value, so policy must inspect normalized arguments. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Definitions must resolve to implementations carrying the correct cwd, environment, terminal, filesystem, memory, and integration state.
+> **Source:** `xai-grok-tools/src/types/definition.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** `FinalizedToolset` and `SessionContext` connect the registry to session dependencies. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Finalize per-session implementations
 
-**Why it matters.** The same named operation can behave differently in another workspace or capability mode; session binding makes placement explicit. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Definitions must resolve to implementations carrying the correct cwd, environment, terminal, filesystem, memory, and integration state.
 
-**Failure drill.** A stale context can execute in the wrong directory or retain outdated integration state. Bind and log session identity. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. `FinalizedToolset` and `SessionContext` connect the registry to session dependencies. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `xai-grok-tools/src/registry/types.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Filter before model selection
+**Why the story changes here.** The same named operation can behave differently in another workspace or capability mode; session binding makes placement explicit.
 
-**The contract.** Agent definitions and headless flags can restrict which tool schemas enter a request.
+</div>
 
-**What the source shows.** Headless supports `--tools` and `--disallowed-tools`, including restrictions on the Agent tool and named subagent types. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: A stale context can execute in the wrong directory or retain outdated integration state. Bind and log session identity. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Non-exposure is stronger and cheaper than repeatedly denying a capability the workflow never needs. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `xai-grok-tools/src/registry/types.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Filtering the alias instead of the real tool name can leave a capability exposed; use inspect/help and source-pinned names. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Filter before model selection
 
-> **Source note:** User guide `14-headless-mode.md`, tool-filtering section. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Agent definitions and headless flags can restrict which tool schemas enter a request.
 
-## 4. Normalize calls before policy
+She follows that responsibility into the repository. Headless supports `--tools` and `--disallowed-tools`, including restrictions on the Agent tool and named subagent types. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Arguments need parsing, alias resolution, and canonical tool identity before matchers or rules evaluate them.
+<div class="story-lesson">
 
-**What the source shows.** `prepare_tool_call` parses and normalizes the model call and resolves the bridge tool. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Non-exposure is stronger and cheaper than repeatedly denying a capability the workflow never needs.
 
-**Why it matters.** Policy must match what will execute, not an untrusted display string. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Malformed arguments should become a model-visible error and must never fall through to a permissive default implementation. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Filtering the alias instead of the real tool name can leave a capability exposed; use inspect/help and source-pinned names. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `xai-grok-shell/src/session/acp_session_impl/tool_calls.rs::prepare_tool_call`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** User guide `14-headless-mode.md`, tool-filtering section. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Apply deterministic preconditions
+## 4. The next clue — Normalize calls before policy
 
-**The contract.** Plan-mode edit restrictions and `PreToolUse` hooks run before the ordinary permission decision and implementation.
+Mira now needs one small mechanism: Arguments need parsing, alias resolution, and canonical tool identity before matchers or rules evaluate them.
 
-**What the source shows.** The preparation path checks plan-mode edits, dispatches the pre-hook, and converts explicit denial into a not-executed result. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. `prepare_tool_call` parses and normalizes the model call and resolves the bridge tool. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Deterministic organization policy should not rely on the model remembering a sentence in a prompt. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Hook crashes/timeouts are documented fail-open; enforcement hooks must handle errors and emit explicit deny. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Policy must match what will execute, not an untrusted display string.
 
-> **Source note:** `tool_calls.rs` and user guide `10-hooks.md`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Ask the permission manager
+Then she tests the unhappy path: Malformed arguments should become a model-visible error and must never fall through to a permissive default implementation. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Rules, remembered grants, built-in approvals, and mode policy decide admission after pre-hook checks.
+> **Source:** `xai-grok-shell/src/session/acp_session_impl/tool_calls.rs::prepare_tool_call`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** The shell sends a request through `PermissionHandle`; the workspace permission manager implements mode and rule evaluation. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Apply deterministic preconditions
 
-**Why it matters.** Separating policy from implementation enables interactive approval, deny-by-default automation, and managed constraints over the same tool code. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Plan-mode edit restrictions and `PreToolUse` hooks run before the ordinary permission decision and implementation.
 
-**Failure drill.** `bypassPermissions` removes most prompts but does not convert an unconfined environment into a safe one. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The preparation path checks plan-mode edits, dispatches the pre-hook, and converts explicit denial into a not-executed result. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `xai-grok-workspace/src/permission/manager.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Dispatch locally or by proxy
+**Why the story changes here.** Deterministic organization policy should not rely on the model remembering a sentence in a prompt.
 
-**The contract.** Authorized calls should use the same high-level tool contract regardless of execution placement.
+</div>
 
-**What the source shows.** `dispatch_tool` delegates to `WorkspaceOps::call_tool`, whose local branch calls the session toolset and proxy branch routes to the hub. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Hook crashes/timeouts are documented fail-open; enforcement hooks must handle errors and emit explicit deny. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Remote workspace placement becomes an environmental concern rather than a rewrite of the model loop. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `tool_calls.rs` and user guide `10-hooks.md`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Proxy errors must retain enough classification to distinguish transport failure from tool failure; otherwise the model may retry a side effect blindly. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Ask the permission manager
 
-> **Source note:** `tool_dispatch.rs` and `xai-grok-workspace/src/workspace_ops.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Rules, remembered grants, built-in approvals, and mode policy decide admission after pre-hook checks.
 
-## 8. Control concurrency and output
+She follows that responsibility into the repository. The shell sends a request through `PermissionHandle`; the workspace permission manager implements mode and rule evaluation. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Parallel operations need call identity, path locking where appropriate, bounded output, and background lifecycle APIs.
+<div class="story-lesson">
 
-**What the source shows.** The dispatch layer derives same-file lock paths; long-running commands and subagents use get/wait/kill operations, and MCP output has documented inline caps with spill files. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Separating policy from implementation enables interactive approval, deny-by-default automation, and managed constraints over the same tool code.
 
-**Why it matters.** Concurrency improves throughput only when shared state and result association remain deterministic. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Two edits to one file can race; unbounded logs can exhaust context; orphan background work can outlive the assumption that a turn is finished. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: `bypassPermissions` removes most prompts but does not convert an unconfined environment into a safe one. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `tool_dispatch.rs::lock_path_for_args`, background guide, MCP guide. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `xai-grok-workspace/src/permission/manager.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — read-only repository review
+## 7. The next clue — Dispatch locally or by proxy
 
-Design a run that can inspect code and execute no mutation-capable tool.
+Mira now needs one small mechanism: Authorized calls should use the same high-level tool contract regardless of execution placement.
+
+She follows that responsibility into the repository. `dispatch_tool` delegates to `WorkspaceOps::call_tool`, whose local branch calls the session toolset and proxy branch routes to the hub. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Remote workspace placement becomes an environmental concern rather than a rewrite of the model loop.
+
+</div>
+
+Then she tests the unhappy path: Proxy errors must retain enough classification to distinguish transport failure from tool failure; otherwise the model may retry a side effect blindly. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `tool_dispatch.rs` and `xai-grok-workspace/src/workspace_ops.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Control concurrency and output
+
+Mira now needs one small mechanism: Parallel operations need call identity, path locking where appropriate, bounded output, and background lifecycle APIs.
+
+She follows that responsibility into the repository. The dispatch layer derives same-file lock paths; long-running commands and subagents use get/wait/kill operations, and MCP output has documented inline caps with spill files. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Concurrency improves throughput only when shared state and result association remain deterministic.
+
+</div>
+
+Then she tests the unhappy path: Two edits to one file can race; unbounded logs can exhaust context; orphan background work can outlive the assumption that a turn is finished. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `tool_dispatch.rs::lock_path_for_args`, background guide, MCP guide. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — read-only repository review
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Design a run that can inspect code and execute no mutation-capable tool.
 
 1.  Create a disposable checkout with no ambient write credential.
 2.  Expose only read, list, and grep/search tools.
@@ -160,17 +232,19 @@ after=$(git status --porcelain=v1)
 test "$before" = "$after"
 ```
 
-The example uses documented filtering concepts. Exact effective names should be confirmed with the current binary because user-facing aliases can differ from internal names.
+**What she learns.** The example uses documented filtering concepts. Exact effective names should be confirmed with the current binary because user-facing aliases can differ from internal names.
 
 <div class="bm-fix">
 
-**Verification gate.** Require an unchanged Git worktree and inspect the session/tool log for any unavailable or unexpectedly mapped capability.
+**The proof she demands.** Require an unchanged Git worktree and inspect the session/tool log for any unavailable or unexpectedly mapped capability.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -179,113 +253,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **What serializes?** | Same-path calls can acquire a derived lock; other calls may run concurrently. | Do not infer global serial execution. |
 | **What is third-party?** | The notice identifies specific adapted tool implementations. | Attribute files precisely, not the whole runtime. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Effective schema name/description hash and source integration.
 - Raw and normalized arguments with secret redaction.
 - Hook, rule, mode, remembered-grant, and final admission decision.
 - Start/end time, exit classification, truncation/spill location, changed paths, and post-hook result.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **A schema can validate syntactically while allowing a dangerous semantic value, so policy must inspect normalized arguments.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Define the model-facing function:** reopen `xai-grok-tools/src/types/definition.rs`. Confirm the symbol or field still exists, then reproduce this boundary: A schema can validate syntactically while allowing a dangerous semantic value, so policy must inspect normalized arguments.
-2.  **Finalize per-session implementations:** reopen `xai-grok-tools/src/registry/types.rs`. Confirm the symbol or field still exists, then reproduce this boundary: A stale context can execute in the wrong directory or retain outdated integration state. Bind and log session identity.
-3.  **Filter before model selection:** reopen User guide `14-headless-mode.md`, tool-filtering section. Confirm the symbol or field still exists, then reproduce this boundary: Filtering the alias instead of the real tool name can leave a capability exposed; use inspect/help and source-pinned names.
-4.  **Normalize calls before policy:** reopen `xai-grok-shell/src/session/acp_session_impl/tool_calls.rs::prepare_tool_call`. Confirm the symbol or field still exists, then reproduce this boundary: Malformed arguments should become a model-visible error and must never fall through to a permissive default implementation.
-5.  **Apply deterministic preconditions:** reopen `tool_calls.rs` and user guide `10-hooks.md`. Confirm the symbol or field still exists, then reproduce this boundary: Hook crashes/timeouts are documented fail-open; enforcement hooks must handle errors and emit explicit deny.
-6.  **Ask the permission manager:** reopen `xai-grok-workspace/src/permission/manager.rs`. Confirm the symbol or field still exists, then reproduce this boundary: `bypassPermissions` removes most prompts but does not convert an unconfined environment into a safe one.
-7.  **Dispatch locally or by proxy:** reopen `tool_dispatch.rs` and `xai-grok-workspace/src/workspace_ops.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Proxy errors must retain enough classification to distinguish transport failure from tool failure; otherwise the model may retry a side effect blindly.
-8.  **Control concurrency and output:** reopen `tool_dispatch.rs::lock_path_for_args`, background guide, MCP guide. Confirm the symbol or field still exists, then reproduce this boundary: Two edits to one file can race; unbounded logs can exhaust context; orphan background work can outlive the assumption that a turn is finished.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Define the model-facing function
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Every visible tool needs a stable name, useful description, and JSON parameter schema. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `ToolDefinition` is a function definition with name, optional description, and parameters. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A schema can validate syntactically while allowing a dangerous semantic value, so policy must inspect normalized arguments. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Descriptions and schemas spend context but reduce ambiguous calls; they are part of agent behavior, not API decoration. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Finalize per-session implementations
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Definitions must resolve to implementations carrying the correct cwd, environment, terminal, filesystem, memory, and integration state. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `FinalizedToolset` and `SessionContext` connect the registry to session dependencies. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A stale context can execute in the wrong directory or retain outdated integration state. Bind and log session identity. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The same named operation can behave differently in another workspace or capability mode; session binding makes placement explicit. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Filter before model selection
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Agent definitions and headless flags can restrict which tool schemas enter a request. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Headless supports `--tools` and `--disallowed-tools`, including restrictions on the Agent tool and named subagent types. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Filtering the alias instead of the real tool name can leave a capability exposed; use inspect/help and source-pinned names. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Non-exposure is stronger and cheaper than repeatedly denying a capability the workflow never needs. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Normalize calls before policy
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Arguments need parsing, alias resolution, and canonical tool identity before matchers or rules evaluate them. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `prepare_tool_call` parses and normalizes the model call and resolves the bridge tool. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Malformed arguments should become a model-visible error and must never fall through to a permissive default implementation. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Policy must match what will execute, not an untrusted display string. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Apply deterministic preconditions
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Plan-mode edit restrictions and `PreToolUse` hooks run before the ordinary permission decision and implementation. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The preparation path checks plan-mode edits, dispatches the pre-hook, and converts explicit denial into a not-executed result. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Hook crashes/timeouts are documented fail-open; enforcement hooks must handle errors and emit explicit deny. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Deterministic organization policy should not rely on the model remembering a sentence in a prompt. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Ask the permission manager
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Rules, remembered grants, built-in approvals, and mode policy decide admission after pre-hook checks. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The shell sends a request through `PermissionHandle`; the workspace permission manager implements mode and rule evaluation. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: `bypassPermissions` removes most prompts but does not convert an unconfined environment into a safe one. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Separating policy from implementation enables interactive approval, deny-by-default automation, and managed constraints over the same tool code. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Dispatch locally or by proxy
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Authorized calls should use the same high-level tool contract regardless of execution placement. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `dispatch_tool` delegates to `WorkspaceOps::call_tool`, whose local branch calls the session toolset and proxy branch routes to the hub. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Proxy errors must retain enough classification to distinguish transport failure from tool failure; otherwise the model may retry a side effect blindly. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Remote workspace placement becomes an environmental concern rather than a rewrite of the model loop. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Control concurrency and output
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Parallel operations need call identity, path locking where appropriate, bounded output, and background lifecycle APIs. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The dispatch layer derives same-file lock paths; long-running commands and subagents use get/wait/kill operations, and MCP output has documented inline caps with spill files. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Two edits to one file can race; unbounded logs can exhaust context; orphan background work can outlive the assumption that a turn is finished. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Concurrency improves throughput only when shared state and result association remain deterministic. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -330,6 +307,12 @@ Yes, with targeted serialization for inferred same-file operations. Shared envir
 Are MCP tools ordinary tools?
 
 They are external integration tools with namespacing/discovery and their own transport/output concerns, routed through the broader authorization lifecycle.
+
+## What changed for Mira
+
+Mira learns to inspect four things for every tool: its promise, authority, execution location, and result contract.
+
+**Next:** Those tools still need a place to act, which makes the workspace more than a directory path.
 
 ## Key takeaways
 

@@ -8,7 +8,19 @@ research_commit: "c68e39f60462f28d9be5e683d9cbe2c57b1a5027"
 
 # Reading the Grok Build Rust Workspace
 
-A crate list is not an architecture. Read Grok Build from the composition root through client, runtime, action, state, and cross-cutting boundaries. The useful question is not 'what does this crate contain?' but 'which runtime contract becomes unstable if this crate changes?'
+<div id="incident" class="story-opening">
+
+THE INCIDENT · CHAPTER 02
+
+Mira clones the repository and opens the root Cargo workspace. Dozens of crates stare back at her. Reading them alphabetically feels like studying a city by memorizing every street name. She needs to know where a request enters, where decisions happen, and where side effects leave the process.
+
+</div>
+
+**The question:** How do you turn a large Rust workspace into a small mental map?
+
+## Start from first principles
+
+A railway map omits buildings and trees. It keeps stations, lines, and transfers because those explain movement. A useful crate map does the same: it keeps runtime responsibilities and the boundaries between them.
 
 Large Rust workspaces encourage directory tourism: open every manifest, restate its description, and mistake coverage for understanding. Grok Build has enough crates to make that approach actively misleading.
 
@@ -16,13 +28,41 @@ The better route starts at the binary, follows imports into a user-visible mode,
 
 The root Cargo configuration is generated and marked read-only. Treat member manifests and source imports as the reliable map, and avoid interpreting generated workspace order as product priority.
 
-<div class="bm-note">
+<div class="story-lesson">
 
-**Series equation.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. This chapter studies the *harness-architecture* term without pretending the other three disappear.
+**In one sentence.** A crate list is not an architecture. Read Grok Build from the composition root through client, runtime, action, state, and cross-cutting boundaries. The useful question is not 'what does this crate contain?' but 'which runtime contract becomes unstable if this crate changes?'
 
 </div>
 
-## The mental model
+<div class="principles-grid">
+
+<div>
+
+1 · NEED**How do you turn a large Rust workspace into a small mental map?**
+
+</div>
+
+<div>
+
+2 · MECHANISM**The harness must own a clear harness-architecture boundary.**
+
+</div>
+
+<div>
+
+3 · PROOF**Observe the model, harness, environment, and verifier separately.**
+
+</div>
+
+</div>
+
+<div class="bm-note">
+
+**The equation for the whole series.** Coding-agent effectiveness = model capability × harness quality × environment quality × verification quality. If any factor approaches zero, the product approaches zero too. This chapter isolates *harness-architecture*, then reconnects it to the complete system.
+
+</div>
+
+## Build the smallest useful mental model
 
 Group crates into five bands: composition, clients, runtime, action/workspace, and cross-cutting services. This is a runtime map, not a dependency graph; a low-level crate can affect every layer without being a user-facing feature.
 
@@ -38,109 +78,141 @@ Fig 2.1 — Responsibility bands in the Grok Build workspace.
 
 </div>
 
-## Source walk — the contracts that matter
+## Now open the hood
 
-The workspace contains many crates and compatibility surfaces. The following contracts are the shortest route through the behavior relevant to this chapter. Each one ties a user-visible feature to the module that owns it, then asks what happens when the contract is denied, interrupted, or misconfigured.
+Only after the idea is clear does Mira open the source. She ignores most of the workspace and follows the few boundaries that must exist for this part of the story to work.
 
-## 1. Start at the composition root
+## 1. The next clue — Start at the composition root
 
-**The contract.** The executable must assemble modes while keeping feature implementations outside CLI parsing.
+Mira now needs one small mechanism: The executable must assemble modes while keeping feature implementations outside CLI parsing.
 
-**What the source shows.** `pager-bin/src/main.rs` imports `run_headless`, `run_stdio_agent`, and `run_leader` and dispatches through `run_agent_command`. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. `pager-bin/src/main.rs` imports `run_headless`, `run_stdio_agent`, and `run_leader` and dispatches through `run_agent_command`. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** Imports reveal the actual wiring better than crate names; they identify which subsystem owns process lifetime. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** A flag can be accepted but ignored in a particular mode, so trace it from parser field into the called runtime rather than trusting help text alone. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** Imports reveal the actual wiring better than crate names; they identify which subsystem owns process lifetime.
 
-> **Source note:** `crates/codegen/xai-grok-pager-bin/src/main.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 2. Separate clients from semantics
+Then she tests the unhappy path: A flag can be accepted but ignored in a particular mode, so trace it from parser field into the called runtime rather than trusting help text alone. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Interactive rendering and headless projection should consume shared events instead of reimplementing the agent loop.
+> **Source:** `crates/codegen/xai-grok-pager-bin/src/main.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** The pager owns terminal presentation; `headless.rs` acts as an ACP client and the shell exposes stdio/server modes. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 2. The next clue — Separate clients from semantics
 
-**Why it matters.** This permits a rich TUI, scripts, and editors to share sessions and tool behavior. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Interactive rendering and headless projection should consume shared events instead of reimplementing the agent loop.
 
-**Failure drill.** Client-specific buffering or output projection can lose updates even when the runtime is correct; test event-to-output conversion independently. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. The pager owns terminal presentation; `headless.rs` acts as an ACP client and the shell exposes stdio/server modes. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `xai-grok-pager`, `xai-grok-shell/src/agent/app.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 3. Put turn semantics in shell
+**Why the story changes here.** This permits a rich TUI, scripts, and editors to share sessions and tool behavior.
 
-**The contract.** One runtime must own prompt lifecycle, tool feedback, compaction, cancellation, and stopping.
+</div>
 
-**What the source shows.** The ACP session implementation under `xai-grok-shell` contains `handle_prompt`, recovery wrappers, and the conversation loop. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Client-specific buffering or output projection can lose updates even when the runtime is correct; test event-to-output conversion independently. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** Central ownership makes interface changes less likely to fork semantic behavior. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `xai-grok-pager`, `xai-grok-shell/src/agent/app.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** If a tool or client bypasses chat-state updates, later rounds reason from incomplete observations and persisted resume state diverges. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 3. The next clue — Put turn semantics in shell
 
-> **Source note:** `xai-grok-shell/src/session/acp_session_impl`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: One runtime must own prompt lifecycle, tool feedback, compaction, cancellation, and stopping.
 
-## 4. Keep agent definition distinct from session execution
+She follows that responsibility into the repository. The ACP session implementation under `xai-grok-shell` contains `handle_prompt`, recovery wrappers, and the conversation loop. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Prompt bodies, agent roles, tool selections, and discovered rules must be configurable without moving turn control into configuration code.
+<div class="story-lesson">
 
-**What the source shows.** `xai-grok-agent` provides builders, definitions, `PromptContext`, and layered AGENTS discovery consumed by the shell. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Central ownership makes interface changes less likely to fork semantic behavior.
 
-**Why it matters.** It lets main sessions and subagents render different prompts/tools while using the same loop. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** Treating the system prompt as a static string hides runtime-selected skills, audience, cwd, memory, and instruction precedence. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: If a tool or client bypasses chat-state updates, later rounds reason from incomplete observations and persisted resume state diverges. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `crates/codegen/xai-grok-agent/src/prompt/context.rs` and `agents_md.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `xai-grok-shell/src/session/acp_session_impl`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## 5. Treat chat state as a subsystem
+## 4. The next clue — Keep agent definition distinct from session execution
 
-**The contract.** Messages, tool observations, request construction, and compaction metadata need an explicit state API.
+Mira now needs one small mechanism: Prompt bodies, agent roles, tool selections, and discovered rules must be configurable without moving turn control into configuration code.
 
-**What the source shows.** `xai-chat-state` is called by the turn implementation when user input, model output, and tool results enter the conversation. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+She follows that responsibility into the repository. `xai-grok-agent` provides builders, definitions, `PromptContext`, and layered AGENTS discovery consumed by the shell. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**Why it matters.** The model sees a projection of state, while persistence and UI may need richer events. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+<div class="story-lesson">
 
-**Failure drill.** Mutating only a rendered transcript does not update the next model request; state ownership must remain unambiguous. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+**Why the story changes here.** It lets main sessions and subagents render different prompts/tools while using the same loop.
 
-> **Source note:** `crates/codegen/xai-chat-state` and its call sites in `turn.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+</div>
 
-## 6. Separate sampling from orchestration
+Then she tests the unhappy path: Treating the system prompt as a static string hides runtime-selected skills, audience, cwd, memory, and instruction precedence. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**The contract.** Provider/model streaming should return structured responses without owning tool execution or permission decisions.
+> **Source:** `crates/codegen/xai-grok-agent/src/prompt/context.rs` and `agents_md.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**What the source shows.** `run_turn_via_sampler` delegates sampling through `xai-grok-sampler`; the shell interprets calls and controls retries/compaction. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+## 5. The next clue — Treat chat state as a subsystem
 
-**Why it matters.** Model transport can change without granting a provider adapter filesystem authority. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+Mira now needs one small mechanism: Messages, tool observations, request construction, and compaction metadata need an explicit state API.
 
-**Failure drill.** Authentication refresh and context overflow are transport/context recovery, not proof the engineering task recovered. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+She follows that responsibility into the repository. `xai-chat-state` is called by the turn implementation when user input, model output, and tool results enter the conversation. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-> **Source note:** `xai-grok-shell/.../turn.rs` and `xai-grok-sampler`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+<div class="story-lesson">
 
-## 7. Tools define actions; workspace places them
+**Why the story changes here.** The model sees a projection of state, while persistence and UI may need richer events.
 
-**The contract.** Tool registry code should describe and resolve operations, while workspace code chooses local/proxy execution and owns environmental state.
+</div>
 
-**What the source shows.** `xai-grok-tools` defines `ToolDefinition`/`FinalizedToolset`; `xai-grok-workspace` binds sessions and dispatches `call_tool`. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+Then she tests the unhappy path: Mutating only a rendered transcript does not update the next model request; state ownership must remain unambiguous. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-**Why it matters.** The boundary supports multiple placements and makes side-effect authority reviewable. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+> **Source:** `crates/codegen/xai-chat-state` and its call sites in `turn.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-**Failure drill.** Collapsing both layers makes it difficult to distinguish 'tool absent' from 'workspace unavailable' or 'policy denied.' A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+## 6. The next clue — Separate sampling from orchestration
 
-> **Source note:** `xai-grok-tools` and `xai-grok-workspace/src/workspace_ops.rs`. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+Mira now needs one small mechanism: Provider/model streaming should return structured responses without owning tool execution or permission decisions.
 
-## 8. Cross-cutting crates are architectural
+She follows that responsibility into the repository. `run_turn_via_sampler` delegates sampling through `xai-grok-sampler`; the shell interprets calls and controls retries/compaction. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
 
-**The contract.** Memory, MCP, hooks, sandbox, config, telemetry, Markdown, and ACP must integrate through explicit contracts rather than scattered conditionals.
+<div class="story-lesson">
 
-**What the source shows.** Dedicated crates expose these services, while the shell and workspace consume them at defined lifecycle points. This is the point where a product label becomes an implementation claim: the file or symbol tells us which component owns the decision and what data crosses the boundary.
+**Why the story changes here.** Model transport can change without granting a provider adapter filesystem authority.
 
-**Why it matters.** Cross-cutting does not mean optional trivia; these systems change context, authority, transport, recovery, and human comprehension. In harness engineering, moving this responsibility to a different layer changes failure recovery, testability, and the authority available to a model-generated action.
+</div>
 
-**Failure drill.** A feature can be present in the workspace but disabled by configuration or absent from an effective toolset; installed is not the same as active. A useful review does not stop at the happy path. It asks what the next model round, the operator, and the persisted session will observe when this contract fails.
+Then she tests the unhappy path: Authentication refresh and context overflow are transport/context recovery, not proof the engineering task recovered. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
 
-> **Source note:** `xai-grok-memory`, `xai-grok-mcp`, `xai-grok-hooks`, `xai-grok-sandbox`, ACP crates. Researched at Grok Build commit `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+> **Source:** `xai-grok-shell/.../turn.rs` and `xai-grok-sampler`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
 
-## Worked example — trace one flag instead of reading seventy manifests
+## 7. The next clue — Tools define actions; workspace places them
 
-Use `--output-format` as a vertical slice from CLI input to observable behavior.
+Mira now needs one small mechanism: Tool registry code should describe and resolve operations, while workspace code chooses local/proxy execution and owns environmental state.
+
+She follows that responsibility into the repository. `xai-grok-tools` defines `ToolDefinition`/`FinalizedToolset`; `xai-grok-workspace` binds sessions and dispatches `call_tool`. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** The boundary supports multiple placements and makes side-effect authority reviewable.
+
+</div>
+
+Then she tests the unhappy path: Collapsing both layers makes it difficult to distinguish 'tool absent' from 'workspace unavailable' or 'policy denied.' If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `xai-grok-tools` and `xai-grok-workspace/src/workspace_ops.rs`. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## 8. The next clue — Cross-cutting crates are architectural
+
+Mira now needs one small mechanism: Memory, MCP, hooks, sandbox, config, telemetry, Markdown, and ACP must integrate through explicit contracts rather than scattered conditionals.
+
+She follows that responsibility into the repository. Dedicated crates expose these services, while the shell and workspace consume them at defined lifecycle points. The important point is not the Rust syntax. It is ownership: this is where the system decides what crosses the boundary.
+
+<div class="story-lesson">
+
+**Why the story changes here.** Cross-cutting does not mean optional trivia; these systems change context, authority, transport, recovery, and human comprehension.
+
+</div>
+
+Then she tests the unhappy path: A feature can be present in the workspace but disabled by configuration or absent from an effective toolset; installed is not the same as active. If the model, operator, and saved session do not receive the same honest outcome, the mechanism is not yet trustworthy.
+
+> **Source:** `xai-grok-memory`, `xai-grok-mcp`, `xai-grok-hooks`, `xai-grok-sandbox`, ACP crates. Verified against Grok Build `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`.
+
+## Mira runs the experiment — trace one flag instead of reading seventy manifests
+
+Reading source gives her a hypothesis. A small experiment tells her whether that hypothesis survives contact with a real workspace. Use `--output-format` as a vertical slice from CLI input to observable behavior.
 
 1.  Find the parser field in pager-bin.
 2.  Locate the headless-only validation and mode dispatch.
@@ -157,17 +229,19 @@ rg -n 'output.format|OutputFormat|streaming.json' \
   crates/codegen/xai-grok-pager
 ```
 
-The exact search is a source-reading technique, not a product command. It replaces crate enumeration with a testable cross-boundary contract.
+**What she learns.** The exact search is a source-reading technique, not a product command. It replaces crate enumeration with a testable cross-boundary contract.
 
 <div class="bm-fix">
 
-**Verification gate.** The value should resolve through parser, dispatch, runtime events, and final output without an unexplained duplicate implementation.
+**The proof she demands.** The value should resolve through parser, dispatch, runtime events, and final output without an unexplained duplicate implementation.
 
 </div>
 
-The distinction between a native Grok Build control and an operator-supplied control is intentional here. The harness can expose a tool, emit an event, persist a session identifier, or apply a sandbox profile. The surrounding repository, shell, container, CI system, and reviewer still decide whether that evidence is sufficient for the real engineering change.
+That last check matters. Grok Build can expose a mechanism and report an observation; the repository, operating system, CI platform, and reviewer decide whether those observations prove the actual task succeeded.
 
-## Engineering audit — boundaries, evidence, and failure
+## The whiteboard test
+
+Before Mira explains the chapter to her team, she reduces it to three questions: what owns the decision, what evidence comes back, and what changes when the mechanism fails?
 
 | Review question | Source-backed answer | Operational consequence |
 |----|----|----|
@@ -176,113 +250,16 @@ The distinction between a native Grok Build control and an operator-supplied con
 | **Where are side effects placed?** | tools resolved into workspace local/proxy operations | Log both operation and placement. |
 | **Where is human comprehension built?** | pager plus formatting/Markdown/Mermaid components | Treat rendering errors as control-plane defects when they hide approvals or failures. |
 
-Use this table as a pre-publication and pre-deployment review, not as a feature scorecard. A mechanism can be correctly implemented and still be the wrong control for a particular threat. A documented default can also change after the pinned commit. Re-run the source path and command checks before copying a configuration into production.
+This is not a feature scorecard. A mechanism can work exactly as implemented and still be the wrong control for a particular threat. Defaults also change, so recheck the pinned source path before copying configuration into production.
 
-### What to observe in production
+### Signals Mira keeps
 
 - Selected mode and resolved effective configuration.
 - ACP lifecycle/version and session identifiers.
 - Agent definition, model, toolset, workspace placement, and sandbox profile.
 - Per-crate error boundaries in traces rather than a single generic failure.
 
-These signals connect the four factors used throughout the series. Model output describes the proposed action. Harness events reveal selection, policy, and state transitions. Environment logs reveal what actually ran. Verification artifacts reveal whether the repository reached the requested condition. Losing any one of those views makes a confident final answer harder to audit.
-
-## Production review checklist
-
-A source walk becomes operational only when a team converts it into checks. Record the exact Grok Build commit, released binary version, model/provider, cwd, workspace placement, effective tools, permission mode, sandbox profile, discovered rules, skills, plugins, MCP servers, and session ID. Those fields explain why identical prompts may not create identical actions.
-
-Test the negative path. A high-value drill for this chapter is: **A flag can be accepted but ignored in a particular mode, so trace it from parser field into the called runtime rather than trusting help text alone.** Run it in a disposable environment and verify three views agree: the model receives an honest observation, the operator sees the failure or denial, and the persisted session contains enough evidence to diagnose it.
-
-Do not treat model prose as an audit log. Preserve normalized arguments with secret redaction, policy decisions and source, exit status, changed paths, truncation markers, background state, and verifier artifacts. A final answer can summarize those facts but must not replace them.
-
-Audit authority. Ask which component can read credentials, write outside the repository, spawn processes, reach the network, install extensions, approve calls, change protected branches, or delete evidence. If the answer is only “the agent,” the boundary is underspecified. Name the tool, policy, OS identity, container, CI credential, and human role.
-
-Finally, define cleanup for child processes, worktrees, temporary files, session artifacts, cached credentials, OAuth tokens, plugin data, and remote resources. Recovery and cleanup are normal state-machine work, not exceptional housekeeping.
-
-### Source verification notebook
-
-1.  **Start at the composition root:** reopen `crates/codegen/xai-grok-pager-bin/src/main.rs`. Confirm the symbol or field still exists, then reproduce this boundary: A flag can be accepted but ignored in a particular mode, so trace it from parser field into the called runtime rather than trusting help text alone.
-2.  **Separate clients from semantics:** reopen `xai-grok-pager`, `xai-grok-shell/src/agent/app.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Client-specific buffering or output projection can lose updates even when the runtime is correct; test event-to-output conversion independently.
-3.  **Put turn semantics in shell:** reopen `xai-grok-shell/src/session/acp_session_impl`. Confirm the symbol or field still exists, then reproduce this boundary: If a tool or client bypasses chat-state updates, later rounds reason from incomplete observations and persisted resume state diverges.
-4.  **Keep agent definition distinct from session execution:** reopen `crates/codegen/xai-grok-agent/src/prompt/context.rs` and `agents_md.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Treating the system prompt as a static string hides runtime-selected skills, audience, cwd, memory, and instruction precedence.
-5.  **Treat chat state as a subsystem:** reopen `crates/codegen/xai-chat-state` and its call sites in `turn.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Mutating only a rendered transcript does not update the next model request; state ownership must remain unambiguous.
-6.  **Separate sampling from orchestration:** reopen `xai-grok-shell/.../turn.rs` and `xai-grok-sampler`. Confirm the symbol or field still exists, then reproduce this boundary: Authentication refresh and context overflow are transport/context recovery, not proof the engineering task recovered.
-7.  **Tools define actions; workspace places them:** reopen `xai-grok-tools` and `xai-grok-workspace/src/workspace_ops.rs`. Confirm the symbol or field still exists, then reproduce this boundary: Collapsing both layers makes it difficult to distinguish 'tool absent' from 'workspace unavailable' or 'policy denied.'
-8.  **Cross-cutting crates are architectural:** reopen `xai-grok-memory`, `xai-grok-mcp`, `xai-grok-hooks`, `xai-grok-sandbox`, ACP crates. Confirm the symbol or field still exists, then reproduce this boundary: A feature can be present in the workspace but disabled by configuration or absent from an effective toolset; installed is not the same as active.
-
-Agent repositories move quickly, and copied configuration can outlive the implementation that gave it meaning. Revalidation is cheaper than debugging a safety or recovery assumption after a destructive action.
-
-## Contract validation lab
-
-The following lab turns each source claim into a falsifiable exercise. Run it against a disposable checkout and a non-production identity. Keep the base commit fixed, capture structured events, and change one variable at a time. The aim is not to prove the entire product correct; it is to establish that the boundary described in this chapter behaves the way your workflow assumes.
-
-For every exercise, save four artifacts: the effective configuration, the input/stimulus, the raw runtime output, and an independent observation of environment state. That last artifact might be a Git diff, process list, denied-path check, session tail, network log, or verifier report. Without it, the test only proves what the harness said about itself.
-
-### Exercise 1 — Start at the composition root
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: The executable must assemble modes while keeping feature implementations outside CLI parsing. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `pager-bin/src/main.rs` imports `run_headless`, `run_stdio_agent`, and `run_leader` and dispatches through `run_agent_command`. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A flag can be accepted but ignored in a particular mode, so trace it from parser field into the called runtime rather than trusting help text alone. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Imports reveal the actual wiring better than crate names; they identify which subsystem owns process lifetime. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 2 — Separate clients from semantics
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Interactive rendering and headless projection should consume shared events instead of reimplementing the agent loop. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The pager owns terminal presentation; `headless.rs` acts as an ACP client and the shell exposes stdio/server modes. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Client-specific buffering or output projection can lose updates even when the runtime is correct; test event-to-output conversion independently. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** This permits a rich TUI, scripts, and editors to share sessions and tool behavior. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 3 — Put turn semantics in shell
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: One runtime must own prompt lifecycle, tool feedback, compaction, cancellation, and stopping. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is The ACP session implementation under `xai-grok-shell` contains `handle_prompt`, recovery wrappers, and the conversation loop. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: If a tool or client bypasses chat-state updates, later rounds reason from incomplete observations and persisted resume state diverges. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Central ownership makes interface changes less likely to fork semantic behavior. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 4 — Keep agent definition distinct from session execution
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Prompt bodies, agent roles, tool selections, and discovered rules must be configurable without moving turn control into configuration code. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `xai-grok-agent` provides builders, definitions, `PromptContext`, and layered AGENTS discovery consumed by the shell. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Treating the system prompt as a static string hides runtime-selected skills, audience, cwd, memory, and instruction precedence. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** It lets main sessions and subagents render different prompts/tools while using the same loop. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 5 — Treat chat state as a subsystem
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Messages, tool observations, request construction, and compaction metadata need an explicit state API. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `xai-chat-state` is called by the turn implementation when user input, model output, and tool results enter the conversation. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Mutating only a rendered transcript does not update the next model request; state ownership must remain unambiguous. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The model sees a projection of state, while persistence and UI may need richer events. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 6 — Separate sampling from orchestration
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Provider/model streaming should return structured responses without owning tool execution or permission decisions. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `run_turn_via_sampler` delegates sampling through `xai-grok-sampler`; the shell interprets calls and controls retries/compaction. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Authentication refresh and context overflow are transport/context recovery, not proof the engineering task recovered. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Model transport can change without granting a provider adapter filesystem authority. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 7 — Tools define actions; workspace places them
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Tool registry code should describe and resolve operations, while workspace code chooses local/proxy execution and owns environmental state. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is `xai-grok-tools` defines `ToolDefinition`/`FinalizedToolset`; `xai-grok-workspace` binds sessions and dispatches `call_tool`. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: Collapsing both layers makes it difficult to distinguish 'tool absent' from 'workspace unavailable' or 'policy denied.' A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** The boundary supports multiple placements and makes side-effect authority reviewable. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-### Exercise 8 — Cross-cutting crates are architectural
-
-**Setup and stimulus.** Begin from a clean session whose model, tools, workspace, permission mode, and sandbox profile are recorded. Construct the smallest task that crosses this contract: Memory, MCP, hooks, sandbox, config, telemetry, Markdown, and ACP must integrate through explicit contracts rather than scattered conditionals. Trigger both the expected path and one deliberately invalid or disallowed variation. Do not combine this experiment with unrelated edits, extensions, or background tasks; isolation makes the resulting evidence interpretable.
-
-**Expected evidence.** The implementation evidence is Dedicated crates expose these services, while the shell and workspace consume them at defined lifecycle points. Capture the named event, symbol-level behavior, result status, and environmental observation. Then induce the documented failure: A feature can be present in the workspace but disabled by configuration or absent from an effective toolset; installed is not the same as active. A passing exercise shows that the operator, persisted session, and next model round agree about what happened. If they disagree, treat the boundary as unverified in your deployment even when the happy-path UI looks correct.
-
-**Engineering interpretation.** Cross-cutting does not mean optional trivia; these systems change context, authority, transport, recovery, and human comprehension. Record whether the control failed open or closed, whether retry could duplicate a side effect, which identity had authority, and which artifact a reviewer would need later. This converts a repository reading into a regression test your team can rerun after upgrades.
-
-Repeat these exercises when the binary, default branch, model provider, operating system, plugin set, or managed configuration changes. Agent behavior is a product of the complete system. A source contract verified on one Mac with an interactive prompt is not automatically verified in a Linux CI container with deny-by-default permissions and remote tools.
+Together, those signals tell a complete story: the model proposed an action, the harness admitted and routed it, the environment performed something, and a verifier measured the result.
 
 ## Limits and uncertainty
 
@@ -327,6 +304,12 @@ They do not grant model capability, but they determine whether humans can inspec
 What Rust knowledge matters most?
 
 Understand enums/traits that select local versus proxy behavior, async task boundaries, and shared state ownership. Generic Rust syntax is secondary.
+
+## What changed for Mira
+
+The workspace becomes five understandable neighborhoods: clients, runtime, actions, state, and cross-cutting services.
+
+**Next:** With the map drawn, Mira can follow one request as it moves through the runtime.
 
 ## Key takeaways
 

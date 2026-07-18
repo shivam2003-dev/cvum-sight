@@ -1,6 +1,6 @@
 /* Apply saved reader preferences before first paint. */
 (function () {
-  var themes = ["developer", "hacker", "god", "anime", "minimalist"];
+  var themes = ["developer", "hacker", "god", "anime", "minimalist", "modernist"];
   var theme = localStorage.getItem("cvam-theme") || "minimalist";
   if (themes.indexOf(theme) === -1) {
     theme = "minimalist";
@@ -11,13 +11,13 @@
   function makeThemeLink(name) {
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/themes/theme-" + name + ".css?v=4";
+    link.href = "/themes/theme-" + name + ".css?v=5";
     link.setAttribute("data-cvam-theme-css", name);
     return link;
   }
 
-  // Only the selected visual theme is render-blocking. Loading all five added
-  // four needless CSS requests and hundreds of inactive rules to every page.
+  // Only the selected visual theme is render-blocking. Loading every theme adds
+  // needless CSS requests and hundreds of inactive rules to every page.
   var activeThemeLink = makeThemeLink(theme);
   if (themeBundle && themeBundle.parentNode) themeBundle.parentNode.insertBefore(activeThemeLink, themeBundle);
   else document.head.appendChild(activeThemeLink);

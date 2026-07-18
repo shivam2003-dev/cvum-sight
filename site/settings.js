@@ -5,7 +5,8 @@
     { id: "hacker",     label: "Hacker" },
     { id: "god",        label: "God" },
     { id: "anime",      label: "Anime" },
-    { id: "minimalist", label: "Minimalist" }
+    { id: "minimalist", label: "Minimalist" },
+    { id: "modernist",  label: "Modernist" }
   ];
   var SIZES = [
     { id: "text-sm", label: "S" },

@@ -250,12 +250,20 @@
   // ── archive page ──
   const archiveList = document.getElementById("archive-list");
   if (archiveList && typeof POSTS !== "undefined") {
-    const params = new URLSearchParams(window.location.search);
-    const filterCat = params.get("cat");
+    const searchInput = document.getElementById("archive-search");
+    const categorySelect = document.getElementById("archive-category");
+    const clearButton = document.getElementById("archive-clear");
+    const resultSummary = document.getElementById("archive-result-summary");
+    const emptyState = document.getElementById("archive-empty");
+    const pagination = document.getElementById("archive-pagination");
+    const pageNumbers = document.getElementById("archive-page-numbers");
+    const previousButton = document.getElementById("archive-prev");
+    const nextButton = document.getElementById("archive-next");
+    const pageSize = 20;
+
     // AI Native tool pages live in their own dedicated hub and are hidden from Archive.
     const hiddenArchiveDates = new Set(["May 31, 2026", "Jun 1, 2026"]);
     const archiveSource = POSTS.filter(p => !p.slug.startsWith("ain-") && !hiddenArchiveDates.has(p.date));
-    const filtered = filterCat ? archiveSource.filter(p => p.cat === filterCat) : archiveSource;
 
     // Collapse every series into ONE entry: series name, linking to its FIRST article.
     const seriesNames = {
@@ -268,66 +276,181 @@
       "grok-build": "Inside Grok Build",
       consensus: "Consensus Algorithms"
     };
+    const seriesHubs = {
+      deepseek: "series-deepseek.html",
+      "ai-tools": "series-ai-tools.html",
+      "yc-paper-club": "series-yc-paper-club.html",
+      gpu: "series-gpu.html",
+      harness: "series-harness.html",
+      "grok-build": "series-grok-build.html",
+      consensus: "series-consensus.html"
+    };
     const seenSeries = {};
-    const collapsed = [];
-    filtered.forEach(p => {
+    const entries = [];
+    archiveSource.forEach(p => {
       if (p.series) {
         if (!seenSeries[p.series]) {
-          seenSeries[p.series] = { first: p, count: 1 };
-          collapsed.push({ type: "series", key: p.series });
+          seenSeries[p.series] = { first: p, posts: [p] };
+          entries.push({ type: "series", key: p.series });
         } else {
-          seenSeries[p.series].count++;
+          seenSeries[p.series].posts.push(p);
           // keep the lowest seriesNum as the "first article" link target
           const cur = parseFloat(seenSeries[p.series].first.seriesNum) || 0;
           const cand = parseFloat(p.seriesNum) || 0;
           if (cand < cur) seenSeries[p.series].first = p;
         }
       } else {
-        collapsed.push({ type: "post", data: p });
+        entries.push({ type: "post", data: p });
       }
     });
 
-    // update subtitle to reflect filter
-    const archiveSub = document.querySelector(".archive-subtitle");
-    if (archiveSub) {
-      archiveSub.textContent = filterCat
-        ? `Posts in // ${filterCat} · ${collapsed.length} entr${collapsed.length !== 1 ? "ies" : "y"}`
-        : `All posts · newest first`;
+    const categories = Array.from(new Set(archiveSource.map(p => p.cat))).sort((a, b) => a.localeCompare(b));
+    if (categorySelect) {
+      categorySelect.insertAdjacentHTML("beforeend", categories.map(cat =>
+        `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`
+      ).join(""));
     }
 
-    archiveList.innerHTML = collapsed.map(item => {
+    function entryData(item) {
       if (item.type === "series") {
         const entry = seenSeries[item.key];
         const p = entry.first;
-        const count = entry.count;
+        const count = entry.posts.length;
         const name = seriesNames[item.key] || (item.key.charAt(0).toUpperCase() + item.key.slice(1));
-        // link to the series hub page when one exists, else the first article
-        const seriesHubs = {
-          deepseek: "series-deepseek.html",
-          "ai-tools": "series-ai-tools.html",
-          "yc-paper-club": "series-yc-paper-club.html",
-          gpu: "series-gpu.html",
-          harness: "series-harness.html",
-          "grok-build": "series-grok-build.html",
-          consensus: "series-consensus.html"
-        };
-        const href = seriesHubs[item.key] || `posts/${escapeHtml(p.slug)}.html`;
-        return `<li>
+        const searchText = entry.posts.map(post => [post.title, post.excerpt, post.cat].concat(post.tags || []).join(" ")).join(" ");
+        return {
+          categories: new Set(entry.posts.map(post => post.cat)),
+          searchText: `${name} ${item.key} ${searchText}`.toLowerCase(),
+          html: `<li>
           <span class="meta">${escapeHtml(p.date)}</span>
           <span class="tag fill">series</span>
-          <a href="${href}">${escapeHtml(name)} Series</a>
+          <a href="${seriesHubs[item.key] || `posts/${escapeHtml(p.slug)}.html`}">${escapeHtml(name)} Series</a>
           <span class="meta">${count} article${count !== 1 ? "s" : ""}</span>
-        </li>`;
-      } else {
-        const p = item.data;
-        return `<li>
+        </li>`
+        };
+      }
+      const p = item.data;
+      return {
+        categories: new Set([p.cat]),
+        searchText: [p.title, p.excerpt, p.cat].concat(p.tags || []).join(" ").toLowerCase(),
+        html: `<li>
           <span class="meta">${escapeHtml(p.date)}</span>
           <span class="tag fill">${escapeHtml(p.cat)}</span>
           <a href="posts/${escapeHtml(p.slug)}.html">${escapeHtml(p.title)}</a>
           <span class="meta">${p.time} min</span>
-        </li>`;
+        </li>`
+      };
+    }
+
+    const searchableEntries = entries.map(entryData);
+    let state = { query: "", category: "", page: 1 };
+
+    function readStateFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const requestedCategory = params.get("cat") || "";
+      state.query = (params.get("q") || "").trim();
+      state.category = categories.includes(requestedCategory) ? requestedCategory : "";
+      state.page = Math.max(1, parseInt(params.get("page"), 10) || 1);
+      if (searchInput) searchInput.value = state.query;
+      if (categorySelect) categorySelect.value = state.category;
+    }
+
+    function writeStateToUrl(mode) {
+      const params = new URLSearchParams();
+      if (state.query) params.set("q", state.query);
+      if (state.category) params.set("cat", state.category);
+      if (state.page > 1) params.set("page", String(state.page));
+      const url = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
+      history[mode === "push" ? "pushState" : "replaceState"]({}, "", url);
+    }
+
+    function visiblePageNumbers(totalPages) {
+      const pages = new Set([1, totalPages, state.page - 1, state.page, state.page + 1]);
+      const ordered = Array.from(pages).filter(page => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+      const output = [];
+      ordered.forEach((page, index) => {
+        if (index && page - ordered[index - 1] > 1) output.push("ellipsis");
+        output.push(page);
+      });
+      return output;
+    }
+
+    function renderArchive(options) {
+      const terms = state.query.toLowerCase().split(/\s+/).filter(Boolean);
+      const filtered = searchableEntries.filter(entry =>
+        (!state.category || entry.categories.has(state.category)) &&
+        terms.every(term => entry.searchText.includes(term))
+      );
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      state.page = Math.min(state.page, totalPages);
+      const start = (state.page - 1) * pageSize;
+      const currentEntries = filtered.slice(start, start + pageSize);
+      archiveList.innerHTML = currentEntries.map(entry => entry.html).join("");
+      archiveList.hidden = !filtered.length;
+      if (emptyState) emptyState.hidden = Boolean(filtered.length);
+
+      const firstResult = filtered.length ? start + 1 : 0;
+      const lastResult = Math.min(start + pageSize, filtered.length);
+      if (resultSummary) {
+        resultSummary.textContent = filtered.length
+          ? `Showing ${firstResult}–${lastResult} of ${filtered.length} entries`
+          : "0 archive entries";
       }
-    }).join("");
+      const archiveSub = document.querySelector(".archive-subtitle");
+      if (archiveSub) {
+        archiveSub.textContent = state.category
+          ? `Newest first · category: ${state.category}`
+          : "All posts · newest first";
+      }
+
+      if (pagination) pagination.hidden = totalPages <= 1 || !filtered.length;
+      if (previousButton) previousButton.disabled = state.page === 1;
+      if (nextButton) nextButton.disabled = state.page === totalPages;
+      if (pageNumbers) {
+        pageNumbers.innerHTML = visiblePageNumbers(totalPages).map(page => page === "ellipsis"
+          ? '<span class="archive-ellipsis" aria-hidden="true">…</span>'
+          : `<button type="button" data-page="${page}"${page === state.page ? ' class="active" aria-current="page"' : ""} aria-label="Archive page ${page}">${page}</button>`
+        ).join("");
+      }
+      if (!options || options.updateUrl !== false) writeStateToUrl(options && options.historyMode);
+    }
+
+    function goToPage(page) {
+      state.page = page;
+      renderArchive({ historyMode: "push" });
+      document.querySelector(".archive-toolbar").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    if (searchInput) searchInput.addEventListener("input", function () {
+      state.query = this.value.trim();
+      state.page = 1;
+      renderArchive({ historyMode: "replace" });
+    });
+    if (categorySelect) categorySelect.addEventListener("change", function () {
+      state.category = this.value;
+      state.page = 1;
+      renderArchive({ historyMode: "replace" });
+    });
+    if (clearButton) clearButton.addEventListener("click", function () {
+      state = { query: "", category: "", page: 1 };
+      if (searchInput) searchInput.value = "";
+      if (categorySelect) categorySelect.value = "";
+      renderArchive({ historyMode: "replace" });
+      if (searchInput) searchInput.focus();
+    });
+    if (pageNumbers) pageNumbers.addEventListener("click", function (event) {
+      const button = event.target.closest("button[data-page]");
+      if (button) goToPage(Number(button.dataset.page));
+    });
+    if (previousButton) previousButton.addEventListener("click", function () { goToPage(state.page - 1); });
+    if (nextButton) nextButton.addEventListener("click", function () { goToPage(state.page + 1); });
+    window.addEventListener("popstate", function () {
+      readStateFromUrl();
+      renderArchive({ updateUrl: false });
+    });
+
+    readStateFromUrl();
+    renderArchive({ historyMode: "replace" });
   }
 
   // ── tags page ──

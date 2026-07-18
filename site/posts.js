@@ -435,7 +435,7 @@ const POSTS = [
   },
   {
     slug: "consensus-7-8-matchmaker-pigpaxos-bpaxos-rabia",
-    title: "Matchmaker Paxos, PigPaxos, BPaxos &amp; Rabia.",
+    title: "Matchmaker Paxos, PigPaxos, BPaxos & Rabia.",
     date: "Jul 20, 2026",
     cat: "devops",
     tags: ["devops", "distributed-systems", "modern-paxos-survey", "series-consensus"],
@@ -891,7 +891,7 @@ const POSTS = [
   },
   {
     slug: "pgbackrest-s3-guide",
-    title: "pgBackRest with S3 — the complete hands-on guide to backup &amp; restore.",
+    title: "pgBackRest with S3 — the complete hands-on guide to backup & restore.",
     date: "Jul 7, 2026",
     cat: "postgres",
     tags: ["postgres", "pgbackrest", "backup", "s3", "disaster-recovery", "devops"],
@@ -945,7 +945,7 @@ const POSTS = [
   },
   {
     slug: "harness-2-tools",
-    title: "Tools &amp; the execution environment.",
+    title: "Tools & the execution environment.",
     date: "Jul 4, 2026",
     cat: "ml",
     tags: ["ml", "agents", "harness-engineering", "tools", "module-2"],
@@ -969,7 +969,7 @@ const POSTS = [
   },
   {
     slug: "harness-4-durability",
-    title: "Durability, recovery &amp; orchestration.",
+    title: "Durability, recovery & orchestration.",
     date: "Jul 4, 2026",
     cat: "ml",
     tags: ["ml", "agents", "harness-engineering", "durability", "module-4"],
@@ -981,7 +981,7 @@ const POSTS = [
   },
   {
     slug: "harness-5-production",
-    title: "Production harnesses &amp; capstone.",
+    title: "Production harnesses & capstone.",
     date: "Jul 4, 2026",
     cat: "ml",
     tags: ["ml", "agents", "harness-engineering", "capstone", "module-5"],
@@ -1013,7 +1013,7 @@ const POSTS = [
   },
   {
     slug: "gpu-1-1-architecture",
-    title: "How a GPU actually works — SIMT, warps &amp; the silicon.",
+    title: "How a GPU actually works — SIMT, warps & the silicon.",
     date: "Jun 29, 2026",
     cat: "ml",
     tags: ["ml", "gpu", "cuda", "simt", "architecture", "phase-1"],
@@ -1025,7 +1025,7 @@ const POSTS = [
   },
   {
     slug: "gpu-1-2-memory",
-    title: "GPU memory — coalescing, shared memory &amp; occupancy.",
+    title: "GPU memory — coalescing, shared memory & occupancy.",
     date: "Jun 29, 2026",
     cat: "ml",
     tags: ["ml", "gpu", "cuda", "memory", "coalescing", "phase-1"],
@@ -1037,7 +1037,7 @@ const POSTS = [
   },
   {
     slug: "gpu-2-1-optimization",
-    title: "Kernel optimization &amp; the Roofline model.",
+    title: "Kernel optimization & the Roofline model.",
     date: "Jun 29, 2026",
     cat: "ml",
     tags: ["ml", "gpu", "cuda", "roofline", "optimization", "phase-2"],
@@ -1049,7 +1049,7 @@ const POSTS = [
   },
   {
     slug: "gpu-2-2-tooling",
-    title: "The GPU toolchain — profilers &amp; kernel DSLs.",
+    title: "The GPU toolchain — profilers & kernel DSLs.",
     date: "Jun 29, 2026",
     cat: "ml",
     tags: ["ml", "gpu", "nsight", "triton", "cutlass", "phase-2"],
@@ -1061,7 +1061,7 @@ const POSTS = [
   },
   {
     slug: "gpu-3-1-multi-gpu",
-    title: "Multi-GPU &amp; model parallelism.",
+    title: "Multi-GPU & model parallelism.",
     date: "Jun 29, 2026",
     cat: "ml",
     tags: ["ml", "gpu", "distributed", "megatron", "nvlink", "phase-3"],
@@ -1073,7 +1073,7 @@ const POSTS = [
   },
   {
     slug: "gpu-3-2-datacenter",
-    title: "GPU datacenters — scheduling &amp; multi-tenancy.",
+    title: "GPU datacenters — scheduling & multi-tenancy.",
     date: "Jun 29, 2026",
     cat: "ml",
     tags: ["ml", "gpu", "scheduling", "virtualization", "multi-tenant", "phase-3"],
@@ -1085,7 +1085,7 @@ const POSTS = [
   },
   {
     slug: "gpt-5-6-system-card",
-    title: "GPT-5.6 — Sol, Terra &amp; Luna, reading the system card.",
+    title: "GPT-5.6 — Sol, Terra & Luna, reading the system card.",
     date: "Jun 25, 2026",
     cat: "ml",
     tags: ["ml", "ai-safety", "openai", "gpt-5", "preparedness"],
@@ -1107,7 +1107,7 @@ const POSTS = [
   },
   {
     slug: "kog-laneformer-monokernel",
-    title: "KOG LaneFormer-2B &amp; the monokernel — co-designing a model, runtime &amp; GPU kernel for batch-1 latency.",
+    title: "KOG LaneFormer-2B & the monokernel — co-designing a model, runtime & GPU kernel for batch-1 latency.",
     date: "Jun 24, 2026",
     cat: "ml",
     tags: ["ml", "llm-inference", "gpu", "latency", "mi300x", "tensor-parallelism"],
@@ -1117,7 +1117,7 @@ const POSTS = [
   },
   {
     slug: "build-your-own-ai-lab",
-    title: "Build your own AI lab — the complete 2026 guide to self-hosting GLM-5.2, DeepSeek V4 &amp; friends.",
+    title: "Build your own AI lab — the complete 2026 guide to self-hosting GLM-5.2, DeepSeek V4 & friends.",
     date: "Jun 22, 2026",
     cat: "ml",
     tags: ["ml", "llm", "self-hosting", "hardware", "gpu", "dgx-spark"],

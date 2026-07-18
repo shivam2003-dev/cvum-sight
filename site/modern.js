@@ -8,13 +8,13 @@
 
   if (document.querySelector(".post-body") && !document.querySelector('script[data-cvam-focus]')) {
     var focusScript = document.createElement("script");
-    focusScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "focus.js?v=1";
+    focusScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "focus.js?v=2";
     focusScript.setAttribute("data-cvam-focus", "true");
     document.body.appendChild(focusScript);
   }
   if (!document.querySelector('script[data-cvam-enhancements]')) {
     var enhancementsScript = document.createElement("script");
-    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=5";
+    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=6";
     enhancementsScript.setAttribute("data-cvam-enhancements", "true");
     document.body.appendChild(enhancementsScript);
   }

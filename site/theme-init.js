@@ -6,6 +6,41 @@
     theme = "minimalist";
     localStorage.setItem("cvam-theme", theme);
   }
+
+  var themeBundle = document.querySelector('link[href*="themes.css"]');
+  function makeThemeLink(name) {
+    var link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "/themes/theme-" + name + ".css?v=4";
+    link.setAttribute("data-cvam-theme-css", name);
+    return link;
+  }
+
+  // Only the selected visual theme is render-blocking. Loading all five added
+  // four needless CSS requests and hundreds of inactive rules to every page.
+  var activeThemeLink = makeThemeLink(theme);
+  if (themeBundle && themeBundle.parentNode) themeBundle.parentNode.insertBefore(activeThemeLink, themeBundle);
+  else document.head.appendChild(activeThemeLink);
+
+  var themeRequest = 0;
+  window.__cvamLoadThemeCss = function (name, ready) {
+    if (themes.indexOf(name) === -1) return;
+    var request = ++themeRequest;
+    var current = document.querySelector('link[data-cvam-theme-css]');
+    if (current && current.getAttribute("data-cvam-theme-css") === name) {
+      if (ready) ready();
+      return;
+    }
+    var next = makeThemeLink(name);
+    next.onload = function () {
+      if (request !== themeRequest) { next.remove(); return; }
+      if (current) current.remove();
+      if (ready) ready();
+    };
+    next.onerror = function () { next.remove(); };
+    if (themeBundle && themeBundle.parentNode) themeBundle.parentNode.insertBefore(next, themeBundle);
+    else document.head.appendChild(next);
+  };
   document.documentElement.classList.add("theme-" + theme);
 
   var size = localStorage.getItem("cvam-size");

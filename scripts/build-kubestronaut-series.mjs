@@ -6,8 +6,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const site = path.join(root, "site");
 const posts = path.join(site, "posts");
 
-const themeScript = `<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}document.documentElement.classList.add("view-modern");})()</script>`;
-
 const certs = [
   { code: "KCNA", slug: "cheat-kcna", label: "Foundations" },
   { code: "KCSA", slug: "cheat-kcsa", label: "Security foundations" },
@@ -59,8 +57,9 @@ function articlePage(guide) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${guide.code} Exam Cheatsheet — cvam.sight</title>
 <meta name="description" content="${guide.description}">
-<link rel="stylesheet" href="../style.css?v=58">
-${themeScript}
+<link rel="stylesheet" href="../style.css?v=70">
+<link rel="stylesheet" href="/themes.css?v=4">
+<script src="/theme-init.js?v=3"></script>
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
 <script defer src="/_vercel/speed-insights/script.js"></script>
 <script defer src="/_vercel/insights/script.js"></script>
@@ -97,12 +96,11 @@ ${guide.body}
     </div>
     <aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside>
   </div>
-  <script src="../posts.js?v=2"></script>
-  <script src="../stats.js"></script>
-  <script src="../app.js?v=31"></script>
-  <script defer src="../settings.js?v=10"></script>
-  <script type="module" src="../highlighter.js"></script>
-  <script defer src="../reader.js"></script>
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=37"></script>
+  <script defer src="../settings.js?v=12"></script>
+  <script type="module" src="../highlighter.js?v=2"></script>
+  <script defer src="../reader.js?v=2"></script>
 </body>
 </html>`;
 }
@@ -125,7 +123,7 @@ function landingPage() {
 <meta name="description" content="A current, connected preparation series for all five CNCF Kubernetes certifications required for Kubestronaut: KCNA, KCSA, CKA, CKAD and CKS.">
 <meta property="og:type" content="article"><meta property="og:site_name" content="cvam.sight"><meta property="og:title" content="Road to Kubestronaut"><meta property="og:description" content="Five certifications, one connected path: KCNA, KCSA, CKA, CKAD and CKS."><meta property="og:url" content="https://shivam2003.com/series-kubestronaut"><meta property="og:image" content="https://shivam2003.com/assets/kubestronaut-series-og.png"><meta property="og:image:width" content="1731"><meta property="og:image:height" content="909"><meta property="og:image:alt" content="Road to Kubestronaut — KCNA, KCSA, CKA, CKAD and CKS learning path">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Road to Kubestronaut"><meta name="twitter:description" content="Five certifications, one connected path: KCNA, KCSA, CKA, CKAD and CKS."><meta name="twitter:image" content="https://shivam2003.com/assets/kubestronaut-series-og.png">
-<link rel="stylesheet" href="style.css?v=58">${themeScript}<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="style.css?v=70"><link rel="stylesheet" href="/themes.css?v=4"><script src="/theme-init.js?v=3"></script><link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <script defer src="/_vercel/speed-insights/script.js"></script><script defer src="/_vercel/insights/script.js"></script></head>
 <body class="kubestronaut-series-page"><div class="layout">${sidebar("")}<div class="page">
   <p class="meta" style="margin-bottom:8px"><a href="series.html" style="color:var(--ink-faint);text-decoration:none">&larr; All Series</a></p>
@@ -185,7 +183,7 @@ function landingPage() {
   <ul><li><a href="https://github.com/cncf/curriculum" target="_blank" rel="noreferrer">CNCF certification curricula</a></li><li><a href="https://www.cncf.io/training/kubestronaut/kubestronaut-faq/" target="_blank" rel="noreferrer">Kubestronaut FAQ</a></li><li><a href="https://www.cncf.io/training/" target="_blank" rel="noreferrer">CNCF training paths and CARE renewal rules</a></li></ul>
   </div>
   <footer class="footer"><span>&copy; cvam — written in plaintext, served warm</span></footer>
-</div></div><script src="posts.js?v=2"></script><script src="stats.js"></script><script src="app.js?v=31"></script><script defer src="settings.js?v=10"></script><script defer src="reader.js"></script></body></html>`;
+</div></div><script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=37"></script><script defer src="settings.js?v=12"></script><script defer src="reader.js?v=2"></script></body></html>`;
 }
 
 const kcna = {

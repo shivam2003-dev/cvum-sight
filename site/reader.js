@@ -9,6 +9,13 @@
   var progressBar = document.querySelector('.progress-bar');
   var baseTitle = document.title;
 
+  // reader.js is the single owner of progress on long-form pages. app.js keeps
+  // a small fallback for legacy pages that do not load this file.
+  window.__cvamReaderProgress = true;
+  if (typeof window.__cvamStopFallbackProgress === 'function') {
+    window.__cvamStopFallbackProgress();
+  }
+
   // ─────────────────────────────────────────────
   // 1. SCROLL TO TOP BUTTON
   // ─────────────────────────────────────────────
@@ -34,52 +41,85 @@
     document.body.appendChild(tooltip);
   }
 
-  function getScrollPct() {
-    var scrollTop = window.scrollY || document.documentElement.scrollTop;
-    var docH = document.documentElement.scrollHeight - window.innerHeight;
-    return docH > 0 ? Math.min(100, Math.round((scrollTop / docH) * 100)) : 0;
+  var totalWords = postBody ? ((postBody.textContent || '').trim().match(/\S+/g) || []).length : 0;
+  var metrics = { scrollable: 1, postTop: 0, postHeight: 1 };
+  var scrollFrame = 0;
+  var lastPct = -1;
+  var lastMins = -1;
+  var lastTitle = '';
+  var lastTopVisible = null;
+  var lastTooltipVisible = null;
+
+  function refreshMetrics() {
+    metrics.scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+    if (postBody) {
+      var rect = postBody.getBoundingClientRect();
+      metrics.postTop = rect.top + (window.scrollY || document.documentElement.scrollTop || 0);
+      metrics.postHeight = Math.max(1, rect.height);
+    }
   }
 
-  function getTimeLeft() {
-    if (!postBody) return 0;
-    var text = postBody.innerText || postBody.textContent || '';
-    var totalWords = text.trim().split(/\s+/).length;
-    var postTop = postBody.getBoundingClientRect().top + window.scrollY;
-    var scrolled = Math.max(0, window.scrollY + window.innerHeight - postTop);
-    var fraction = Math.max(0, Math.min(1, scrolled / postBody.offsetHeight));
-    var remaining = Math.round(totalWords * (1 - fraction));
-    return Math.ceil(remaining / 200); // 200 wpm average
-  }
+  function renderScrollState() {
+    scrollFrame = 0;
+    var scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+    var pct = Math.min(100, Math.max(0, Math.round((scrollTop / metrics.scrollable) * 100)));
 
-  window.addEventListener('scroll', function () {
-    var pct = getScrollPct();
+    if (pct !== lastPct) {
+      lastPct = pct;
+      if (progressBar) progressBar.style.transform = 'scaleX(' + (pct / 100) + ')';
+    }
 
-    // progress bar
-    if (progressBar) progressBar.style.width = pct + '%';
+    var showTop = pct > 30;
+    if (showTop !== lastTopVisible) {
+      lastTopVisible = showTop;
+      scrollBtn.classList.toggle('visible', showTop);
+    }
 
-    // scroll-to-top visibility (after 30%)
-    scrollBtn.classList.toggle('visible', pct > 30);
+    if (!isPost) return;
 
-    if (isPost) {
-      // tab title
-      if (pct > 2 && pct < 98) {
-        document.title = pct + '% · ' + baseTitle;
-      } else {
-        document.title = baseTitle;
+    var nextTitle = pct > 2 && pct < 98 ? pct + '% · ' + baseTitle : baseTitle;
+    if (nextTitle !== lastTitle) {
+      lastTitle = nextTitle;
+      document.title = nextTitle;
+    }
+
+    if (tooltip) {
+      var scrolled = Math.max(0, scrollTop + window.innerHeight - metrics.postTop);
+      var fraction = Math.max(0, Math.min(1, scrolled / metrics.postHeight));
+      var mins = Math.ceil(Math.round(totalWords * (1 - fraction)) / 200);
+      var showTooltip = mins > 0 && pct > 5 && pct < 96;
+      if (showTooltip && mins !== lastMins) {
+        lastMins = mins;
+        tooltip.textContent = '~' + mins + ' min left';
       }
-
-      // time left tooltip
-      if (tooltip) {
-        var mins = getTimeLeft();
-        if (mins > 0 && pct > 5 && pct < 96) {
-          tooltip.textContent = '~' + mins + ' min left';
-          tooltip.classList.add('visible');
-        } else {
-          tooltip.classList.remove('visible');
-        }
+      if (showTooltip !== lastTooltipVisible) {
+        lastTooltipVisible = showTooltip;
+        tooltip.classList.toggle('visible', showTooltip);
       }
     }
-  }, { passive: true });
+  }
+
+  function queueScrollRender() {
+    if (!scrollFrame) scrollFrame = window.requestAnimationFrame(renderScrollState);
+  }
+
+  function refreshAndRender() {
+    refreshMetrics();
+    queueScrollRender();
+  }
+
+  window.addEventListener('scroll', queueScrollRender, { passive: true });
+  window.addEventListener('resize', refreshAndRender, { passive: true });
+  window.addEventListener('load', refreshAndRender, { once: true });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshAndRender);
+  if (postBody && 'ResizeObserver' in window) {
+    var resizeTimer = 0;
+    new ResizeObserver(function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(refreshAndRender, 80);
+    }).observe(postBody);
+  }
+  refreshAndRender();
 
   // ─────────────────────────────────────────────
   // 4. HIGHLIGHT + SHARE POPOVER

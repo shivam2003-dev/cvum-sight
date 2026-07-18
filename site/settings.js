@@ -154,12 +154,17 @@
   swatches.forEach(function (s) {
     s.addEventListener("click", function () {
       var theme = this.getAttribute("data-theme");
-      ["paper", "white", "dark", "midnight", "matcha"].concat(THEMES.map(function (t) { return t.id; })).forEach(function (id) {
-        document.documentElement.classList.remove("theme-" + id);
-      });
-      document.documentElement.classList.add("theme-" + theme);
-      localStorage.setItem("cvam-theme", theme);
-      activate(swatches, this);
+      var selected = this;
+      function applyTheme() {
+        ["paper", "white", "dark", "midnight", "matcha"].concat(THEMES.map(function (t) { return t.id; })).forEach(function (id) {
+          document.documentElement.classList.remove("theme-" + id);
+        });
+        document.documentElement.classList.add("theme-" + theme);
+        localStorage.setItem("cvam-theme", theme);
+        activate(swatches, selected);
+      }
+      if (typeof window.__cvamLoadThemeCss === "function") window.__cvamLoadThemeCss(theme, applyTheme);
+      else applyTheme();
     });
   });
 
@@ -189,14 +194,18 @@
 
   // ── scroll style (paged) ──
   var pagedControls = null;
+  var readoutFrame = 0;
   function pageStep() { return Math.round(window.innerHeight * 0.85); }
-  function updateReadout() {
+  function renderReadout() {
+    readoutFrame = 0;
     if (!pagedControls) return;
     var doc = document.documentElement;
-    var total = Math.max(1, doc.scrollHeight - window.innerHeight);
     var pages = Math.max(1, Math.ceil(doc.scrollHeight / window.innerHeight));
     var cur = Math.min(pages, Math.floor(window.scrollY / pageStep()) + 1);
     pagedControls.querySelector(".page-readout b").textContent = cur + " / " + pages;
+  }
+  function updateReadout() {
+    if (!readoutFrame) readoutFrame = requestAnimationFrame(renderReadout);
   }
   function flip(dir) {
     if (document.body.classList.contains("page-turning")) return;
@@ -239,6 +248,8 @@
       document.body.classList.remove("paged-mode");
       window.removeEventListener("keydown", pagedKeys);
       window.removeEventListener("scroll", updateReadout);
+      if (readoutFrame) cancelAnimationFrame(readoutFrame);
+      readoutFrame = 0;
     }
   }
   if (hasArticle && savedScroll === "scroll-paged") { applyPaged(true); }

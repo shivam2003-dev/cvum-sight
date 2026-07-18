@@ -5,6 +5,7 @@
 
   var startedAt = 0;
   var timer = null;
+  var progressFrame = 0;
   var hud = document.createElement("div");
   hud.className = "focus-hud";
   hud.innerHTML =
@@ -13,6 +14,8 @@
     '<span class="focus-progress"><i></i></span>' +
     '<button type="button" class="focus-exit" aria-label="Exit focus mode">Exit <kbd>Esc</kbd></button>';
   document.body.appendChild(hud);
+  var timeNode = hud.querySelector(".focus-time");
+  var progressNode = hud.querySelector(".focus-progress i");
 
   function formatTime(ms) {
     var seconds = Math.floor(ms / 1000);
@@ -20,11 +23,20 @@
     return String(minutes).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
   }
 
-  function updateFocus() {
+  function updateClock() {
     if (!document.body.classList.contains("focus-mode")) return;
-    hud.querySelector(".focus-time").textContent = formatTime(Date.now() - startedAt);
+    timeNode.textContent = formatTime(Date.now() - startedAt);
+  }
+
+  function renderFocusProgress() {
+    progressFrame = 0;
+    if (!document.body.classList.contains("focus-mode")) return;
     var max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
-    hud.querySelector(".focus-progress i").style.width = Math.round(Math.min(1, scrollY / max) * 100) + "%";
+    progressNode.style.transform = "scaleX(" + Math.min(1, scrollY / max) + ")";
+  }
+
+  function queueFocusProgress() {
+    if (!progressFrame) progressFrame = requestAnimationFrame(renderFocusProgress);
   }
 
   function enterFocus() {
@@ -32,9 +44,10 @@
     document.body.classList.add("focus-mode");
     document.querySelector(".settings-panel")?.classList.remove("open");
     startedAt = Date.now();
-    updateFocus();
-    timer = setInterval(updateFocus, 1000);
-    addEventListener("scroll", updateFocus, { passive:true });
+    updateClock();
+    queueFocusProgress();
+    timer = setInterval(updateClock, 1000);
+    addEventListener("scroll", queueFocusProgress, { passive:true });
     if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(function () {});
     }
@@ -44,7 +57,9 @@
     document.body.classList.remove("focus-mode");
     clearInterval(timer);
     timer = null;
-    removeEventListener("scroll", updateFocus);
+    removeEventListener("scroll", queueFocusProgress);
+    if (progressFrame) cancelAnimationFrame(progressFrame);
+    progressFrame = 0;
     if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
   }
 

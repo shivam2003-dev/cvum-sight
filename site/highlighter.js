@@ -1,36 +1,22 @@
-/* highlighter.js — Shiki syntax highlighting + copy button for all <pre> blocks */
-(async () => {
+/* Lightweight code chrome + copy button for explicit-language <pre> blocks. */
+(() => {
   // Target bare <pre> and <pre><code> blocks inside .post-body
-  const pres = Array.from(document.querySelectorAll('.post-body pre')).filter(
-    p => !p.closest('.code-block-wrap')
-  );
-  if (!pres.length) return;
+  const blocks = Array.from(document.querySelectorAll('.post-body pre'))
+    .filter(pre => !pre.closest('.code-block-wrap'))
+    .map(pre => {
+      const innerCode = pre.querySelector('code');
+      const langSource = innerCode || pre;
+      const langMatch = langSource.className.match(/language-([\w-]+)/);
+      const lang = langMatch ? langMatch[1] : (pre.dataset.lang || 'text');
+      return { pre, lang, rawText: pre.textContent };
+    })
+    .filter(block => block.lang !== 'text');
+  if (!blocks.length) return;
 
-  let codeToHtml;
-  try {
-    ({ codeToHtml } = await import('https://esm.sh/shiki@1'));
-  } catch (e) {
-    return; // leave unstyled if CDN unreachable
-  }
-
-  for (const pre of pres) {
-    const innerCode = pre.querySelector('code');
-    // Detect language from class on <code> or <pre>, or data-lang
-    const langSource = innerCode || pre;
-    const langMatch = langSource.className.match(/language-(\w+)/);
-    const lang = langMatch ? langMatch[1] : (pre.dataset.lang || 'text');
-    // Skip plain-text blocks (ASCII math, tables, numeric output) — no chrome, no copy button.
-    // Only real code (explicit language- class or data-lang) gets highlighting + copy.
-    if (lang === 'text') continue;
-    const rawText = pre.textContent;
-
-    try {
-      const highlighted = await codeToHtml(rawText, {
-        lang,
-        theme: 'one-dark-pro',
-      });
-
-      // Build wrapper
+  // Apply all wrappers in one frame. The code stays as native text, so there is
+  // no remote grammar/WASM download, parser long task, or delayed scroll shift.
+  requestAnimationFrame(() => {
+    blocks.forEach(({ pre, lang, rawText }) => {
       const wrap = document.createElement('div');
       wrap.className = 'code-block-wrap';
 
@@ -41,15 +27,6 @@
         '<span class="code-dots"><i></i><i></i><i></i></span>' +
         (lang !== 'text' ? '<span class="code-lang">' + lang + '</span>' : '') +
         '<button class="code-copy-btn">copy</button>';
-
-      wrap.appendChild(header);
-      wrap.insertAdjacentHTML('beforeend', highlighted);
-
-      // Shiki wraps in <pre><code> — CSS handles sizing and scroll
-      const shikiPre = wrap.querySelector('pre');
-      if (shikiPre) {
-        shikiPre.style.borderRadius = '0 0 10px 10px';
-      }
 
       // Copy handler
       header.querySelector('.code-copy-btn').addEventListener('click', function () {
@@ -70,8 +47,8 @@
       });
 
       pre.replaceWith(wrap);
-    } catch (e) {
-      // leave original pre untouched if this block fails
-    }
-  }
+      wrap.appendChild(header);
+      wrap.appendChild(pre);
+    });
+  });
 })();

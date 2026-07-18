@@ -51,35 +51,27 @@
   }
 
   function loadTotal(cb) {
+    try {
+      var cached = sessionStorage.getItem("cvam_view_total");
+      if (cached !== null) { cb(Number(cached) || 0); return; }
+    } catch (_) {}
     fetch("/api/views?total=1")
       .then(function (r) { return r.json(); })
-      .then(function (d) { cb(d.total || 0); })
+      .then(function (d) {
+        var total = d.total || 0;
+        try { sessionStorage.setItem("cvam_view_total", String(total)); } catch (_) {}
+        cb(total);
+      })
       .catch(function () { cb(0); });
   }
 
   var slug = getSlug();
 
-  // ── Animated count-up ──
+  // Counts land once. Per-frame number animation added layout work during the
+  // first seconds of reading without adding useful information.
   function countUp(el, target, prefix, suffix, onDone) {
-    if (target === 0) {
-      el.textContent = prefix + "0" + suffix;
-      if (onDone) onDone();
-      return;
-    }
-    var duration = Math.min(1400, 350 + target * 3);
-    var startTime = null;
-    function ease(t) { return 1 - Math.pow(1 - t, 3); }
-    function step(ts) {
-      if (!startTime) startTime = ts;
-      var t = Math.min((ts - startTime) / duration, 1);
-      el.textContent = prefix + fmt(Math.round(ease(t) * target)) + suffix;
-      if (t < 1) { requestAnimationFrame(step); }
-      else {
-        el.textContent = prefix + fmt(target) + suffix;
-        if (onDone) onDone();
-      }
-    }
-    requestAnimationFrame(step);
+    el.textContent = prefix + fmt(target) + suffix;
+    if (onDone) onDone();
   }
 
   // ── Per-article view badge ──
@@ -90,14 +82,9 @@
       span.className = "readers-badge is-counting";
       span.textContent = " · 0" + (count === 1 ? " view" : " views");
       postMeta.appendChild(span);
-      // slight delay so the appear animation plays first
-      setTimeout(function () {
-        countUp(span, count, " · ", count === 1 ? " view" : " views", function () {
-          span.classList.remove("is-counting");
-          span.classList.add("is-landed");
-          setTimeout(function () { span.classList.remove("is-landed"); }, 600);
-        });
-      }, 400);
+      countUp(span, count, " · ", count === 1 ? " view" : " views", function () {
+        span.classList.remove("is-counting");
+      });
     });
   } else {
     if (!seenToday(slug)) {
@@ -113,12 +100,9 @@
       sidebarStat.classList.add("is-visible");
       countUp(sidebarStat, total, "", " total views", function () {
         sidebarStat.classList.remove("is-visible");
-        sidebarStat.classList.add("is-popping");
-        setTimeout(function () { sidebarStat.classList.remove("is-popping"); }, 900);
       });
     });
   }
 
   window.cvamStats = { fmt: fmt };
 })();
-

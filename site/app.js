@@ -9,13 +9,13 @@
 
   if (document.querySelector(".post-body") && !document.querySelector('script[data-cvam-focus]')) {
     var focusScript = document.createElement("script");
-    focusScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "focus.js?v=1";
+    focusScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "focus.js?v=2";
     focusScript.setAttribute("data-cvam-focus", "true");
     document.body.appendChild(focusScript);
   }
   if (!document.querySelector('script[data-cvam-enhancements]')) {
     var enhancementsScript = document.createElement("script");
-    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=5";
+    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=6";
     enhancementsScript.setAttribute("data-cvam-enhancements", "true");
     document.body.appendChild(enhancementsScript);
   }
@@ -531,12 +531,31 @@
   // ── reading progress bar (post pages) ──
   const progressBar = document.querySelector(".progress-bar");
   if (progressBar) {
-    window.addEventListener("scroll", function () {
+    let progressFrame = 0;
+    let lastProgress = -1;
+    function renderFallbackProgress() {
+      progressFrame = 0;
+      if (window.__cvamReaderProgress) return;
       const docH = document.documentElement.scrollHeight - window.innerHeight;
       if (docH > 0) {
-        progressBar.style.width = Math.min(100, (window.scrollY / docH) * 100) + "%";
+        const progress = Math.min(1, Math.max(0, window.scrollY / docH));
+        const rounded = Math.round(progress * 1000);
+        if (rounded !== lastProgress) {
+          lastProgress = rounded;
+          progressBar.style.transform = `scaleX(${progress})`;
+        }
       }
-    }, { passive: true });
+    }
+    function queueFallbackProgress() {
+      if (!progressFrame) progressFrame = requestAnimationFrame(renderFallbackProgress);
+    }
+    window.addEventListener("scroll", queueFallbackProgress, { passive: true });
+    window.__cvamStopFallbackProgress = function () {
+      window.removeEventListener("scroll", queueFallbackProgress);
+      if (progressFrame) cancelAnimationFrame(progressFrame);
+      progressFrame = 0;
+    };
+    queueFallbackProgress();
   }
 
   // ── table of contents (post pages with #toc-nav) ──

@@ -199,7 +199,7 @@
 
   // ── home page: post grid ──
   const grid = document.getElementById("post-grid");
-  if (grid && typeof POSTS !== "undefined") {
+  if (grid && document.body.classList.contains("home-page") && typeof POSTS !== "undefined") {
     // Home feed stays light: only the 6 latest posts.
     // Everything else lives behind "browse all articles".
     const RECENT_LIMIT = 4;

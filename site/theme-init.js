@@ -22,4 +22,16 @@
   }
 
   document.documentElement.classList.add("view-modern");
+
+  /* Reserve the article-first shell before paint. Explicit reader choices win;
+     new visitors get compact rails on long-form pages. */
+  var savedNav = localStorage.getItem("cvam-nav");
+  var looksLikeArticle = /\/(posts|ai-native|paperjuice-posts|books)\//.test(window.location.pathname);
+  if (savedNav === "collapsed" || (savedNav === null && looksLikeArticle)) {
+    document.documentElement.classList.add("nav-collapsed");
+  }
+  var savedRightPanel = localStorage.getItem("cvam-right-panel");
+  if (savedRightPanel === "collapsed" || savedRightPanel === null) {
+    document.documentElement.classList.add("right-panel-collapsed");
+  }
 })();

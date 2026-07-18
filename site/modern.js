@@ -63,7 +63,10 @@
         collapse.setAttribute("aria-expanded", collapsed ? "false" : "true");
         collapse.querySelector("b").textContent = collapsed ? "Expand" : "Collapse";
       }
-      if (localStorage.getItem("cvam-nav") === "collapsed") document.documentElement.classList.add("nav-collapsed");
+      var savedNav = localStorage.getItem("cvam-nav");
+      if (savedNav === "collapsed" || (savedNav === null && document.querySelector(".post-body"))) {
+        document.documentElement.classList.add("nav-collapsed");
+      }
       collapse.addEventListener("click", function () {
         document.documentElement.classList.toggle("nav-collapsed");
         localStorage.setItem("cvam-nav", document.documentElement.classList.contains("nav-collapsed") ? "collapsed" : "expanded");
@@ -84,7 +87,10 @@
         rightToggle.setAttribute("aria-label", closed ? "Expand right sidebar" : "Collapse right sidebar");
         rightToggle.setAttribute("aria-expanded", closed ? "false" : "true");
       }
-      if (localStorage.getItem("cvam-right-panel") === "collapsed") document.documentElement.classList.add("right-panel-collapsed");
+      var savedRightPanel = localStorage.getItem("cvam-right-panel");
+      if (savedRightPanel === "collapsed" || savedRightPanel === null) {
+        document.documentElement.classList.add("right-panel-collapsed");
+      }
       rightToggle.addEventListener("click", function () {
         document.documentElement.classList.toggle("right-panel-collapsed");
         localStorage.setItem("cvam-right-panel", document.documentElement.classList.contains("right-panel-collapsed") ? "collapsed" : "expanded");

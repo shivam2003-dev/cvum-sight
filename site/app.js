@@ -24,6 +24,13 @@
   (function () {
     var sidebar = document.querySelector(".sidebar");
     if (sidebar && !sidebar.querySelector(".sidebar-collapse")) {
+      if (!sidebar.id) sidebar.id = "site-sidebar";
+      if (!sidebar.hasAttribute("aria-label")) sidebar.setAttribute("aria-label", "Site navigation");
+      var primaryNav = sidebar.querySelector("nav");
+      if (primaryNav && !primaryNav.hasAttribute("aria-label")) primaryNav.setAttribute("aria-label", "Primary navigation");
+      sidebar.querySelectorAll("nav a.active").forEach(function (link) {
+        if (!link.hasAttribute("aria-current")) link.setAttribute("aria-current", "page");
+      });
       var brand = sidebar.querySelector(".logo");
       if (brand && !brand.querySelector(".brand-mark")) {
         var oldDot = brand.querySelector(".dot");
@@ -48,6 +55,7 @@
       var collapse = document.createElement("button");
       collapse.className = "sidebar-collapse";
       collapse.type = "button";
+      collapse.setAttribute("aria-controls", sidebar.id);
       collapse.innerHTML = '<span aria-hidden="true">‹</span><b>Collapse</b>';
       function syncSidebar() {
         var collapsed = document.documentElement.classList.contains("nav-collapsed");
@@ -67,9 +75,12 @@
 
     var rightPanel = document.querySelector(".toc-panel, .vocab-panel");
     if (rightPanel && !rightPanel.querySelector(".right-panel-collapse")) {
+      if (!rightPanel.id) rightPanel.id = rightPanel.classList.contains("toc-panel") ? "page-toc-panel" : "page-vocabulary-panel";
+      if (!rightPanel.hasAttribute("aria-label")) rightPanel.setAttribute("aria-label", rightPanel.classList.contains("toc-panel") ? "On this page" : "Key terms");
       var rightToggle = document.createElement("button");
       rightToggle.className = "right-panel-collapse";
       rightToggle.type = "button";
+      rightToggle.setAttribute("aria-controls", rightPanel.id);
       rightToggle.innerHTML = '<span aria-hidden="true">›</span><b>' + (rightPanel.classList.contains("toc-panel") ? "On this page" : "Key terms") + '</b>';
       function syncRightPanel() {
         var closed = document.documentElement.classList.contains("right-panel-collapsed");
@@ -93,15 +104,44 @@
     if (!sidebar || sidebar.querySelector(".nav-toggle")) return;
     const btn = document.createElement("button");
     btn.className = "nav-toggle";
-    btn.setAttribute("aria-label", "menu");
+    if (!sidebar.id) sidebar.id = "site-sidebar";
+    btn.setAttribute("aria-controls", sidebar.id);
     btn.innerHTML = "<span></span><span></span><span></span>";
-    btn.addEventListener("click", function () { sidebar.classList.toggle("open"); });
+    function syncMobileNavigation() {
+      const open = sidebar.classList.contains("open");
+      btn.setAttribute("aria-label", open ? "Close navigation menu" : "Open navigation menu");
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    btn.addEventListener("click", function () {
+      sidebar.classList.toggle("open");
+      syncMobileNavigation();
+    });
     sidebar.insertBefore(btn, sidebar.firstChild);
+    syncMobileNavigation();
     // close on nav link tap
     sidebar.querySelectorAll("nav a").forEach(function (a) {
-      a.addEventListener("click", function () { sidebar.classList.remove("open"); });
+      a.addEventListener("click", function () {
+        sidebar.classList.remove("open");
+        syncMobileNavigation();
+      });
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && sidebar.classList.contains("open")) {
+        sidebar.classList.remove("open");
+        syncMobileNavigation();
+        btn.focus();
+      }
     });
   })();
+
+  // Keep full-card series links concise for assistive technology by naming
+  // each link from its visible title instead of its full excerpt and metadata.
+  document.querySelectorAll(".series-directory a.post-card").forEach(function (link, index) {
+    var title = link.querySelector("h3");
+    if (!title) return;
+    if (!title.id) title.id = "series-title-" + (index + 1);
+    link.setAttribute("aria-labelledby", title.id);
+  });
 
   // ── helpers ──
   function escapeHtml(str) {
@@ -496,6 +536,7 @@
   // ── table of contents (post pages with #toc-nav) ──
   const tocNav = document.getElementById("toc-nav");
   if (tocNav) {
+    if (!tocNav.hasAttribute("aria-label")) tocNav.setAttribute("aria-label", "Table of contents");
     const headings = document.querySelectorAll(".post-body h2");
     if (headings.length) {
       headings.forEach(function (h, i) {
@@ -514,9 +555,15 @@
       const observer = new IntersectionObserver(function (entries) {
         entries.forEach(function (entry) {
           if (entry.isIntersecting) {
-            links.forEach(function (l) { l.classList.remove("active"); });
+            links.forEach(function (l) {
+              l.classList.remove("active");
+              l.removeAttribute("aria-current");
+            });
             const active = tocNav.querySelector('a[href="#' + entry.target.id + '"]');
-            if (active) active.classList.add("active");
+            if (active) {
+              active.classList.add("active");
+              active.setAttribute("aria-current", "location");
+            }
           }
         });
       }, { rootMargin: "-10% 0px -80% 0px" });

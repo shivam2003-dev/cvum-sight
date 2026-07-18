@@ -26,7 +26,7 @@
   /* Reserve the article-first shell before paint. Explicit reader choices win;
      new visitors get compact rails on long-form pages. */
   var savedNav = localStorage.getItem("cvam-nav");
-  var looksLikeArticle = /\/(posts|ai-native|paperjuice-posts|books)\//.test(window.location.pathname);
+  var looksLikeArticle = /\/(posts|ai-native|paperjuice-posts|books|bits|gate|private)\//.test(window.location.pathname);
   if (savedNav === "collapsed" || (savedNav === null && looksLikeArticle)) {
     document.documentElement.classList.add("nav-collapsed");
   }

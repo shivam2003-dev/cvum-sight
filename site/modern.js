@@ -19,16 +19,6 @@
     document.body.appendChild(enhancementsScript);
   }
 
-  if (!document.querySelector('link[data-cvam-modern-css]')) {
-    var existingCss = document.querySelector('link[rel="stylesheet"][href*="style.css"]');
-    if (existingCss) {
-      var freshCss = document.createElement("link");
-      freshCss.rel = "stylesheet";
-      freshCss.href = existingCss.href.split("?")[0] + "?v=50";
-      freshCss.setAttribute("data-cvam-modern-css", "true");
-      document.head.appendChild(freshCss);
-    }
-  }
   function install() {
     var sidebar = document.querySelector(".sidebar");
     if (sidebar && !sidebar.querySelector(".sidebar-collapse")) {

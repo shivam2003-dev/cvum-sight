@@ -1,11 +1,11 @@
 /* settings.js — reader settings panel (theme, text size, font, line spacing, scroll style) */
 (function () {
   var THEMES = [
-    { id: "paper",    label: "Paper (default)" },
-    { id: "white",    label: "White (clean)" },
-    { id: "dark",     label: "Dark" },
-    { id: "midnight", label: "Midnight (deep blue)" },
-    { id: "matcha",   label: "Matcha" }
+    { id: "developer",  label: "Developer" },
+    { id: "hacker",     label: "Hacker" },
+    { id: "god",        label: "God" },
+    { id: "anime",      label: "Anime" },
+    { id: "minimalist", label: "Minimalist" }
   ];
   var SIZES = [
     { id: "text-sm", label: "S" },
@@ -30,7 +30,11 @@
   ];
   var hasArticle = !!document.querySelector(".post-body");
 
-  var savedTheme = localStorage.getItem("cvam-theme") || "paper";
+  var savedTheme = localStorage.getItem("cvam-theme") || "minimalist";
+  if (!THEMES.some(function (theme) { return theme.id === savedTheme; })) {
+    savedTheme = "minimalist";
+    localStorage.setItem("cvam-theme", savedTheme);
+  }
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
   var savedSpace = localStorage.getItem("cvam-ls")    || "ls-cozy";
   var savedScroll = localStorage.getItem("cvam-scroll") || "scroll-normal";
@@ -150,8 +154,10 @@
   swatches.forEach(function (s) {
     s.addEventListener("click", function () {
       var theme = this.getAttribute("data-theme");
-      THEMES.forEach(function (t) { document.documentElement.classList.remove("theme-" + t.id); });
-      if (theme !== "paper") { document.documentElement.classList.add("theme-" + theme); }
+      ["paper", "white", "dark", "midnight", "matcha"].concat(THEMES.map(function (t) { return t.id; })).forEach(function (id) {
+        document.documentElement.classList.remove("theme-" + id);
+      });
+      document.documentElement.classList.add("theme-" + theme);
       localStorage.setItem("cvam-theme", theme);
       activate(swatches, this);
     });

@@ -125,7 +125,7 @@ function landingPage() {
 <meta name="description" content="A current, connected preparation series for all five CNCF Kubernetes certifications required for Kubestronaut: KCNA, KCSA, CKA, CKAD and CKS.">
 <meta property="og:type" content="article"><meta property="og:site_name" content="cvam.sight"><meta property="og:title" content="Road to Kubestronaut"><meta property="og:description" content="Five certifications, one connected path: KCNA, KCSA, CKA, CKAD and CKS."><meta property="og:url" content="https://shivam2003.com/series-kubestronaut"><meta property="og:image" content="https://shivam2003.com/assets/kubestronaut-series-og.png"><meta property="og:image:width" content="1731"><meta property="og:image:height" content="909"><meta property="og:image:alt" content="Road to Kubestronaut — KCNA, KCSA, CKA, CKAD and CKS learning path">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Road to Kubestronaut"><meta name="twitter:description" content="Five certifications, one connected path: KCNA, KCSA, CKA, CKAD and CKS."><meta name="twitter:image" content="https://shivam2003.com/assets/kubestronaut-series-og.png">
-<link rel="stylesheet" href="style.css?v=51">${themeScript}<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="style.css?v=52">${themeScript}<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <script defer src="/_vercel/speed-insights/script.js"></script><script defer src="/_vercel/insights/script.js"></script></head>
 <body><div class="layout">${sidebar("")}<div class="page">
   <p class="meta" style="margin-bottom:8px"><a href="series.html" style="color:var(--ink-faint);text-decoration:none">&larr; All Series</a></p>
@@ -135,6 +135,10 @@ function landingPage() {
     <p class="series-page-desc">Five exams, three distinct modes of thinking. Start with the cloud native map, add security judgment, then prove administration, application delivery and specialist security at the keyboard. Each guide follows the current official curriculum and ends with traps, verification habits and a focused study order.</p>
     <div class="series-page-stats"><div class="series-stat"><strong>5</strong><span>certifications</span></div><div class="series-stat"><strong>2</strong><span>associate exams</span></div><div class="series-stat"><strong>3</strong><span>hands-on exams</span></div><div class="series-stat"><strong>v1.35</strong><span>performance track</span></div></div>
   </div>
+  <figure class="series-hero-image">
+    <img src="assets/kubestronaut-series-og.png" width="1731" height="909" alt="Road to Kubestronaut learning path from KCNA and KCSA through CKA, CKAD and CKS" decoding="async" fetchpriority="high">
+    <figcaption>Five certifications · one connected Kubernetes path</figcaption>
+  </figure>
   <hr class="rule">
   <div class="post-body">
   <div class="gotcha"><span class="gotcha-label">the destination</span>CNCF recognizes a Kubestronaut after <strong>KCNA, KCSA, CKA, CKAD and CKS</strong> have all been passed and are active together. CKS requires a passed CKA. The order below minimizes context switching and reuses each exam's knowledge in the next.</div>

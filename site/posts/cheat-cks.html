@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CKS Exam Cheatsheet — cvam.sight</title>
+<meta name="description" content="Current CKS v1.35 hands-on exam guide covering cluster setup and hardening, system hardening, microservice vulnerabilities, supply-chain security, audit and runtime detection, security commands, verification, and common exam mistakes.">
+<link rel="stylesheet" href="../style.css?v=51">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html" class="active">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank" rel="noreferrer">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../series-kubestronaut.html" style="color:var(--ink-faint);text-decoration:none">&larr; Road to Kubestronaut</a></p>
+      <div class="post-header">
+        <p class="meta">KUBESTRONAUT · 2-HOUR PERFORMANCE-BASED · CURRENT CURRICULUM</p>
+        <h1>CKS — The Certified Kubernetes Security Specialist Cheatsheet.</h1>
+        <div class="tag-row"><span class="tag fill">kubernetes</span><span class="tag">cks</span><span class="tag">security</span><span class="tag">supply-chain</span><span class="tag">exam-prep</span></div>
+      </div>
+      <div class="series-banner">
+    <p class="series-banner-label">Road to Kubestronaut · Certification 5</p>
+    <p class="series-banner-title">CKS: Security specialist</p>
+    <div class="series-banner-progress"><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip done"></div><div class="series-pip current"></div></div>
+    <p class="series-banner-meta">Guide 5 of 5</p>
+    <div class="series-banner-nav"><a href="cheat-kcna.html" class="done">01 KCNA</a><a href="cheat-kcsa.html" class="done">02 KCSA</a><a href="cheat-cka.html" class="done">03 CKA</a><a href="cheat-ckad.html" class="done">04 CKAD</a><a href="cheat-cks.html" class="active">05 CKS</a></div>
+  </div>
+      <div class="post-body">
+
+        <blockquote>
+          <strong>CKS</strong> is the terminal-speed security finish line: a <strong>2-hour, performance-based</strong> exam on <strong>Kubernetes v1.35</strong>. You must have passed <strong>CKA</strong> before attempting it. Current domains: <strong>Cluster Setup 15% · Cluster Hardening 15% · System Hardening 10% · Minimize Microservice Vulnerabilities 20% · Supply Chain Security 20% · Monitoring, Logging &amp; Runtime Security 20%</strong>. Make the smallest safe change, preserve availability, and prove the control works.
+        </blockquote>
+
+        <h2 id="exam-setup">0. First-minute setup and evidence loop</h2>
+        <pre data-lang="bash">alias k=kubectl
+export do="--dry-run=client -o yaml"
+source &lt;(kubectl completion bash)
+complete -o default -F __start_kubectl k
+
+# every task
+k config use-context &lt;named-context&gt;
+k config set-context --current --namespace=&lt;namespace&gt;
+k get nodes
+
+# preserve before editing host/control-plane files
+sudo cp /etc/kubernetes/manifests/kube-apiserver.yaml \
+  /etc/kubernetes/manifests/kube-apiserver.yaml.bak-outside-manifest-dir</pre>
+        <div class="gotcha"><span class="gotcha-label">backups outside static-pod directory</span>Any valid manifest left in <code>/etc/kubernetes/manifests</code> can be read by the kubelet as another static Pod. Put backups elsewhere, change one flag at a time, and watch the component return before continuing.</div>
+        <p>For each task: <strong>identify boundary → inspect current state → preserve rollback → change → wait → verify positive behavior → verify denied behavior</strong>. A policy that exists but selects nothing is not a security control.</p>
+
+        <h2 id="cluster-setup">1. Cluster Setup (15%)</h2>
+        <h3 id="network-policy">Network security policies</h3>
+        <pre data-lang="yaml">apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: api-ingress, namespace: team }
+spec:
+  podSelector: { matchLabels: { app: api } }
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress } }
+      podSelector: { matchLabels: { app: gateway } }
+    ports: [{ protocol: TCP, port: 8443 }]</pre>
+        <pre data-lang="bash"># verify labels and actual reachability from allowed and denied sources
+k get pods -n team --show-labels
+k get ns --show-labels
+k describe netpol api-ingress -n team
+k exec -n ingress deploy/gateway -- wget -qO- --timeout=2 https://api.team:8443
+k run denied -n default --image=busybox:1.36 --rm -it --restart=Never -- \
+  wget -qO- --timeout=2 http://api.team:8443</pre>
+        <div class="gotcha"><span class="gotcha-label">and vs or</span><code>namespaceSelector</code> and <code>podSelector</code> in the same <code>from</code> item are ANDed. Separate list items are ORed. Indentation changes the security meaning.</div>
+
+        <h3 id="cis">CIS benchmark review</h3>
+        <pre data-lang="bash"># use the binary/config supplied by the exam environment
+kube-bench run --targets master
+kube-bench run --targets node
+
+# confirm the effective configuration, not only flags
+ps -ef | grep kube-apiserver
+sudo grep -nE 'anonymous-auth|authorization-mode|read-only-port' \
+  /var/lib/kubelet/config.yaml /etc/kubernetes/manifests/*.yaml</pre>
+        <p>CIS output is an assessment, not an automatic mandate. Fix the named control in the named component and validate availability. Some managed or lab configurations have justified exceptions.</p>
+
+        <h3 id="tls-ingress">Ingress TLS</h3>
+        <pre data-lang="bash">k create secret tls web-tls --cert=tls.crt --key=tls.key -n app
+</pre>
+        <pre data-lang="yaml">spec:
+  tls:
+  - hosts: [app.example.com]
+    secretName: web-tls
+  rules:
+  - host: app.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service: { name: web, port: { number: 80 } }</pre>
+        <p>Certificate hostnames must match the request host, the Secret must be in the Ingress namespace, and a controller must implement the Ingress.</p>
+
+        <h3 id="metadata-binaries">Node metadata, endpoints and binaries</h3>
+        <ul>
+          <li>Prevent Pods from reaching cloud metadata unless explicitly needed; prefer workload identity to node-wide credentials.</li>
+          <li>Restrict kubelet, etcd, runtime sockets and control-plane ports by network and authentication.</li>
+          <li>Download binaries from the official channel and verify checksum/signature before execution.</li>
+        </ul>
+        <pre data-lang="bash">sha256sum kubectl
+echo '&lt;expected-sha256&gt;  kubectl' | sha256sum --check
+openssl x509 -in tls.crt -noout -subject -issuer -dates -ext subjectAltName</pre>
+
+        <h2 id="cluster-hardening">2. Cluster Hardening (15%)</h2>
+        <h3 id="rbac">Least-privilege RBAC</h3>
+        <pre data-lang="bash">k auth can-i --list --as=jane -n team
+k auth can-i get secrets --as=system:serviceaccount:team:builder -n team
+k get rolebindings,clusterrolebindings -A -o wide
+
+k create role deploy-reader --verb=get,list,watch --resource=deployments.apps -n team
+k create rolebinding jane-deploy-read --role=deploy-reader --user=jane -n team
+k auth can-i list deployments --as=jane -n team
+k auth can-i delete deployments --as=jane -n team</pre>
+        <ul>
+          <li>Avoid wildcards in verbs/resources and avoid <code>cluster-admin</code> for routine workloads.</li>
+          <li>Permissions to create Pods can indirectly expose mounted Secrets, service-account tokens, host paths or privileged execution.</li>
+          <li>Permissions to create/update Roles or bindings can be privilege escalation.</li>
+          <li>Test allowed and forbidden operations with the exact identity and namespace.</li>
+        </ul>
+
+        <h3 id="service-accounts">Service-account hygiene</h3>
+        <pre data-lang="yaml">apiVersion: v1
+kind: Pod
+metadata: { name: worker }
+spec:
+  serviceAccountName: worker
+  automountServiceAccountToken: false
+  containers:
+  - { name: worker, image: example/worker:1.2 }</pre>
+        <p>Use dedicated service accounts, minimal RoleBindings and projected short-lived tokens. Disable automount when the process does not call the Kubernetes API.</p>
+
+        <h3 id="api-access">Restrict API access and upgrade</h3>
+        <ul>
+          <li>Disable anonymous authentication where required and use secure authorization modes.</li>
+          <li>Expose the API on trusted networks; use TLS and controlled bastion/VPN paths.</li>
+          <li>Protect admin kubeconfigs and rotate compromised credentials.</li>
+          <li>Upgrade supported Kubernetes releases to receive security fixes; drain and verify nodes as in CKA.</li>
+        </ul>
+        <pre data-lang="bash">sudo grep -n -- '--anonymous-auth\|--authorization-mode' \
+  /etc/kubernetes/manifests/kube-apiserver.yaml
+k get --raw='/readyz?verbose'
+k version
+k get nodes -o custom-columns=NAME:.metadata.name,KUBELET:.status.nodeInfo.kubeletVersion</pre>
+
+        <h2 id="system-hardening">3. System Hardening (10%)</h2>
+        <p>Reduce the host attack surface: minimal OS/packages, patched kernel/runtime, no unused network services, protected runtime sockets, least-privilege users, strong file permissions and host-level mandatory access control.</p>
+        <pre data-lang="bash"># inspect listening services and running units
+sudo ss -lntup
+sudo systemctl --type=service --state=running
+sudo find /etc/kubernetes -type f -maxdepth 3 -ls
+
+# AppArmor availability and profiles
+sudo aa-status
+
+# seccomp is expressed in the Pod security context
+k get pod app -o jsonpath='{.spec.securityContext.seccompProfile.type}'</pre>
+        <table><thead><tr><th>Control</th><th>What it restricts</th></tr></thead><tbody>
+          <tr><td><strong>seccomp</strong></td><td>Linux system calls available to a process</td></tr>
+          <tr><td><strong>AppArmor</strong></td><td>Profile-based file, capability, signal and network access</td></tr>
+          <tr><td><strong>capabilities</strong></td><td>Breaks root privilege into discrete powers</td></tr>
+          <tr><td><strong>runAsNonRoot</strong></td><td>Prevents UID 0 execution when enforceable</td></tr>
+          <tr><td><strong>readOnlyRootFilesystem</strong></td><td>Reduces runtime filesystem mutation</td></tr>
+        </tbody></table>
+        <div class="gotcha"><span class="gotcha-label">layers, not substitutes</span>seccomp, AppArmor, capabilities and non-root identity constrain different attack paths. One enabled field does not make the others redundant.</div>
+
+        <h2 id="microservices">4. Minimize Microservice Vulnerabilities (20%)</h2>
+        <h3 id="restricted-pod">Restricted workload pattern</h3>
+        <pre data-lang="yaml">apiVersion: v1
+kind: Pod
+metadata: { name: api, namespace: team }
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+  - name: api
+    image: registry.example/api@sha256:&lt;digest&gt;
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities: { drop: ["ALL"] }
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 256Mi }
+    volumeMounts:
+    - { name: tmp, mountPath: /tmp }
+  volumes:
+  - { name: tmp, emptyDir: {} }</pre>
+        <p>If a read-only image needs writable paths, mount narrow <code>emptyDir</code> volumes instead of making the whole root filesystem writable. Never add privilege merely to silence an application error without understanding the required access.</p>
+
+        <h3 id="psa">Pod Security Admission</h3>
+        <pre data-lang="bash"># stage with warn/audit, then enforce after remediation
+k label ns team pod-security.kubernetes.io/warn=restricted \
+  pod-security.kubernetes.io/warn-version=latest --overwrite
+k label ns team pod-security.kubernetes.io/audit=restricted \
+  pod-security.kubernetes.io/audit-version=latest --overwrite
+k label ns team pod-security.kubernetes.io/enforce=restricted \
+  pod-security.kubernetes.io/enforce-version=latest --overwrite</pre>
+
+        <h3 id="secrets-isolation">Secrets and isolation</h3>
+        <ul>
+          <li>Encrypt Secret data at rest; restrict RBAC and backup access; rotate leaked values.</li>
+          <li>Use separate namespaces, identities, quotas and NetworkPolicies for tenants, but recognize namespaces alone are not hard multi-tenancy.</li>
+          <li>Use sandboxed runtimes/VM isolation for stronger untrusted-workload boundaries.</li>
+          <li>Use Cilium, Istio or another appropriate dataplane for workload-to-workload encryption when required; NetworkPolicy alone does not encrypt.</li>
+        </ul>
+
+        <h2 id="supply-chain">5. Supply Chain Security (20%)</h2>
+        <h3 id="minimal-images">Minimize and inspect images</h3>
+        <pre data-lang="dockerfile">FROM golang:1.24 AS build
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/app ./cmd/app
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/app /app
+USER nonroot:nonroot
+ENTRYPOINT ["/app"]</pre>
+        <ul>
+          <li>Smaller base, fewer packages and no shell/package manager reduce attack surface.</li>
+          <li>Run as non-root, pin digest and rebuild from maintained bases.</li>
+          <li>Do not place build credentials or secrets in layers; multi-stage builds do not erase a secret copied into an earlier published stage.</li>
+        </ul>
+
+        <h3 id="scan-sign">Scan, inventory, sign and admit</h3>
+        <pre data-lang="bash"># exact commands depend on tools installed in the exam environment
+trivy image --severity HIGH,CRITICAL registry.example/app:1.4
+trivy config deployment.yaml
+kube-linter lint deployment.yaml
+kubesec scan deployment.yaml
+
+# example Sigstore workflow when cosign is supplied
+cosign verify --key cosign.pub registry.example/app@sha256:&lt;digest&gt;
+cosign verify-attestation --key cosign.pub \
+  --type slsaprovenance registry.example/app@sha256:&lt;digest&gt;</pre>
+        <table><thead><tr><th>Evidence/control</th><th>Answers</th></tr></thead><tbody>
+          <tr><td>Vulnerability scan</td><td>Does known affected software exist?</td></tr>
+          <tr><td>Static manifest analysis</td><td>Does configuration violate a policy or best practice?</td></tr>
+          <tr><td>SBOM</td><td>Which software components are present?</td></tr>
+          <tr><td>Signature</td><td>Who signed this exact artifact; is integrity intact?</td></tr>
+          <tr><td>Provenance attestation</td><td>How and where was the artifact built?</td></tr>
+          <tr><td>Admission policy</td><td>May this artifact/configuration enter the cluster?</td></tr>
+        </tbody></table>
+        <p>Enforce trusted registries, digest pinning, signatures/attestations and policy through an admission mechanism available in the environment. Test an allowed image and a deliberately disallowed image.</p>
+
+        <h2 id="runtime">6. Monitoring, Logging and Runtime Security (20%)</h2>
+        <h3 id="audit">Kubernetes audit logging</h3>
+        <pre data-lang="yaml">apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+- level: Metadata
+  resources:
+  - group: ""
+    resources: ["secrets"]
+- level: RequestResponse
+  verbs: ["create", "update", "patch", "delete"]
+- level: None
+  nonResourceURLs: ["/healthz*", "/readyz*"]
+- level: Metadata</pre>
+        <pre data-lang="bash"># API server flags need both policy and log destination plus hostPath mounts
+sudo grep -n -- '--audit-' /etc/kubernetes/manifests/kube-apiserver.yaml
+sudo tail -f /var/log/kubernetes/audit/audit.log
+k get --raw=/readyz</pre>
+        <p>Audit levels are <strong>None, Metadata, Request, RequestResponse</strong>. Rules are evaluated in order; first match wins. Avoid logging sensitive request bodies unless the task explicitly requires it.</p>
+
+        <h3 id="runtime-detection">Runtime detection and investigation</h3>
+        <p>Behavioral detection observes what running workloads actually do: unexpected shells, package installation, writes to sensitive paths, privilege changes, suspicious network connections or access to credentials. Falco-style rules commonly match kernel/runtime events against conditions.</p>
+        <pre data-lang="bash"># investigate a suspicious workload
+k get pod suspicious -o yaml
+k describe pod suspicious
+k logs suspicious --all-containers --since=30m
+k get events --field-selector involvedObject.name=suspicious
+k auth can-i --list --as=system:serviceaccount:team:app -n team
+
+# node/runtime evidence when authorized
+sudo crictl ps -a
+sudo crictl inspect &lt;container-id&gt;
+sudo journalctl -u kubelet --since '30 min ago'</pre>
+        <ol>
+          <li>Preserve relevant evidence and timestamps.</li>
+          <li>Scope identity, namespace, node, image digest, network and affected objects.</li>
+          <li>Contain with minimal blast radius—policy, scale/isolate, credential rotation as appropriate.</li>
+          <li>Remove persistence and repair the exploited control.</li>
+          <li>Recover from trusted artifacts and verify monitoring catches recurrence.</li>
+        </ol>
+
+        <h3 id="immutability">Runtime immutability</h3>
+        <ul>
+          <li>Use read-only root filesystems with explicit writable volumes.</li>
+          <li>Disallow exec/package-manager workflows for production change; rebuild and redeploy a new image.</li>
+          <li>Pin images by digest and detect drift from declared state.</li>
+          <li>Drop privilege and prevent hostPath/host namespaces unless explicitly required.</li>
+        </ul>
+
+        <h2 id="admission-encryption">7. Admission policy and encryption at rest</h2>
+        <h3 id="admission-flow">Validate before persistence</h3>
+        <p>Admission runs after authentication and authorization but before an object is stored. <strong>Mutating</strong> admission changes a request; <strong>validating</strong> admission accepts or rejects it. Policy can enforce trusted registries, digest pinning, required labels, restricted security context and prohibited host access. Failure policy matters: <code>Fail</code> preserves enforcement when a webhook is unavailable; <code>Ignore</code> favors availability but can fail open.</p>
+        <pre data-lang="bash">k get validatingwebhookconfigurations,mutatingwebhookconfigurations
+k get validatingadmissionpolicies,validatingadmissionpolicybindings 2&gt;/dev/null || true
+k get events -A --sort-by=.lastTimestamp | tail -30
+
+# test policy with server-side dry-run before persistence
+k apply --dry-run=server -f compliant.yaml
+k apply --dry-run=server -f deliberately-denied.yaml</pre>
+        <div class="gotcha"><span class="gotcha-label">do not lock out the control plane</span>Scope webhooks carefully with selectors and rules, use reachable TLS endpoints, and exclude the webhook's own recovery path where appropriate. A broad failing webhook can block every matching API write.</div>
+
+        <h3 id="secret-encryption">Encrypt Kubernetes API data at rest</h3>
+        <pre data-lang="yaml">apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+- resources: [secrets]
+  providers:
+  - aesgcm:
+      keys:
+      - name: key1
+        secret: &lt;base64-encoded-32-byte-key&gt;
+  - identity: {}</pre>
+        <p>The first provider writes new data; later providers can read existing data. The <code>identity</code> fallback supports migration from plaintext but means plaintext remains readable. Mount the configuration into the API server, add <code>--encryption-provider-config</code>, verify readiness, then rewrite existing Secrets so they are re-encrypted:</p>
+        <pre data-lang="bash"># after the API server is healthy with the provider
+k get secrets -A -o json | k replace -f -
+
+# verify storage carefully from etcd: ciphertext should not expose the value
+ETCDCTL_API=3 etcdctl get /registry/secrets/team/db \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key</pre>
+        <p>Protect and rotate encryption keys; losing them can make data unrecoverable. Encryption at rest does not replace RBAC, TLS in transit or secret rotation.</p>
+
+        <h3 id="runtime-rules">Runtime rule reasoning</h3>
+        <pre data-lang="yaml"># conceptual Falco-style rule; use the installed tool's schema
+- rule: Shell in production container
+  condition: container and proc.name in (bash, sh, zsh) and k8s.ns.name = "prod"
+  output: "shell in prod (user=%user.name pod=%k8s.pod.name cmd=%proc.cmdline)"
+  priority: WARNING</pre>
+        <p>A useful runtime rule has a narrow behavior, enough context for triage and tolerable noise. Baseline legitimate automation, exclude by stable identity rather than broad process names, and test with a controlled event. Runtime detection complements prevention because signed, scanned and admitted software can still be exploited after startup.</p>
+
+        <h2 id="verification">8. Security verification matrix</h2>
+        <table><thead><tr><th>Control</th><th>Positive test</th><th>Negative test</th></tr></thead><tbody>
+          <tr><td>RBAC</td><td>Required verb succeeds as target identity</td><td>Unneeded verb returns forbidden</td></tr>
+          <tr><td>NetworkPolicy</td><td>Allowed source reaches exact port</td><td>Denied source times out/fails</td></tr>
+          <tr><td>Pod security</td><td>Compliant Pod admits and starts</td><td>Privileged/non-compliant Pod is rejected</td></tr>
+          <tr><td>Image policy</td><td>Trusted signed digest admits</td><td>Unknown registry/signature is denied</td></tr>
+          <tr><td>Audit</td><td>Relevant request produces expected event</td><td>Noise/sensitive bodies are excluded as designed</td></tr>
+          <tr><td>Control plane</td><td><code>/readyz</code> and kubectl return</td><td>Anonymous/unauthorized access fails</td></tr>
+        </tbody></table>
+
+        <h2 id="mistakes">9. Common mistakes and final study order</h2>
+        <ul>
+          <li>Editing the wrong cluster or namespace.</li>
+          <li>Leaving a static-Pod manifest backup in the manifests directory.</li>
+          <li>Applying a default-deny policy before proving required DNS/egress paths.</li>
+          <li>Writing a NetworkPolicy that selects no Pods because labels are wrong.</li>
+          <li>Granting broad RBAC because the narrow Role was slightly harder to write.</li>
+          <li>Assuming non-root alone prevents privilege escalation.</li>
+          <li>Breaking an app with read-only rootfs without mounting its required writable paths.</li>
+          <li>Calling a scan, SBOM or signature interchangeable.</li>
+          <li>Enabling audit flags without mounting the policy/log path into the API server static Pod.</li>
+          <li>Making several control-plane changes before verifying the first one.</li>
+        </ul>
+        <p>Practice order: <strong>NetworkPolicy → RBAC/service accounts → restricted Pods/PSA → API/CIS hardening → seccomp/AppArmor → image scanning/signing/admission → audit policy → runtime investigation</strong>. Rehearse every task with a positive and negative test; security without evidence is only configuration.</p>
+        <h2 id="official-sources">Official sources &amp; freshness</h2>
+        <p>This guide was checked against the official Linux Foundation exam page and CNCF curriculum on <strong>19 July 2026</strong>. Exam versions and policies can change; re-check the source page before booking.</p>
+        <ul>
+          <li><a href="https://training.linuxfoundation.org/certification/certified-kubernetes-security-specialist/" target="_blank" rel="noreferrer">Linux Foundation — CKS certification and current domains</a></li>
+          <li><a href="https://github.com/cncf/curriculum" target="_blank" rel="noreferrer">CNCF — open certification curricula</a></li>
+          <li><a href="https://www.cncf.io/training/kubestronaut/kubestronaut-faq/" target="_blank" rel="noreferrer">CNCF — Kubestronaut requirements and renewal FAQ</a></li>
+        </ul>
+      </div>
+      <div class="post-nav">
+        <a href="cheat-ckad.html">&larr; prev: CKAD</a>
+        <a href="../series-kubestronaut.html">series map &rarr;</a>
+      </div>
+    </article>
+    <footer class="footer"><span>&copy; cvam — written in plaintext, served warm</span></footer>
+    </div>
+    <aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside>
+  </div>
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=31"></script>
+  <script defer src="../settings.js?v=10"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

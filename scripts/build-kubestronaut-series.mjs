@@ -64,7 +64,7 @@ function articlePage(guide) {
 <script defer src="/_vercel/speed-insights/script.js"></script>
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
-<body>
+<body class="certification-guide-page">
   <div class="progress-bar"></div>
   <div class="layout has-toc">
     ${sidebar("../")}
@@ -102,20 +102,21 @@ ${guide.body}
   <script type="module" src="../highlighter.js?v=2"></script>
   <script defer src="../reader.js?v=2"></script>
 </body>
-</html>`;
+</html>
+`;
 }
 
 function landingPage() {
   const missions = [
-    { code: "KCNA", n: "01", title: "Build the cloud native map", desc: "Architecture, orchestration, delivery, observability and the CNCF ecosystem. Learn the vocabulary and mental models every later exam assumes.", meta: "90 min · multiple choice · beginner", tags: "44 / 28 / 16 / 12" },
-    { code: "KCSA", n: "02", title: "Think in threats and controls", desc: "The 4Cs, component trust boundaries, identity, Pod and network security, supply chain, platform security and compliance.", meta: "90 min · multiple choice · beginner", tags: "14 / 22 / 22 / 16 / 16 / 10" },
-    { code: "CKA", n: "03", title: "Operate the cluster", desc: "Troubleshoot, install, upgrade and secure clusters; manage networking, workloads, storage, RBAC, etcd and control-plane lifecycle.", meta: "2 hours · hands-on · Kubernetes v1.35", tags: "30 / 25 / 20 / 15 / 10" },
-    { code: "CKAD", n: "04", title: "Ship applications under pressure", desc: "Design workloads, roll out versions, configure and secure Pods, build health checks, expose Services and debug failures quickly.", meta: "2 hours · hands-on · Kubernetes v1.35", tags: "20 / 20 / 15 / 25 / 20" },
-    { code: "CKS", n: "05", title: "Secure build, cluster and runtime", desc: "Harden the platform and OS, minimize workload vulnerabilities, protect the supply chain, audit behavior and investigate runtime threats.", meta: "2 hours · hands-on · CKA prerequisite", tags: "15 / 15 / 10 / 20 / 20 / 20" },
+    { code: "KCNA", n: "01", title: "Foundations", guide: "Kubernetes and Cloud Native Associate", desc: "Build the cloud native map: architecture, orchestration, delivery, observability and the CNCF ecosystem. Learn the vocabulary and mental models every later exam assumes.", meta: "90 minutes · multiple choice · no prerequisite", kind: "associate" },
+    { code: "KCSA", n: "02", title: "Security foundations", guide: "Kubernetes and Cloud Native Security Associate", desc: "Think in threats and controls: the 4Cs, component trust boundaries, identity, Pod and network security, supply chain, platform security and compliance.", meta: "90 minutes · multiple choice · no prerequisite", kind: "associate" },
+    { code: "CKA", n: "03", title: "Administration", guide: "Certified Kubernetes Administrator", desc: "Operate the cluster: troubleshoot, install, upgrade and secure clusters; manage networking, workloads, storage, RBAC, etcd and the control plane.", meta: "2 hours · hands-on · Kubernetes v1.35", kind: "hands-on" },
+    { code: "CKAD", n: "04", title: "Application delivery", guide: "Certified Kubernetes Application Developer", desc: "Ship applications under pressure: design workloads, roll out versions, configure and secure Pods, build health checks, expose Services and debug failures.", meta: "2 hours · hands-on · Kubernetes v1.35", kind: "hands-on" },
+    { code: "CKS", n: "05", title: "Security specialist", guide: "Certified Kubernetes Security Specialist", desc: "Secure build, cluster and runtime: harden the platform and OS, minimize workload vulnerabilities, protect the supply chain, audit behavior and investigate threats.", meta: "2 hours · hands-on · active CKA required", kind: "hands-on" },
   ];
   const missionHtml = missions.map((m) => `<section class="series-phase" id="${m.code.toLowerCase()}">
-        <div class="phase-header"><div class="phase-badge done">${m.n}</div><div><h2 class="phase-title">${m.code} — ${m.title}</h2><p class="phase-desc">${m.desc}</p></div></div>
-        <div class="phase-articles"><a href="posts/cheat-${m.code.toLowerCase()}.html" class="phase-article"><span class="phase-article-num">${m.n}</span><div class="phase-article-body"><h3>Open the complete ${m.code} exam cheatsheet</h3><p>${m.meta}</p></div><span class="difficulty ${m.code === "KCNA" || m.code === "KCSA" ? "beginner" : "advanced"}">${m.tags}</span><span class="phase-article-time">guide →</span></a></div>
+        <div class="phase-header"><div class="phase-badge done">Certification ${Number(m.n)}</div><div><h2 class="phase-title">${m.code} — ${m.title}</h2><p class="phase-desc">${m.desc}</p></div></div>
+        <div class="phase-articles"><a href="posts/cheat-${m.code.toLowerCase()}.html" class="phase-article"><span class="phase-article-num">${m.n}</span><div class="phase-article-body"><h3>${m.code} — ${m.guide} Cheatsheet</h3><p>${m.meta}</p></div><span class="difficulty ${m.kind === "associate" ? "beginner" : "advanced"}">${m.kind}</span><span class="phase-article-time">open guide →</span></a></div>
       </section><hr class="rule">`).join("\n");
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -123,67 +124,31 @@ function landingPage() {
 <meta name="description" content="A current, connected preparation series for all five CNCF Kubernetes certifications required for Kubestronaut: KCNA, KCSA, CKA, CKAD and CKS.">
 <meta property="og:type" content="article"><meta property="og:site_name" content="cvam.sight"><meta property="og:title" content="Road to Kubestronaut"><meta property="og:description" content="Five certifications, one connected path: KCNA, KCSA, CKA, CKAD and CKS."><meta property="og:url" content="https://shivam2003.com/series-kubestronaut"><meta property="og:image" content="https://shivam2003.com/assets/kubestronaut-series-og.png"><meta property="og:image:width" content="1731"><meta property="og:image:height" content="909"><meta property="og:image:alt" content="Road to Kubestronaut — KCNA, KCSA, CKA, CKAD and CKS learning path">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Road to Kubestronaut"><meta name="twitter:description" content="Five certifications, one connected path: KCNA, KCSA, CKA, CKAD and CKS."><meta name="twitter:image" content="https://shivam2003.com/assets/kubestronaut-series-og.png">
-<link rel="stylesheet" href="style.css?v=70"><link rel="stylesheet" href="/themes.css?v=4"><script src="/theme-init.js?v=3"></script><link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="style.css?v=71"><link rel="stylesheet" href="/themes.css?v=4"><script src="/theme-init.js?v=3"></script><link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <script defer src="/_vercel/speed-insights/script.js"></script><script defer src="/_vercel/insights/script.js"></script></head>
 <body class="kubestronaut-series-page"><div class="layout">${sidebar("")}<div class="page">
   <p class="meta" style="margin-bottom:8px"><a href="series.html" style="color:var(--ink-faint);text-decoration:none">&larr; All Series</a></p>
   <div class="series-page-header">
-    <p class="meta">SERIES // FIVE ACTIVE CERTIFICATIONS · ONE KUBESTRONAUT PATH</p>
+    <p class="meta">SERIES // 5 CERTIFICATIONS · 5 GUIDES · COMPLETE PATH</p>
+    <figure class="series-hero-image">
+      <img src="assets/kubestronaut-series-og.png" width="1731" height="909" alt="Road to Kubestronaut learning path from KCNA and KCSA through CKA, CKAD and CKS" decoding="async" fetchpriority="high">
+      <figcaption>KCNA · KCSA · CKA · CKAD · CKS</figcaption>
+    </figure>
+    <div class="series-page-stats"><div class="series-stat"><strong>5</strong><span>certifications</span></div><div class="series-stat"><strong>2</strong><span>associate exams</span></div><div class="series-stat"><strong>3</strong><span>hands-on exams</span></div><div class="series-stat"><strong>v1.35</strong><span>performance track</span></div></div>
   </div>
-  <figure class="series-hero-image">
-    <img src="assets/kubestronaut-series-og.png" width="1731" height="909" alt="Road to Kubestronaut learning path from KCNA and KCSA through CKA, CKAD and CKS" decoding="async" fetchpriority="high">
-    <figcaption>Five certifications · one connected Kubernetes path</figcaption>
-  </figure>
-  <div class="series-page-stats"><div class="series-stat"><strong>5</strong><span>certifications</span></div><div class="series-stat"><strong>2</strong><span>associate exams</span></div><div class="series-stat"><strong>3</strong><span>hands-on exams</span></div><div class="series-stat"><strong>v1.35</strong><span>performance track</span></div></div>
   <hr class="rule">
-  <div class="post-body">
-  <div class="gotcha"><span class="gotcha-label">the destination</span>CNCF recognizes a Kubestronaut after <strong>KCNA, KCSA, CKA, CKAD and CKS</strong> have all been passed and are active together. CKS requires a passed CKA. The order below minimizes context switching and reuses each exam's knowledge in the next.</div>
-
-  <h2 id="route">The recommended route</h2>
-  <div class="series-roadmap"><div class="roadmap-track">
+  <div class="series-roadmap">
+    <p class="meta" style="margin-bottom:16px">ROADMAP // CLICK A CERTIFICATION TO JUMP</p>
+    <div class="roadmap-track">
     ${missions.map((m, i) => `<a class="roadmap-node" href="#${m.code.toLowerCase()}"><span class="roadmap-dot done"></span><span class="roadmap-label">${m.code}</span><span class="roadmap-sub">${["map","threats","operate","ship","secure"][i]}</span></a>${i < missions.length - 1 ? '<span class="roadmap-line"></span>' : ''}`).join("")}
-  </div></div>
-  <p><strong>Why this order?</strong> KCNA makes the object and ecosystem vocabulary explicit. KCSA layers security reasoning on top. CKA builds operational fluency and satisfies the CKS prerequisite. CKAD reuses kubectl speed while narrowing focus to application delivery. CKS then combines cluster administration, workload security and supply-chain/runtime controls.</p>
-
-  <h2 id="compare">Know which exam you are sitting</h2>
-  <table><thead><tr><th>Exam</th><th>Format</th><th>Primary skill</th><th>Preparation bias</th></tr></thead><tbody>
-    <tr><td><strong>KCNA</strong></td><td>90-min multiple choice</td><td>Cloud native concepts and component ownership</td><td>Explain why alternatives are wrong</td></tr>
-    <tr><td><strong>KCSA</strong></td><td>90-min multiple choice</td><td>Threat boundaries and security controls</td><td>Map risks to prevent/detect/respond controls</td></tr>
-    <tr><td><strong>CKA</strong></td><td>2-hour terminal</td><td>Cluster operations and troubleshooting</td><td>Practice complete admin tasks with verification</td></tr>
-    <tr><td><strong>CKAD</strong></td><td>2-hour terminal</td><td>Application design, delivery and debugging</td><td>Generate/edit manifests at speed</td></tr>
-    <tr><td><strong>CKS</strong></td><td>2-hour terminal</td><td>Platform, workload, supply-chain and runtime security</td><td>Apply narrow controls and test allowed + denied behavior</td></tr>
-  </tbody></table>
-
-  <h2 id="shared-core">The shared core that compounds</h2>
-  <table><thead><tr><th>Skill</th><th>Starts</th><th>Deepens</th><th>Finishes</th></tr></thead><tbody>
-    <tr><td>Kubernetes architecture</td><td>KCNA component model</td><td>CKA lifecycle/troubleshooting</td><td>CKS component hardening</td></tr>
-    <tr><td>Workload design</td><td>KCNA object choice</td><td>CKAD multi-container/deployment</td><td>CKS restricted runtime</td></tr>
-    <tr><td>Identity and policy</td><td>KCSA authn/authz/admission</td><td>CKA/CKAD RBAC and ServiceAccounts</td><td>CKS least privilege and admission</td></tr>
-    <tr><td>Networking</td><td>KCNA Service/CNI model</td><td>CKA/CKAD DNS, Gateway/Ingress, NetworkPolicy</td><td>CKS segmentation and encryption</td></tr>
-    <tr><td>Supply chain</td><td>KCSA image/provenance concepts</td><td>CKAD image and delivery mechanics</td><td>CKS scan, sign, attest and admit</td></tr>
-  </tbody></table>
-
-  <h2 id="renewal">Keep the five active: CARE in 2026</h2>
-  <p>The CNCF CARE program now links progression and renewal. If you previously earned KCNA, passing or recertifying CKA or CKAD can extend KCNA. Passing or recertifying CKS can extend KCSA; from <strong>18 June 2026</strong>, CKS can also reinstate or extend CKA. These links reduce renewal friction, but Kubestronaut recognition still requires all five certifications to be active. Confirm your own dates in the Linux Foundation portal and the current CNCF FAQ.</p>
-
-  <h2 id="plan">A realistic preparation rhythm</h2>
-  <ol>
-    <li><strong>Foundation block:</strong> KCNA concepts, daily kubectl reading, then timed associate questions.</li>
-    <li><strong>Security foundation block:</strong> KCSA trust boundaries, identity, supply chain and framework scenarios.</li>
-    <li><strong>Operations block:</strong> CKA cluster tasks until context switching, etcd, upgrades and troubleshooting are automatic.</li>
-    <li><strong>Application block:</strong> CKAD timed manifest work, rollouts, probes, configuration, Services and policies.</li>
-    <li><strong>Security specialist block:</strong> CKS hardening, restricted workloads, supply chain, audit and runtime investigation—with a positive and negative test for every control.</li>
-  </ol>
-  <p>Do not study all five as isolated syllabi. Maintain one lab notebook with four columns: <strong>concept → command/manifest → failure signal → verification</strong>. The same knowledge should become more operational on every pass.</p>
-
+    </div>
+  </div>
   <hr class="rule">
   ${missionHtml}
-  <h2 id="sources">Official references</h2>
-  <p>Curriculum and program details checked on <strong>19 July 2026</strong>. Re-check before scheduling because Kubernetes versions and certification policies move.</p>
-  <ul><li><a href="https://github.com/cncf/curriculum" target="_blank" rel="noreferrer">CNCF certification curricula</a></li><li><a href="https://www.cncf.io/training/kubestronaut/kubestronaut-faq/" target="_blank" rel="noreferrer">Kubestronaut FAQ</a></li><li><a href="https://www.cncf.io/training/" target="_blank" rel="noreferrer">CNCF training paths and CARE renewal rules</a></li></ul>
-  </div>
+  <section class="kubestronaut-sources" aria-labelledby="sources-title"><p class="meta">OFFICIAL // CURRICULUM &amp; PROGRAM LINKS</p><h2 id="sources-title">Keep the path current.</h2><p>Curriculum and program details checked on <strong>19 July 2026</strong>. Re-check before scheduling because Kubernetes versions and certification policies move.</p><div class="kubestronaut-source-links"><a href="https://github.com/cncf/curriculum" target="_blank" rel="noreferrer">Certification curricula →</a><a href="https://www.cncf.io/training/kubestronaut/kubestronaut-faq/" target="_blank" rel="noreferrer">Kubestronaut FAQ →</a><a href="https://www.cncf.io/training/" target="_blank" rel="noreferrer">CNCF training paths →</a></div></section>
   <footer class="footer"><span>&copy; cvam — written in plaintext, served warm</span></footer>
-</div></div><script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=37"></script><script defer src="settings.js?v=12"></script><script defer src="reader.js?v=2"></script></body></html>`;
+</div></div><script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=37"></script><script defer src="settings.js?v=12"></script><script defer src="reader.js?v=2"></script></body></html>
+`;
 }
 
 const kcna = {

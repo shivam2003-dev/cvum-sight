@@ -274,7 +274,12 @@
       gpu: "Silicon to Scale",
       harness: "Harness Engineering",
       "grok-build": "Inside Grok Build",
-      consensus: "Consensus Algorithms"
+      consensus: "Consensus Algorithms",
+      "frontier-digest": "Frontier Digest",
+      "kubecon-mumbai-2026": "KubeCon Mumbai 2026",
+      linuxperf: "Linux Performance",
+      benchmarking: "Cloud Benchmarking",
+      "design-cloud": "Cloud Architecture Styles"
     };
     const seriesHubs = {
       deepseek: "series-deepseek.html",
@@ -283,7 +288,11 @@
       gpu: "series-gpu.html",
       harness: "series-harness.html",
       "grok-build": "series-grok-build.html",
-      consensus: "series-consensus.html"
+      consensus: "series-consensus.html",
+      "frontier-digest": "series-frontier-digest.html",
+      "kubecon-mumbai-2026": "series-kubecon-mumbai-2026.html",
+      linuxperf: "series-linux-performance.html",
+      benchmarking: "series-benchmarking.html"
     };
     const seenSeries = {};
     const entries = [];

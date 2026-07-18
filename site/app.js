@@ -259,7 +259,7 @@
     const pageNumbers = document.getElementById("archive-page-numbers");
     const previousButton = document.getElementById("archive-prev");
     const nextButton = document.getElementById("archive-next");
-    const pageSize = 20;
+    const pageSize = 50;
 
     // AI Native tool pages live in their own dedicated hub and are hidden from Archive.
     const hiddenArchiveDates = new Set(["May 31, 2026", "Jun 1, 2026"]);

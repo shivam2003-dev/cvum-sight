@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CKA Exam Cheatsheet — cvam.sight</title>
+<meta name="description" content="Comprehensive last-minute revision for the Certified Kubernetes Administrator (CKA) exam on the current v1.35 curriculum: exam-day setup, kubectl speed tricks, all five domains (Troubleshooting 30%, Cluster Architecture 25%, Networking 20%, Workloads 15%, Storage 10%), kubeadm HA + upgrades, etcd backup/restore, RBAC, CRDs/Operators, Helm, Kustomize, Gateway API, NetworkPolicy, PV/PVC/StorageClass, a troubleshooting playbook, exam-day tips, and common mistakes.">
+<link rel="stylesheet" href="../style.css?v=51">
+<script>(function(){var t=localStorage.getItem("cvam-theme")||"paper";if(!localStorage.getItem("cvam-theme-mig")){if(t==="matcha"){t="paper";localStorage.removeItem("cvam-theme");}localStorage.setItem("cvam-theme-mig","1");}if(t&&t!=="paper")document.documentElement.classList.add("theme-"+t);var s=localStorage.getItem("cvam-size");if(s&&s!=="text-md")document.documentElement.classList.add(s);var ls=localStorage.getItem("cvam-ls");if(ls&&ls!=="ls-cozy")document.documentElement.classList.add(ls);var f=localStorage.getItem("cvam-font");if(f&&f!=="font-sans")document.documentElement.classList.add(f);else{var sf=localStorage.getItem("cvam-sans");if(sf==="0")document.documentElement.classList.add("font-serif");}document.documentElement.classList.add("view-modern");})()</script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <p class="meta" style="margin-bottom:8px"><a href="../cheatsheets.html" style="color:var(--ink-faint);text-decoration:none">&larr; Cheatsheets</a></p>
+
+      <div class="post-header">
+        <p class="meta">CHEATSHEET &middot; DEVOPS &middot; LAST-MINUTE REVISION</p>
+        <h1>CKA — The Certified Kubernetes Administrator Cheatsheet.</h1>
+        <div class="tag-row">
+          <span class="tag fill">kubernetes</span>
+          <span class="tag">cka</span>
+          <span class="tag">certification</span>
+          <span class="tag">kubectl</span>
+          <span class="tag">exam-prep</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <blockquote>
+          The <strong>CKA</strong> is a <strong>2-hour, hands-on, performance-based</strong> exam on the current
+          <strong>Kubernetes v1.35</strong> curriculum — no multiple choice, just a live cluster and a terminal.
+          <strong>15–20 tasks</strong>, weighted by domain, pass mark <strong>66%</strong>, one free retake.
+          Five domains: <strong>Troubleshooting 30% · Cluster Architecture 25% · Services &amp; Networking 20%
+          · Workloads &amp; Scheduling 15% · Storage 10%</strong>. The whole game is <em>speed and correctness at the
+          keyboard</em> — this sheet is command-first. Kubernetes docs (kubernetes.io) are allowed during the exam;
+          bookmark them. Study order and exam-day playbook at the bottom.
+        </blockquote>
+
+        <h2 id="exam-setup">0. Exam-day setup (do this in the first 60 seconds)</h2>
+        <p>Every task runs against a specific cluster/context. Two habits save the most points: <strong>switch context first</strong>, and <strong>generate YAML imperatively</strong> instead of typing it.</p>
+        <pre data-lang="bash"># the alias that pays for itself
+alias k=kubectl
+export do="--dry-run=client -o yaml"   # generate manifests fast
+export now="--force --grace-period=0"  # delete pods immediately
+source <(kubectl completion bash) ; complete -o default -F __start_kubectl k
+
+# ALWAYS switch to the cluster the question names, first thing
+kubectl config get-contexts
+kubectl config use-context <cluster-name>
+
+# vim: set these in ~/.vimrc so YAML indentation doesn't fight you
+# set expandtab tabstop=2 shiftwidth=2 number autoindent</pre>
+        <div class="gotcha"><span class="gotcha-label">context first, every task</span>
+          The single most common avoidable failure: doing a perfect task in the wrong cluster. Re-run
+          <code>kubectl config use-context</code> at the start of <em>every</em> question. Also note the task's
+          <strong>namespace</strong> — add <code>-n &lt;ns&gt;</code> everywhere or <code>k config set-context --current --namespace=&lt;ns&gt;</code>.</div>
+
+        <h2 id="kubectl-speed">1. kubectl speed &amp; imperative generation</h2>
+        <p>You rarely write YAML from scratch. Generate a skeleton with <code>$do</code>, edit, apply.</p>
+        <pre data-lang="bash"># generate manifests (don't create) — then edit the file
+k create deploy web --image=nginx --replicas=3 $do > web.yaml
+k run pod1 --image=nginx $do > pod.yaml
+k create svc clusterip web --tcp=80:80 $do > svc.yaml
+k create cm app --from-literal=KEY=val $do > cm.yaml
+k create secret generic db --from-literal=pass=s3cr3t $do > sec.yaml
+k create job pi --image=perl -- perl -e 'print 1' $do > job.yaml
+k create cronjob c --image=busybox --schedule="*/1 * * * *" -- date $do > cj.yaml
+
+# quick imperative actions (no file needed)
+k expose deploy web --port=80 --target-port=8080          # make a Service
+k scale deploy web --replicas=5
+k set image deploy/web nginx=nginx:1.27
+k label pod pod1 tier=frontend
+k annotate pod pod1 note="exam"
+k rollout restart deploy/web
+
+# inspect fast
+k get pods -A -o wide                    # all namespaces, node + IP
+k get pods --show-labels
+k get po -l app=web                      # label selector
+k describe pod pod1                       # events at the bottom = gold
+k explain pod.spec.containers             # field reference, offline</pre>
+        <div class="gotcha"><span class="gotcha-label">--dry-run=client -o yaml is your pen</span>
+          You will not have time to hand-write PodSpecs. Generate, redirect to a file, edit the 2–3 fields you
+          need, <code>k apply -f</code>. <code>kubectl explain --recursive</code> is the offline field lookup when
+          you forget a nesting.</div>
+
+        <h2 id="cluster-arch">2. Cluster Architecture, Installation &amp; Config (25%)</h2>
+
+        <h3 id="components">The control plane, in one breath</h3>
+        <table>
+          <thead><tr><th>Component</th><th>Job</th></tr></thead>
+          <tbody>
+            <tr><td><strong>kube-apiserver</strong></td><td>The front door — every request goes through it; the only thing that talks to etcd.</td></tr>
+            <tr><td><strong>etcd</strong></td><td>The database — all cluster state. Back this up (high-value exam task).</td></tr>
+            <tr><td><strong>kube-scheduler</strong></td><td>Picks a node for each unscheduled Pod (filters + scores).</td></tr>
+            <tr><td><strong>kube-controller-manager</strong></td><td>Reconciliation loops (Deployment→ReplicaSet→Pods, node, endpoints…).</td></tr>
+            <tr><td><strong>kubelet</strong></td><td>Node agent — runs containers, reports status. A <em>systemd service</em>, not a pod.</td></tr>
+            <tr><td><strong>kube-proxy</strong></td><td>Programs Service networking (iptables/IPVS) on each node.</td></tr>
+            <tr><td><strong>CNI plugin</strong></td><td>Pod networking (Calico/Cilium/Flannel). No CNI ⇒ nodes stay <code>NotReady</code>.</td></tr>
+          </tbody>
+        </table>
+        <p>On a kubeadm cluster the control-plane components run as <strong>static pods</strong> — manifests in <code>/etc/kubernetes/manifests/</code> on the control-plane node. Edit a file there and the kubelet restarts that pod automatically.</p>
+
+        <h3 id="kubeadm">kubeadm — create, join, HA</h3>
+        <pre data-lang="bash"># init a control plane (pick a pod CIDR your CNI expects)
+kubeadm init --pod-network-cidr=10.244.0.0/16 --control-plane-endpoint="LB:6443"
+mkdir -p ~/.kube && cp -i /etc/kubernetes/admin.conf ~/.kube/config
+# then apply a CNI (e.g. calico/cilium manifest) — nodes go Ready after
+
+# join a worker (token printed by init; regenerate if expired)
+kubeadm token create --print-join-command
+kubeadm join LB:6443 --token <t> --discovery-token-ca-cert-hash sha256:<h>
+
+# join another control plane (HA) — add --control-plane --certificate-key
+kubeadm init phase upload-certs --upload-certs   # prints the cert key</pre>
+        <div class="gotcha"><span class="gotcha-label">HA = stacked etcd + a load balancer</span>
+          A highly-available control plane means <strong>≥3 control-plane nodes</strong> (odd number, for etcd quorum)
+          behind a load balancer on <code>:6443</code>, joined with <code>--control-plane</code>. etcd quorum needs a
+          majority — 3 nodes tolerate 1 failure, 5 tolerate 2.</div>
+
+        <h3 id="upgrade">Cluster upgrade (kubeadm) — control plane then workers</h3>
+        <pre data-lang="bash"># --- on the first control-plane node ---
+apt-get update && apt-get install -y kubeadm=1.35.x-*   # upgrade kubeadm first
+kubeadm upgrade plan
+kubeadm upgrade apply v1.35.x
+# then upgrade the node's kubelet + kubectl
+kubectl drain <cp-node> --ignore-daemonsets
+apt-get install -y kubelet=1.35.x-* kubectl=1.35.x-*
+systemctl daemon-reload && systemctl restart kubelet
+kubectl uncordon <cp-node>
+
+# --- on each worker (one at a time) ---
+kubeadm upgrade node                       # NOT 'upgrade apply' on workers
+kubectl drain <worker> --ignore-daemonsets --delete-emptydir-data
+# (install kubelet/kubectl, restart kubelet, then)
+kubectl uncordon <worker></pre>
+        <div class="gotcha"><span class="gotcha-label">order + drain</span>
+          Upgrade <strong>kubeadm first</strong>, then <code>apply</code> (control plane) / <code>node</code> (workers),
+          then the kubelet. Always <code>drain</code> before and <code>uncordon</code> after. Skipping minor versions
+          (1.33→1.35) is unsupported — go one minor at a time.</div>
+
+        <h3 id="etcd-backup">etcd backup &amp; restore (high-value — practice cold)</h3>
+        <pre data-lang="bash"># find the certs (from the etcd static-pod manifest or describe)
+export E="--cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  --endpoints=https://127.0.0.1:2379"
+
+# BACKUP
+ETCDCTL_API=3 etcdctl $E snapshot save /opt/snap.db
+ETCDCTL_API=3 etcdctl $E snapshot status /opt/snap.db -w table
+
+# RESTORE to a new data dir
+ETCDCTL_API=3 etcdctl snapshot restore /opt/snap.db \
+  --data-dir=/var/lib/etcd-restore
+# then point the etcd static pod at the new dir:
+#   edit /etc/kubernetes/manifests/etcd.yaml -> hostPath + --data-dir
+#   kubelet restarts etcd automatically</pre>
+        <div class="gotcha"><span class="gotcha-label">restore ≠ save flags</span>
+          <code>snapshot restore</code> does <em>not</em> need the cert flags — only the snapshot + <code>--data-dir</code>.
+          After restore you must repoint the etcd manifest's <code>hostPath</code> volume <strong>and</strong> the
+          <code>--data-dir</code> arg to the new directory, then wait for the static pod to come back.</div>
+
+        <h3 id="rbac">RBAC — who can do what</h3>
+        <pre data-lang="bash"># Role (namespaced) + RoleBinding
+k create role dev --verb=get,list,watch --resource=pods -n team
+k create rolebinding dev-bind --role=dev --user=jane -n team
+
+# ClusterRole (cluster-wide) + ClusterRoleBinding
+k create clusterrole reader --verb=get,list --resource=nodes
+k create clusterrolebinding read-nodes --clusterrole=reader --user=jane
+
+# bind a ClusterRole into ONE namespace with a RoleBinding
+k create rolebinding x --clusterrole=reader --serviceaccount=team:sa1 -n team
+
+# TEST permissions (do this to verify!)
+k auth can-i list pods --as=jane -n team
+k auth can-i '*' '*' --as=system:serviceaccount:team:sa1</pre>
+        <div class="gotcha"><span class="gotcha-label">Role vs ClusterRole scope</span>
+          <strong>Role</strong> + <strong>RoleBinding</strong> = one namespace. <strong>ClusterRole</strong> +
+          <strong>ClusterRoleBinding</strong> = whole cluster. A <em>ClusterRole</em> bound by a <em>RoleBinding</em>
+          applies only in that binding's namespace — the common way to grant a reusable role per-namespace. Verify with
+          <code>kubectl auth can-i --as=...</code>.</div>
+
+        <h3 id="crd-helm">CRDs, Operators, Helm &amp; Kustomize</h3>
+        <ul>
+          <li><strong>CRD</strong> — extends the API with a new <code>kind</code>. <code>k get crd</code>, then <code>k get &lt;newkind&gt; -A</code>. An <strong>Operator</strong> is a CRD + a controller watching it.</li>
+          <li><strong>Helm</strong> — package manager. <code>helm repo add &amp; update</code>, <code>helm install &lt;rel&gt; &lt;chart&gt; -n ns</code>, <code>helm upgrade</code>, <code>helm list -A</code>, <code>helm uninstall</code>, <code>helm template</code> (render without installing).</li>
+          <li><strong>Kustomize</strong> — template-free overlays. <code>kubectl apply -k ./dir</code> (dir has a <code>kustomization.yaml</code> listing resources + patches). <code>kubectl kustomize ./dir</code> renders it.</li>
+        </ul>
+
+        <h2 id="workloads">3. Workloads &amp; Scheduling (15%)</h2>
+
+        <h3 id="deployments">Deployments &amp; rollouts</h3>
+        <pre data-lang="bash">k create deploy web --image=nginx:1.26 --replicas=3
+k set image deploy/web nginx=nginx:1.27           # trigger a rollout
+k rollout status deploy/web
+k rollout history deploy/web
+k rollout undo deploy/web --to-revision=1          # roll back
+k scale deploy/web --replicas=6
+k autoscale deploy/web --min=2 --max=10 --cpu-percent=70   # HPA</pre>
+
+        <h3 id="config">ConfigMaps &amp; Secrets into Pods</h3>
+        <pre data-lang="yaml"># env from a key, and mount as a volume
+spec:
+  containers:
+  - name: app
+    image: nginx
+    envFrom: [{ configMapRef: { name: app } }]      # all keys as env
+    env:
+    - name: PASS
+      valueFrom: { secretKeyRef: { name: db, key: pass } }
+    volumeMounts: [{ name: cfg, mountPath: /etc/cfg }]
+  volumes:
+  - name: cfg
+    configMap: { name: app }</pre>
+        <div class="gotcha"><span class="gotcha-label">Secrets are base64, not encrypted</span>
+          <code>k get secret x -o jsonpath='{.data.pass}' | base64 -d</code> to read. Base64 is encoding, not
+          security — encryption-at-rest is a separate EncryptionConfiguration on the apiserver.</div>
+
+        <h3 id="scheduling">Scheduling — where a Pod lands</h3>
+        <table>
+          <thead><tr><th>Mechanism</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><strong>nodeSelector</strong></td><td>Hard match on node labels: <code>nodeSelector: {disk: ssd}</code>.</td></tr>
+            <tr><td><strong>nodeName</strong></td><td>Bypass the scheduler entirely — pin to one node by name.</td></tr>
+            <tr><td><strong>Affinity / anti-affinity</strong></td><td>Soft/hard rules (<code>required…</code>/<code>preferred…</code>) over node or pod labels.</td></tr>
+            <tr><td><strong>Taint + Toleration</strong></td><td>Taint <em>repels</em> pods from a node; a matching toleration lets a pod stay.</td></tr>
+            <tr><td><strong>Resources</strong></td><td><code>requests</code> drive scheduling; <code>limits</code> cap usage (CPU throttled, memory OOMKilled).</td></tr>
+          </tbody>
+        </table>
+        <pre data-lang="bash"># taints (control-plane nodes carry one by default)
+k taint node n1 key=val:NoSchedule
+k taint node n1 key=val:NoSchedule-        # remove (trailing minus)
+# toleration on the pod:
+#   tolerations: [{key: key, operator: Equal, value: val, effect: NoSchedule}]
+
+# cordon/drain (also a Troubleshooting skill)
+k cordon n1                                 # no new pods
+k drain n1 --ignore-daemonsets --delete-emptydir-data
+k uncordon n1</pre>
+
+        <h3 id="static-ds">Static pods, DaemonSets, Jobs</h3>
+        <ul>
+          <li><strong>Static pod</strong> — managed by the kubelet directly from <code>/etc/kubernetes/manifests/</code> (or <code>staticPodPath</code> in the kubelet config). Name gets the node suffix. Delete the file to remove it.</li>
+          <li><strong>DaemonSet</strong> — one pod per (matching) node; how kube-proxy and CNI agents run.</li>
+          <li><strong>Job</strong> (run-to-completion) / <strong>CronJob</strong> (scheduled). <code>completions</code>, <code>parallelism</code>, <code>backoffLimit</code>.</li>
+        </ul>
+
+        <h2 id="networking">4. Services &amp; Networking (20%)</h2>
+
+        <h3 id="services">Services — the four types</h3>
+        <table>
+          <thead><tr><th>Type</th><th>Reach</th></tr></thead>
+          <tbody>
+            <tr><td><strong>ClusterIP</strong> (default)</td><td>In-cluster virtual IP. The DNS name is <code>svc.ns.svc.cluster.local</code>.</td></tr>
+            <tr><td><strong>NodePort</strong></td><td>Opens a port (30000–32767) on every node → routes to the Service.</td></tr>
+            <tr><td><strong>LoadBalancer</strong></td><td>Cloud LB in front of a NodePort (needs a cloud/MetalLB provider).</td></tr>
+            <tr><td><strong>ExternalName</strong></td><td>CNAME alias to an external DNS name; no proxying.</td></tr>
+          </tbody>
+        </table>
+        <pre data-lang="bash">k expose deploy web --port=80 --target-port=8080          # ClusterIP
+k expose deploy web --type=NodePort --port=80
+k get ep web              # endpoints = the pod IPs behind it (empty ⇒ selector wrong)</pre>
+        <div class="gotcha"><span class="gotcha-label">no endpoints ⇒ selector mismatch</span>
+          A Service finds pods by <strong>label selector</strong>. If <code>k get endpoints &lt;svc&gt;</code> is empty,
+          the Service's selector doesn't match any pod's labels, or the pods aren't Ready. This is the #1 "service
+          not working" cause.</div>
+
+        <h3 id="ingress-gw">Ingress &amp; Gateway API</h3>
+        <p><strong>Ingress</strong> = L7 HTTP routing to Services, via an ingress controller (nginx, etc.). <strong>Gateway API</strong> is the newer, more expressive successor now on the curriculum — three roles: <code>GatewayClass</code> (the controller), <code>Gateway</code> (the listener/IP), and <code>HTTPRoute</code> (the routing rules, attached to a Gateway).</p>
+        <pre data-lang="bash">k get ingress -A ; k describe ingress web
+k get gatewayclass ; k get gateway -A ; k get httproute -A
+# HTTPRoute: parentRefs -> the Gateway; rules -> matches + backendRefs (Services)</pre>
+
+        <h3 id="netpol">NetworkPolicy — deny-by-default is opt-in</h3>
+        <pre data-lang="yaml"># default-deny all ingress in a namespace, then allow specific traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny, namespace: team }
+spec:
+  podSelector: {}          # all pods
+  policyTypes: [Ingress]
+  # (no ingress rules = deny all ingress)
+---
+spec:                       # allow from pods labelled role=api on port 8080
+  podSelector: { matchLabels: { app: db } }
+  policyTypes: [Ingress]
+  ingress:
+  - from: [{ podSelector: { matchLabels: { role: api } } }]
+    ports: [{ protocol: TCP, port: 8080 }]</pre>
+        <div class="gotcha"><span class="gotcha-label">policies are additive + need a CNI that enforces them</span>
+          With no NetworkPolicy, all traffic is allowed. The moment one selects a pod, that pod is default-deny for the
+          chosen <code>policyTypes</code>, and rules only <em>add</em> allowances. Flannel doesn't enforce NetworkPolicy;
+          Calico/Cilium do.</div>
+
+        <h3 id="dns">CoreDNS &amp; service discovery</h3>
+        <pre data-lang="bash"># DNS lives in kube-system as a Deployment 'coredns' + Service 'kube-dns'
+k get pods -n kube-system -l k8s-app=kube-dns
+k get svc kube-dns -n kube-system
+# test from a throwaway pod:
+k run t --image=busybox:1.28 --rm -it --restart=Never -- nslookup web.team
+# pod A record: 10-244-1-5.team.pod.cluster.local ; svc: web.team.svc.cluster.local</pre>
+
+        <h2 id="storage">5. Storage (10%)</h2>
+        <p>The chain: a <strong>PersistentVolume (PV)</strong> is a piece of storage; a <strong>PersistentVolumeClaim (PVC)</strong> is a request that <em>binds</em> to a matching PV; a Pod mounts the PVC. A <strong>StorageClass</strong> enables <em>dynamic</em> provisioning (create a PV on demand when a PVC asks).</p>
+        <table>
+          <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><strong>accessModes</strong></td><td>RWO (one node RW), ROX (many nodes RO), RWX (many nodes RW), RWOP (one pod).</td></tr>
+            <tr><td><strong>reclaimPolicy</strong></td><td><code>Retain</code> (keep data after PVC delete), <code>Delete</code> (remove the volume).</td></tr>
+            <tr><td><strong>storageClassName</strong></td><td>Empty <code>""</code> = static/no dynamic; a name = dynamic via that class.</td></tr>
+            <tr><td><strong>volumeBindingMode</strong></td><td><code>Immediate</code> vs <code>WaitForFirstConsumer</code> (bind when a pod is scheduled).</td></tr>
+          </tbody>
+        </table>
+        <pre data-lang="bash">k get pv,pvc,sc
+k describe pvc data                       # 'Pending' ⇒ no matching PV / no default SC
+k get sc                                   # is there a (default) StorageClass?</pre>
+        <div class="gotcha"><span class="gotcha-label">PVC Pending = no match</span>
+          A PVC stuck <code>Pending</code> means no PV satisfies its size/accessMode/class, or there's no default
+          StorageClass to provision one. Check <code>describe pvc</code> events. A PVC can't shrink; expansion needs
+          <code>allowVolumeExpansion: true</code> on the StorageClass.</div>
+
+        <h2 id="troubleshooting">6. Troubleshooting (30% — the biggest domain)</h2>
+        <p>Highest weight, so drill it. The method: <strong>look at events and logs before touching anything</strong>.</p>
+        <pre data-lang="bash"># the universal first four commands
+k get pods -A -o wide                      # what's not Running/Ready
+k describe pod <p>                          # Events section = the cause
+k logs <p> [-c <container>] [--previous]    # --previous = last crash
+k get events -A --sort-by=.lastTimestamp
+
+# node level
+k get nodes ; k describe node <n>          # conditions: MemoryPressure, DiskPressure, Ready
+ssh <node>; systemctl status kubelet; journalctl -u kubelet -f
+crictl ps -a ; crictl logs <id>            # container runtime, on the node</pre>
+
+        <h3 id="ts-pods">Pod statuses → cause</h3>
+        <table>
+          <thead><tr><th>Status</th><th>Usual cause</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Pending</strong></td><td>Unschedulable — no node fits (resources, taints, nodeSelector), or PVC unbound.</td></tr>
+            <tr><td><strong>ImagePullBackOff</strong></td><td>Bad image name/tag, private registry without a pull secret.</td></tr>
+            <tr><td><strong>CrashLoopBackOff</strong></td><td>Container starts then exits — check <code>logs --previous</code>; bad command, missing config, failing probe.</td></tr>
+            <tr><td><strong>OOMKilled</strong></td><td>Exceeded its memory <code>limit</code> — raise the limit or fix the leak.</td></tr>
+            <tr><td><strong>0/1 Ready</strong></td><td>Running but readiness probe failing — app not serving on the probe path/port yet.</td></tr>
+            <tr><td><strong>Init:…</strong></td><td>An init container hasn't finished — check its logs specifically.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="ts-node">NotReady node</h3>
+        <pre data-lang="bash"># almost always the kubelet or the CNI
+ssh <node>
+systemctl status kubelet && journalctl -u kubelet --no-pager | tail -40
+systemctl restart kubelet
+# check: kubelet config (/var/lib/kubelet/config.yaml), certs, CNI plugin present,
+# container runtime up (systemctl status containerd)</pre>
+        <div class="gotcha"><span class="gotcha-label">NotReady = kubelet, CNI, or runtime</span>
+          Node <code>NotReady</code> is nearly always: kubelet down/misconfigured, container runtime down, or no CNI.
+          <code>journalctl -u kubelet</code> tells you which. A fresh cluster with all nodes NotReady = you forgot to
+          install a CNI.</div>
+
+        <h3 id="ts-cp">Broken control plane (static pods)</h3>
+        <pre data-lang="bash"># apiserver down? kubectl won't respond. Inspect static pods on the node:
+ssh <cp-node>
+ls /etc/kubernetes/manifests/                         # apiserver/etcd/scheduler/ccm
+crictl ps -a | grep -E 'apiserver|etcd|scheduler'
+crictl logs <id>                                       # why it won't start
+# fix the manifest yaml (bad flag, wrong etcd endpoint), kubelet re-creates the pod</pre>
+
+        <h3 id="ts-net">Service / DNS not reachable</h3>
+        <pre data-lang="bash">k get ep <svc>                             # empty ⇒ selector/labels mismatch
+k get pods -n kube-system -l k8s-app=kube-dns   # CoreDNS healthy?
+k run t --image=busybox:1.28 --rm -it --restart=Never -- \
+   sh -c 'nslookup <svc>.<ns>; wget -qO- <svc>.<ns>:<port>'
+# also: NetworkPolicy blocking it? kube-proxy running on the node?</pre>
+
+        <h2 id="jsonpath">7. jsonpath, sorting &amp; scripting shortcuts</h2>
+        <pre data-lang="bash"># custom columns / jsonpath (exam loves "get X and write it to a file")
+k get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'
+k get pods -o custom-columns='NAME:.metadata.name,NODE:.spec.nodeName'
+k get pods --sort-by=.metadata.creationTimestamp
+k get pods --field-selector status.phase=Running
+k top nodes ; k top pods -A                # needs metrics-server
+k get po -o yaml | k neat 2>/dev/null || k get po -o yaml   # strip noise if kubectl-neat present</pre>
+
+        <h2 id="keep-in-mind">8. What to keep in mind (exam mindset)</h2>
+        <ul>
+          <li><strong>Switch context first, every task.</strong> Then check the namespace. Most lost points are "right answer, wrong cluster/ns."</li>
+          <li><strong>Never hand-write YAML you can generate.</strong> <code>$do</code> a skeleton, edit, apply. Speed is the exam.</li>
+          <li><strong>Read events first.</strong> <code>describe</code> and <code>logs --previous</code> answer most troubleshooting tasks before you change anything.</li>
+          <li><strong>Verify every task.</strong> Re-run a <code>get</code>/<code>auth can-i</code>/<code>nslookup</code> to confirm the change actually worked — partial credit is per-task.</li>
+          <li><strong>Flag and move on.</strong> ~6–8 min per task average. If one fights you, note it and return; a 30%-weighted troubleshooting task is worth more than a stuck 4% one.</li>
+          <li><strong>Use the docs.</strong> kubernetes.io is allowed — bookmark NetworkPolicy, PV, RBAC, and the kubeadm upgrade page; copy YAML from there and edit.</li>
+          <li><strong>Static pods restart themselves.</strong> Edit the manifest in <code>/etc/kubernetes/manifests/</code>; don't <code>kubectl delete</code> and expect it gone.</li>
+          <li><strong>Practice etcd backup/restore cold.</strong> It's a near-guaranteed, high-value, all-or-nothing task.</li>
+        </ul>
+
+        <h2 id="mistakes">9. Common mistakes</h2>
+        <ul>
+          <li><strong>Wrong context / namespace</strong> — the biggest silent point-loser. Set both at task start.</li>
+          <li><strong>Forgetting <code>--ignore-daemonsets</code> (and often <code>--delete-emptydir-data</code>)</strong> on <code>drain</code> — it errors out otherwise.</li>
+          <li><strong>Upgrading kubelet before <code>kubeadm upgrade apply</code></strong> — wrong order; kubeadm first, then kubelet.</li>
+          <li><strong>Passing cert flags to <code>etcdctl snapshot restore</code></strong> — restore only needs the snapshot + <code>--data-dir</code>; and don't forget to repoint the etcd manifest.</li>
+          <li><strong>Service selector ≠ pod labels</strong> — empty endpoints. Always <code>k get ep</code> to confirm.</li>
+          <li><strong>Expecting NetworkPolicy to work on Flannel</strong> — it won't enforce; needs Calico/Cilium.</li>
+          <li><strong>PVC size/accessMode/class not matching any PV</strong> — stays Pending; read <code>describe pvc</code> events.</li>
+          <li><strong>Editing an immutable field</strong> (e.g. a Job's <code>selector</code>, a Pod's containers) — delete &amp; recreate instead.</li>
+          <li><strong>Trusting a task is done without verifying</strong> — always re-query. Partial, silent failures cost whole tasks.</li>
+          <li><strong>Reading a Secret and forgetting <code>base64 -d</code></strong> — the value in <code>.data</code> is base64-encoded.</li>
+          <li><strong>Deleting a static pod with kubectl</strong> — the kubelet re-creates it from the manifest file; remove/edit the file.</li>
+          <li><strong>Not using imperative generation</strong> — hand-writing PodSpecs burns the clock you needed for troubleshooting.</li>
+        </ul>
+
+        <h2 id="study">10. Study priority order</h2>
+        <ol>
+          <li><strong>Troubleshooting</strong> (30%) — pod statuses, NotReady nodes, control-plane static pods, service/DNS</li>
+          <li><strong>etcd backup &amp; restore</strong> — drill until automatic</li>
+          <li><strong>kubeadm upgrade</strong> + <strong>drain/cordon/uncordon</strong></li>
+          <li><strong>RBAC</strong> (Role/ClusterRole/bindings + <code>auth can-i</code>)</li>
+          <li><strong>Services &amp; NetworkPolicy</strong> (endpoints, selectors, deny-by-default)</li>
+          <li><strong>Scheduling</strong> (taints/tolerations, affinity, nodeSelector, resources)</li>
+          <li><strong>Storage</strong> (PV/PVC/StorageClass binding, accessModes, reclaim)</li>
+          <li><strong>Deployments &amp; rollouts</strong>, ConfigMap/Secret injection</li>
+          <li><strong>Ingress / Gateway API</strong>, CoreDNS</li>
+          <li><strong>CRDs/Operators, Helm, Kustomize</strong> (recognize + basic ops)</li>
+        </ol>
+        <p>Exam: 2 hours, ~15–20 performance-based tasks on Kubernetes v1.35, pass at 66%, one free retake.
+        Lean on imperative <code>kubectl</code>, verify every task, and spend your time where the weight is —
+        troubleshooting and cluster architecture are more than half the marks.</p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="cheat-kubernetes.html">&larr; prev: Kubernetes (interview)</a>
+        <a href="../cheatsheets.html">all cheatsheets &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>&copy; cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../posts.js?v=2"></script>
+  <script src="../stats.js"></script>
+  <script src="../app.js?v=31"></script>
+  <script defer src="../settings.js?v=10"></script>
+  <script type="module" src="../highlighter.js"></script>
+  <script defer src="../reader.js"></script>
+</body>
+</html>

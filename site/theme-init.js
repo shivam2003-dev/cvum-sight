@@ -1,9 +1,9 @@
 /* Apply saved reader preferences before first paint. */
 (function () {
   var themes = ["developer", "hacker", "god", "anime", "minimalist", "modernist"];
-  var theme = localStorage.getItem("cvam-theme") || "minimalist";
+  var theme = localStorage.getItem("cvam-theme") || "modernist";
   if (themes.indexOf(theme) === -1) {
-    theme = "minimalist";
+    theme = "modernist";
     localStorage.setItem("cvam-theme", theme);
   }
 

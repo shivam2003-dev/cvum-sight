@@ -31,7 +31,7 @@
   ];
   var hasArticle = !!document.querySelector(".post-body");
 
-  var savedTheme = localStorage.getItem("cvam-theme") || "minimalist";
+  var savedTheme = localStorage.getItem("cvam-theme") || "modernist";
   if (!THEMES.some(function (theme) { return theme.id === savedTheme; })) {
     savedTheme = "minimalist";
     localStorage.setItem("cvam-theme", savedTheme);

@@ -97,7 +97,7 @@ ${guide.body}
     <aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside>
   </div>
   <script src="../stats.js?v=2"></script>
-  <script src="../app.js?v=37"></script>
+  <script src="../app.js?v=38"></script>
   <script defer src="../settings.js?v=15"></script>
   <script type="module" src="../highlighter.js?v=2"></script>
   <script defer src="../reader.js?v=2"></script>
@@ -147,7 +147,7 @@ function landingPage() {
   ${missionHtml}
   <section class="kubestronaut-sources" aria-labelledby="sources-title"><p class="meta">OFFICIAL // CURRICULUM &amp; PROGRAM LINKS</p><h2 id="sources-title">Keep the path current.</h2><p>Curriculum and program details checked on <strong>19 July 2026</strong>. Re-check before scheduling because Kubernetes versions and certification policies move.</p><div class="kubestronaut-source-links"><a href="https://github.com/cncf/curriculum" target="_blank" rel="noreferrer">Certification curricula →</a><a href="https://www.cncf.io/training/kubestronaut/kubestronaut-faq/" target="_blank" rel="noreferrer">Kubestronaut FAQ →</a><a href="https://www.cncf.io/training/" target="_blank" rel="noreferrer">CNCF training paths →</a></div></section>
   <footer class="footer"><span>&copy; cvam — written in plaintext, served warm</span></footer>
-</div></div><script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=37"></script><script defer src="settings.js?v=15"></script><script defer src="reader.js?v=2"></script></body></html>
+</div></div><script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=38"></script><script defer src="settings.js?v=15"></script><script defer src="reader.js?v=2"></script></body></html>
 `;
 }
 

@@ -39,10 +39,25 @@
     if (!progressFrame) progressFrame = requestAnimationFrame(renderFocusProgress);
   }
 
-  function enterFocus() {
+  function syncLaunchState(active) {
+    var launch = document.querySelector(".focus-launch");
+    if (!launch) return;
+    launch.textContent = active ? "Active" : "Start";
+    launch.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+
+  function enterFocus(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     if (document.body.classList.contains("focus-mode")) return;
     document.body.classList.add("focus-mode");
-    document.querySelector(".settings-panel")?.classList.remove("open");
+    var settingsPanel = document.querySelector(".settings-panel");
+    if (settingsPanel) settingsPanel.classList.remove("open");
+    var settingsButton = document.querySelector(".settings-btn");
+    if (settingsButton) settingsButton.setAttribute("aria-expanded", "false");
+    syncLaunchState(true);
     startedAt = Date.now();
     updateClock();
     queueFocusProgress();
@@ -55,6 +70,7 @@
 
   function exitFocus() {
     document.body.classList.remove("focus-mode");
+    syncLaunchState(false);
     clearInterval(timer);
     timer = null;
     removeEventListener("scroll", queueFocusProgress);
@@ -69,7 +85,7 @@
     var target = panel.querySelector(".scroll-row")?.closest(".settings-row") || panel.querySelector(".settings-hint");
     var card = document.createElement("div");
     card.className = "focus-setting-card";
-    card.innerHTML = '<span class="focus-setting-icon">◉</span><span><b>Focus reading</b><small>Fullscreen · timer · distraction-free</small></span><button type="button" class="focus-launch">Start</button>';
+    card.innerHTML = '<span class="focus-setting-icon">◉</span><span><b>Focus reading</b><small>Fullscreen · timer · distraction-free</small></span><button type="button" class="focus-launch" aria-pressed="false">Start</button>';
     panel.insertBefore(card, target);
     card.querySelector(".focus-launch").addEventListener("click", enterFocus);
     return true;
@@ -91,7 +107,7 @@
       exitFocus();
     }
   });
-  document.addEventListener("fullscreenchange", function () {
-    if (!document.fullscreenElement && document.body.classList.contains("focus-mode")) exitFocus();
-  });
+  /* Focus mode is independent from the Fullscreen API. Browsers and embedded
+     webviews may deny or immediately leave fullscreen; reading mode must still
+     remain active until the reader explicitly exits it. */
 })();

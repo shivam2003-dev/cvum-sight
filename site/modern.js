@@ -8,7 +8,7 @@
 
   if (document.querySelector(".post-body") && !document.querySelector('script[data-cvam-focus]')) {
     var focusScript = document.createElement("script");
-    focusScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "focus.js?v=2";
+    focusScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "focus.js?v=3";
     focusScript.setAttribute("data-cvam-focus", "true");
     document.body.appendChild(focusScript);
   }

@@ -6,7 +6,8 @@
     { id: "god",        label: "God" },
     { id: "anime",      label: "Anime" },
     { id: "minimalist", label: "Minimalist" },
-    { id: "modernist",  label: "Modernist" }
+    { id: "modernist",  label: "Modernist" },
+    { id: "apple-glass", label: "Apple Glass" }
   ];
   var SIZES = [
     { id: "text-sm", label: "S" },
@@ -33,7 +34,7 @@
 
   var savedTheme = localStorage.getItem("cvam-theme") || "modernist";
   if (!THEMES.some(function (theme) { return theme.id === savedTheme; })) {
-    savedTheme = "minimalist";
+    savedTheme = "modernist";
     localStorage.setItem("cvam-theme", savedTheme);
   }
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
@@ -76,7 +77,7 @@
 
   var themeSwatches = THEMES.map(function (t) {
     var active = t.id === savedTheme ? " active" : "";
-    return '<button type="button" class="theme-swatch' + active + '" data-theme="' + t.id + '" title="' + t.label + '" aria-label="' + t.label + ' theme" aria-pressed="' + (t.id === savedTheme) + '"><span>' + t.label.split(" ")[0] + '</span></button>';
+    return '<button type="button" class="theme-swatch' + active + '" data-theme="' + t.id + '" title="' + t.label + '" aria-label="' + t.label + ' theme" aria-pressed="' + (t.id === savedTheme) + '"><span>' + t.label + '</span></button>';
   }).join("");
 
   var html =

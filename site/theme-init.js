@@ -1,6 +1,6 @@
 /* Apply saved reader preferences before first paint. */
 (function () {
-  var themes = ["developer", "hacker", "god", "anime", "minimalist", "modernist"];
+  var themes = ["developer", "hacker", "god", "anime", "minimalist", "modernist", "apple-glass"];
   var theme = localStorage.getItem("cvam-theme") || "modernist";
   if (themes.indexOf(theme) === -1) {
     theme = "modernist";
@@ -11,7 +11,7 @@
   function makeThemeLink(name) {
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/themes/theme-" + name + ".css?v=5";
+    link.href = "/themes/theme-" + name + ".css?v=6";
     link.setAttribute("data-cvam-theme-css", name);
     return link;
   }

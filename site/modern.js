@@ -14,7 +14,7 @@
   }
   if (!document.querySelector('script[data-cvam-enhancements]')) {
     var enhancementsScript = document.createElement("script");
-    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=6";
+    enhancementsScript.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "enhancements.js?v=7";
     enhancementsScript.setAttribute("data-cvam-enhancements", "true");
     document.body.appendChild(enhancementsScript);
   }

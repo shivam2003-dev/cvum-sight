@@ -57,7 +57,7 @@ function articlePage(guide) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${guide.code} Exam Cheatsheet — cvam.sight</title>
 <meta name="description" content="${guide.description}">
-<link rel="stylesheet" href="../style.css?v=74">
+<link rel="stylesheet" href="../style.css?v=75">
 <link rel="stylesheet" href="/themes.css?v=6">
 <script src="/theme-init.js?v=6"></script>
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
@@ -97,7 +97,7 @@ ${guide.body}
     <aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside>
   </div>
   <script src="../stats.js?v=2"></script>
-  <script src="../app.js?v=38"></script>
+  <script src="../app.js?v=39"></script>
   <script defer src="../settings.js?v=15"></script>
   <script type="module" src="../highlighter.js?v=2"></script>
   <script defer src="../reader.js?v=2"></script>
@@ -124,7 +124,7 @@ function landingPage() {
 <meta name="description" content="A current, connected preparation series for all five CNCF Kubernetes certifications required for Kubestronaut: KCNA, KCSA, CKA, CKAD and CKS.">
 <meta property="og:type" content="article"><meta property="og:site_name" content="cvam.sight"><meta property="og:title" content="Road to Kubestronaut"><meta property="og:description" content="Five certifications, one connected path: KCNA, KCSA, CKA, CKAD and CKS."><meta property="og:url" content="https://shivam2003.com/series-kubestronaut"><meta property="og:image" content="https://shivam2003.com/assets/kubestronaut-series-og.png"><meta property="og:image:width" content="1731"><meta property="og:image:height" content="909"><meta property="og:image:alt" content="Road to Kubestronaut — KCNA, KCSA, CKA, CKAD and CKS learning path">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Road to Kubestronaut"><meta name="twitter:description" content="Five certifications, one connected path: KCNA, KCSA, CKA, CKAD and CKS."><meta name="twitter:image" content="https://shivam2003.com/assets/kubestronaut-series-og.png">
-<link rel="stylesheet" href="style.css?v=74"><link rel="stylesheet" href="/themes.css?v=6"><script src="/theme-init.js?v=6"></script><link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="style.css?v=75"><link rel="stylesheet" href="/themes.css?v=6"><script src="/theme-init.js?v=6"></script><link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <script defer src="/_vercel/speed-insights/script.js"></script><script defer src="/_vercel/insights/script.js"></script></head>
 <body class="kubestronaut-series-page"><div class="layout">${sidebar("")}<div class="page">
   <p class="meta" style="margin-bottom:8px"><a href="series.html" style="color:var(--ink-faint);text-decoration:none">&larr; All Series</a></p>
@@ -147,7 +147,7 @@ function landingPage() {
   ${missionHtml}
   <section class="kubestronaut-sources" aria-labelledby="sources-title"><p class="meta">OFFICIAL // CURRICULUM &amp; PROGRAM LINKS</p><h2 id="sources-title">Keep the path current.</h2><p>Curriculum and program details checked on <strong>19 July 2026</strong>. Re-check before scheduling because Kubernetes versions and certification policies move.</p><div class="kubestronaut-source-links"><a href="https://github.com/cncf/curriculum" target="_blank" rel="noreferrer">Certification curricula →</a><a href="https://www.cncf.io/training/kubestronaut/kubestronaut-faq/" target="_blank" rel="noreferrer">Kubestronaut FAQ →</a><a href="https://www.cncf.io/training/" target="_blank" rel="noreferrer">CNCF training paths →</a></div></section>
   <footer class="footer"><span>&copy; cvam — written in plaintext, served warm</span></footer>
-</div></div><script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=38"></script><script defer src="settings.js?v=15"></script><script defer src="reader.js?v=2"></script></body></html>
+</div></div><script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=39"></script><script defer src="settings.js?v=15"></script><script defer src="reader.js?v=2"></script></body></html>
 `;
 }
 

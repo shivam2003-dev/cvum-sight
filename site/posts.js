@@ -26,6 +26,18 @@ const POSTS = [
     excerpt: "A plain-language deep dive into Moonshot's Kimi K3: the 2.8T-parameter Mixture-of-Experts design (16 of 896 experts active under Stable LatentMoE), a component-by-component tour of the new architecture — Kimi Delta Attention's channel-wise gated delta rule (with the one bit of math worth it), Gated MLA as the exact-recall escape hatch, Attention Residuals across depth, Quantile Balancing, SiTU, and Per-Head Muon — MXFP4/MXFP8 quantization-aware training from SFT onward, the 64+-accelerator serving supernodes, and the prefill-cache economics behind $0.30 cache-hit pricing. MoE, KV-cache, and linear-attention basics built from scratch so anyone can follow, with four hand-drawn diagrams."
   },
   {
+    slug: "frontier-digest-004",
+    title: "Frontier Digest #4 — the week agents learned to watch themselves.",
+    date: "Jul 19, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "open-weights", "evaluation", "weekly"],
+    time: 18,
+    words: 3550,
+    excerpt: "Edition #4 of the weekly AI newsletter (Jul 13 – Jul 19) — the whole week, not just papers. Kimi K3 and Thinking Machines' Inkling split the open-weight frontier between maximum scale and maximum customizability; WANDR shows how far research agents remain from complete, cited work; and the ten papers form one loop around self-improvement, metacognition, meaningful routing, matched-budget harness evaluation, early failure tracing, filtered oversight, GFlowRL, world models, and cross-embodiment robotics.",
+    series: "frontier-digest",
+    seriesNum: "004"
+  },
+  {
     slug: "grok-build-14-build-your-own-harness",
     title: "Building your own harness — lessons from Grok Build.",
     date: "Jul 16, 2026", cat: "ml", tags: ["agents", "grok-build", "harness-engineering", "architecture"],

@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-16-particle-swarm-optimization",
+    title: "Computational Intelligence Chapter 16 — Particle Swarm Optimization.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-16", "book-notes"],
+    time: 21,
+    words: 4061,
+    excerpt: "Global-best and local-best PSO, cognitive and social velocity components, neighborhood topologies, inertia, velocity clamping, constriction, update timing, convergence, hybrid, binary, niching, dynamic, and multi-objective PSO. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-15-coevolution",
     title: "Computational Intelligence Chapter 15 — Coevolution.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-15", "book-notes"],
     time: 21,
-    words: 4050,
+    words: 4051,
     excerpt: "Competitive and cooperative coevolution, relative fitness, arms races, cycling, disengagement, collaborator selection, problem decomposition, credit assignment, and applications. Detailed first-principles master's companion."
   },
   {

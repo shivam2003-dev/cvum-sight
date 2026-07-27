@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "slp-1-introduction",
+    title: "Speech & Language Processing Chapter 1 — Introduction.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-1", "book-notes"],
+    time: 25,
+    words: 4835,
+    excerpt: "The map of language technology: what NLP and speech systems do, why language is difficult, and how the book connects models, data, linguistic structure, and evaluation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "kimi-k3-architecture-and-infrastructure",
     title: "Kimi K3 — the architecture and infrastructure, explained.",
     date: "Aug 5, 2026",

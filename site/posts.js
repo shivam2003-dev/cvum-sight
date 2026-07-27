@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-14-cultural-algorithms",
+    title: "Computational Intelligence Chapter 14 — Cultural Algorithms.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-14", "book-notes"],
+    time: 21,
+    words: 4056,
+    excerpt: "Population and belief spaces, acceptance and influence functions, normative, situational, domain, topographic, and historical knowledge, fuzzy cultural algorithms, constraints, dynamic and multi-objective problems. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-13-differential-evolution",
     title: "Computational Intelligence Chapter 13 — Differential Evolution.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-13", "book-notes"],
     time: 21,
-    words: 4065,
+    words: 4066,
     excerpt: "Difference-vector mutation, target, base, and donor vectors, binomial and exponential crossover, greedy selection, DE/x/y/z notation, parameter control, hybrids, discrete variants, and advanced optimization settings. Detailed first-principles master's companion."
   },
   {

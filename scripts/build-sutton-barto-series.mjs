@@ -417,7 +417,7 @@ function renderLanding() {
 <p class="meta" style="margin-bottom:8px"><a href="books-explained.html" style="color:var(--ink-faint);text-decoration:none">&larr; Books Explained</a></p>
 <section style="margin-bottom:32px"><p class="meta">// BOOK COMPANION · ${publishedCount}/17 LIVE</p><h1 style="margin:8px 0 12px">Reinforcement Learning: An Introduction — explained.</h1>
 <p class="excerpt" style="max-width:760px">An easy-to-read, detailed companion to <em>Richard S. Sutton and Andrew G. Barto, Reinforcement Learning: An Introduction, 2nd edition</em>. Each chapter builds intuition first, then explains the equation, works through an example, warns about the common mistake, answers practical questions, and ends with a compact study card.</p>
-<p class="meta" style="max-width:760px">Independent learning material, written in original language. It follows the official chapter sequence without copying the book. Chapters are being written and published one by one.</p></section><hr class="rule">
+<p class="meta" style="max-width:760px">Independent learning material, written in original language. It follows the official chapter sequence without copying the book. ${publishedCount === chapters.length ? "All 17 chapters are complete and ready to read." : "Chapters are being written and published one by one."}</p></section><hr class="rule">
 <section class="series-index" style="margin-bottom:32px"><p class="meta" style="margin-bottom:12px">CHAPTERS · ${publishedCount} LIVE</p><div class="chapter-grid">${cards}</div></section>
 <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div></div>
 <script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=40"></script><script defer src="settings.js?v=16"></script><script defer src="reader.js?v=2"></script></body></html>`;
@@ -433,11 +433,12 @@ function updateBooksExplained() {
           <h3>Reinforcement Learning: An Introduction <span class="ready-badge">live</span></h3>
           <p class="card-excerpt">Sutton and Barto's 2nd edition explained chapter by chapter in approachable language—with intuition, equations, worked examples, mistakes, FAQs, and study cards.</p>
           <div style="display:flex;gap:4px;flex-wrap:wrap"><span class="tag">#reinforcement-learning</span><span class="tag">#machine-learning</span><span class="tag">#book-notes</span></div>
-          <div class="card-meta"><span>${publishedCount} of 17 chapters live</span><span>· publishing</span></div>
+          <div class="card-meta"><span>${publishedCount} of 17 chapters live</span><span>· ${publishedCount === chapters.length ? "complete" : "publishing"}</span></div>
         </a>\n`;
     html = html.replace('      <div class="post-grid">\n', `      <div class="post-grid">\n${card}`);
   } else {
     html = html.replace(/\d+ of 17 chapters live/g, `${publishedCount} of 17 chapters live`);
+    html = html.replace(/<span>· (?:publishing|complete)<\/span>/, `<span>· ${publishedCount === chapters.length ? "complete" : "publishing"}</span>`);
   }
   fs.writeFileSync(file, html);
 }

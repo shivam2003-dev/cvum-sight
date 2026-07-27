@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-9-genetic-algorithms",
+    title: "Computational Intelligence Chapter 9 — Genetic Algorithms.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-9", "book-notes"],
+    time: 21,
+    words: 4080,
+    excerpt: "Canonical genetic algorithms, binary and floating-point crossover, mutation, control parameters, steady-state and island variants, messy GAs, niching, constraints, multi-objective and dynamic optimization. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-8-introduction-to-evolutionary-computation",
     title: "Computational Intelligence Chapter 8 — Introduction to Evolutionary Computation.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-8", "book-notes"],
     time: 21,
-    words: 4072,
+    words: 4073,
     excerpt: "Generic evolutionary algorithms, chromosome representation, initialization, fitness, selection pressure, reproduction operators, stopping conditions, elitism, and comparison with classical optimization. Detailed first-principles master's companion."
   },
   {

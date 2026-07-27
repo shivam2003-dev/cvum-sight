@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "cv-szeliski-1-introduction",
+    title: "Computer Vision Chapter 1 — Introduction.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computer-vision", "szeliski", "image-understanding", "chapter-1", "book-notes"],
+    time: 12,
+    words: 1914,
+    excerpt: "Vision as an inverse problem: image formation, ambiguity, priors, representations, recognition, reconstruction, applications, evaluation, uncertainty, and failure analysis."
+  },
+  {
     slug: "slp-25-conversation-and-structure",
     title: "Speech & Language Processing Chapter 25 — Conversation and Its Structure.",
     date: "Jul 28, 2026",

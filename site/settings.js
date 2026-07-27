@@ -1,6 +1,7 @@
 /* settings.js — reader settings panel (theme, text size, font, line spacing, scroll style) */
 (function () {
   var THEMES = [
+    { id: "paper",      label: "Classic Paper" },
     { id: "developer",  label: "Developer" },
     { id: "hacker",     label: "Hacker" },
     { id: "god",        label: "God" },
@@ -30,18 +31,24 @@
     { id: "scroll-normal", label: "Scroll" },
     { id: "scroll-paged",  label: "Paged" }
   ];
+  var VIEWS = [
+    { id: "classic", label: "Classic" },
+    { id: "modern",  label: "Modern" }
+  ];
   var hasArticle = !!document.querySelector(".post-body");
 
-  var savedTheme = localStorage.getItem("cvam-theme") || "modernist";
+  var savedTheme = localStorage.getItem("cvam-theme") || "paper";
   if (!THEMES.some(function (theme) { return theme.id === savedTheme; })) {
-    savedTheme = "modernist";
+    savedTheme = "paper";
     localStorage.setItem("cvam-theme", savedTheme);
   }
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
   var savedSpace = localStorage.getItem("cvam-ls")    || "ls-cozy";
   var savedScroll = localStorage.getItem("cvam-scroll") || "scroll-normal";
-  localStorage.setItem("cvam-view", "modern");
-  document.documentElement.classList.add("view-modern");
+  var savedView = localStorage.getItem("cvam-view") || "classic";
+  if (savedView !== "classic" && savedView !== "modern") savedView = "classic";
+  localStorage.setItem("cvam-view", savedView);
+  document.documentElement.classList.toggle("view-modern", savedView === "modern");
   // line width now adaptive (CSS clamp) — clear any legacy override
   localStorage.removeItem("cvam-lw");
   document.documentElement.classList.remove("lw-narrow", "lw-wide");
@@ -82,6 +89,11 @@
 
   var html =
     '<div class="settings-panel-head"><span class="settings-panel-icon">Aa</span><span><b>Reader settings</b><small>Make this page yours</small></span><button type="button" class="settings-close" aria-label="Close reader settings">×</button></div>' +
+    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
+      '<label class="seg-label">Layout</label>' +
+      '<div class="seg-row view-row">' + seg("view-btn", "data-view", VIEWS, savedView) + '</div>' +
+    '</div>' +
+    '<div class="settings-divider"></div>' +
     '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">' +
       '<label>Theme</label>' +
       '<div class="theme-picker">' + themeSwatches + '</div>' +
@@ -138,6 +150,17 @@
     current.setAttribute("aria-pressed", "true");
   }
 
+  // ── layout view (classic / modern) ──
+  var viewBtns = panel.querySelectorAll(".view-btn");
+  viewBtns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      var view = this.getAttribute("data-view");
+      document.documentElement.classList.toggle("view-modern", view === "modern");
+      localStorage.setItem("cvam-view", view);
+      activate(viewBtns, this);
+    });
+  });
+
   // ── font style ──
   var fontBtnEls = panel.querySelectorAll(".font-btn");
   fontBtnEls.forEach(function (b) {
@@ -161,7 +184,7 @@
         ["paper", "white", "dark", "midnight", "matcha"].concat(THEMES.map(function (t) { return t.id; })).forEach(function (id) {
           document.documentElement.classList.remove("theme-" + id);
         });
-        document.documentElement.classList.add("theme-" + theme);
+        if (theme !== "paper") document.documentElement.classList.add("theme-" + theme);
         localStorage.setItem("cvam-theme", theme);
         activate(swatches, selected);
       }

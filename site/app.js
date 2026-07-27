@@ -1,8 +1,8 @@
 /* app.js — renders post cards, archive list, tag cloud, sidebar cats, contrib grid, progress bar */
 
 (function () {
-  localStorage.setItem("cvam-view", "modern");
-  document.documentElement.classList.add("view-modern");
+  var savedView = localStorage.getItem("cvam-view") || "classic";
+  document.documentElement.classList.toggle("view-modern", savedView === "modern");
   document.querySelectorAll('a[href="about.html"],a[href="../about.html"],a[href="/about.html"],a[href="/about"]').forEach(function (link) {
     link.href = "https://about.shivam2003.com/";
   });
@@ -32,7 +32,7 @@
         if (!link.hasAttribute("aria-current")) link.setAttribute("aria-current", "page");
       });
       var brand = sidebar.querySelector(".logo");
-      if (brand && !brand.querySelector(".brand-mark")) {
+      if (document.documentElement.classList.contains("view-modern") && brand && !brand.querySelector(".brand-mark")) {
         var oldDot = brand.querySelector(".dot");
         var mark = document.createElement("img");
         mark.className = "brand-mark";

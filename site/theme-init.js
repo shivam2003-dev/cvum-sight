@@ -1,9 +1,16 @@
 /* Apply saved reader preferences before first paint. */
 (function () {
-  var themes = ["developer", "hacker", "god", "anime", "minimalist", "modernist", "apple-glass"];
-  var theme = localStorage.getItem("cvam-theme") || "modernist";
+  var themes = ["paper", "developer", "hacker", "god", "anime", "minimalist", "modernist", "apple-glass"];
+  var classicRestoreKey = "cvam-classic-restore-v1";
+  if (!localStorage.getItem(classicRestoreKey)) {
+    localStorage.setItem("cvam-view", "classic");
+    localStorage.setItem("cvam-theme", "paper");
+    localStorage.setItem(classicRestoreKey, "1");
+  }
+
+  var theme = localStorage.getItem("cvam-theme") || "paper";
   if (themes.indexOf(theme) === -1) {
-    theme = "modernist";
+    theme = "paper";
     localStorage.setItem("cvam-theme", theme);
   }
 
@@ -18,15 +25,22 @@
 
   // Only the selected visual theme is render-blocking. Loading every theme adds
   // needless CSS requests and hundreds of inactive rules to every page.
-  var activeThemeLink = makeThemeLink(theme);
-  if (themeBundle && themeBundle.parentNode) themeBundle.parentNode.insertBefore(activeThemeLink, themeBundle);
-  else document.head.appendChild(activeThemeLink);
+  if (theme !== "paper") {
+    var activeThemeLink = makeThemeLink(theme);
+    if (themeBundle && themeBundle.parentNode) themeBundle.parentNode.insertBefore(activeThemeLink, themeBundle);
+    else document.head.appendChild(activeThemeLink);
+  }
 
   var themeRequest = 0;
   window.__cvamLoadThemeCss = function (name, ready) {
     if (themes.indexOf(name) === -1) return;
     var request = ++themeRequest;
     var current = document.querySelector('link[data-cvam-theme-css]');
+    if (name === "paper") {
+      if (current) current.remove();
+      if (ready) ready();
+      return;
+    }
     if (current && current.getAttribute("data-cvam-theme-css") === name) {
       if (ready) ready();
       return;
@@ -41,7 +55,7 @@
     if (themeBundle && themeBundle.parentNode) themeBundle.parentNode.insertBefore(next, themeBundle);
     else document.head.appendChild(next);
   };
-  document.documentElement.classList.add("theme-" + theme);
+  if (theme !== "paper") document.documentElement.classList.add("theme-" + theme);
 
   var size = localStorage.getItem("cvam-size");
   if (size && size !== "text-md") document.documentElement.classList.add(size);
@@ -56,7 +70,12 @@
     document.documentElement.classList.add("font-serif");
   }
 
-  document.documentElement.classList.add("view-modern");
+  var view = localStorage.getItem("cvam-view");
+  if (view !== "modern" && view !== "classic") {
+    view = "classic";
+    localStorage.setItem("cvam-view", view);
+  }
+  document.documentElement.classList.toggle("view-modern", view === "modern");
 
   /* Reserve the article-first shell before paint. Explicit reader choices win;
      new visitors get compact rails on long-form pages. */

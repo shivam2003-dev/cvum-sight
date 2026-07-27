@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "ci-1-introduction-to-computational-intelligence",
+    title: "Computational Intelligence Chapter 1 — Introduction to Computational Intelligence.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-1", "book-notes"],
+    time: 21,
+    words: 4188,
+    excerpt: "Computational intelligence as adaptive behavior in complex environments, its neural, evolutionary, swarm, immune, and fuzzy paradigms, their biological motivations, history, and hybridization. Detailed first-principles master's companion."
+  },
+  {
     slug: "aima-5-adversarial-search-and-games",
     title: "AIMA Chapter 5 — Adversarial Search and Games.",
     date: "Jul 28, 2026",

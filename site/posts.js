@@ -26,6 +26,54 @@ const POSTS = [
     excerpt: "A plain-language deep dive into Moonshot's Kimi K3: the 2.8T-parameter Mixture-of-Experts design (16 of 896 experts active under Stable LatentMoE), a component-by-component tour of the new architecture — Kimi Delta Attention's channel-wise gated delta rule (with the one bit of math worth it), Gated MLA as the exact-recall escape hatch, Attention Residuals across depth, Quantile Balancing, SiTU, and Per-Head Muon — MXFP4/MXFP8 quantization-aware training from SFT onward, the 64+-accelerator serving supernodes, and the prefill-cache economics behind $0.30 cache-hit pricing. MoE, KV-cache, and linear-attention basics built from scratch so anyone can follow, with four hand-drawn diagrams."
   },
   {
+    slug: "harness-handbook-1-behavior-map",
+    title: "Harness Handbook — why a file tree is not a behavior map.",
+    date: "Jul 27, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "agents", "harness-handbook", "behavior-localization", "code-navigation"],
+    time: 20,
+    words: 4003,
+    excerpt: "Part 1 explains the missing problem before any patch: requests speak in behavior, repositories speak in files. Behavior localization, the L1-L3 map, cross-stage state registers, progressive disclosure, source alignment, and a worked file-deletion audit in plain language.",
+    series: "harness-handbook",
+    seriesNum: "1"
+  },
+  {
+    slug: "harness-handbook-2-construction",
+    title: "How Harness Handbook turns source code into a behavior map.",
+    date: "Jul 27, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "agents", "harness-handbook", "static-analysis", "program-analysis"],
+    time: 20,
+    words: 4012,
+    excerpt: "Part 2 opens the generator: deterministic program facts first, LLM-assisted organization second, and source validation last. Function-vs-file leaf modes, proposer-reviewer loops, stage synthesis, state registers, fallback cards, frozen locators, and a practical construction audit.",
+    series: "harness-handbook",
+    seriesNum: "2"
+  },
+  {
+    slug: "harness-handbook-3-bgpd-resync",
+    title: "BGPD explained — from a behavior request to verified edit sites.",
+    date: "Jul 27, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "agents", "harness-handbook", "bgpd", "edit-planning"],
+    time: 20,
+    words: 4030,
+    excerpt: "Part 3 follows one change from plain-English request to code: L1 system context, L2 behavior units, state registers, L3 candidates, call-graph expansion, current-source verification, evidence-backed edit blocks, action declarations, execution boundaries, and diff-driven resynchronization.",
+    series: "harness-handbook",
+    seriesNum: "3"
+  },
+  {
+    slug: "harness-handbook-4-results-adoption",
+    title: "Does Harness Handbook work? Results, limits, and an adoption playbook.",
+    date: "Jul 27, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "agents", "harness-handbook", "evaluation", "engineering-playbook"],
+    time: 21,
+    words: 4120,
+    excerpt: "Part 4 reads the experiment without the hype: 60 requests, two real harnesses, three judges, better plan preference and localization with fewer planner tokens — but no end-to-end patch evaluation. Every headline number, the limits that matter, and a four-week pilot for teams that want evidence before adoption.",
+    series: "harness-handbook",
+    seriesNum: "4"
+  },
+  {
     slug: "frontier-digest-004",
     title: "Frontier Digest #4 — the week agents learned to watch themselves.",
     date: "Jul 19, 2026",

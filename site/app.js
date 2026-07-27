@@ -319,6 +319,7 @@
       "yc-paper-club": "YC Paper Club",
       gpu: "Silicon to Scale",
       harness: "Harness Engineering",
+      "harness-handbook": "Harness Handbook",
       "grok-build": "Inside Grok Build",
       consensus: "Consensus Algorithms",
       "frontier-digest": "Frontier Digest",

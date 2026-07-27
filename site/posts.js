@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "cv-szeliski-2-image-formation",
+    title: "Computer Vision Chapter 2 — Image Formation.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computer-vision", "image-formation", "camera-calibration", "chapter-2", "book-notes"],
+    time: 10,
+    words: 1456,
+    excerpt: "Projective geometry, camera models, lenses, calibration, radiometry, color, sensors, sampling, noise, exposure, and rolling shutter from first principles."
+  },
+  {
     slug: "cv-szeliski-1-introduction",
     title: "Computer Vision Chapter 1 — Introduction.",
     date: "Jul 28, 2026",

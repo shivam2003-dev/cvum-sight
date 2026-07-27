@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-2-the-artificial-neuron",
+    title: "Computational Intelligence Chapter 2 — The Artificial Neuron.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-2", "book-notes"],
+    time: 21,
+    words: 4123,
+    excerpt: "Weighted net input, bias, activation functions, geometric decision boundaries, augmented vectors, gradient descent, Widrow-Hoff, generalized delta, and error-correction learning. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-1-introduction-to-computational-intelligence",
     title: "Computational Intelligence Chapter 1 — Introduction to Computational Intelligence.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-1", "book-notes"],
     time: 21,
-    words: 4188,
+    words: 4189,
     excerpt: "Computational intelligence as adaptive behavior in complex environments, its neural, evolutionary, swarm, immune, and fuzzy paradigms, their biological motivations, history, and hybridization. Detailed first-principles master's companion."
   },
   {

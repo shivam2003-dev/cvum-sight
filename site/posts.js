@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-12-evolution-strategies",
+    title: "Computational Intelligence Chapter 12 — Evolution Strategies.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-12", "book-notes"],
+    time: 21,
+    words: 4022,
+    excerpt: "(1+1)-ES, (μ,λ) and (μ+λ) selection, recombination, mutation, strategy parameters, covariance and directed variation, self-adaptation, surrogate models, constraints, noise, and niching. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-11-evolutionary-programming",
     title: "Computational Intelligence Chapter 11 — Evolutionary Programming.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-11", "book-notes"],
     time: 21,
-    words: 4059,
+    words: 4060,
     excerpt: "Basic evolutionary programming, mutation-centered search, probabilistic selection, static and dynamic strategy parameters, self-adaptation, distribution variants, local-search hybrids, constraints, and applications. Detailed first-principles master's companion."
   },
   {

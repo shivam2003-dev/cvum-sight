@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-22-sentiment-affect-connotation-lexicons",
+    title: "Speech & Language Processing Chapter 22 — Lexicons for Sentiment, Affect, and Connotation.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-22", "book-notes"],
+    time: 23,
+    words: 4573,
+    excerpt: "Emotion definitions, sentiment and affect lexicons, human labeling, semi-supervised induction, supervised word sentiment, lexicon-based recognition, entity-centered affect, and connotation frames. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-21-semantic-role-labeling",
     title: "Speech & Language Processing Chapter 21 — Semantic Role Labeling and Argument Structure.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-21", "book-notes"],
     time: 23,
-    words: 4550,
+    words: 4551,
     excerpt: "Semantic roles, alternations, thematic-role limits, PropBank, FrameNet, SRL systems, selectional restrictions, and predicate decomposition. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

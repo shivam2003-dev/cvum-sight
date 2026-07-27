@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-13-rnns-and-lstms",
+    title: "Speech & Language Processing Chapter 13 — RNNs and LSTMs.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-13", "book-notes"],
+    time: 23,
+    words: 4560,
+    excerpt: "Recurrent neural networks, sequence modeling, stacked and bidirectional architectures, long short-term memory, encoder-decoder models, and attention. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-12-machine-translation",
     title: "Speech & Language Processing Chapter 12 — Machine Translation.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-12", "book-notes"],
     time: 23,
-    words: 4541,
+    words: 4542,
     excerpt: "Cross-language divergence, encoder-decoder translation, attention, beam search, low-resource translation, evaluation, and bias. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

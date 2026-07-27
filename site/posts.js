@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-11-evolutionary-programming",
+    title: "Computational Intelligence Chapter 11 — Evolutionary Programming.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-11", "book-notes"],
+    time: 21,
+    words: 4059,
+    excerpt: "Basic evolutionary programming, mutation-centered search, probabilistic selection, static and dynamic strategy parameters, self-adaptation, distribution variants, local-search hybrids, constraints, and applications. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-10-genetic-programming",
     title: "Computational Intelligence Chapter 10 — Genetic Programming.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-10", "book-notes"],
     time: 21,
-    words: 4087,
+    words: 4088,
     excerpt: "Tree-based program representation, function and terminal sets, population initialization, fitness, subtree crossover and mutation, closure, bloat, building blocks, applications, and interpretable symbolic search. Detailed first-principles master's companion."
   },
   {

@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-20-fuzzy-sets",
+    title: "Computational Intelligence Chapter 20 — Fuzzy Sets.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-20", "book-notes"],
+    time: 21,
+    words: 4073,
+    excerpt: "Crisp and fuzzy membership, membership functions, support, core, height, α-cuts, containment, complement, t-norm and t-conorm operators, and the distinction between fuzziness and probability. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-19-artificial-immune-models",
     title: "Computational Intelligence Chapter 19 — Artificial Immune Models.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-19", "book-notes"],
     time: 21,
-    words: 4092,
+    words: 4093,
     excerpt: "Generic AIS design, negative selection, evolutionary detectors, clonal selection and CLONALG, dynamic and multilayered systems, immune networks, self-stabilization, danger models, anomaly detection, clustering, and applications. Detailed first-principles master's companion."
   },
   {

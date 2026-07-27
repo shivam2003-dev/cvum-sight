@@ -8,42 +8,98 @@
 <p class="meta" style="margin-bottom:8px"><a href="../reinforcement-learning-introduction.html" style="color:var(--ink-faint);text-decoration:none">&larr; Reinforcement Learning: An Introduction</a></p>
 <div class="post-header"><p class="meta">BOOK NOTES · SUTTON &amp; BARTO · CHAPTER 7 · Part I · Tabular Methods</p><h1>Chapter 7 — n-step Bootstrapping, explained.</h1><div class="tag-row"><span class="tag fill">n-step</span><span class="tag">bootstrapping</span><span class="tag">tree-backup</span><span class="tag">q-sigma</span></div></div>
 <div class="post-body osc-body">
-<div class="osc-tldr"><p class="osc-tldr-label">// the one-minute version</p><p>The continuum between one-step TD and Monte Carlo, including n-step Sarsa, off-policy correction, Tree Backup, and Q(σ).</p></div>
-<p class="osc-lead">One-step TD learns quickly but trusts its current estimate heavily. Monte Carlo waits longer but uses a complete outcome. n-step methods choose a point between them: observe several real rewards, then bootstrap.</p>
+<div class="osc-tldr"><p class="osc-tldr-label">// the one-minute version</p><p><strong>n-step methods</strong> form a continuum between one-step TD and Monte Carlo. The n-step return contains n observed rewards, then bootstraps from V(S<sub>t+n</sub>). Larger n moves delayed information farther per update but increases delay and variance. n-step Sarsa extends the idea to on-policy control. Off-policy n-step learning corrects sampled actions with products of importance ratios; control variates reduce variance. <strong>Tree Backup</strong> uses target-policy expectations for branches not sampled and needs no importance ratios. <strong>Q(σ)</strong> unifies Sarsa and Tree Backup by mixing sampling (σ=1) with expectation (σ=0) at each step.</p></div>
 
-<h2 id="s1"><span class="n">01</span> The chapter in one mental model</h2>
-<div class="osc-key"><span class="lab">core loop</span>Gₜ:ₜ₊ₙ = Rₜ₊₁ + γRₜ₊₂ + … + γⁿV(Sₜ₊ₙ).</div>
-<p>The notation can look dense, but the purpose is practical: turn experience into a better prediction or a better decision. Read every equation by naming what is known now, what new evidence arrived, and which estimate is being moved toward that evidence.</p>
+<p class="osc-lead">Asha's TD learner notices a delivery reward, but the useful news crawls backward one junction per repeated trip. Monte Carlo can send the full outcome to every earlier state, yet waits for termination and inherits the randomness of the whole route. She needs a dial rather than a binary choice. An n-step return observes several real transitions, then asks the current value function to summarize everything beyond them.</p>
 
-<h2 id="s2"><span class="n">02</span> A spectrum of targets</h2><p>n=1 gives one-step TD. As n reaches the episode end, the target becomes Monte Carlo. Intermediate n trades bias, variance, delay, and computation.</p>
-<h2 id="s3"><span class="n">03</span> Credit travels faster</h2><p>A reward can update states several steps earlier in one operation. This often improves early learning compared with waiting for repeated one-step propagation.</p>
-<h2 id="s4"><span class="n">04</span> n-step Sarsa</h2><p>The action-value target includes n sampled rewards followed by the value of the state–action pair at the bootstrap boundary. A small rolling buffer is enough for online implementation.</p>
-<h2 id="s5"><span class="n">05</span> Off-policy correction</h2><p>Importance-sampling ratios can correct the sampled middle of the trajectory when behavior and target policies differ. Longer products usually mean larger variance.</p>
-<h2 id="s6"><span class="n">06</span> Tree Backup and Q(σ)</h2><p>Tree Backup uses expectations over unchosen actions and avoids importance sampling. Q(σ) mixes sampled Sarsa-like backups with expectation-based Tree-Backup behavior at each step.</p>
+<h2 id="s1"><span class="n">01</span> Deriving the n-step return</h2>
+<p>One-step TD uses R<sub>t+1</sub>+γV(S<sub>t+1</sub>). Two-step TD substitutes one more reward before bootstrapping. In general:</p>
+<div class="fbox">G<sub>t:t+n</sub> = R<sub>t+1</sub> + γR<sub>t+2</sub> + ··· + γ<sup>n−1</sup>R<sub>t+n</sub> + γ<sup>n</sup>V(S<sub>t+n</sub>)</div>
+<p>If termination occurs before t+n, omit the bootstrap and stop at the terminal reward. The update is V(S<sub>t</sub>)←V+α[G<sub>t:t+n</sub>−V]. With n=1 it is TD(0); when n spans the remaining episode it is Monte Carlo.</p>
 
-<h2 id="s7"><span class="n">07</span> Worked example</h2>
-<div class="osc-analogy"><span class="lab">walk it through</span>A maze reward lies six moves from a junction. One-step TD needs repeated episodes to pass value backward one state at a time. A four-step return can immediately connect part of the delayed reward to the junction, but a very long return may vary wildly across exploratory paths.</div>
-<p>When you work through an example, keep the roles separate: the <strong>behavior policy</strong> produces experience, the <strong>target</strong> says what the current estimate should move toward, and the <strong>step size</strong> controls how far it moves. Many algorithms differ mainly in one of those three choices.</p>
+<div class="osc-diagram"><svg viewBox="0 0 720 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="n-step return">
+<text x="360" y="24" text-anchor="middle" class="ttl">OBSERVE n REWARDS, THEN BOOTSTRAP</text>
+<circle cx="80" cy="130" r="34" class="box"/><text x="80" y="135" text-anchor="middle" class="lbl">Sₜ</text>
+<circle cx="220" cy="130" r="34" class="box"/><text x="220" y="135" text-anchor="middle" class="lbl">Sₜ₊₁</text>
+<circle cx="360" cy="130" r="34" class="box"/><text x="360" y="135" text-anchor="middle" class="lbl">…</text>
+<circle cx="500" cy="130" r="34" class="box"/><text x="500" y="135" text-anchor="middle" class="lbl">Sₜ₊ₙ</text>
+<line x1="115" y1="130" x2="185" y2="130" class="arr"/><line x1="255" y1="130" x2="325" y2="130" class="arr"/><line x1="395" y1="130" x2="465" y2="130" class="arr"/>
+<text x="150" y="112" text-anchor="middle" class="lblf">Rₜ₊₁</text><text x="290" y="112" text-anchor="middle" class="lblf">Rₜ₊₂</text><text x="430" y="112" text-anchor="middle" class="lblf">Rₜ₊ₙ</text>
+<rect x="555" y="96" width="125" height="68" rx="8" class="boxg"/><text x="617" y="122" text-anchor="middle" class="lbl">V(Sₜ₊ₙ)</text><text x="617" y="145" text-anchor="middle" class="lblf">bootstrap</text><line x1="534" y1="130" x2="545" y2="130" class="arr"/>
+<path d="M500 192 C400 248 180 248 80 192" class="arr" fill="none"/><text x="290" y="250" text-anchor="middle" class="lbl">one target updates Sₜ after n transitions</text>
+</svg><p class="cap">Fig 1 — n controls how much sampled reality appears before the value estimate resumes the prediction.</p></div>
 
-<h2 id="s8"><span class="n">08</span> The easy mistake</h2>
-<div class="osc-warn"><span class="lab">watch out</span>A larger n is not always more accurate. It uses more real rewards but also accumulates more random outcomes, waits longer, and can amplify off-policy ratios.</div>
+<h2 id="s2"><span class="n">02</span> Bias, variance, delay, and speed of credit</h2>
+<p>Small n bootstraps heavily: targets arrive quickly and usually have lower variance, but inherit current value bias. Large n uses more actual rewards and moves credit farther, but waits longer and accumulates environmental randomness.</p>
+<p>In the 19-state random walk, intermediate n often reaches low prediction error faster than either extreme. But n and α interact: a long return can require a smaller step size. There is no universally optimal n.</p>
+<p>A four-step reward at Asha's delivery point can update a junction four transitions earlier after one trip. One-step TD needs repeated propagation; a 40-step target may include irrelevant traffic noise from much later.</p>
 
-<h2 id="s9"><span class="n">09</span> Questions people actually ask</h2>
-<details class="osc-faq"><summary>Do I need to memorize every equation?</summary><p>No. First learn the update pattern: old estimate plus step size times an error. Then identify how the target is built and whether data comes from the same policy being evaluated. Derive or look up the exact form after the mental model is stable.</p></details>
-<details class="osc-faq"><summary>What should I implement first?</summary><p>Use the smallest environment that exposes the chapter's idea. Print intermediate values, fix random seeds for debugging, and compare against a simple baseline before scaling to a neural network.</p></details>
-<details class="osc-faq"><summary>How do I know whether learning is real?</summary><p>Evaluate on multiple seeds, separate training behavior from the target or greedy policy, report distributions rather than one run, and inspect learned values or policies—not only total reward.</p></details>
+<h2 id="s3"><span class="n">03</span> Online implementation and the τ index</h2>
+<p>An n-step method must wait n transitions before updating time τ=t−n+1. Store the recent states, actions, and rewards in circular arrays. After reaching terminal time T, continue the loop long enough to flush pending updates through τ=T−1.</p>
+<p>Most implementation bugs are indexing bugs: R<sub>t+1</sub> follows A<sub>t</sub>; the reward sum runs from τ+1 through min(τ+n,T); bootstrapping occurs only if τ+n&lt;T. Write a hand-worked three-step episode before optimizing code.</p>
 
-<h2 id="s10"><span class="n">10</span> Key takeaways</h2><ul class="osc-takeaways"><li><strong>A spectrum of targets:</strong> n=1 gives one-step TD.</li><li><strong>Credit travels faster:</strong> A reward can update states several steps earlier in one operation.</li><li><strong>n-step Sarsa:</strong> The action-value target includes n sampled rewards followed by the value of the state–action pair at the bootstrap boundary.</li><li><strong>Off-policy correction:</strong> Importance-sampling ratios can correct the sampled middle of the trajectory when behavior and target policies differ.</li><li><strong>Tree Backup and Q(σ):</strong> Tree Backup uses expectations over unchosen actions and avoids importance sampling.</li></ul>
+<h2 id="s4"><span class="n">04</span> n-step Sarsa</h2>
+<div class="fbox">G<sub>t:t+n</sub> = Σ<sub>i=1</sub><sup>n</sup>γ<sup>i−1</sup>R<sub>t+i</sub> + γ<sup>n</sup>Q(S<sub>t+n</sub>,A<sub>t+n</sub>)</div>
+<p>n-step Sarsa samples the next n−1 actions under the policy and bootstraps from the nth state–action pair. Update Q(S<sub>t</sub>,A<sub>t</sub>) toward this return, then keep the policy ε-greedy with respect to Q.</p>
+<p>The method remains on-policy because both the sampled middle actions and final bootstrap action come from the same behavior being evaluated.</p>
 
-<div class="osc-cheat"><div class="ch-bar"><span>// study card</span><span class="ch-tag">chapter 7</span></div><div class="ch-body">
-<p class="ch-sec">remember</p><div class="ch-row"><span class="ch-cmd">main idea</span><span class="ch-desc">The continuum between one-step TD and Monte Carlo, including n-step Sarsa, off-policy correction, Tree Backup, and Q(σ).</span></div>
-<div class="ch-row"><span class="ch-cmd">core form</span><span class="ch-desc">Gₜ:ₜ₊ₙ = Rₜ₊₁ + γRₜ₊₂ + … + γⁿV(Sₜ₊ₙ).</span></div>
-<div class="ch-row"><span class="ch-cmd">common trap</span><span class="ch-desc">A larger n is not always more accurate. It uses more real rewards but also accumulates more random outcomes, waits longer, and can amplify off-policy ratios.</span></div>
-<p class="ch-sec">try it</p><div class="ch-row"><span class="ch-cmd">practice</span><span class="ch-desc">Run n-step TD on random walk for n ∈ {1,2,4,8,16}. Sweep step sizes and make a heatmap of RMS error; there is no single best n independent of α.</span></div>
+<h2 id="s5"><span class="n">05</span> Off-policy n-step correction</h2>
+<p>If behavior b differs from target π, the sampled actions between the updated pair and bootstrap boundary need correction:</p>
+<div class="fbox">Q(S<sub>t</sub>,A<sub>t</sub>) ← Q + α ρ<sub>t+1:t+n−1</sub>[G<sub>t:t+n</sub>−Q]</div>
+<p>The ratio begins at t+1 because the update is already conditioned on A<sub>t</sub>. Products create the same variance problem as off-policy MC, though over n−1 rather than the entire episode. If π assigns zero to one sampled action, the update becomes zero.</p>
+
+<h2 id="s6"><span class="n">06</span> Per-decision control variates</h2>
+<p>Instead of multiplying one ratio onto the full return, derive the correction recursively at each decision. Add the target-policy expectation as a control variate so that sampling error is corrected toward a known conditional mean.</p>
+<p>The pattern is “sampled contribution plus expected correction.” When the sampled action is surprising under π, its ratio adjusts the difference from the expected value rather than multiplying every unrelated term. This can reduce variance while preserving the target expectation.</p>
+
+<h2 id="s7"><span class="n">07</span> Tree Backup without importance sampling</h2>
+<p>Tree Backup follows the sampled action branch but includes expected contributions of actions not taken. At each state, non-sampled actions contribute π(a|s)Q(s,a); the sampled branch continues recursively weighted by its target probability.</p>
+<p>Because it constructs a target-policy expectation directly, it needs no behavior probabilities or importance ratios. This is attractive when behavior is unknown, but it requires computing values for all actions at each backed-up state.</p>
+<div class="osc-analogy"><span class="lab">tree view</span>Sarsa follows one path through the action tree. Expected Sarsa backs up all actions for one level. Tree Backup follows the experienced path deeply while folding in the unchosen side branches as expectations at every level.</div>
+
+<h2 id="s8"><span class="n">08</span> Q(σ): one equation connecting the family</h2>
+<p>Q(σ) chooses at each step how much to sample the next action. σ=1 gives Sarsa-like sampling; σ=0 gives Tree-Backup-style expectation. Intermediate σ blends them, and σ may vary by time or state.</p>
+<p>This makes the central design axis explicit: sampled backups are cheap and can adapt to the exact trajectory but have action-selection variance; expected backups cost more and reduce variance. The best mixture can change as estimates improve.</p>
+
+<div class="osc-gotchas"><p class="gh">common catches &amp; gotchas</p><ul>
+<li><b>Assuming larger n is always better</b> — It moves credit farther but raises delay, storage, and variance.</li>
+<li><b>Forgetting the terminal flush</b> — Pending pre-terminal states still need updates after T is observed.</li>
+<li><b>Including Aₜ in the importance product</b> — The update is conditioned on the current action; correction begins with later sampled actions.</li>
+<li><b>Calling Tree Backup model-based</b> — It expects over actions using Q and π, not over unknown environment transitions.</li>
+<li><b>Comparing n without retuning α</b> — Longer returns usually change the stable step-size range.</li>
+<li><b>Ignoring action-set cost</b> — Expected methods may be impractical when summing over a huge action space.</li>
+</ul></div>
+
+<h2 id="s9"><span class="n">09</span> Questions master's students should answer</h2>
+<details class="osc-faq"><summary>Does n-step TD bootstrap?</summary><p>Yes, unless the episode ends before the boundary. It observes n rewards and then uses V(Sₜ₊ₙ) or Q(Sₜ₊ₙ,Aₜ₊ₙ).</p></details>
+<details class="osc-faq"><summary>Why can intermediate n learn faster?</summary><p>It propagates reward multiple steps per update while retaining some low-variance bootstrapping. The best balance depends on task stochasticity, representation, and α.</p></details>
+<details class="osc-faq"><summary>Why does Tree Backup avoid importance sampling?</summary><p>It builds the target-policy expectation explicitly over unchosen actions and weights the sampled continuation by target probability, so it does not need behavior-to-target likelihood ratios.</p></details>
+<details class="osc-faq"><summary>What does σ control?</summary><p>Whether each next-action component is sampled (1), expected (0), or mixed. It controls action-sampling variance, not environment-transition variance.</p></details>
+<details class="osc-faq"><summary>How much memory is required?</summary><p>O(n) recent states, actions, and rewards with a circular buffer. Eligibility traces later reproduce mixtures of many n-step returns with a different backward-view memory.</p></details>
+
+<h2 id="s10"><span class="n">10</span> Key takeaways</h2><ul class="osc-takeaways">
+<li>n-step returns interpolate between one-step TD and Monte Carlo.</li>
+<li>Increasing n reduces bootstrap dependence but raises sampling variance and update delay.</li>
+<li>n-step Sarsa extends sampled multi-step targets to on-policy action-value control.</li>
+<li>Off-policy sampled paths require target/behavior correction and coverage.</li>
+<li>Per-decision control variates correct deviations around target expectations.</li>
+<li>Tree Backup performs multi-step expected action backups without importance sampling.</li>
+<li>Q(σ) exposes sampling versus expectation as a continuous design choice.</li>
+</ul>
+
+<div class="osc-cheat"><div class="ch-bar"><span>// chapter study sheet</span><span class="ch-tag">n-step family</span></div><div class="ch-body">
+<p class="ch-sec">targets</p><div class="ch-row"><span class="ch-cmd">n-step V</span><span class="ch-desc">n rewards + γⁿV(Sₜ₊ₙ).</span></div>
+<div class="ch-row"><span class="ch-cmd">n-step Sarsa</span><span class="ch-desc">n rewards + γⁿQ(Sₜ₊ₙ,Aₜ₊ₙ).</span></div>
+<p class="ch-sec">off-policy</p><div class="ch-row"><span class="ch-cmd">sampled correction</span><span class="ch-desc">Multiply TD error by ρₜ₊₁:ₜ₊ₙ₋₁.</span></div>
+<div class="ch-row"><span class="ch-cmd">Tree Backup</span><span class="ch-desc">Expected side branches; no behavior ratios.</span></div>
+<div class="ch-row"><span class="ch-cmd">Q(σ)</span><span class="ch-desc">σ=1 sample, σ=0 expect, intermediate mix.</span></div>
+<p class="ch-sec">implementation</p><div class="ch-row"><span class="ch-cmd">τ=t−n+1</span><span class="ch-desc">Time index eligible for an n-step update.</span></div>
+<div class="ch-row"><span class="ch-cmd">flush after T</span><span class="ch-desc">Finish every pending update before ending episode loop.</span></div>
 </div></div>
 
-<h2 id="s11"><span class="n">11</span> Source trail and scope</h2>
-<p>These are independent companion notes, not a replacement for the textbook. The chapter organization follows Sutton and Barto's second edition; explanations and examples here are original. Use the <a href="http://incompleteideas.net/book/the-book-2nd.html" target="_blank" rel="noopener">authors' book page</a>, the <a href="https://mitpress.mit.edu/9780262039246/reinforcement-learning/" target="_blank" rel="noopener">MIT Press edition page</a>, and the <a href="https://mitp-content-server.mit.edu/books/content/sectbyfn/books_pres_0/10094/Toc.pdf?dl=1" target="_blank" rel="noopener">official table of contents</a> for the primary source and exact section sequence.</p>
+<h2 id="s11"><span class="n">11</span> Wrapping up and source trail</h2>
+<p>Asha can now choose how far each real experience carries credit. Chapter 8, <a href="rlai-8-planning-and-learning.html">planning and learning with tabular methods</a>, asks how to multiply the value of scarce real experience by learning a model and generating simulated transitions.</p>
+<p>These are independent companion notes written in original language. Primary references: the <a href="http://incompleteideas.net/book/the-book-2nd.html" target="_blank" rel="noopener">authors' book page</a>, the <a href="https://www.incompleteideas.net/book/bookdraft2018mar21.pdf" target="_blank" rel="noopener">author-hosted open-access draft</a>, the <a href="https://mitpress.mit.edu/9780262039246/reinforcement-learning/" target="_blank" rel="noopener">MIT Press edition page</a>, and the <a href="https://mitp-content-server.mit.edu/books/content/sectbyfn/books_pres_0/10094/Toc.pdf?dl=1" target="_blank" rel="noopener">official contents</a>.</p>
 </div><div class="post-nav"><a href="rlai-6-temporal-difference-learning.html">&larr; previous: Chapter 6</a><a href="rlai-8-planning-and-learning.html">next: Chapter 8 &rarr;</a></div></article><footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div>
 <aside class="toc-panel chapter-panel"><p class="toc-panel-label">// chapters</p><nav class="chapter-nav"><a class="toc-link" href="rlai-1-introduction.html">1. Introduction</a><a class="toc-link" href="rlai-2-multi-armed-bandits.html">2. Multi-armed Bandits</a><a class="toc-link" href="rlai-3-finite-mdps.html">3. Finite Markov Decision Processes</a><a class="toc-link" href="rlai-4-dynamic-programming.html">4. Dynamic Programming</a><a class="toc-link" href="rlai-5-monte-carlo-methods.html">5. Monte Carlo Methods</a><a class="toc-link" href="rlai-6-temporal-difference-learning.html">6. Temporal-Difference Learning</a><a class="toc-link active" href="rlai-7-n-step-bootstrapping.html">7. n-step Bootstrapping</a><a class="toc-link" href="rlai-8-planning-and-learning.html">8. Planning and Learning with Tabular Methods</a><a class="toc-link" href="rlai-9-on-policy-prediction-approximation.html">9. On-policy Prediction with Approximation</a><a class="toc-link" href="rlai-10-on-policy-control-approximation.html">10. On-policy Control with Approximation</a><a class="toc-link" href="rlai-11-off-policy-approximation.html">11. Off-policy Methods with Approximation</a><a class="toc-link" href="rlai-12-eligibility-traces.html">12. Eligibility Traces</a><a class="toc-link" href="rlai-13-policy-gradient-methods.html">13. Policy Gradient Methods</a><a class="toc-link" href="rlai-14-psychology.html">14. Psychology</a><a class="toc-link" href="rlai-15-neuroscience.html">15. Neuroscience</a><a class="toc-link" href="rlai-16-applications-case-studies.html">16. Applications and Case Studies</a><a class="toc-link" href="rlai-17-frontiers.html">17. Frontiers</a></nav></aside></div>
 <script src="../stats.js?v=2"></script><script src="../app.js?v=40"></script><script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script></body></html>

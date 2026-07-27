@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-13-differential-evolution",
+    title: "Computational Intelligence Chapter 13 — Differential Evolution.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-13", "book-notes"],
+    time: 21,
+    words: 4065,
+    excerpt: "Difference-vector mutation, target, base, and donor vectors, binomial and exponential crossover, greedy selection, DE/x/y/z notation, parameter control, hybrids, discrete variants, and advanced optimization settings. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-12-evolution-strategies",
     title: "Computational Intelligence Chapter 12 — Evolution Strategies.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-12", "book-notes"],
     time: 21,
-    words: 4022,
+    words: 4023,
     excerpt: "(1+1)-ES, (μ,λ) and (μ+λ) selection, recombination, mutation, strategy parameters, covariance and directed variation, self-adaptation, surrogate models, constraints, noise, and niching. Detailed first-principles master's companion."
   },
   {

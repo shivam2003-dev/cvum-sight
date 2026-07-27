@@ -8,42 +8,102 @@
 <p class="meta" style="margin-bottom:8px"><a href="../reinforcement-learning-introduction.html" style="color:var(--ink-faint);text-decoration:none">&larr; Reinforcement Learning: An Introduction</a></p>
 <div class="post-header"><p class="meta">BOOK NOTES · SUTTON &amp; BARTO · CHAPTER 8 · Part I · Tabular Methods</p><h1>Chapter 8 — Planning and Learning with Tabular Methods, explained.</h1><div class="tag-row"><span class="tag fill">dyna</span><span class="tag">model-based</span><span class="tag">planning</span><span class="tag">prioritized-sweeping</span><span class="tag">mcts</span></div></div>
 <div class="post-body osc-body">
-<div class="osc-tldr"><p class="osc-tldr-label">// the one-minute version</p><p>How learned models turn experience into simulated experience through Dyna, prioritized sweeping, rollout planning, and Monte Carlo tree search.</p></div>
-<p class="osc-lead">A model-free agent learns only once from each real transition. A planning agent can remember that transition, imagine it again, and improve many related decisions while the real environment is idle.</p>
+<div class="osc-tldr"><p class="osc-tldr-label">// the one-minute version</p><p><strong>Planning</strong> applies value updates to model-generated experience. A distribution model provides probabilities; a sample model generates transitions. <strong>Dyna</strong> unifies acting, direct RL, model learning, and planning with the same Q-learning update. When a model becomes stale, Dyna can plan confidently in a world that no longer exists; Dyna-Q+ adds time-based exploration bonuses. <strong>Prioritized sweeping</strong> backs up predecessors whose values are likely to change most. Sample backups can beat full expectations when branching is high and compute is limited. Trajectory sampling, RTDP, rollouts, heuristic search, and <strong>MCTS</strong> focus planning on reachable or currently relevant states.</p></div>
 
-<h2 id="s1"><span class="n">01</span> The chapter in one mental model</h2>
-<div class="osc-key"><span class="lab">core loop</span>Dyna loop: act → learn value → learn model → sample model experiences → learn again.</div>
-<p>The notation can look dense, but the purpose is practical: turn experience into a better prediction or a better decision. Read every equation by naming what is known now, what new evidence arrived, and which estimate is being moved toward that evidence.</p>
+<p class="osc-lead">Real deliveries are expensive, but Asha's robot experiences each transition only once. After learning that aisle B is blocked, ordinary Q-learning updates the junction immediately before B; upstream routes remain optimistic until revisited. Asha already has enough evidence to imagine those routes ending at the blockage. If she learns a model, one real surprise can generate many useful hypothetical updates while the robot charges.</p>
 
-<h2 id="s2"><span class="n">02</span> Models and planning</h2><p>A distribution model predicts possible next states and rewards; a sample model produces one simulated transition. Planning means applying familiar value updates to model-generated experience.</p>
-<h2 id="s3"><span class="n">03</span> Dyna architecture</h2><p>Dyna interleaves direct RL, model learning, and planning. The same update rule can consume both real and simulated transitions, making implementation conceptually clean.</p>
-<h2 id="s4"><span class="n">04</span> When models are wrong</h2><p>A learned model becomes stale after the environment changes. Dyna-Q+ adds an exploration bonus for long-untried actions, encouraging the agent to test whether old knowledge remains valid.</p>
-<h2 id="s5"><span class="n">05</span> Prioritized sweeping</h2><p>Uniform planning wastes backups on states whose values barely changed. Prioritized sweeping works backward through predecessor states with large expected changes, focusing compute where it can matter.</p>
-<h2 id="s6"><span class="n">06</span> Decision-time planning</h2><p>Rollouts and Monte Carlo tree search plan from the current state rather than improving a global policy everywhere. MCTS repeatedly selects, expands, simulates, and backs up within a search tree.</p>
+<h2 id="s1"><span class="n">01</span> Models turn experience into reusable predictions</h2>
+<p>A model predicts environment responses. A <strong>distribution model</strong> returns p(s′,r|s,a), enabling expected backups. A <strong>sample model</strong> returns one possible s′,r when queried, enabling sample backups. Planning means computing or improving a policy with this model.</p>
+<p>Model-based and model-free methods use the same value targets; they differ in where transitions come from. Real transitions support direct RL and model learning. Simulated transitions support planning.</p>
 
-<h2 id="s7"><span class="n">07</span> Worked example</h2>
-<div class="osc-analogy"><span class="lab">walk it through</span>A warehouse robot experiences that aisle B is blocked. Direct learning changes the value of the current route. A model also updates imagined routes that would later enter B. Prioritized sweeping quickly revises upstream junctions rather than replaying irrelevant corridors.</div>
-<p>When you work through an example, keep the roles separate: the <strong>behavior policy</strong> produces experience, the <strong>target</strong> says what the current estimate should move toward, and the <strong>step size</strong> controls how far it moves. Many algorithms differ mainly in one of those three choices.</p>
+<div class="osc-key"><span class="lab">first principle</span>A model's value is not realism by itself. Its value is counterfactual reuse: asking what may happen for states and actions not currently being experienced.</div>
 
-<h2 id="s8"><span class="n">08</span> The easy mistake</h2>
-<div class="osc-warn"><span class="lab">watch out</span>Model-based does not mean the model must be a perfect simulator. Even a partial model can accelerate learning, but planning must account for model error and spend computation selectively.</div>
+<h2 id="s2"><span class="n">02</span> Dyna: one architecture, four jobs</h2>
+<p>Dyna-Q repeats this loop: (1) observe S, choose A, receive R,S′; (2) update Q from the real transition; (3) store the transition in a model; (4) repeat n planning steps by sampling a previously observed S,A, querying the model, and applying the same Q-learning update.</p>
+<div class="fbox">Q(S,A) ← Q(S,A)+α[R+γmax<sub>a</sub>Q(S′,a)−Q(S,A)]</div>
+<p>The equation does not reveal whether the transition was real or imagined. More planning steps per real action usually reduce real experience needed, at the cost of computation and exposure to model error.</p>
 
-<h2 id="s9"><span class="n">09</span> Questions people actually ask</h2>
-<details class="osc-faq"><summary>Do I need to memorize every equation?</summary><p>No. First learn the update pattern: old estimate plus step size times an error. Then identify how the target is built and whether data comes from the same policy being evaluated. Derive or look up the exact form after the mental model is stable.</p></details>
-<details class="osc-faq"><summary>What should I implement first?</summary><p>Use the smallest environment that exposes the chapter's idea. Print intermediate values, fix random seeds for debugging, and compare against a simple baseline before scaling to a neural network.</p></details>
-<details class="osc-faq"><summary>How do I know whether learning is real?</summary><p>Evaluate on multiple seeds, separate training behavior from the target or greedy policy, report distributions rather than one run, and inspect learned values or policies—not only total reward.</p></details>
+<div class="osc-diagram"><svg viewBox="0 0 720 345" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dyna architecture">
+<text x="360" y="24" text-anchor="middle" class="ttl">DYNA: REAL AND SIMULATED EXPERIENCE SHARE AN UPDATE</text>
+<rect x="55" y="83" width="180" height="76" rx="9" class="boxg"/><text x="145" y="112" text-anchor="middle" class="lbl" style="font-weight:bold">ENVIRONMENT</text><text x="145" y="137" text-anchor="middle" class="lblf">real S,A,R,S′</text>
+<rect x="270" y="83" width="180" height="76" rx="9" class="boxy"/><text x="360" y="112" text-anchor="middle" class="lbl" style="font-weight:bold">MODEL</text><text x="360" y="137" text-anchor="middle" class="lblf">learn + sample</text>
+<rect x="485" y="83" width="180" height="76" rx="9" class="box"/><text x="575" y="112" text-anchor="middle" class="lbl" style="font-weight:bold">VALUE / POLICY</text><text x="575" y="137" text-anchor="middle" class="lblf">Q-learning backup</text>
+<line x1="235" y1="121" x2="260" y2="121" class="arr"/><line x1="450" y1="121" x2="475" y2="121" class="arr"/>
+<path d="M145 170 C175 245 500 250 575 170" class="arr" fill="none"/><text x="360" y="245" text-anchor="middle" class="lbl">direct RL: real transition updates Q</text>
+<path d="M575 76 C510 35 420 45 360 76" class="arr" fill="none"/><text x="468" y="49" text-anchor="middle" class="lblf">planning queries repeat</text>
+<rect x="225" y="282" width="270" height="42" rx="7" class="box"/><text x="360" y="308" text-anchor="middle" class="lbl">act → learn → model → plan</text>
+</svg><p class="cap">Fig 1 — Dyna learns from reality once, records it, then spends computation replaying model consequences.</p></div>
 
-<h2 id="s10"><span class="n">10</span> Key takeaways</h2><ul class="osc-takeaways"><li><strong>Models and planning:</strong> A distribution model predicts possible next states and rewards; a sample model produces one simulated transition.</li><li><strong>Dyna architecture:</strong> Dyna interleaves direct RL, model learning, and planning.</li><li><strong>When models are wrong:</strong> A learned model becomes stale after the environment changes.</li><li><strong>Prioritized sweeping:</strong> Uniform planning wastes backups on states whose values barely changed.</li><li><strong>Decision-time planning:</strong> Rollouts and Monte Carlo tree search plan from the current state rather than improving a global policy everywhere.</li></ul>
+<h2 id="s3"><span class="n">03</span> Maze learning and the price of computation</h2>
+<p>In the Dyna maze, zero planning steps reduce to Q-learning. Five or fifty planning updates after each real step propagate reward through the model much faster, so the agent reaches the goal with fewer environment interactions.</p>
+<p>This does not mean planning is free. Compare wall-clock compute, model-query cost, and real-sample cost. In robotics, a millisecond simulation may replace a second of motion; in a slow learned world model, planning may itself dominate latency.</p>
 
-<div class="osc-cheat"><div class="ch-bar"><span>// study card</span><span class="ch-tag">chapter 8</span></div><div class="ch-body">
-<p class="ch-sec">remember</p><div class="ch-row"><span class="ch-cmd">main idea</span><span class="ch-desc">How learned models turn experience into simulated experience through Dyna, prioritized sweeping, rollout planning, and Monte Carlo tree search.</span></div>
-<div class="ch-row"><span class="ch-cmd">core form</span><span class="ch-desc">Dyna loop: act → learn value → learn model → sample model experiences → learn again.</span></div>
-<div class="ch-row"><span class="ch-cmd">common trap</span><span class="ch-desc">Model-based does not mean the model must be a perfect simulator. Even a partial model can accelerate learning, but planning must account for model error and spend computation selectively.</span></div>
-<p class="ch-sec">try it</p><div class="ch-row"><span class="ch-cmd">practice</span><span class="ch-desc">Implement Dyna-Q in a maze and vary planning steps per real action. Then change the maze mid-run and compare ordinary Dyna-Q with an exploration-bonus variant.</span></div>
+<h2 id="s4"><span class="n">04</span> When the model is wrong: blocking and shortcuts</h2>
+<p>If a learned deterministic model stores the last observed transition, it assumes the world stays fixed. When a route becomes blocked, direct experience corrects the encountered edge, and planning spreads the bad news. But when a new shortcut opens, the agent may never try it because the old model and policy agree it is useless.</p>
+<p><strong>Dyna-Q+</strong> treats actions not tried for τ steps as potentially improved, adding exploration bonus κ√τ to modeled reward. The bonus makes stale actions attractive enough to retest. It can adapt to shortcuts but may waste effort revisiting genuinely stable poor actions.</p>
+<div class="osc-warn"><span class="lab">model error compounds</span>Planning amplifies whatever the model says. More planning with a biased model can make performance worse faster. Track real-versus-predicted transitions and limit rollout depth or trust when mismatch grows.</div>
+
+<h2 id="s5"><span class="n">05</span> Prioritized sweeping</h2>
+<p>Uniform Dyna samples previously seen pairs randomly. Many backups have tiny TD errors and change nothing. Prioritized sweeping maintains a priority queue keyed by expected update magnitude. When a state's value changes, find predecessor pairs that can lead to it and raise their priorities.</p>
+<p>Pop the largest priority, perform its backup, then propagate priority backward. This follows surprise against causal direction—from changed outcome to decisions that depend on it. A blockage near delivery rapidly revises upstream junctions instead of replaying unrelated aisles.</p>
+<p>The model must store predecessor links or derive them. Queue maintenance adds overhead, so priority helps most when important changes are sparse relative to the state space.</p>
+
+<h2 id="s6"><span class="n">06</span> Expected versus sample backups</h2>
+<p>An expected backup sums over all possible outcomes of an action; a sample backup uses one model-generated outcome. Expected backups remove transition-sampling variance but cost proportional to branching factor.</p>
+<p>With high branching and fixed compute, many cheap sample backups across relevant pairs can produce more progress than a few exhaustive expectations. Early in planning, breadth of updates may matter more than precision of each one.</p>
+<p>This comparison unifies planning and learning: model-free TD is necessarily sample-based; a sample model makes planning look identical; a distribution model offers the option of expectation.</p>
+
+<h2 id="s7"><span class="n">07</span> Trajectory sampling and real-time dynamic programming</h2>
+<p>Uniform sweeps spend equal compute on unreachable states. <strong>Trajectory sampling</strong> starts from states of interest and follows model trajectories under a policy, concentrating backups on states likely to be visited.</p>
+<p><strong>Real-time dynamic programming (RTDP)</strong> uses greedy simulated trajectories with value iteration backups. Under suitable initialization and reachability conditions, it can solve relevant states without exhaustively solving the entire MDP.</p>
+<p>The tradeoff is coverage: focusing on the current policy can miss valuable alternatives. Exploration, optimistic initialization, or occasional broader planning protects against tunnel vision.</p>
+
+<h2 id="s8"><span class="n">08</span> Planning at decision time: rollouts, search, and MCTS</h2>
+<p>Background planning improves a stored policy before a decision. Decision-time planning spends computation from the current state. A <strong>rollout algorithm</strong> simulates each candidate action followed by a base policy and selects the action with best estimated return. Even a modest base policy can improve through lookahead.</p>
+<p><strong>Heuristic search</strong> expands promising paths and uses an approximate value at leaf states. <strong>Monte Carlo tree search</strong> repeats four phases: select actions through an existing tree (balancing value and visit uncertainty), expand a new node, simulate or evaluate from it, and back up the outcome. Search becomes deeper where evidence says it matters.</p>
+<p>MCTS is not the same as Chapter 5 MC control. It builds a temporary, state-rooted search tree using a model at decision time; Monte Carlo control learns persistent policy values from environment episodes.</p>
+
+<div class="osc-cards"><div class="osc-card"><h4>Background planning</h4><p>Dyna, prioritized sweeping, sweeps. Improve values broadly between decisions.</p></div><div class="osc-card"><h4>Decision-time planning</h4><p>Rollouts, heuristic search, MCTS. Focus compute on the current choice.</p></div></div>
+
+<div class="osc-gotchas"><p class="gh">common catches &amp; gotchas</p><ul>
+<li><b>Equating a model with a neural world model</b> — A table of observed transitions is already a model.</li>
+<li><b>Counting simulated samples as new evidence</b> — Planning reuses assumptions; it does not add independent real information.</li>
+<li><b>Planning harder in a wrong model</b> — Monitor model error and retest stale actions.</li>
+<li><b>Uniformly replaying everything</b> — Priorities and reachability can spend compute where value changes matter.</li>
+<li><b>Assuming expected backups are always superior</b> — Their branching cost may lose to many sample backups.</li>
+<li><b>Confusing MCTS with model-free MC</b> — MCTS is model-based decision-time search rooted at the current state.</li>
+</ul></div>
+
+<h2 id="s9"><span class="n">09</span> Questions master's students should answer</h2>
+<details class="osc-faq"><summary>Is Dyna model-based or model-free?</summary><p>It is an architecture containing both: direct model-free updates from real experience plus model learning and model-based planning updates.</p></details>
+<details class="osc-faq"><summary>Why can a sample model be enough?</summary><p>Many RL updates need transition samples, not explicit probabilities. Querying a generative model produces the same input shape as real experience.</p></details>
+<details class="osc-faq"><summary>What does prioritized sweeping prioritize?</summary><p>An estimate of how much a backup will change value, then predecessors of changed states. It prioritizes computational consequence, not raw visit frequency.</p></details>
+<details class="osc-faq"><summary>When is planning at decision time attractive?</summary><p>When the current state matters more than a globally solved policy, a model is available, and latency permits targeted lookahead—games are the classic case.</p></details>
+<details class="osc-faq"><summary>How should model error change planning?</summary><p>Reduce trust or horizon in uncertain regions, compare predictions with real transitions, maintain uncertainty, and deliberately gather data where errors affect decisions.</p></details>
+
+<h2 id="s10"><span class="n">10</span> Key takeaways</h2><ul class="osc-takeaways">
+<li>Planning applies familiar backups to model-generated experience.</li>
+<li>Dyna integrates direct RL, model learning, and planning in one loop.</li>
+<li>Planning reduces real interactions but spends computation and can amplify model bias.</li>
+<li>Dyna-Q+ retests stale actions with a time-based bonus when the environment may change.</li>
+<li>Prioritized sweeping propagates important changes backward through predecessors.</li>
+<li>Sample versus expected backups trade variance for branching cost.</li>
+<li>Trajectory sampling and RTDP focus on reachable states; rollouts and MCTS focus on the current decision.</li>
+</ul>
+
+<div class="osc-cheat"><div class="ch-bar"><span>// chapter study sheet</span><span class="ch-tag">planning map</span></div><div class="ch-body">
+<p class="ch-sec">Dyna loop</p><div class="ch-row"><span class="ch-cmd">direct RL</span><span class="ch-desc">Update Q from real S,A,R,S′.</span></div>
+<div class="ch-row"><span class="ch-cmd">model learning</span><span class="ch-desc">Store or fit predicted reward and successor.</span></div>
+<div class="ch-row"><span class="ch-cmd">planning</span><span class="ch-desc">Query model; apply same value update repeatedly.</span></div>
+<p class="ch-sec">where compute goes</p><div class="ch-row"><span class="ch-cmd">uniform Dyna</span><span class="ch-desc">Random previously observed state–action pairs.</span></div>
+<div class="ch-row"><span class="ch-cmd">prioritized sweeping</span><span class="ch-desc">Largest expected change, then predecessors.</span></div>
+<div class="ch-row"><span class="ch-cmd">trajectory / RTDP</span><span class="ch-desc">States reachable under simulated behavior.</span></div>
+<div class="ch-row"><span class="ch-cmd">MCTS</span><span class="ch-desc">Select → expand → simulate/evaluate → backup.</span></div>
 </div></div>
 
-<h2 id="s11"><span class="n">11</span> Source trail and scope</h2>
-<p>These are independent companion notes, not a replacement for the textbook. The chapter organization follows Sutton and Barto's second edition; explanations and examples here are original. Use the <a href="http://incompleteideas.net/book/the-book-2nd.html" target="_blank" rel="noopener">authors' book page</a>, the <a href="https://mitpress.mit.edu/9780262039246/reinforcement-learning/" target="_blank" rel="noopener">MIT Press edition page</a>, and the <a href="https://mitp-content-server.mit.edu/books/content/sectbyfn/books_pres_0/10094/Toc.pdf?dl=1" target="_blank" rel="noopener">official table of contents</a> for the primary source and exact section sequence.</p>
+<h2 id="s11"><span class="n">11</span> Part I synthesis and source trail</h2>
+<p>Tabular RL now forms a single map: DP uses full models and expectations; MC uses complete sampled returns; TD uses sampled transitions and bootstrap estimates; n-step methods interpolate; Dyna learns a model and turns computation into extra updates; search spends those updates at decision time. Part II begins with <a href="rlai-9-on-policy-prediction-approximation.html">on-policy prediction with approximation</a>, because Asha's real warehouse cannot fit in a value table.</p>
+<p>These are independent companion notes written in original language. Primary references: the <a href="http://incompleteideas.net/book/the-book-2nd.html" target="_blank" rel="noopener">authors' book page</a>, the <a href="https://www.incompleteideas.net/book/bookdraft2018mar21.pdf" target="_blank" rel="noopener">author-hosted open-access draft</a>, the <a href="https://mitpress.mit.edu/9780262039246/reinforcement-learning/" target="_blank" rel="noopener">MIT Press edition page</a>, and the <a href="https://mitp-content-server.mit.edu/books/content/sectbyfn/books_pres_0/10094/Toc.pdf?dl=1" target="_blank" rel="noopener">official contents</a>.</p>
 </div><div class="post-nav"><a href="rlai-7-n-step-bootstrapping.html">&larr; previous: Chapter 7</a><a href="rlai-9-on-policy-prediction-approximation.html">next: Chapter 9 &rarr;</a></div></article><footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div>
 <aside class="toc-panel chapter-panel"><p class="toc-panel-label">// chapters</p><nav class="chapter-nav"><a class="toc-link" href="rlai-1-introduction.html">1. Introduction</a><a class="toc-link" href="rlai-2-multi-armed-bandits.html">2. Multi-armed Bandits</a><a class="toc-link" href="rlai-3-finite-mdps.html">3. Finite Markov Decision Processes</a><a class="toc-link" href="rlai-4-dynamic-programming.html">4. Dynamic Programming</a><a class="toc-link" href="rlai-5-monte-carlo-methods.html">5. Monte Carlo Methods</a><a class="toc-link" href="rlai-6-temporal-difference-learning.html">6. Temporal-Difference Learning</a><a class="toc-link" href="rlai-7-n-step-bootstrapping.html">7. n-step Bootstrapping</a><a class="toc-link active" href="rlai-8-planning-and-learning.html">8. Planning and Learning with Tabular Methods</a><a class="toc-link" href="rlai-9-on-policy-prediction-approximation.html">9. On-policy Prediction with Approximation</a><a class="toc-link" href="rlai-10-on-policy-control-approximation.html">10. On-policy Control with Approximation</a><a class="toc-link" href="rlai-11-off-policy-approximation.html">11. Off-policy Methods with Approximation</a><a class="toc-link" href="rlai-12-eligibility-traces.html">12. Eligibility Traces</a><a class="toc-link" href="rlai-13-policy-gradient-methods.html">13. Policy Gradient Methods</a><a class="toc-link" href="rlai-14-psychology.html">14. Psychology</a><a class="toc-link" href="rlai-15-neuroscience.html">15. Neuroscience</a><a class="toc-link" href="rlai-16-applications-case-studies.html">16. Applications and Case Studies</a><a class="toc-link" href="rlai-17-frontiers.html">17. Frontiers</a></nav></aside></div>
 <script src="../stats.js?v=2"></script><script src="../app.js?v=40"></script><script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script></body></html>

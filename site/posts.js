@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-19-dependency-parsing",
+    title: "Speech & Language Processing Chapter 19 — Dependency Parsing.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-19", "book-notes"],
+    time: 23,
+    words: 4492,
+    excerpt: "Head-dependent relations, dependency trees, transition-based parsing, graph-based parsing, projectivity, decoding, and attachment evaluation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-18-context-free-grammars-constituency-parsing",
     title: "Speech & Language Processing Chapter 18 — Context-Free Grammars and Constituency Parsing.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-18", "book-notes"],
     time: 23,
-    words: 4560,
+    words: 4561,
     excerpt: "Constituents, context-free grammars, treebanks, ambiguity, normal forms, CKY dynamic programming, neural span parsing, and evaluation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

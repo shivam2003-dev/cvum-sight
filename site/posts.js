@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-3-supervised-learning-neural-networks",
+    title: "Computational Intelligence Chapter 3 — Supervised Learning Neural Networks.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-3", "book-notes"],
+    time: 21,
+    words: 4125,
+    excerpt: "Feedforward, functional-link, product-unit, recurrent, time-delay, and cascade networks; supervised objectives; gradient and alternative optimization; hidden units; and ensembles. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-2-the-artificial-neuron",
     title: "Computational Intelligence Chapter 2 — The Artificial Neuron.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-2", "book-notes"],
     time: 21,
-    words: 4123,
+    words: 4124,
     excerpt: "Weighted net input, bias, activation functions, geometric decision boundaries, augmented vectors, gradient descent, Widrow-Hoff, generalized delta, and error-correction learning. Detailed first-principles master's companion."
   },
   {

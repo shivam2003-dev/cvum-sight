@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-3-n-gram-language-models",
+    title: "Speech & Language Processing Chapter 3 — N-gram Language Models.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-3", "book-notes"],
+    time: 24,
+    words: 4639,
+    excerpt: "Conditional probability, n-grams, training and test splits, perplexity, sampling, overfitting, smoothing, interpolation, backoff, and entropy. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-2-words-and-tokens",
     title: "Speech & Language Processing Chapter 2 — Words and Tokens.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-2", "book-notes"],
     time: 24,
-    words: 4701,
+    words: 4702,
     excerpt: "Words, morphemes, Unicode, subword tokenization, corpora, regular expressions, rule-based tokenization, and minimum edit distance. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

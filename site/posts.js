@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "aima-3-solving-problems-by-searching",
+    title: "AIMA Chapter 3 — Solving Problems by Searching.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["artificial-intelligence", "aima", "chapter-3", "book-notes"],
+    time: 21,
+    words: 4162,
+    excerpt: "Problem formulation, state spaces, tree and graph search, breadth-first and depth-first search, uniform-cost search, iterative deepening, best-first search, A*, heuristics, and search evaluation. Detailed first-principles master's companion."
+  },
+  {
     slug: "aima-2-intelligent-agents",
     title: "AIMA Chapter 2 — Intelligent Agents.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["artificial-intelligence", "aima", "chapter-2", "book-notes"],
     time: 21,
-    words: 4132,
+    words: 4133,
     excerpt: "Agents and environments, rationality, PEAS task specifications, environment properties, reflex and model-based architectures, goals, utilities, learning agents, and safe task design. Detailed first-principles master's companion."
   },
   {

@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-4-unsupervised-learning-neural-networks",
+    title: "Computational Intelligence Chapter 4 — Unsupervised Learning Neural Networks.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-4", "book-notes"],
+    time: 21,
+    words: 4105,
+    excerpt: "Hebbian learning, principal-component learning, learning-vector quantization, self-organizing feature maps, stochastic and batch training, growing maps, clustering, and visualization. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-3-supervised-learning-neural-networks",
     title: "Computational Intelligence Chapter 3 — Supervised Learning Neural Networks.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-3", "book-notes"],
     time: 21,
-    words: 4125,
+    words: 4126,
     excerpt: "Feedforward, functional-link, product-unit, recurrent, time-delay, and cascade networks; supervised objectives; gradient and alternative optimization; hidden units; and ensembles. Detailed first-principles master's companion."
   },
   {

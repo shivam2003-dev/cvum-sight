@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-5-embeddings",
+    title: "Speech & Language Processing Chapter 5 — Embeddings.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-5", "book-notes"],
+    time: 23,
+    words: 4543,
+    excerpt: "Lexical semantics, distributional meaning, count vectors, cosine similarity, word2vec, semantic properties, bias, and evaluation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-4-logistic-regression-text-classification",
     title: "Speech & Language Processing Chapter 4 — Logistic Regression and Text Classification.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-4", "book-notes"],
     time: 24,
-    words: 4610,
+    words: 4611,
     excerpt: "Supervised classification, the sigmoid and softmax, features, cross-entropy, gradient descent, precision, recall, F1, cross-validation, and significance testing. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

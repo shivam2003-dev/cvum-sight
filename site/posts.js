@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-16-text-to-speech",
+    title: "Speech & Language Processing Chapter 16 — Text-to-Speech.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-16", "book-notes"],
+    time: 23,
+    words: 4542,
+    excerpt: "TTS pipelines, audio codecs and discrete tokens, language-model speech generation, VALL-E-style two-stage systems, evaluation, other speech tasks, and spoken language models. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-15-automatic-speech-recognition",
     title: "Speech & Language Processing Chapter 15 — Automatic Speech Recognition.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-15", "book-notes"],
     time: 23,
-    words: 4592,
+    words: 4593,
     excerpt: "The ASR task, convolutional encoders, encoder-decoder recognition, self-supervised speech models, CTC, decoding, and word error rate. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

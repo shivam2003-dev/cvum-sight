@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-22-fuzzy-controllers",
+    title: "Computational Intelligence Chapter 22 — Fuzzy Controllers.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-22", "book-notes"],
+    time: 21,
+    words: 4056,
+    excerpt: "Fuzzy-control components, knowledge bases, input and output scaling, table-based, Mamdani, and Takagi-Sugeno controllers, stability, tuning, rule surfaces, implementation, and evaluation. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-21-fuzzy-logic-and-reasoning",
     title: "Computational Intelligence Chapter 21 — Fuzzy Logic and Reasoning.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-21", "book-notes"],
     time: 21,
-    words: 4094,
+    words: 4095,
     excerpt: "Linguistic variables, hedges, fuzzy propositions and rules, implication, fuzzification, rule activation, aggregation, approximate inference, defuzzification, and interpretable rule-base design. Detailed first-principles master's companion."
   },
   {

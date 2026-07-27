@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "aima-5-adversarial-search-and-games",
+    title: "AIMA Chapter 5 — Adversarial Search and Games.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["artificial-intelligence", "aima", "chapter-5", "book-notes"],
+    time: 21,
+    words: 4145,
+    excerpt: "Game trees, minimax, alpha-beta pruning, move ordering, cutoff search, evaluation functions, Monte Carlo tree search, stochastic games, partial observability, and multiplayer settings. Detailed first-principles master's companion."
+  },
+  {
     slug: "aima-4-search-in-complex-environments",
     title: "AIMA Chapter 4 — Search in Complex Environments.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["artificial-intelligence", "aima", "chapter-4", "book-notes"],
     time: 21,
-    words: 4165,
+    words: 4166,
     excerpt: "Local search, hill climbing, simulated annealing, local beam search, evolutionary search, continuous optimization, nondeterministic actions, partial observability, online search, and unknown environments. Detailed first-principles master's companion."
   },
   {

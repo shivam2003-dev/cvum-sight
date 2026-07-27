@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-14-phonetics-and-speech-features",
+    title: "Speech & Language Processing Chapter 14 — Phonetics and Speech Feature Extraction.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-14", "book-notes"],
+    time: 23,
+    words: 4556,
+    excerpt: "Speech sounds, phonetic transcription, articulation, prosody, acoustic signals, spectrograms, log-Mel features, and MFCCs. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-13-rnns-and-lstms",
     title: "Speech & Language Processing Chapter 13 — RNNs and LSTMs.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-13", "book-notes"],
     time: 23,
-    words: 4560,
+    words: 4561,
     excerpt: "Recurrent neural networks, sequence modeling, stacked and bidirectional architectures, long short-term memory, encoder-decoder models, and attention. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

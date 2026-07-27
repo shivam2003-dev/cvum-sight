@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-8-introduction-to-evolutionary-computation",
+    title: "Computational Intelligence Chapter 8 — Introduction to Evolutionary Computation.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-8", "book-notes"],
+    time: 21,
+    words: 4072,
+    excerpt: "Generic evolutionary algorithms, chromosome representation, initialization, fitness, selection pressure, reproduction operators, stopping conditions, elitism, and comparison with classical optimization. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-7-performance-issues-supervised-learning",
     title: "Computational Intelligence Chapter 7 — Performance Issues (Supervised Learning).",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-7", "book-notes"],
     time: 21,
-    words: 4118,
+    words: 4119,
     excerpt: "Accuracy, complexity, convergence, generalization, data preparation, robust losses, initialization, learning rate, momentum, optimizer and architecture choice, adaptive activations, and active learning. Detailed first-principles master's companion."
   },
   {

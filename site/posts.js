@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-21-semantic-role-labeling",
+    title: "Speech & Language Processing Chapter 21 — Semantic Role Labeling and Argument Structure.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-21", "book-notes"],
+    time: 23,
+    words: 4550,
+    excerpt: "Semantic roles, alternations, thematic-role limits, PropBank, FrameNet, SRL systems, selectional restrictions, and predicate decomposition. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-20-information-extraction-relations-events-time",
     title: "Speech & Language Processing Chapter 20 — Information Extraction: Relations, Events, and Time.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-20", "book-notes"],
     time: 23,
-    words: 4557,
+    words: 4558,
     excerpt: "Relation extraction, event extraction, temporal representation, aspect, TimeBank-style annotation, temporal analysis, and template filling. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

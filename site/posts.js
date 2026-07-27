@@ -2710,5 +2710,6 @@ const RESOURCES = [
   { path: "posts/extra-performance-engineering.html", kind: "extra", cat: "extra", title: "Performance Engineering Resources", tags: ["performance","profiling","benchmarking","optimization","resources","mindstack"], excerpt: "System optimization, profiling, and benchmarking — books, latency research, FlameGraphs/perf, and load-test frameworks." },
   // SUTTON_BARTO_BOOK_START
   { path: "posts/rlai-1-introduction.html", kind: "extra", cat: "book-notes", title: "Sutton & Barto Chapter 1 — Introduction", tags: ["reinforcement-learning","chapter-1","agent","environment","reward","policy","value"], excerpt: "The reinforcement-learning problem, its four main elements, delayed consequences, and why trial-and-error learning is different from supervised learning." },
+  { path: "posts/rlai-2-multi-armed-bandits.html", kind: "extra", cat: "book-notes", title: "Sutton & Barto Chapter 2 — Multi-armed Bandits", tags: ["reinforcement-learning","chapter-2","bandits","exploration","ucb","optimism","gradient-bandit"], excerpt: "The exploration–exploitation dilemma in its cleanest form, including ε-greedy action selection, optimistic values, UCB, and gradient bandits." },
   // SUTTON_BARTO_BOOK_END
 ];

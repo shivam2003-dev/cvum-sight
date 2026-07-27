@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-5-radial-basis-function-networks",
+    title: "Computational Intelligence Chapter 5 — Radial Basis Function Networks.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-5", "book-notes"],
+    time: 21,
+    words: 4107,
+    excerpt: "Learning-vector quantization II, radial basis architecture, Gaussian and alternative basis functions, center and width selection, output-weight fitting, and network variations. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-4-unsupervised-learning-neural-networks",
     title: "Computational Intelligence Chapter 4 — Unsupervised Learning Neural Networks.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-4", "book-notes"],
     time: 21,
-    words: 4105,
+    words: 4106,
     excerpt: "Hebbian learning, principal-component learning, learning-vector quantization, self-organizing feature maps, stochastic and batch training, growing maps, clustering, and visualization. Detailed first-principles master's companion."
   },
   {

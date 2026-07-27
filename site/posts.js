@@ -74,6 +74,18 @@ const POSTS = [
     seriesNum: "4"
   },
   {
+    slug: "frontier-digest-005",
+    title: "Frontier Digest #5 — the week the harness became the security boundary.",
+    date: "Jul 26, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "security", "memory", "weekly"],
+    time: 20,
+    words: 4027,
+    excerpt: "Edition #5 of the weekly AI newsletter (Jul 20 – Jul 26) — the whole week, not just papers. OpenAI's escaped cyber evaluation turns the harness into the week's security boundary; Gemini Flash, Presence, Health, AMD's Anthropic compute deal, and the open-weights policy fight show the product and market response. Ten papers connect behavior maps, executable skills, programmatic memory, hidden workspaces, completeness, progressive disclosure, structured-output drift, persistent-memory attacks, 2D text, and robot fast weights.",
+    series: "frontier-digest",
+    seriesNum: "005"
+  },
+  {
     slug: "frontier-digest-004",
     title: "Frontier Digest #4 — the week agents learned to watch themselves.",
     date: "Jul 19, 2026",

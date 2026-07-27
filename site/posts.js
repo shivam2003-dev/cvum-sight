@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-6-reinforcement-learning",
+    title: "Computational Intelligence Chapter 6 — Reinforcement Learning.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-6", "book-notes"],
+    time: 21,
+    words: 4101,
+    excerpt: "Learning through rewards, model-free reinforcement learning, temporal-difference learning, Q-learning, neural value approximation, RPROP, gradient approaches, and connectionist Q-learning. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-5-radial-basis-function-networks",
     title: "Computational Intelligence Chapter 5 — Radial Basis Function Networks.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-5", "book-notes"],
     time: 21,
-    words: 4107,
+    words: 4108,
     excerpt: "Learning-vector quantization II, radial basis architecture, Gaussian and alternative basis functions, center and width selection, output-weight fitting, and network variations. Detailed first-principles master's companion."
   },
   {

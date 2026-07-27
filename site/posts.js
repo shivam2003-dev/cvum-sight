@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-23-coreference-and-entity-linking",
+    title: "Speech & Language Processing Chapter 23 — Coreference Resolution and Entity Linking.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-23", "book-notes"],
+    time: 23,
+    words: 4545,
+    excerpt: "Mentions, anaphora, coreference clusters, mention detection, ranking architectures, entity linking, evaluation, Winograd-style cases, and gender bias. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-22-sentiment-affect-connotation-lexicons",
     title: "Speech & Language Processing Chapter 22 — Lexicons for Sentiment, Affect, and Connotation.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-22", "book-notes"],
     time: 23,
-    words: 4573,
+    words: 4574,
     excerpt: "Emotion definitions, sentiment and affect lexicons, human labeling, semi-supervised induction, supervised word sentiment, lexicon-based recognition, entity-centered affect, and connotation frames. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

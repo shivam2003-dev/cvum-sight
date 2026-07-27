@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-11-information-retrieval-and-rag",
+    title: "Speech & Language Processing Chapter 11 — Information Retrieval and Retrieval-Augmented Generation.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-11", "book-notes"],
+    time: 24,
+    words: 4629,
+    excerpt: "Sparse and dense retrieval, inverted indexes, ranking, evaluation, question answering, retrieval-augmented generation, grounding, and datasets. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-10-masked-language-models",
     title: "Speech & Language Processing Chapter 10 — Masked Language Models.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-10", "book-notes"],
     time: 23,
-    words: 4544,
+    words: 4545,
     excerpt: "Bidirectional transformer encoders, masked-token training, contextual embeddings, fine-tuning for classification, and sequence labeling. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

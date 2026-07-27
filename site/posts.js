@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-20-information-extraction-relations-events-time",
+    title: "Speech & Language Processing Chapter 20 — Information Extraction: Relations, Events, and Time.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-20", "book-notes"],
+    time: 23,
+    words: 4557,
+    excerpt: "Relation extraction, event extraction, temporal representation, aspect, TimeBank-style annotation, temporal analysis, and template filling. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-19-dependency-parsing",
     title: "Speech & Language Processing Chapter 19 — Dependency Parsing.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-19", "book-notes"],
     time: 23,
-    words: 4492,
+    words: 4493,
     excerpt: "Head-dependent relations, dependency trees, transition-based parsing, graph-based parsing, projectivity, decoding, and attachment evaluation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

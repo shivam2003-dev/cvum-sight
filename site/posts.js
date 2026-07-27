@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-12-machine-translation",
+    title: "Speech & Language Processing Chapter 12 — Machine Translation.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-12", "book-notes"],
+    time: 23,
+    words: 4541,
+    excerpt: "Cross-language divergence, encoder-decoder translation, attention, beam search, low-resource translation, evaluation, and bias. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-11-information-retrieval-and-rag",
     title: "Speech & Language Processing Chapter 11 — Information Retrieval and Retrieval-Augmented Generation.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-11", "book-notes"],
     time: 24,
-    words: 4629,
+    words: 4630,
     excerpt: "Sparse and dense retrieval, inverted indexes, ranking, evaluation, question answering, retrieval-augmented generation, grounding, and datasets. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

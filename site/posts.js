@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-15-automatic-speech-recognition",
+    title: "Speech & Language Processing Chapter 15 — Automatic Speech Recognition.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-15", "book-notes"],
+    time: 23,
+    words: 4592,
+    excerpt: "The ASR task, convolutional encoders, encoder-decoder recognition, self-supervised speech models, CTC, decoding, and word error rate. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-14-phonetics-and-speech-features",
     title: "Speech & Language Processing Chapter 14 — Phonetics and Speech Feature Extraction.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-14", "book-notes"],
     time: 23,
-    words: 4556,
+    words: 4557,
     excerpt: "Speech sounds, phonetic transcription, articulation, prosody, acoustic signals, spectrograms, log-Mel features, and MFCCs. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-15-coevolution",
+    title: "Computational Intelligence Chapter 15 — Coevolution.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-15", "book-notes"],
+    time: 21,
+    words: 4050,
+    excerpt: "Competitive and cooperative coevolution, relative fitness, arms races, cycling, disengagement, collaborator selection, problem decomposition, credit assignment, and applications. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-14-cultural-algorithms",
     title: "Computational Intelligence Chapter 14 — Cultural Algorithms.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-14", "book-notes"],
     time: 21,
-    words: 4056,
+    words: 4057,
     excerpt: "Population and belief spaces, acceptance and influence functions, normative, situational, domain, topographic, and historical knowledge, fuzzy cultural algorithms, constraints, dynamic and multi-objective problems. Detailed first-principles master's companion."
   },
   {

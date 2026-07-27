@@ -2708,4 +2708,7 @@ const RESOURCES = [
   { path: "posts/extra-databases.html", kind: "extra", cat: "extra", title: "Databases Resources", tags: ["databases","sql","nosql","postgres","redis","resources","mindstack"], excerpt: "Relational, NoSQL, database design and optimization — books, the foundational distributed-DB papers, engine source, and tuning guides." },
   { path: "posts/extra-troubleshooting.html", kind: "extra", cat: "extra", title: "Troubleshooting & Debugging Resources", tags: ["troubleshooting","debugging","linux","strace","perf","resources","mindstack"], excerpt: "System debugging, diagnostic tools, and methodologies — books, the right tools (strace/tcpdump/perf/gdb), and the playbooks." },
   { path: "posts/extra-performance-engineering.html", kind: "extra", cat: "extra", title: "Performance Engineering Resources", tags: ["performance","profiling","benchmarking","optimization","resources","mindstack"], excerpt: "System optimization, profiling, and benchmarking — books, latency research, FlameGraphs/perf, and load-test frameworks." },
+  // SUTTON_BARTO_BOOK_START
+  { path: "posts/rlai-1-introduction.html", kind: "extra", cat: "book-notes", title: "Sutton & Barto Chapter 1 — Introduction", tags: ["reinforcement-learning","chapter-1","agent","environment","reward","policy","value"], excerpt: "The reinforcement-learning problem, its four main elements, delayed consequences, and why trial-and-error learning is different from supervised learning." },
+  // SUTTON_BARTO_BOOK_END
 ];

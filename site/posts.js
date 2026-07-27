@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-17-sequence-labeling-pos-ner",
+    title: "Speech & Language Processing Chapter 17 — Sequence Labeling for Parts of Speech and Named Entities.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-17", "book-notes"],
+    time: 23,
+    words: 4559,
+    excerpt: "Word classes, part-of-speech tagging, named entities, HMMs, conditional random fields, neural sequence labeling, and span-level evaluation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-16-text-to-speech",
     title: "Speech & Language Processing Chapter 16 — Text-to-Speech.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-16", "book-notes"],
     time: 23,
-    words: 4542,
+    words: 4543,
     excerpt: "TTS pipelines, audio codecs and discrete tokens, language-model speech generation, VALL-E-style two-stage systems, evaluation, other speech tasks, and spoken language models. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

@@ -15,6 +15,7 @@
  */
 
 const POSTS = [
+  { slug:"cv-szeliski-3-image-processing", title:"Computer Vision Chapter 3 — Image Processing.", date:"Jul 28, 2026", cat:"book-notes", tags:["computer-vision","image-processing","convolution","chapter-3"], time:8, words:1122, excerpt:"Point operations, convolution, Fourier analysis, sampling, pyramids, nonlinear filters, morphology, restoration, interpolation, and warping." },
   {
     slug: "cv-szeliski-2-image-formation",
     title: "Computer Vision Chapter 2 — Image Formation.",

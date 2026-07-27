@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "aima-2-intelligent-agents",
+    title: "AIMA Chapter 2 — Intelligent Agents.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["artificial-intelligence", "aima", "chapter-2", "book-notes"],
+    time: 21,
+    words: 4132,
+    excerpt: "Agents and environments, rationality, PEAS task specifications, environment properties, reflex and model-based architectures, goals, utilities, learning agents, and safe task design. Detailed first-principles master's companion."
+  },
+  {
     slug: "aima-1-introduction",
     title: "AIMA Chapter 1 — Introduction.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["artificial-intelligence", "aima", "chapter-1", "book-notes"],
     time: 21,
-    words: 4185,
+    words: 4186,
     excerpt: "Definitions of AI, rational action, the intellectual foundations and history of the field, present capabilities, and the benefits and risks of building intelligent systems. Detailed first-principles master's companion."
   },
   { slug:"cv-szeliski-3-image-processing", title:"Computer Vision Chapter 3 — Image Processing.", date:"Jul 28, 2026", cat:"book-notes", tags:["computer-vision","image-processing","convolution","chapter-3"], time:8, words:1122, excerpt:"Point operations, convolution, Fourier analysis, sampling, pyramids, nonlinear filters, morphology, restoration, interpolation, and warping." },

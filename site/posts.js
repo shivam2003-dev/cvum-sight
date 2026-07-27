@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "aima-4-search-in-complex-environments",
+    title: "AIMA Chapter 4 — Search in Complex Environments.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["artificial-intelligence", "aima", "chapter-4", "book-notes"],
+    time: 21,
+    words: 4165,
+    excerpt: "Local search, hill climbing, simulated annealing, local beam search, evolutionary search, continuous optimization, nondeterministic actions, partial observability, online search, and unknown environments. Detailed first-principles master's companion."
+  },
+  {
     slug: "aima-3-solving-problems-by-searching",
     title: "AIMA Chapter 3 — Solving Problems by Searching.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["artificial-intelligence", "aima", "chapter-3", "book-notes"],
     time: 21,
-    words: 4162,
+    words: 4163,
     excerpt: "Problem formulation, state spaces, tree and graph search, breadth-first and depth-first search, uniform-cost search, iterative deepening, best-first search, A*, heuristics, and search evaluation. Detailed first-principles master's companion."
   },
   {

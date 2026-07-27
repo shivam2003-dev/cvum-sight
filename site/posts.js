@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-18-context-free-grammars-constituency-parsing",
+    title: "Speech & Language Processing Chapter 18 — Context-Free Grammars and Constituency Parsing.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-18", "book-notes"],
+    time: 23,
+    words: 4560,
+    excerpt: "Constituents, context-free grammars, treebanks, ambiguity, normal forms, CKY dynamic programming, neural span parsing, and evaluation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-17-sequence-labeling-pos-ner",
     title: "Speech & Language Processing Chapter 17 — Sequence Labeling for Parts of Speech and Named Entities.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-17", "book-notes"],
     time: 23,
-    words: 4559,
+    words: 4560,
     excerpt: "Word classes, part-of-speech tagging, named entities, HMMs, conditional random fields, neural sequence labeling, and span-level evaluation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

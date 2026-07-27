@@ -2711,5 +2711,6 @@ const RESOURCES = [
   // SUTTON_BARTO_BOOK_START
   { path: "posts/rlai-1-introduction.html", kind: "extra", cat: "book-notes", title: "Sutton & Barto Chapter 1 — Introduction", tags: ["reinforcement-learning","chapter-1","agent","environment","reward","policy","value"], excerpt: "The reinforcement-learning problem, its four main elements, delayed consequences, and why trial-and-error learning is different from supervised learning." },
   { path: "posts/rlai-2-multi-armed-bandits.html", kind: "extra", cat: "book-notes", title: "Sutton & Barto Chapter 2 — Multi-armed Bandits", tags: ["reinforcement-learning","chapter-2","bandits","exploration","ucb","optimism","gradient-bandit"], excerpt: "The exploration–exploitation dilemma in its cleanest form, including ε-greedy action selection, optimistic values, UCB, and gradient bandits." },
+  { path: "posts/rlai-3-finite-mdps.html", kind: "extra", cat: "book-notes", title: "Sutton & Barto Chapter 3 — Finite Markov Decision Processes", tags: ["reinforcement-learning","chapter-3","mdp","return","bellman-equation","policy","value-function"], excerpt: "The mathematical language of sequential decisions: states, actions, rewards, returns, policies, value functions, and Bellman equations." },
   // SUTTON_BARTO_BOOK_END
 ];

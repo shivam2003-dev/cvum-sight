@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-19-artificial-immune-models",
+    title: "Computational Intelligence Chapter 19 — Artificial Immune Models.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-19", "book-notes"],
+    time: 21,
+    words: 4092,
+    excerpt: "Generic AIS design, negative selection, evolutionary detectors, clonal selection and CLONALG, dynamic and multilayered systems, immune networks, self-stabilization, danger models, anomaly detection, clustering, and applications. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-18-natural-immune-system",
     title: "Computational Intelligence Chapter 18 — Natural Immune System.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-18", "book-notes"],
     time: 21,
-    words: 4117,
+    words: 4118,
     excerpt: "The classical immune view, antibodies and antigens, lymphocytes and other white cells, innate and adaptive immunity, recognition, clonal learning, memory, network theory, and danger theory as computational inspiration. Detailed first-principles master's companion."
   },
   {

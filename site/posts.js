@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-21-fuzzy-logic-and-reasoning",
+    title: "Computational Intelligence Chapter 21 — Fuzzy Logic and Reasoning.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-21", "book-notes"],
+    time: 21,
+    words: 4094,
+    excerpt: "Linguistic variables, hedges, fuzzy propositions and rules, implication, fuzzification, rule activation, aggregation, approximate inference, defuzzification, and interpretable rule-base design. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-20-fuzzy-sets",
     title: "Computational Intelligence Chapter 20 — Fuzzy Sets.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-20", "book-notes"],
     time: 21,
-    words: 4073,
+    words: 4074,
     excerpt: "Crisp and fuzzy membership, membership functions, support, core, height, α-cuts, containment, complement, t-norm and t-conorm operators, and the distinction between fuzziness and probability. Detailed first-principles master's companion."
   },
   {

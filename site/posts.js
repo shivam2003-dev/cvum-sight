@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-25-conversation-and-structure",
+    title: "Speech & Language Processing Chapter 25 — Conversation and Its Structure.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-25", "book-notes"],
+    time: 23,
+    words: 4544,
+    excerpt: "Turn-taking, adjacency pairs, grounding, repair, dialog acts, conversational corpora, context, initiative, and evaluation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-24-discourse-coherence",
     title: "Speech & Language Processing Chapter 24 — Discourse Coherence.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-24", "book-notes"],
     time: 23,
-    words: 4495,
+    words: 4496,
     excerpt: "Coherence relations, discourse structure, centering, entity-based coherence, local representation learning, global coherence, and argument structure. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

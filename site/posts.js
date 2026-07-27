@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-8-transformers",
+    title: "Speech & Language Processing Chapter 8 — Transformers.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-8", "book-notes"],
+    time: 23,
+    words: 4556,
+    excerpt: "Self-attention, transformer blocks, parallel computation, token and positional embeddings, language-model heads, sampling, training, scaling, and interpretation. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-7-large-language-models",
     title: "Speech & Language Processing Chapter 7 — Large Language Models.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-7", "book-notes"],
     time: 23,
-    words: 4579,
+    words: 4580,
     excerpt: "Language-model architectures, conditional generation, prompting, decoding, pretraining, scaling, evaluation, ethical risk, and safety. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

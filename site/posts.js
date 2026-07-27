@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-10-genetic-programming",
+    title: "Computational Intelligence Chapter 10 — Genetic Programming.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-10", "book-notes"],
+    time: 21,
+    words: 4087,
+    excerpt: "Tree-based program representation, function and terminal sets, population initialization, fitness, subtree crossover and mutation, closure, bloat, building blocks, applications, and interpretable symbolic search. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-9-genetic-algorithms",
     title: "Computational Intelligence Chapter 9 — Genetic Algorithms.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-9", "book-notes"],
     time: 21,
-    words: 4080,
+    words: 4081,
     excerpt: "Canonical genetic algorithms, binary and floating-point crossover, mutation, control parameters, steady-state and island variants, messy GAs, niching, constraints, multi-objective and dynamic optimization. Detailed first-principles master's companion."
   },
   {

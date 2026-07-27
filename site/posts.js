@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-7-large-language-models",
+    title: "Speech & Language Processing Chapter 7 — Large Language Models.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-7", "book-notes"],
+    time: 23,
+    words: 4579,
+    excerpt: "Language-model architectures, conditional generation, prompting, decoding, pretraining, scaling, evaluation, ethical risk, and safety. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-6-neural-networks",
     title: "Speech & Language Processing Chapter 6 — Neural Networks.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-6", "book-notes"],
     time: 23,
-    words: 4489,
+    words: 4490,
     excerpt: "Units, nonlinear activation, XOR, feedforward networks, classification, embedding inputs, backpropagation, optimization, and regularization. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

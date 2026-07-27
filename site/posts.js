@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-7-performance-issues-supervised-learning",
+    title: "Computational Intelligence Chapter 7 — Performance Issues (Supervised Learning).",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-7", "book-notes"],
+    time: 21,
+    words: 4118,
+    excerpt: "Accuracy, complexity, convergence, generalization, data preparation, robust losses, initialization, learning rate, momentum, optimizer and architecture choice, adaptive activations, and active learning. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-6-reinforcement-learning",
     title: "Computational Intelligence Chapter 6 — Reinforcement Learning.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-6", "book-notes"],
     time: 21,
-    words: 4101,
+    words: 4102,
     excerpt: "Learning through rewards, model-free reinforcement learning, temporal-difference learning, Q-learning, neural value approximation, RPROP, gradient approaches, and connectionist Q-learning. Detailed first-principles master's companion."
   },
   {

@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-17-ant-algorithms",
+    title: "Computational Intelligence Chapter 17 — Ant Algorithms.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-17", "book-notes"],
+    time: 21,
+    words: 4063,
+    excerpt: "Stigmergy, artificial pheromone, ant-system construction, evaporation, Ant Colony System, Max-Min Ant System, Ant-Q, rank variants, clustering, division of labor, continuous and multi-objective ACO. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-16-particle-swarm-optimization",
     title: "Computational Intelligence Chapter 16 — Particle Swarm Optimization.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-16", "book-notes"],
     time: 21,
-    words: 4061,
+    words: 4062,
     excerpt: "Global-best and local-best PSO, cognitive and social velocity components, neighborhood topologies, inertia, velocity clamping, constriction, update timing, convergence, hybrid, binary, niching, dynamic, and multi-objective PSO. Detailed first-principles master's companion."
   },
   {

@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "slp-10-masked-language-models",
+    title: "Speech & Language Processing Chapter 10 — Masked Language Models.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["speech-language-processing", "nlp", "speech", "chapter-10", "book-notes"],
+    time: 23,
+    words: 4544,
+    excerpt: "Bidirectional transformer encoders, masked-token training, contextual embeddings, fine-tuning for classification, and sequence labeling. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
+  },
+  {
     slug: "slp-9-post-training-alignment-test-time-compute",
     title: "Speech & Language Processing Chapter 9 — Post-training: Instruction Tuning, Alignment, and Test-Time Compute.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["speech-language-processing", "nlp", "speech", "chapter-9", "book-notes"],
     time: 24,
-    words: 4651,
+    words: 4652,
     excerpt: "Supervised instruction tuning, preference data, reward modeling, RLHF-style optimization, direct preference optimization, alignment limits, reasoning, and test-time compute. First-principles master's companion with derivation, worked case, evaluation, pitfalls, and study lab."
   },
   {

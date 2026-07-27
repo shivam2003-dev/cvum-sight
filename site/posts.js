@@ -16,13 +16,23 @@
 
 const POSTS = [
   {
+    slug: "ci-23-rough-sets",
+    title: "Computational Intelligence Chapter 23 — Rough Sets.",
+    date: "Jul 28, 2026",
+    cat: "book-notes",
+    tags: ["computational-intelligence", "ci", "chapter-23", "book-notes"],
+    time: 21,
+    words: 4114,
+    excerpt: "Indiscernibility relations, information systems, lower and upper approximations, boundary regions, positive and negative regions, approximation accuracy, reducts, dependency, and rough versus fuzzy uncertainty. Detailed first-principles master's companion."
+  },
+  {
     slug: "ci-22-fuzzy-controllers",
     title: "Computational Intelligence Chapter 22 — Fuzzy Controllers.",
     date: "Jul 28, 2026",
     cat: "book-notes",
     tags: ["computational-intelligence", "ci", "chapter-22", "book-notes"],
     time: 21,
-    words: 4056,
+    words: 4057,
     excerpt: "Fuzzy-control components, knowledge bases, input and output scaling, table-based, Mamdani, and Takagi-Sugeno controllers, stability, tuning, rule surfaces, implementation, and evaluation. Detailed first-principles master's companion."
   },
   {

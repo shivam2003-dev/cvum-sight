@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="R1-Zero, cold-start data, reasoning RL, rejection-sampling SFT, final RL, distilled models, rewards, and what 'architecture' really means here.">
+<title>DeepSeek-R1: Architecture and Training Pipeline — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=79">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=8"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a><a href="../series.html" class="active">Series</a>
+        <a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 9</p>
+        <p class="series-banner-title">DeepSeek R1 & Reasoning</p>
+        <div class="series-banner-progress"><div class="series-pip current"></div>
+          <div class="series-pip "></div>
+          <div class="series-pip "></div>
+          <div class="series-pip "></div>
+          <div class="series-pip "></div>
+          <div class="series-pip "></div></div>
+        <p class="series-banner-meta">Article 1 of 6 · Phase 9 of 10</p>
+        <div class="series-banner-nav"><a href="deepseek-9-1-r1-architecture.html" class="active">9.1 DeepSeek-R1</a>
+          <a href="deepseek-9-2-rlvr.html" class="">9.2 Reinforcement Learning With Verifiable Rewards</a>
+          <a href="deepseek-9-3-grpo-vs-ppo.html" class="">9.3 GRPO vs PPO</a>
+          <a href="deepseek-9-4-emergent-reasoning.html" class="">9.4 Emergent Reasoning in R1-Zero</a>
+          <a href="deepseek-9-5-self-verification.html" class="">9.5 Self-Verification</a>
+          <a href="deepseek-9-6-test-time-compute.html" class="">9.6 Test-Time Compute Scaling</a>
+          <a href="../series-deepseek.html">Phase hub</a>
+        </div>
+      </div>
+      <div class="post-header">
+        <p class="meta">Jul 30, 2026 · ml · 8 min read · 1521 words <span class="difficulty advanced">advanced</span></p>
+        <h1>DeepSeek-R1: Architecture and Training Pipeline.</h1>
+        <div class="tag-row"><span class="tag fill">ml</span><span class="tag">deepseek</span><span class="tag">phase-9</span><span class="tag">reasoning</span><span class="tag">rl</span></div>
+      </div>
+
+      <div class="post-body">
+        <p class="lead">R1-Zero, cold-start data, reasoning RL, rejection-sampling SFT, final RL, distilled models, rewards, and what 'architecture' really means here.</p>
+        <p>This chapter follows the series' four-layer pyramid: intuition first, then consequences, system design, and finally implementation-level checks. It is written to be useful both as a first explanation and as a review sheet before reading the primary papers.</p>
+
+        <div class="callout">
+          <strong>The one-sentence model</strong>
+          <p>R1’s breakthrough is primarily a training pipeline applied to a V3-family base, not a wholly new Transformer block; objectives and data turn a capable base model into a reasoning model.</p>
+        </div>
+
+        <h2>What you should be able to do after reading</h2>
+        <ul>
+          <li>Explain the mechanism without relying on the feature name.</li>
+          <li>Trace the relevant tensors, losses, or messages through one concrete example.</li>
+          <li>Distinguish a paper claim from an inference, implementation choice, or marketing shorthand.</li>
+          <li>Design a minimal experiment that could prove the idea wrong.</li>
+        </ul>
+
+        <h2>Where this chapter fits in the ten-phase map</h2>
+        <p>Reasoning post-training starts from the V3-family base engineered in Phases 1–8. RL changes which trajectories the model emits; it does not repeal attention, routing, precision, or serving constraints. Longer reasoning also makes context management and test-time cost more important.</p>
+        <p>The dependency is useful when debugging. If the model-level equation is correct but the measured result is poor, walk backward through representation, numerical format, memory layout, routing or communication, and finally the evaluation harness. The first broken contract is usually more actionable than the final benchmark delta.</p>
+
+        
+        <h2>1. R1-Zero tests pure RL</h2>
+        <p>Starting from DeepSeek-V3-Base, R1-Zero uses GRPO with rule-based accuracy and format rewards, without a preliminary supervised reasoning set. Its reasoning behaviors emerge, but readability and language mixing remain problems.</p>
+
+        <h2>2. Cold-start data improves the interface</h2>
+        <p>The full R1 pipeline first fine-tunes on a small collection of readable long-chain examples. This establishes a coherent reasoning format and avoids asking reinforcement learning to discover both problem solving and human-readable presentation from scratch.</p>
+
+        <h2>3. Reasoning RL is followed by new data</h2>
+        <p>After reasoning-oriented RL, DeepSeek rejection-samples successful outputs and mixes them with general supervised data. This turns model-generated solutions into a stronger SFT stage while filtering for correctness and quality.</p>
+
+        <h2>4. Final RL balances objectives</h2>
+        <p>A later reinforcement-learning stage improves reasoning while also optimizing helpfulness and harmlessness on broader prompts. The pipeline separates verifiable domains, where rules can score answers, from open-ended domains requiring other feedback.</p>
+
+        <h2>5. Distillation transfers behavior</h2>
+        <p>DeepSeek fine-tunes smaller Qwen and Llama bases on reasoning data from R1, producing 1.5B through 70B distilled checkpoints. These are not compressed copies of R1’s weights; they are different base models trained to imitate its successful reasoning behavior.</p>
+        <p class="study-note"><strong>Engineering lens.</strong> For every concept above, identify the tensor, state, metric, or system boundary that makes it observable. Then ask which assumption would make the claim fail. This keeps the chapter testable instead of leaving it as architecture vocabulary.</p>
+
+        <h2>Worked example</h2>
+        <p>Draw the four stages as checkpoint, data source, objective, and output artifact. For each, state what new capability or failure it addresses. This prevents the common error of treating 'R1' as one RL run.</p>
+        <p>Do the arithmetic with small dimensions first. Small examples expose index shifts, hidden assumptions, and missing denominators that disappear inside a billion-parameter headline. Once the hand-worked result is correct, automate it and compare the program output against the same values.</p>
+
+        <h2>Implementation and measurement plan</h2>
+        <p>Evaluate final answers, reasoning length, format adherence, language consistency, calibration, and safety. Keep R1-Zero, full R1, and distilled checkpoints separate in experiments and model cards.</p>
+        <ol><li>State the exact model, checkpoint, hardware, and date behind every numerical claim.</li>
+          <li>Separate algorithmic complexity, theoretical FLOPs, measured latency, memory, and end-to-end cost.</li>
+          <li>Build a small reference implementation before optimizing kernels or distributing it.</li>
+          <li>Compare against an equal-compute or equal-parameter baseline and report the denominator.</li>
+          <li>Record failure cases and scope limits beside the successful result.</li></ol>
+
+        <h2>From a paper claim to an engineering contract</h2>
+        <p>The primary anchor for this chapter is <em>DeepSeek-R1: Incentivizing Reasoning Capability via Reinforcement Learning</em> from DeepSeek-R1. Reading a number from that source is only the first step. A reproducible contract has four layers:</p>
+        <table>
+          <thead><tr><th>Layer</th><th>Question to write down</th><th>Evidence</th></tr></thead>
+          <tbody>
+            <tr><td>Mechanism</td><td>What operation, loss, state, or routing decision changes?</td><td>Equation, pseudocode, tensor shapes</td></tr>
+            <tr><td>Implementation</td><td>How is it realized on the named hardware and software stack?</td><td>Kernel, precision, layout, process groups</td></tr>
+            <tr><td>Measurement</td><td>Which denominator and baseline make the comparison fair?</td><td>Raw metrics, config, repeated runs</td></tr>
+            <tr><td>Scope</td><td>Where should the claim stop being trusted?</td><td>Failure cases, ablations, dated limitations</td></tr>
+          </tbody>
+        </table>
+        <p>This separation prevents a frequent error in frontier-model writing: converting a theoretical reduction into a latency promise, or converting one internal benchmark into a universal quality ranking. The implementation can fail to realize the algorithm, and the workload can fail to expose the intended benefit.</p>
+
+        <h2>Failure modes and misleading shortcuts</h2>
+        <ul><li>R1 is not simply V3 with a longer system prompt.</li>
+          <li>Distilled models do not share R1’s architecture or parameter count.</li>
+          <li>Visible reasoning length is not a direct measure of internal quality.</li>
+          <li>Rule rewards cover only verifiable tasks.</li>
+          <li>The paper’s pipeline should not be collapsed into 'pure RL'.</li></ul>
+        <p>These are not footnotes. Frontier-model engineering is dominated by boundary conditions: a method can be mathematically correct and still lose to memory traffic, data skew, numerical drift, evaluation leakage, or a poorly stated comparison. A credible result makes those boundaries visible.</p>
+
+        <h2>How to audit claims about this topic</h2>
+        <p>Rewrite each claim with its missing boundary: name the exact mechanism, identify the tensor or resource it changes, and attach the workload and measurement. Then construct a counterexample at the edge of the claim. If a sentence cannot survive that rewrite, treat it as orientation—not evidence.</p>
+        <p>Next, trace provenance. Prefer the primary report for configuration and results, the released code for implementation behavior, and your own profiler for product performance. Secondary explainers are valuable for intuition but should not silently become the source of a numerical claim.</p>
+
+        <h2>Decision guide: when should you use this idea?</h2>
+        <p><strong>Use it when</strong> the bottleneck named in the thesis appears in profiler traces or controlled quality experiments, the necessary kernels and runtime support exist, and the added system complexity can be observed in production. Start with the smallest configuration that exposes the bottleneck.</p>
+        <p><strong>Delay it when</strong> a dense or higher-precision baseline does not yet converge, the evaluation harness is unstable, or the claimed resource is not limiting the workload. Sophisticated architecture cannot compensate for an invalid baseline.</p>
+        <p><strong>Reject it when</strong> its benefit exists only under a denominator irrelevant to the product—for example, theoretical FLOPs while user latency worsens—or when numerical, safety, or operational regressions exceed the measured gain.</p>
+
+        <h2>Hands-on study lab</h2>
+        <ol><li><strong>1.</strong> Build the stage table.</li>
+          <li><strong>2.</strong> Compare R1-Zero and R1 failure modes.</li>
+          <li><strong>3.</strong> Design a reward for a code task.</li>
+          <li><strong>4.</strong> Explain distillation versus weight pruning.</li></ol>
+        <p>For each exercise, save the configuration, a tiny deterministic fixture, the raw measurements, and one failed case. The goal is not merely to make the code run; it is to make the conclusion independently checkable.</p>
+
+        <h2>Quick self-check</h2>
+        <details><summary>What is the central idea?</summary><p>R1’s breakthrough is primarily a training pipeline applied to a V3-family base, not a wholly new Transformer block; objectives and data turn a capable base model into a reasoning model.</p></details>
+        <details><summary>What is the most common reading mistake?</summary><p>R1 is not simply V3 with a longer system prompt.</p></details>
+        <details><summary>What evidence should I demand?</summary><p>An exact configuration, a fair baseline, primary-source support, end-to-end measurements, and failure cases at the limits of the claim.</p></details>
+        <details><summary>How do I explain it to a new engineer?</summary><p>Begin with the bottleneck, show one tiny worked example, trace the changed state, and only then introduce the official name. Finish by naming one situation where the method will not help.</p></details>
+        <details><summary>How do I review an implementation?</summary><p>Check indexing and masks, parameter sharing, dtype transitions, layouts, process-group scope, raw metric denominators, and behavior under an adversarial or worst-case fixture. A passing happy-path shape test is not enough.</p></details>
+
+        <h2>Teach-back synthesis</h2>
+        <p>Close the page and reconstruct the argument in five sentences: the bottleneck; the mechanism; the state or tensor that changes; the fair measurement; and the main failure mode. Then reopen the page and compare. If you can repeat the feature names but cannot state those five sentences, revisit the worked example.</p>
+        <p>Finally, connect the idea to two neighboring phases. DeepSeek's advantage is not one isolated invention: compressed attention changes the cache, sparse experts change active compute, FP8 changes arithmetic and bandwidth, distributed schedules hide communication, and reasoning training spends the resulting capacity differently. The series becomes useful when those dependencies form one mental model.</p>
+
+        <h2>Key takeaways</h2>
+        <ul>
+          <li>R1-Zero, cold-start data, reasoning RL, rejection-sampling SFT, final RL, distilled models, rewards, and what 'architecture' really means here.</li>
+          <li>The mechanism, training recipe, runtime implementation, and measured product behavior are separate layers of evidence.</li>
+          <li>Numbers remain meaningful only with their workload, precision, hardware, context length, and date attached.</li>
+          <li>A small reproducible test is more valuable than a large uncheckable diagram.</li>
+        </ul>
+
+        <h2>Primary sources and further reading</h2>
+        <ul><li><strong>DeepSeek-R1.</strong> <a href="https://arxiv.org/abs/2501.12948" target="_blank" rel="noopener">DeepSeek-R1: Incentivizing Reasoning Capability via Reinforcement Learning</a>.</li>
+          <li><strong>DeepSeekMath.</strong> <a href="https://arxiv.org/abs/2402.03300" target="_blank" rel="noopener">Pushing the Limits of Mathematical Reasoning in Open Language Models</a>.</li>
+          <li><strong>Schulman et al..</strong> <a href="https://arxiv.org/abs/1707.06347" target="_blank" rel="noopener">Proximal Policy Optimization Algorithms</a>.</li></ul>
+        <p class="meta">Source note: explanations and worked examples here are original. Numerical claims are scoped to the linked reports; rapidly changing model comparisons are dated in the article itself.</p>
+      </div>
+      <div class="post-nav"><a href="deepseek-8-8-memory-optimization.html">← GPU Memory Optimization for Giant MoE Models</a><a href="deepseek-9-2-rlvr.html">Reinforcement Learning With Verifiable Rewards →</a></div>
+    </article>
+    <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer>
+    </div>
+  </div>
+  <script src="../posts.js?v=2"></script><script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=40"></script><script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script>
+</body>
+</html>

@@ -299,7 +299,7 @@ let posts = fs.readFileSync(postsPath, "utf8");
 const begin = "  // BEGIN GENERATED DEEPSEEK COMPLETION";
 const end = "  // END GENERATED DEEPSEEK COMPLETION";
 const entries = [...manifest].reverse().map((item) =>
-  `  { slug:"${item.slug}", title:"${item.title}.", date:"Jul 30, 2026", cat:"ml", tags:["deepseek","phase-${item.phase}"], time:${item.time}, words:${item.words}, excerpt:${JSON.stringify(item.summary)} },`
+  `  { slug:"${item.slug}", title:${JSON.stringify(/[.!?]$/.test(item.title) ? item.title : `${item.title}.`)}, date:"Jul 30, 2026", cat:"ml", tags:["deepseek","phase-${item.phase}"], time:${item.time}, words:${item.words}, excerpt:${JSON.stringify(item.summary)}, series:"deepseek", seriesNum:"${item.number}" },`
 ).join("\n");
 const block = `${begin}\n${entries}\n${end}\n`;
 posts = posts.replace(new RegExp(`${begin}[\\s\\S]*?${end}\\n?`), "");

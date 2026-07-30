@@ -159,7 +159,7 @@ const articles = [
     topic: "Inference infrastructure",
     difficulty: "advanced",
     minutes: 5,
-    words: 530,
+    words: 562,
     tags: ["paperjuice", "inference", "hardware", "serving", "architecture"],
     excerpt: "Misha follows compute, memory bandwidth, latency, networking, and power through prefill, decode, attention, MoE, and speculative decoding.",
     body: `
@@ -168,6 +168,7 @@ const articles = [
 <h2>Split the token loop first</h2>
 <p>Transformer inference has two visibly different phases. <strong>Prefill</strong> processes the prompt in parallel and builds the key-value cache; it benefits from high compute throughput. <strong>Decode</strong> generates one token at a time, repeatedly reading model weights and cache; it is often limited by memory bandwidth and latency. A GPU selected for maximal prefill throughput can be a costly, power-hungry decode engine.</p>
 <p>A CPU system orchestrates, schedules, and batches the prompt. The system checks a prefix cache; uncached prompt tokens enter compute-intensive prefill. KV-cache creation may involve CPU or accelerator memory and network transfer. Decode produces one token at a time and is memory intensive and latency sensitive.</p>
+<figure><div role="region" aria-label="Scrollable inference request lifecycle diagram" tabindex="0" style="overflow-x:auto"><img src="../assets/ycpc-inference-request-lifecycle.png" alt="Lifecycle of an inference request: user request, CPU orchestration and prefix-cache lookup, accelerator prefill, growing KV state, token-by-token decode with optional speculative decoding, and the streamed output" style="width:100%;min-width:760px;max-width:none"></div><figcaption>One request crosses several hardware regimes. Compute dominates prefill; capacity and bandwidth shape KV state; latency and bandwidth constrain the decode loop. Swipe horizontally on a small screen to inspect every phase.</figcaption></figure>
 <h2>The roofline test</h2>
 <p>Misha uses <strong>arithmetic intensity</strong>: FLOPs divided by bytes moved. Above a machine’s peak-FLOPs-to-bandwidth ratio, work tends to be compute-bound; below it, memory-bandwidth-bound. Prefill can reuse weights across prompt tokens and is generally compute-bound. Decode advances one token at a time, so attention and even practical-batch MLP work are often bandwidth-bound.</p>
 <h2>Disaggregation turns hardware into a scheduler problem</h2>

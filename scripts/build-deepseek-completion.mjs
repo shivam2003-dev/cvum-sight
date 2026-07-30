@@ -176,6 +176,13 @@ function articleBody(article) {
 
 function render(article) {
   const { draft, count, time, tags, pips, prevLink, nextLink } = articleBody(article);
+  const glossary = article.concepts.map(([term, definition]) => {
+    const firstSentence = definition.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() || definition;
+    return `<div class="vocab-term">
+        <div class="vocab-term-header"><span class="vocab-term-word">${esc(term)}</span><span class="vocab-term-arrow">▶</span></div>
+        <div class="vocab-term-def">${esc(firstSentence)}</div>
+      </div>`;
+  }).join("\n      ");
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -190,7 +197,7 @@ function render(article) {
 </head>
 <body>
   <div class="progress-bar"></div>
-  <div class="layout">
+  <div class="layout has-vocab">
     <aside class="sidebar">
       <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
       <p class="sidebar-sub">blog from a devops + ml apprentice</p>
@@ -225,8 +232,21 @@ ${draft}
     </article>
     <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer>
     </div>
+    <aside class="vocab-panel" id="vocab-panel">
+      <p class="vocab-panel-label">// vocab</p>
+      ${glossary}
+    </aside>
   </div>
   <script src="../posts.js?v=2"></script><script src="../stats.js?v=2"></script>
+  <script>
+    document.querySelectorAll('.vocab-term').forEach(function(term) {
+      term.querySelector('.vocab-term-header').addEventListener('click', function() {
+        var isOpen = term.classList.contains('open');
+        document.querySelectorAll('.vocab-term').forEach(function(item) { item.classList.remove('open'); });
+        if (!isOpen) term.classList.add('open');
+      });
+    });
+  </script>
   <script src="../app.js?v=40"></script><script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script>
 </body>
 </html>

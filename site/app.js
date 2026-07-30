@@ -307,9 +307,13 @@
     const nextButton = document.getElementById("archive-next");
     const pageSize = 50;
 
-    // AI Native tool pages live in their own dedicated hub and are hidden from Archive.
+    // AI Native tools and book companions live in dedicated hubs, so keep them out of Archive.
     const hiddenArchiveDates = new Set(["May 31, 2026", "Jun 1, 2026"]);
-    const archiveSource = POSTS.filter(p => !p.slug.startsWith("ain-") && !hiddenArchiveDates.has(p.date));
+    const archiveSource = POSTS.filter(p =>
+      p.cat !== "book-notes" &&
+      !p.slug.startsWith("ain-") &&
+      !hiddenArchiveDates.has(p.date)
+    );
 
     // Collapse every series into ONE entry: series name, linking to its FIRST article.
     const seriesNames = {

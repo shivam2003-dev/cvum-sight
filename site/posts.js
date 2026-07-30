@@ -15,6 +15,66 @@
  */
 
 const POSTS = [
+  {
+    slug: "ycpc-14-madrona-gpu-game-engine",
+    title: "Madrona — A Game Engine Where Thirty-Two Thousand Worlds Run at Once.",
+    date: "Jul 30, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "reinforcement-learning", "simulation", "gpu", "game-engines"],
+    time: 6,
+    words: 925,
+    excerpt: "Reinforcement learning needs billions of experiences, but conventional engines step a few worlds at a time. Madrona reorganizes game state as a GPU-native ECS and runs thousands of independent worlds in one batch.",
+    series: "yc-paper-club",
+    seriesNum: "14"
+  },
+  {
+    slug: "ycpc-13-heterogeneous-inference",
+    title: "Why AI Inference Needs Heterogeneous Hardware — One Request, Many Engines.",
+    date: "Jul 30, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "inference", "hardware", "serving", "architecture"],
+    time: 5,
+    words: 875,
+    excerpt: "Inference is not one operation: prefill, decode, retrieval, tool execution and orchestration stress different resources. Heterogeneous design turns a request into a pipeline routed across the right engines.",
+    series: "yc-paper-club",
+    seriesNum: "13"
+  },
+  {
+    slug: "ycpc-12-ai-writes-systems-code",
+    title: "When AI Writes Systems Code — The Compiler Becomes a Teacher.",
+    date: "Jul 30, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "cuda", "triton", "agents", "benchmarking"],
+    time: 5,
+    words: 900,
+    excerpt: "GPU kernels offer AI an unusually honest learning loop: code must compile, match a reference, and beat a timed baseline. Mark Saroufim traces the path from llm.c and KernelBook to competitive kernel agents.",
+    series: "yc-paper-club",
+    seriesNum: "12"
+  },
+  {
+    slug: "ycpc-11-intelligence-per-watt",
+    title: "Intelligence per Watt — When the Best AI Is the One Already on Your Desk.",
+    date: "Jul 30, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "local-ai", "inference", "energy", "benchmarking"],
+    time: 5,
+    words: 900,
+    excerpt: "A model is not efficient merely because it is small. Intelligence per Watt combines task success and power, testing 20+ models, eight accelerators and one million real queries to ask which work can move from cloud to device.",
+    series: "yc-paper-club",
+    seriesNum: "11"
+  },
+  {
+    slug: "ycpc-10-parallel-kittens",
+    title: "ParallelKittens — Making Eight GPUs Feel Like One Machine.",
+    date: "Jul 30, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "ml-systems", "cuda", "multi-gpu", "kernels"],
+    time: 6,
+    words: 1000,
+    excerpt: "Inter-GPU communication is becoming the bottleneck. ParallelKittens turns communication, synchronization and compute overlap into eight tile-level primitives, reaching state-of-the-art performance with fewer than 50 lines of device code.",
+    series: "yc-paper-club",
+    seriesNum: "10"
+  },
   // BEGIN GENERATED DEEPSEEK COMPLETION
   { slug:"deepseek-10-6-open-frontier", title:"The Future of Open-Weight Frontier Models.", date:"Jul 30, 2026", cat:"ml", tags:["deepseek","phase-10"], time:8, words:1487, excerpt:"A grounded series conclusion: capacity, efficient attention, reasoning RL, agents, hardware, evaluation, governance, and concrete ways readers can contribute.", series:"deepseek", seriesNum:"10.6" },
   { slug:"deepseek-10-5-frontier-comparison", title:"DeepSeek-V4 vs GPT-5.4 vs Gemini 3.1 Pro.", date:"Jul 30, 2026", cat:"ml", tags:["deepseek","phase-10"], time:8, words:1530, excerpt:"A dated, methodology-aware comparison of openness, modality, context, deployment, agent interfaces, economics, and benchmark evidence as of July 30, 2026.", series:"deepseek", seriesNum:"10.5" },

@@ -117,7 +117,7 @@ Use CSS classes defined in the SVG `<style>` block; color palette: `#ebe3cf` (pa
 
 ## CSS cache busting
 
-All HTML files reference `style.css?v=2`. Bump this version number (`?v=3`, `?v=4`, etc.) across all HTML files when making CSS changes that need to bypass browser caches.
+All HTML files reference `style.css?v=84`. Bump this version number (`?v=3`, `?v=4`, etc.) across all HTML files when making CSS changes that need to bypass browser caches.
 
 ## Existing topics/categories
 

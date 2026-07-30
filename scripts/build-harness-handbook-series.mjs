@@ -159,7 +159,7 @@ function render(article) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeHtml(article.title)} — cvam.sight</title>
 <meta name="description" content="${escapeHtml(article.description)}">
-<link rel="stylesheet" href="../style.css?v=79">
+<link rel="stylesheet" href="../style.css?v=84">
 <link rel="stylesheet" href="/themes.css?v=6">
 <script src="/theme-init.js?v=8"></script>
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">

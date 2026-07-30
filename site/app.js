@@ -172,6 +172,29 @@
     </a>`;
   }
 
+  const hiddenArchiveDates = new Set(["May 31, 2026", "Jun 1, 2026"]);
+  function isArchiveEligiblePost(post) {
+    return post.cat !== "book-notes" &&
+      !post.slug.startsWith("ain-") &&
+      !hiddenArchiveDates.has(post.date);
+  }
+
+  function renderLatestPostCard(post, index) {
+    const primaryClass = index === 0 ? " discover-feature-primary" : "";
+    return `<a href="posts/${escapeHtml(post.slug)}.html" class="discover-feature-card latest-article-card${primaryClass}">
+      <div class="discover-feature-top">
+        <span class="discover-feature-icon latest-article-icon" aria-hidden="true">${String(index + 1).padStart(2, "0")}</span>
+        <span class="latest-article-meta">${post.time} min · ${post.words} words</span>
+      </div>
+      <div>
+        <span class="discover-feature-label">${escapeHtml(post.cat)} · ${escapeHtml(post.date)}</span>
+        <h3>${escapeHtml(post.title)}</h3>
+        <p>${escapeHtml(post.excerpt)}</p>
+      </div>
+      <span class="discover-feature-action">Read article <b aria-hidden="true">→</b></span>
+    </a>`;
+  }
+
   // resource card (cheatsheets / debug guides) — links by full path
   function renderResourceCard(r) {
     var badge = r.kind === "cheatsheet" ? "cheatsheet" : r.kind === "toolbox" ? "toolbox" : r.kind === "awesome" ? "awesome list" : r.kind === "extra" ? "resource list" : r.kind === "interview" ? "interview Q&A" : "debug guide";
@@ -206,11 +229,10 @@
   // ── home page: post grid ──
   const grid = document.getElementById("post-grid");
   if (grid && document.body.classList.contains("home-page") && typeof POSTS !== "undefined") {
-    // Home feed stays light: only the 6 latest posts.
-    // Everything else lives behind "browse all articles".
+    // Match Archive's publication rules, then show its four newest articles.
     const RECENT_LIMIT = 4;
-    const recent = POSTS.slice(0, RECENT_LIMIT);
-    grid.innerHTML = recent.map(renderPostCard).join("");
+    const recent = POSTS.filter(isArchiveEligiblePost).slice(0, RECENT_LIMIT);
+    grid.innerHTML = recent.map(renderLatestPostCard).join("");
 
     const moreLink = document.getElementById("feed-more");
     if (moreLink && POSTS.length > RECENT_LIMIT) {
@@ -308,12 +330,7 @@
     const pageSize = 50;
 
     // AI Native tools and book companions live in dedicated hubs, so keep them out of Archive.
-    const hiddenArchiveDates = new Set(["May 31, 2026", "Jun 1, 2026"]);
-    const archiveSource = POSTS.filter(p =>
-      p.cat !== "book-notes" &&
-      !p.slug.startsWith("ain-") &&
-      !hiddenArchiveDates.has(p.date)
-    );
+    const archiveSource = POSTS.filter(isArchiveEligiblePost);
 
     // Collapse every series into ONE entry: series name, linking to its FIRST article.
     const seriesNames = {

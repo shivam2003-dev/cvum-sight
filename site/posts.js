@@ -616,7 +616,7 @@ const POSTS = [
   {
     slug: "kimi-k3-architecture-and-infrastructure",
     title: "Kimi K3 — the architecture and infrastructure, explained.",
-    date: "Aug 5, 2026",
+    date: "Jul 27, 2026",
     cat: "ml",
     tags: ["ml", "llm-architecture", "moe", "kimi", "inference"],
     time: 27,

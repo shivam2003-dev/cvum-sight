@@ -8,7 +8,53 @@ const out = path.join(root, "site", "posts");
 const articles = [
   {
     n: 10,
-    slug: "ycpc-10-parallel-kittens",
+    slug: "ycpc-10-chip-kernel-specialization",
+    short: "Specialized Chips",
+    title: "The Case for Chip and Kernel Specialization — One GPU Cannot Win Every Workload.",
+    description: "YC Paper Club Edition 3 opener: François Chaubard explains why training, interactive inference, batch serving, prefill and decode increasingly want specialized chips and kernels.",
+    presenter: "François Chaubard (YC)",
+    topic: "Chip + kernel specialization",
+    difficulty: "intermediate",
+    minutes: 7,
+    words: 1300,
+    tags: ["paperjuice", "ai-hardware", "inference", "kernels", "specialization"],
+    excerpt: "A general-purpose GPU must compromise across training, interactive inference and batch serving. As inference volume grows, François Chaubard argues that chips and kernels will split around TTFT, latency, throughput, memory and communication.",
+    body: `
+<p>A delivery van is useful because it can carry almost anything. But if a city moves enough people and freight, it eventually builds buses, ambulances, refrigerated trucks, and trains. Each vehicle gives up generality to become much better at one job. François Chaubard opened this YC Paper Club edition with the same forecast for AI hardware: the general-purpose GPU created the market, but the market is now large enough to split into specialized machines.</p>
+<blockquote>There is no single meaning of “fast inference.” An interactive assistant wants its first token immediately; a batch service wants the most total tokens per second; training wants memory capacity and enormous all-to-all communication. Different scoreboards produce different winning hardware.</blockquote>
+<figure><img src="../assets/ycpc-chip-specialization-taxonomy.png" alt="François Chaubard’s conceptual chip-specialization tree, splitting a general-purpose H100 into training, interactive inference, batch, prefill, and decode-oriented designs"><figcaption>Conceptual taxonomy from François Chaubard’s YC Paper Club opening. The H100t/H100i/H100ip/H100ib labels illustrate hypothetical specializations; they are not announced NVIDIA product names.</figcaption></figure>
+<h2>Start with the metric, not the chip</h2>
+<p>The slide begins with three goals that are often mixed together:</p>
+<ul><li><strong>Time to first token (TTFT):</strong> how long a user waits before the answer begins.</li><li><strong>Latency:</strong> how long one request or sample takes to finish.</li><li><strong>Throughput:</strong> how many tokens or requests a system completes for the whole batch.</li></ul>
+<p>A server can improve throughput by building a larger batch, even while every individual request waits longer. A personal assistant may accept lower fleet throughput to keep batch size one and answer immediately. “Fastest accelerator” is therefore an incomplete sentence; we must ask fastest for which workload, batch size, latency target, power envelope, and cost model.</p>
+<h2>The first split: training versus inference</h2>
+<p>Training repeatedly performs forward and backward passes, retains activations, updates optimizer state, and moves gradients or tokens across many devices. It values memory capacity, high-bandwidth interconnects, collective communication, and broad numerical flexibility. Mixture-of-experts training can be dominated by all-to-all traffic.</p>
+<p>Inference holds weights mostly fixed. It removes optimizer state and backward computation, but introduces strict service-level objectives, unpredictable arrivals, key-value caches, and a strong sensitivity to memory bandwidth. Once inference consumes far more lifetime compute than training, a chip designed only as a training derivative may carry expensive features that the serving workload rarely uses.</p>
+<h2>The second split: personal versus batch inference</h2>
+<p>Chaubard’s conceptual tree divides inference again. <strong>Personal or interactive inference</strong> often serves one user at batch size one. The goal is low latency and low TTFT, perhaps inside a laptop, phone, workstation, or lightly loaded endpoint. It needs enough memory for the model and cache without requiring a data-center-sized power budget.</p>
+<p><strong>Batch inference</strong> aggregates many requests. Here the operator wants high utilization and maximum useful tokens per second per dollar or watt. Queueing and continuous batching can keep the machine busy, but tail latency must remain within the service promise. The best balance of compute, memory, and networking differs from the personal path.</p>
+<h2>The same split reshapes the data center</h2>
+<p>Specialization does not stop at the package boundary. Training and inference facilities optimize different businesses. A training data center minimizes time-to-train: it can sit near cheap abundant power, connect the newest accelerators into one tightly coupled computer, sustain extreme east-west traffic, and run a fixed cluster close to full load. Jobs are long but can checkpoint and restart.</p>
+<p>An inference data center minimizes cost per token while meeting latency. It belongs nearer users and network hubs, receives bursty demand, and can mix GPUs, ASICs, and older silicon in independently scalable pools. Its traffic arrives north-south from customers; its storage serves weights, KV caches, and retrieval data; its service must remain always on.</p>
+<figure><img src="../assets/ycpc-datacenter-specialization.png" alt="François Chaubard’s comparison of training and inference data centers across metrics, location, hardware, network, cluster shape, reliability, storage, power, and hardware lifetime"><figcaption>Data-center specialization follows workload economics: tightly coupled, steadily loaded training supercomputers versus distributed, latency-bound inference pools.</figcaption></figure>
+<p>This makes the chip argument stronger. Hardware, kernels, networks, storage, reliability, and location co-evolve around the same objective. Buying an “inference chip” without redesigning queueing, cache placement, network paths, and fleet operations captures only part of the possible gain.</p>
+<h2>The third split: prefill versus decode</h2>
+<p>A transformer request itself contains two different workloads. During <strong>prefill</strong>, the system processes the prompt’s tokens in parallel and constructs the KV cache. Large matrix multiplications make this phase comparatively compute-heavy. During <strong>decode</strong>, the model emits one token at a time and repeatedly reads weights and cache. Decode is sequential across tokens and is commonly constrained by memory bandwidth and communication.</p>
+<p>That motivates separate prefill- and decode-oriented workers—or eventually separate chips. A prefill engine may optimize compute density and TTFT for long prompts. A decode engine may spend more silicon and system budget on memory capacity, bandwidth, efficient low precision, and rapid token-by-token scheduling. The difficult systems question is whether the gain exceeds the cost of moving KV caches and coordinating two pools.</p>
+<table><thead><tr><th>Workload</th><th>Primary pressure</th><th>Optimization target</th></tr></thead><tbody><tr><td>Training</td><td>memory, backward compute, collectives</td><td>time and cost to train</td></tr><tr><td>Interactive inference</td><td>batch size 1, power, responsiveness</td><td>low latency / TTFT</td></tr><tr><td>Batch serving</td><td>utilization and request volume</td><td>tokens per second per dollar</td></tr><tr><td>Prefill</td><td>parallel prompt compute</td><td>prompt processing and TTFT</td></tr><tr><td>Decode</td><td>weight and KV-cache movement</td><td>inter-token latency and throughput</td></tr></tbody></table>
+<h2>Why kernel specialization arrives with chip specialization</h2>
+<p>Special silicon is useless without software that exposes its advantage. Kernels decide how tensors are tiled, where data lives, which operations fuse, how low-precision formats accumulate, and whether communication overlaps computation. A general matrix library optimizes a wide space; a workload-specific kernel can assume a model shape, batch regime, quantization format, and memory layout.</p>
+<p>This is the bridge to the rest of Edition 03. ParallelKittens specializes multi-GPU communication schedules. AI-generated systems code expands the number of kernels we can explore. Heterogeneous serving routes each phase to the right engine. Intelligence per watt asks whether the specialization produces useful answers efficiently. The opener supplies the economic thesis beneath them all: enough volume turns one broad market into several narrow, optimizable markets.</p>
+<h2>The caution: specialization creates a tax</h2>
+<p>Every split adds compilers, runtimes, deployment targets, spare capacity, observability, and failure modes. A specialized accelerator can benchmark beautifully but lose in production if workloads change, utilization falls, or moving data between devices dominates. Vendor lock-in and a smaller debugging ecosystem also matter. The right threshold is not “can we build a faster chip?” but “is this workload stable and large enough to repay the hardware and software complexity?”</p>
+<h2>The takeaway</h2>
+<p>Chaubard’s argument is a taxonomy, not a claim that the hypothetical H100 variants on the slide already exist. Its value is the decision tree: begin with the workload and its metric, then specialize only where volume and stability justify it. The GPU remains the flexible ancestor; inference at scale creates the evolutionary pressure for a family.</p>
+<h2>Sources and further reading</h2>
+<ul><li><a href="https://www.youtube.com/watch?v=n8dz2FX0_uY" target="_blank">YC Paper Club opening: The case for chip and kernel specialization (0:00)</a></li><li><a href="ycpc-14-heterogeneous-inference.html">Edition 03 companion: heterogeneous inference infrastructure</a></li><li><a href="ycpc-11-parallel-kittens.html">Edition 03 companion: specialized multi-GPU kernels</a></li></ul>`
+  },
+  {
+    n: 11,
+    slug: "ycpc-11-parallel-kittens",
     short: "ParallelKittens",
     title: "ParallelKittens — Making Eight GPUs Feel Like One Machine.",
     description: "YC Paper Club Part 3: Stuart Sul explains how eight reusable primitives and tile-level communication simplify fast multi-GPU AI kernels.",
@@ -46,8 +92,8 @@ const articles = [
 <ul><li><a href="https://arxiv.org/abs/2511.13940" target="_blank">ParallelKittens paper</a></li><li><a href="https://hazyresearch.stanford.edu/blog/2025-11-17-pk" target="_blank">Hazy Research introduction and linked technical explainers</a></li><li><a href="https://www.youtube.com/watch?v=n8dz2FX0_uY&t=436s" target="_blank">YC Paper Club presentation (7:16)</a></li></ul>`
   },
   {
-    n: 11,
-    slug: "ycpc-11-intelligence-per-watt",
+    n: 12,
+    slug: "ycpc-12-intelligence-per-watt",
     short: "Intelligence / Watt",
     title: "Intelligence per Watt — When the Best AI Is the One Already on Your Desk.",
     description: "YC Paper Club Part 3: Jon Saad-Falcon on measuring useful model accuracy per watt across local and cloud inference.",
@@ -83,8 +129,8 @@ const articles = [
 <ul><li><a href="https://arxiv.org/abs/2511.07885" target="_blank">Intelligence per Watt paper (v4)</a></li><li><a href="https://huggingface.co/papers/2511.07885" target="_blank">Hugging Face paper page and author summary</a></li><li><a href="https://www.youtube.com/watch?v=n8dz2FX0_uY&t=1289s" target="_blank">YC Paper Club presentation (21:29)</a></li></ul>`
   },
   {
-    n: 12,
-    slug: "ycpc-12-ai-writes-systems-code",
+    n: 13,
+    slug: "ycpc-13-ai-writes-systems-code",
     short: "AI Writes Kernels",
     title: "When AI Writes Systems Code — The Compiler Becomes a Teacher.",
     description: "YC Paper Club Part 3: Mark Saroufim on AI-generated GPU kernels, data scarcity, verifiable benchmarking and the new systems engineer.",
@@ -121,8 +167,8 @@ const articles = [
 <ul><li><a href="https://www.coreauto.com/blog/when-ai-starts-writing-systems-code" target="_blank">Mark Saroufim’s essay: When AI Starts Writing Systems Code</a></li><li><a href="https://www.modular.com/blog/three-trends-from-mlsys-2026" target="_blank">MLSys 2026 recap: agent-written kernels and simpler abstractions</a></li><li><a href="https://www.youtube.com/watch?v=n8dz2FX0_uY&t=1865s" target="_blank">YC Paper Club presentation (31:05)</a></li></ul>`
   },
   {
-    n: 13,
-    slug: "ycpc-13-heterogeneous-inference",
+    n: 14,
+    slug: "ycpc-14-heterogeneous-inference",
     short: "Heterogeneous AI",
     title: "Why AI Inference Needs Heterogeneous Hardware — One Request, Many Engines.",
     description: "YC Paper Club Part 3: Misha Smelyanskiy explains why production inference should route each stage to the hardware that fits it.",
@@ -158,8 +204,8 @@ const articles = [
 <ul><li><a href="https://www.youtube.com/watch?v=n8dz2FX0_uY&t=2824s" target="_blank">YC Paper Club presentation (47:04)</a></li><li><a href="https://arxiv.org/abs/1811.09886" target="_blank">Deep Learning Inference in Facebook Data Centers</a></li><li><a href="https://arxiv.org/abs/1805.00907" target="_blank">Glow: compiler techniques for heterogeneous neural-network hardware</a></li></ul>`
   },
   {
-    n: 14,
-    slug: "ycpc-14-madrona-gpu-game-engine",
+    n: 15,
+    slug: "ycpc-15-madrona-gpu-game-engine",
     short: "Madrona",
     title: "Madrona — A Game Engine Where Thirty-Two Thousand Worlds Run at Once.",
     description: "YC Paper Club Part 3: Brennan Shacklett’s GPU-native game engine removes the simulation bottleneck from reinforcement learning.",
@@ -202,11 +248,12 @@ const steps = articles.map(a => ({ n: a.n, slug: a.slug, short: a.short }));
 
 function vocab(article) {
   const terms = {
-    10: [["Tile", "A small rectangular tensor block used as the unit of GPU compute and communication."], ["NVLink / NVSwitch", "NVIDIA’s high-bandwidth links and switching fabric connecting GPUs inside a scale-up system."], ["Overlap", "Scheduling communication while useful computation runs, hiding some transfer time."], ["Collective", "A coordinated operation such as all-reduce or all-gather across multiple GPUs."]],
-    11: [["IPW", "Intelligence per watt: measured task success divided by electrical power for one model-hardware pair."], ["Local LM", "A language model small enough to run interactively on a personal or edge accelerator."], ["Serviceable query", "A query a configuration can answer within the study’s quality and practical constraints."], ["Hybrid routing", "Serving easy or private work locally and escalating harder work to cloud models."]],
-    12: [["Kernel", "A small program executed in parallel by many GPU threads."], ["Triton", "A Python-based language and compiler for authoring high-performance GPU kernels."], ["Differential test", "Checking a generated implementation against a trusted reference over many inputs."], ["Benchmark gaming", "Winning the measured test by exploiting gaps that do not translate to real performance."]],
-    13: [["Prefill", "Parallel processing of an input prompt to construct the transformer KV cache."], ["Decode", "Autoregressive generation of one token at a time, often limited by memory bandwidth."], ["Disaggregation", "Separating serving stages into independently scaled pools."], ["KV cache", "Stored attention keys and values reused while a model generates later tokens."]],
-    14: [["ECS", "Entity Component System: data-oriented game state split into IDs, component columns and systems."], ["Environment step", "One transition of a simulated world from its current state to the next."], ["Batch simulation", "Advancing many independent worlds together to expose large parallel workloads."], ["Sim-to-real", "The challenge of transferring behavior learned in simulation into the real world."]]
+    10: [["TTFT", "Time to first token: the delay before a generated answer starts appearing."], ["Throughput", "The total useful tokens or requests completed per unit time across a batch or fleet."], ["Prefill", "Parallel prompt processing that constructs the transformer key-value cache."], ["Decode", "Sequential token generation that repeatedly reads weights and the key-value cache."]],
+    11: [["Tile", "A small rectangular tensor block used as the unit of GPU compute and communication."], ["NVLink / NVSwitch", "NVIDIA’s high-bandwidth links and switching fabric connecting GPUs inside a scale-up system."], ["Overlap", "Scheduling communication while useful computation runs, hiding some transfer time."], ["Collective", "A coordinated operation such as all-reduce or all-gather across multiple GPUs."]],
+    12: [["IPW", "Intelligence per watt: measured task success divided by electrical power for one model-hardware pair."], ["Local LM", "A language model small enough to run interactively on a personal or edge accelerator."], ["Serviceable query", "A query a configuration can answer within the study’s quality and practical constraints."], ["Hybrid routing", "Serving easy or private work locally and escalating harder work to cloud models."]],
+    13: [["Kernel", "A small program executed in parallel by many GPU threads."], ["Triton", "A Python-based language and compiler for authoring high-performance GPU kernels."], ["Differential test", "Checking a generated implementation against a trusted reference over many inputs."], ["Benchmark gaming", "Winning the measured test by exploiting gaps that do not translate to real performance."]],
+    14: [["Prefill", "Parallel processing of an input prompt to construct the transformer KV cache."], ["Decode", "Autoregressive generation of one token at a time, often limited by memory bandwidth."], ["Disaggregation", "Separating serving stages into independently scaled pools."], ["KV cache", "Stored attention keys and values reused while a model generates later tokens."]],
+    15: [["ECS", "Entity Component System: data-oriented game state split into IDs, component columns and systems."], ["Environment step", "One transition of a simulated world from its current state to the next."], ["Batch simulation", "Advancing many independent worlds together to expose large parallel workloads."], ["Sim-to-real", "The challenge of transferring behavior learned in simulation into the real world."]]
   }[article.n];
   return terms.map(([word, def]) => `<div class="vocab-term"><div class="vocab-term-header"><span class="vocab-term-word">${word}</span><span class="vocab-term-arrow">▶</span></div><div class="vocab-term-def">${def}</div></div>`).join("");
 }
@@ -214,10 +261,10 @@ function vocab(article) {
 function html(article) {
   const navSteps = steps.map(s => `<li class="ycpc-step ${s.n < article.n ? "done" : s.n === article.n ? "current" : ""}"><a href="${s.slug}.html"><span class="ycpc-dot">${s.n - 9}</span><span class="ycpc-name">${s.short}</span></a></li>`).join("");
   const prev = article.n === 10 ? `<a href="../series-yc-paper-club.html">← YC Paper Club</a>` : `<a href="${steps.find(s => s.n === article.n - 1).slug}.html">← prev: ${steps.find(s => s.n === article.n - 1).short}</a>`;
-  const next = article.n === 14 ? `<a href="../series-yc-paper-club.html">back to the series →</a>` : `<a href="${steps.find(s => s.n === article.n + 1).slug}.html">next: ${steps.find(s => s.n === article.n + 1).short} →</a>`;
+  const next = article.n === 15 ? `<a href="../series-yc-paper-club.html">back to the series →</a>` : `<a href="${steps.find(s => s.n === article.n + 1).slug}.html">next: ${steps.find(s => s.n === article.n + 1).short} →</a>`;
   return `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${article.title} — cvam.sight</title><meta name="description" content="${article.description}"><link rel="stylesheet" href="../style.css?v=84"><link rel="stylesheet" href="/themes.css?v=6"><script src="/theme-init.js?v=8"></script><link rel="icon" type="image/svg+xml" href="../assets/favicon.svg"><script defer src="/_vercel/speed-insights/script.js"></script><script defer src="/_vercel/insights/script.js"></script></head>
-<body><div class="progress-bar"></div><div class="layout has-vocab"><aside class="sidebar"><a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a><p class="sidebar-sub">blog from a devops + ml apprentice</p><nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav><div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p><a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a><a href="mailto:shivam.sk2003@gmail.com">Email</a></div></aside><div class="page"><article><div class="ycpc-banner"><div class="ycpc-banner-head"><span class="ycpc-kicker">YC Paper Club · Part 3</span><span class="ycpc-count">Talk ${article.n - 9} / 5 · ${article.topic} · ${article.difficulty}</span></div><ol class="ycpc-steps">${navSteps}</ol><p class="ycpc-current-title">${article.title}</p></div><div class="post-header"><p class="meta">Jul 30, 2026 · paperjuice · ${article.minutes} min read · ${article.words} words <span class="difficulty ${article.difficulty}">${article.difficulty}</span></p><h1>${article.title}</h1><p><strong>Presented by ${article.presenter}</strong></p><div class="tag-row">${article.tags.map((t, i) => `<span class="tag ${i === 0 ? "fill" : ""}">${t}</span>`).join("")}</div></div><div class="post-body">${article.body}</div><div class="post-nav">${prev}${next}</div></article><footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div><aside class="vocab-panel" id="vocab-panel"><p class="vocab-panel-label">// vocab</p>${vocab(article)}</aside></div><script src="../stats.js?v=2"></script><script src="../app.js?v=40"></script><script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script></body></html>`;
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${article.title} — cvam.sight</title><meta name="description" content="${article.description}"><link rel="stylesheet" href="../style.css?v=86"><link rel="stylesheet" href="/themes.css?v=6"><script src="/theme-init.js?v=8"></script><link rel="icon" type="image/svg+xml" href="../assets/favicon.svg"><script defer src="/_vercel/speed-insights/script.js"></script><script defer src="/_vercel/insights/script.js"></script></head>
+<body><div class="progress-bar"></div><div class="layout has-vocab"><aside class="sidebar"><a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a><p class="sidebar-sub">blog from a devops + ml apprentice</p><nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav><div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p><a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a><a href="mailto:shivam.sk2003@gmail.com">Email</a></div></aside><div class="page"><article><div class="ycpc-banner"><div class="ycpc-banner-head"><span class="ycpc-kicker">YC Paper Club · Edition 03</span><span class="ycpc-count">Talk ${article.n - 9} / 6 · ${article.topic} · ${article.difficulty}</span></div><ol class="ycpc-steps">${navSteps}</ol><p class="ycpc-current-title">${article.title}</p></div><div class="post-header"><p class="meta">Jul 30, 2026 · paperjuice · ${article.minutes} min read · ${article.words} words <span class="difficulty ${article.difficulty}">${article.difficulty}</span></p><h1>${article.title}</h1><p><strong>Presented by ${article.presenter}</strong></p><div class="tag-row">${article.tags.map((t, i) => `<span class="tag ${i === 0 ? "fill" : ""}">${t}</span>`).join("")}</div></div><div class="post-body">${article.body}</div><div class="post-nav">${prev}${next}</div></article><footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div><aside class="vocab-panel" id="vocab-panel"><p class="vocab-panel-label">// vocab</p>${vocab(article)}</aside></div><script src="../stats.js?v=2"></script><script src="../app.js?v=40"></script><script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script></body></html>`;
 }
 
 for (const article of articles) {

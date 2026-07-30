@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="A faithful, readable PyTorch MoE block: SwiGLU experts, sigmoid routing, top-k dispatch, shared experts, balancing bias, tests, and cost accounting.">
+<title>Coding DeepSeekMoE From Scratch — cvam.sight</title>
+<link rel="stylesheet" href="../style.css?v=79">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=8"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a><a href="../series.html" class="active">Series</a>
+        <a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">DeepSeek Engineering Blog Series · Phase 5</p>
+        <p class="series-banner-title">Mixture of Experts (MoE)</p>
+        <div class="series-banner-progress"><div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div></div>
+        <p class="series-banner-meta">Article 7 of 7 · Phase 5 of 10</p>
+        <div class="series-banner-nav"><a href="deepseek-5-1-intro-moe.html" class="done">5.1 Introduction to MoE</a>
+          <a href="deepseek-5-2-routing.html" class="done">5.2 MoE Routing</a>
+          <a href="deepseek-5-3-visualizing-experts.html" class="done">5.3 Visualizing Experts</a>
+          <a href="deepseek-5-4-aux-loss.html" class="done">5.4 Auxiliary Loss</a>
+          <a href="deepseek-5-5-capacity-factor.html" class="done">5.5 Capacity Factor</a>
+          <a href="deepseek-5-6-deepseekmoe.html" class="done">5.6 DeepSeekMoE</a>
+          <a href="deepseek-5-7-moe-from-scratch.html" class="active">5.7 Coding DeepSeekMoE From Scratch</a>
+          <a href="../series-deepseek.html">Phase hub</a>
+        </div>
+      </div>
+      <div class="post-header">
+        <p class="meta">Jul 30, 2026 · ml · 8 min read · 1671 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Coding DeepSeekMoE From Scratch.</h1>
+        <div class="tag-row"><span class="tag fill">ml</span><span class="tag">deepseek</span><span class="tag">phase-5</span><span class="tag">moe</span><span class="tag">pytorch</span></div>
+      </div>
+
+      <div class="post-body">
+        <p class="lead">A faithful, readable PyTorch MoE block: SwiGLU experts, sigmoid routing, top-k dispatch, shared experts, balancing bias, tests, and cost accounting.</p>
+        <p>This chapter follows the series' four-layer pyramid: intuition first, then consequences, system design, and finally implementation-level checks. It is written to be useful both as a first explanation and as a review sheet before reading the primary papers.</p>
+
+        <div class="callout">
+          <strong>The one-sentence model</strong>
+          <p>An MoE layer is a router plus a sparse collection of ordinary FFNs; the difficult part is preserving shapes, gradients, capacity, and device locality while only executing selected experts.</p>
+        </div>
+
+        <h2>What you should be able to do after reading</h2>
+        <ul>
+          <li>Explain the mechanism without relying on the feature name.</li>
+          <li>Trace the relevant tensors, losses, or messages through one concrete example.</li>
+          <li>Distinguish a paper claim from an inference, implementation choice, or marketing shorthand.</li>
+          <li>Design a minimal experiment that could prove the idea wrong.</li>
+        </ul>
+
+        <h2>Where this chapter fits in the ten-phase map</h2>
+        <p>This closes the MoE arc that began with sparse activation and routing. It combines Phase 5's expert segmentation, shared knowledge path, load control, and capacity constraints in executable form. It also prepares Phase 8, where the same layer must be placed across dozens of GPUs rather than one Python process.</p>
+        <p>The dependency is useful when debugging. If the model-level equation is correct but the measured result is poor, walk backward through representation, numerical format, memory layout, routing or communication, and finally the evaluation harness. The first broken contract is usually more actionable than the final benchmark delta.</p>
+
+        
+        <h2>1. Start with the dense baseline</h2>
+        <p>A routed expert should first be understood as a normal SwiGLU feed-forward network. The expert maps each token from model width to an intermediate width, gates one projection with SiLU, multiplies it by a second projection, and maps back. Building and testing this dense unit first gives the sparse layer a trustworthy reference.</p>
+
+        <h2>2. Score, select, then weight</h2>
+        <p>The router produces one affinity per token and routed expert. DeepSeek-V3 uses sigmoid affinities for selection, adds a non-gradient balancing bias only when choosing experts, and weights selected outputs using the original affinities. Keeping selection scores and contribution weights separate is essential; otherwise the balancing mechanism silently changes model semantics.</p>
+
+        <h2>3. Dispatch without losing token identity</h2>
+        <p>Flatten batch and sequence into token rows, compute top-k expert indices, then gather rows for each expert. Every expert returns outputs in its local order, so the combine step must scatter-add them back to the original token rows using the saved indices. Most implementation bugs are indexing bugs, not neural-network bugs.</p>
+
+        <h2>4. Shared experts are not routed</h2>
+        <p>The shared expert path runs for every token and is added to the routed result. It captures common transformations once instead of forcing every routed expert to relearn them. Because it is always active, it belongs in the active-parameter and FLOP budget even though it never appears in top-k indices.</p>
+
+        <h2>5. Production sparsity is a systems problem</h2>
+        <p>A Python loop is ideal for learning but not throughput. Real MoE kernels group tokens, pad or pack expert batches, perform grouped GEMMs, and exchange tokens across expert-parallel devices. The mathematical layer stays the same; data movement, buffer sizing, and communication overlap determine whether it is actually fast.</p>
+        <p class="study-note"><strong>Engineering lens.</strong> For every concept above, identify the tensor, state, metric, or system boundary that makes it observable. Then ask which assumption would make the claim fail. This keeps the chapter testable instead of leaving it as architecture vocabulary.</p>
+
+        <h2>Worked example</h2>
+        <p>Use B=2, T=4, d=16, four routed experts, top-2 routing, and one shared expert. Assert output shape [2,4,16], each token has exactly two routed assignments, router gradients exist, unselected experts receive no token gradients, and a dense all-expert reference matches when top-k includes every expert.</p>
+        <p>Do the arithmetic with small dimensions first. Small examples expose index shifts, hidden assumptions, and missing denominators that disappear inside a billion-parameter headline. Once the hand-worked result is correct, automate it and compare the program output against the same values.</p>
+
+        <h2>Implementation and measurement plan</h2>
+        <p>Implement Expert, Router, and DeepSeekMoE as separate modules. Add deterministic routing tests, a load histogram, an auxiliary diagnostic that reports coefficient of variation, and a tiny overfit test. Only after correctness should you replace per-expert loops with sorted token buffers or grouped GEMM.</p>
+        <ol><li>State the exact model, checkpoint, hardware, and date behind every numerical claim.</li>
+          <li>Separate algorithmic complexity, theoretical FLOPs, measured latency, memory, and end-to-end cost.</li>
+          <li>Build a small reference implementation before optimizing kernels or distributing it.</li>
+          <li>Compare against an equal-compute or equal-parameter baseline and report the denominator.</li>
+          <li>Record failure cases and scope limits beside the successful result.</li></ol>
+
+        <h2>From a paper claim to an engineering contract</h2>
+        <p>The primary anchor for this chapter is <em>DeepSeekMoE: Towards Ultimate Expert Specialization</em> from DeepSeekMoE. Reading a number from that source is only the first step. A reproducible contract has four layers:</p>
+        <table>
+          <thead><tr><th>Layer</th><th>Question to write down</th><th>Evidence</th></tr></thead>
+          <tbody>
+            <tr><td>Mechanism</td><td>What operation, loss, state, or routing decision changes?</td><td>Equation, pseudocode, tensor shapes</td></tr>
+            <tr><td>Implementation</td><td>How is it realized on the named hardware and software stack?</td><td>Kernel, precision, layout, process groups</td></tr>
+            <tr><td>Measurement</td><td>Which denominator and baseline make the comparison fair?</td><td>Raw metrics, config, repeated runs</td></tr>
+            <tr><td>Scope</td><td>Where should the claim stop being trusted?</td><td>Failure cases, ablations, dated limitations</td></tr>
+          </tbody>
+        </table>
+        <p>This separation prevents a frequent error in frontier-model writing: converting a theoretical reduction into a latency promise, or converting one internal benchmark into a universal quality ranking. The implementation can fail to realize the algorithm, and the workload can fail to expose the intended benefit.</p>
+
+        <h2>Failure modes and misleading shortcuts</h2>
+        <ul><li>Normalizing over all experts after top-k changes the intended gate.</li>
+          <li>Using the balancing bias as an output weight leaks the control signal into the model.</li>
+          <li>A token-count loop using Python lists hides host-device synchronization.</li>
+          <li>Empty expert batches must be legal; distributed runs will produce them.</li>
+          <li>Equal token counts do not imply equal compute when sequence packing or expert sizes differ.</li></ul>
+        <p>These are not footnotes. Frontier-model engineering is dominated by boundary conditions: a method can be mathematically correct and still lose to memory traffic, data skew, numerical drift, evaluation leakage, or a poorly stated comparison. A credible result makes those boundaries visible.</p>
+
+        <h2>How to audit claims about this topic</h2>
+        <p>Rewrite each claim with its missing boundary: name the exact mechanism, identify the tensor or resource it changes, and attach the workload and measurement. Then construct a counterexample at the edge of the claim. If a sentence cannot survive that rewrite, treat it as orientation—not evidence.</p>
+        <p>Next, trace provenance. Prefer the primary report for configuration and results, the released code for implementation behavior, and your own profiler for product performance. Secondary explainers are valuable for intuition but should not silently become the source of a numerical claim.</p>
+
+        <h2>Decision guide: when should you use this idea?</h2>
+        <p><strong>Use it when</strong> the bottleneck named in the thesis appears in profiler traces or controlled quality experiments, the necessary kernels and runtime support exist, and the added system complexity can be observed in production. Start with the smallest configuration that exposes the bottleneck.</p>
+        <p><strong>Delay it when</strong> a dense or higher-precision baseline does not yet converge, the evaluation harness is unstable, or the claimed resource is not limiting the workload. Sophisticated architecture cannot compensate for an invalid baseline.</p>
+        <p><strong>Reject it when</strong> its benefit exists only under a denominator irrelevant to the product—for example, theoretical FLOPs while user latency worsens—or when numerical, safety, or operational regressions exceed the measured gain.</p>
+
+        <h2>Hands-on study lab</h2>
+        <ol><li><strong>1.</strong> Remove the shared expert and compare convergence on a mixed-pattern toy dataset.</li>
+          <li><strong>2.</strong> Plot expert load before and after bias updates.</li>
+          <li><strong>3.</strong> Replace sigmoid with softmax and measure routing entropy.</li>
+          <li><strong>4.</strong> Write a gradient test proving top-k selection itself is non-differentiable.</li></ol>
+        <p>For each exercise, save the configuration, a tiny deterministic fixture, the raw measurements, and one failed case. The goal is not merely to make the code run; it is to make the conclusion independently checkable.</p>
+
+        <h2>Quick self-check</h2>
+        <details><summary>What is the central idea?</summary><p>An MoE layer is a router plus a sparse collection of ordinary FFNs; the difficult part is preserving shapes, gradients, capacity, and device locality while only executing selected experts.</p></details>
+        <details><summary>What is the most common reading mistake?</summary><p>Normalizing over all experts after top-k changes the intended gate.</p></details>
+        <details><summary>What evidence should I demand?</summary><p>An exact configuration, a fair baseline, primary-source support, end-to-end measurements, and failure cases at the limits of the claim.</p></details>
+        <details><summary>How do I explain it to a new engineer?</summary><p>Begin with the bottleneck, show one tiny worked example, trace the changed state, and only then introduce the official name. Finish by naming one situation where the method will not help.</p></details>
+        <details><summary>How do I review an implementation?</summary><p>Check indexing and masks, parameter sharing, dtype transitions, layouts, process-group scope, raw metric denominators, and behavior under an adversarial or worst-case fixture. A passing happy-path shape test is not enough.</p></details>
+
+        <h2>Teach-back synthesis</h2>
+        <p>Close the page and reconstruct the argument in five sentences: the bottleneck; the mechanism; the state or tensor that changes; the fair measurement; and the main failure mode. Then reopen the page and compare. If you can repeat the feature names but cannot state those five sentences, revisit the worked example.</p>
+        <p>Finally, connect the idea to two neighboring phases. DeepSeek's advantage is not one isolated invention: compressed attention changes the cache, sparse experts change active compute, FP8 changes arithmetic and bandwidth, distributed schedules hide communication, and reasoning training spends the resulting capacity differently. The series becomes useful when those dependencies form one mental model.</p>
+
+        <h2>Key takeaways</h2>
+        <ul>
+          <li>A faithful, readable PyTorch MoE block: SwiGLU experts, sigmoid routing, top-k dispatch, shared experts, balancing bias, tests, and cost accounting.</li>
+          <li>The mechanism, training recipe, runtime implementation, and measured product behavior are separate layers of evidence.</li>
+          <li>Numbers remain meaningful only with their workload, precision, hardware, context length, and date attached.</li>
+          <li>A small reproducible test is more valuable than a large uncheckable diagram.</li>
+        </ul>
+
+        <h2>Primary sources and further reading</h2>
+        <ul><li><strong>DeepSeekMoE.</strong> <a href="https://arxiv.org/abs/2401.06066" target="_blank" rel="noopener">DeepSeekMoE: Towards Ultimate Expert Specialization</a>.</li>
+          <li><strong>DeepSeek-V3.</strong> <a href="https://arxiv.org/abs/2412.19437" target="_blank" rel="noopener">DeepSeek-V3 Technical Report</a>.</li>
+          <li><strong>Hugging Face.</strong> <a href="https://huggingface.co/blog/moe" target="_blank" rel="noopener">Mixture of Experts Explained</a>.</li></ul>
+        <p class="meta">Source note: explanations and worked examples here are original. Numerical claims are scoped to the linked reports; rapidly changing model comparisons are dated in the article itself.</p>
+      </div>
+      <div class="post-nav"><a href="deepseek-5-6-deepseekmoe.html">← The DeepSeekMoE Architecture</a><a href="deepseek-6-1-ntp-limitations.html">Why Next-Token Prediction Is Limited →</a></div>
+    </article>
+    <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer>
+    </div>
+  </div>
+  <script src="../posts.js?v=2"></script><script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=40"></script><script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script>
+</body>
+</html>

@@ -1,5 +1,12 @@
 CLAUDE.md
 
+## Blog typography and visual QA
+
+- Use one reading typeface across article prose, table cells, callouts, notes, cards, and informational boxes. A border or table is not a reason to switch fonts.
+- Use monospace only for actual code, commands, formulas, or keyboard input. Diagrams must follow the SVG typography rules below.
+- Test new and generated blogs with every reader font preset, especially `font-readable`, and inspect representative desktop and mobile renders for typography, wrapping, overflow, and table behavior.
+- After changing `site/style.css`, update the stylesheet cache version in all pages and generators, deploy, and verify that the live page loads the new version.
+
 ## SVG Diagrams — Rules
 
 **Font:** Always use `font-family: 'Kalam', cursive` in SVG text — never `monospace`, `serif`, or any other family. The site uses Kalam/Caveat exclusively; SVGs must match.

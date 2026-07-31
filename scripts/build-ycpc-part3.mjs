@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { deepDives } from "./ycpc-part3-deep-dives.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const out = path.join(root, "site", "posts");
@@ -225,6 +226,18 @@ const articles = [
 <ul><li><a href="https://www.youtube.com/watch?v=n8dz2FX0_uY&t=3873s" target="_blank">Primary source: Brennan Shacklett’s presentation (1:04:33–1:15:35)</a></li><li><a href="https://madrona-engine.github.io/shacklett_siggraph23.pdf" target="_blank">SIGGRAPH 2023 Madrona paper</a></li><li><a href="https://madrona-engine.github.io/" target="_blank">Madrona project page</a></li></ul>`
   }
 ];
+
+for (const article of articles) {
+  const sourceHeading = "<h2>Sources and further reading</h2>";
+  article.body = article.body.replace(sourceHeading, `${deepDives[article.n] || ""}${sourceHeading}`);
+  article.words = article.body
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z]+;/g, " ")
+    .trim()
+    .split(/\s+/)
+    .length;
+  article.minutes = Math.max(article.minutes, Math.ceil(article.words / 220));
+}
 
 const steps = articles.map(a => ({ n: a.n, slug: a.slug, short: a.short }));
 

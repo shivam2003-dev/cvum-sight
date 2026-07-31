@@ -46,7 +46,7 @@ const POSTS = [
     cat: "paperjuice",
     tags: ["paperjuice", "inference", "hardware", "serving", "architecture"],
     time: 5,
-    words: 562,
+    words: 599,
     excerpt: "Misha follows compute, memory bandwidth, latency, networking, and power through prefill, decode, attention, MoE, and speculative decoding.",
     series: "yc-paper-club",
     seriesNum: "14"

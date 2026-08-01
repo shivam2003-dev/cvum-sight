@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "how-search-works-lucene-elasticsearch",
+    title: "How Search Actually Works — Lucene, Inverted Indexes, Segments, and Distributed Search.",
+    date: "Aug 02, 2026",
+    cat: "systems",
+    tags: ["search", "lucene", "elasticsearch", "opensearch", "information-retrieval"],
+    time: 13,
+    words: 2151,
+    excerpt: "A technical guide to full-text search: analysis, inverted indexes, ranking, immutable Lucene segments, merging, shards, and the systems built around Lucene."
+  },
+  {
     slug: "graph-engineering",
     title: "Graph Engineering — Connected Knowledge You Can Trust.",
     date: "Aug 02, 2026",

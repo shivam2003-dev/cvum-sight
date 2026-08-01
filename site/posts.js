@@ -32,7 +32,7 @@ const POSTS = [
     cat: "systems",
     tags: ["graph-engineering", "knowledge-graphs", "graphrag", "data-quality", "agents"],
     time: 14,
-    words: 2273,
+    words: 2004,
     excerpt: "A practical systems guide to relationship-shaped decisions, provenance, GraphRAG, agent boundaries, and production operations."
   },
   {

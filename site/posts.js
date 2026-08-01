@@ -16,6 +16,66 @@
 
 const POSTS = [
   {
+    slug: "graph-engineering-5-operate-and-evolve",
+    title: "Operating a Graph: From Traversals to Reliable Production Systems.",
+    date: "Aug 02, 2026",
+    cat: "systems",
+    tags: ["graph-engineering", "knowledge-graphs", "operations", "data-quality"],
+    time: 10,
+    words: 585,
+    excerpt: "Query budgets, security trimming, freshness, observability, releases, and recovery for production graphs.",
+    series: "graph-engineering",
+    seriesNum: "5"
+  },
+  {
+    slug: "graph-engineering-4-harness-loop-graph-comparison",
+    title: "Harness, Loop, and Graph Engineering: Three Layers, Three Jobs.",
+    date: "Aug 02, 2026",
+    cat: "systems",
+    tags: ["graph-engineering", "agents", "harness", "agent-loops"],
+    time: 10,
+    words: 531,
+    excerpt: "A precise comparison of the agent environment, control loop, and connected-knowledge layer—and how they compose.",
+    series: "graph-engineering",
+    seriesNum: "4"
+  },
+  {
+    slug: "graph-engineering-3-graphrag-without-magic",
+    title: "GraphRAG Without the Magic: Retrieval Is a Systems Design Problem.",
+    date: "Aug 02, 2026",
+    cat: "ml",
+    tags: ["graph-engineering", "graphrag", "retrieval", "knowledge-graphs"],
+    time: 10,
+    words: 506,
+    excerpt: "When graph-assisted retrieval helps, why hybrid evidence matters, and how to evaluate it honestly.",
+    series: "graph-engineering",
+    seriesNum: "3"
+  },
+  {
+    slug: "graph-engineering-2-schema-provenance-quality",
+    title: "The Graph Is a Data Product: Schema, Provenance, and Quality Gates.",
+    date: "Aug 02, 2026",
+    cat: "systems",
+    tags: ["graph-engineering", "data-quality", "provenance", "schema"],
+    time: 10,
+    words: 509,
+    excerpt: "Keep a changing graph trustworthy with stable identity, validation, assertions, and release checks.",
+    series: "graph-engineering",
+    seriesNum: "2"
+  },
+  {
+    slug: "graph-engineering-1-model-the-question",
+    title: "Graph Engineering Starts With Questions, Not Nodes.",
+    date: "Aug 02, 2026",
+    cat: "systems",
+    tags: ["graph-engineering", "knowledge-graphs", "data-modeling", "rdf"],
+    time: 10,
+    words: 517,
+    excerpt: "How to recognize relationship-shaped decisions, choose a graph contract, and model only facts a decision needs.",
+    series: "graph-engineering",
+    seriesNum: "1"
+  },
+  {
     slug: "ycpc-10-chip-kernel-specialization",
     title: "The Case for Chip and Kernel Specialization — Enough Demand Changes the Machine.",
     date: "Jul 30, 2026",

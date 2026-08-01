@@ -27,13 +27,13 @@ const POSTS = [
   },
   {
     slug: "graph-engineering",
-    title: "Graph Engineering — Connected Knowledge You Can Trust.",
+    title: "Graph Engineering for AI Agents — Wiring Loops into Reliable Systems.",
     date: "Aug 02, 2026",
-    cat: "systems",
-    tags: ["graph-engineering", "knowledge-graphs", "graphrag", "data-quality", "agents"],
-    time: 14,
-    words: 2004,
-    excerpt: "A practical systems guide to relationship-shaped decisions, provenance, GraphRAG, agent boundaries, and production operations."
+    cat: "ai systems",
+    tags: ["graph-engineering", "ai-agents", "orchestration", "multi-agent", "reliability"],
+    time: 19,
+    words: 3100,
+    excerpt: "How to wire bounded agent loops into a controlled execution graph with typed state, routing, parallelism, verification, recovery, budgets, and human authority."
   },
   {
     slug: "ycpc-10-chip-kernel-specialization",

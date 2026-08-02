@@ -3,6 +3,7 @@
 
   const DATA_URL = '/gate1/data/questions.json';
   const SOLUTIONS_URL = '/gate1/data/worked-solutions.json';
+  const QUALITY_BATCH_URL = '/gate1/data/quality-batch-10.json';
   const STORE_KEY = 'gate-da-2027-progress-v1';
   const THEME_KEY = 'gate-da-2027-theme';
 
@@ -227,14 +228,38 @@
     const worked = state.solutions[`${question.year}-${question.questionNumber}`];
     if (!worked) return `<section class="empty-state"><strong>Worked solution unavailable.</strong><p>This question has been blocked from showing a generic fallback.</p></section>`;
     const concepts = worked.testing.map(item => `<li>${esc(item)}</li>`).join('');
-    const steps = worked.steps.map((step, index) => `<article class="worked-step">
-      <div class="worked-step-number">Step ${index + 1}</div>
+    const stepCards = (items, label = 'Step') => items.map((step, index) => `<article class="worked-step">
+      <div class="worked-step-number">${esc(label)} ${index + 1}</div>
       <h3>${esc(step.heading)}</h3>
       ${step.body ? `<p>${esc(step.body)}</p>` : ''}
       ${(step.math || []).map(formula => `<div class="math-block">\\[${esc(formula)}\\]</div>`).join('')}
     </article>`).join('');
+    const steps = stepCards(worked.steps);
     const mistakes = worked.mistakes.map(item => `<li>${esc(item)}</li>`).join('');
     const cheatFormula = worked.cheat.formula ? `<dt>Formula</dt><dd><span class="inline-math">\\(${esc(worked.cheat.formula)}\\)</span></dd>` : '';
+    if (worked.quality === 'expert-pilot-v1') {
+      const approach = stepCards(worked.examApproach, 'Move');
+      const elimination = (worked.elimination || []).map(item => `<article class="elimination-item ${/\bcorrect\b/i.test(item.verdict) ? 'correct' : ''}"><strong>${esc(item.label)}</strong><p>${esc(item.verdict)}</p></article>`).join('');
+      const sanity = worked.sanity.map(item => `<li>${esc(item)}</li>`).join('');
+      const patternFormula = worked.pattern.formula ? `<dt>Formula</dt><dd><span class="inline-math">\\(${esc(worked.pattern.formula)}\\)</span></dd>` : '';
+      const optionSection = elimination ? `<details class="learn-card elimination" open><summary><span class="learn-index">05</span><strong>Option elimination</strong></summary><div class="learn-card-content elimination-list">${elimination}</div></details>` : '';
+      const offset = elimination ? 0 : -1;
+      const index = number => String(number + offset).padStart(2, '0');
+      return `<section class="learning-stack expert-solution" id="complete-solution" aria-label="How to solve in the exam">
+        <div class="quality-solution-banner"><div><span>Expert solution pilot</span><strong>Complete worked solution</strong></div><p>Verified from the official paper and answer key · derivation, exam method, checks, and traps included</p></div>
+        <details class="learn-card" open><summary><span class="learn-index">01</span><strong>What is this question testing?</strong></summary><div class="learn-card-content"><ul>${concepts}</ul></div></details>
+        <details class="learn-card intuition" open><summary><span class="learn-index">02</span><strong>Intuition</strong></summary><div class="learn-card-content"><p>${esc(worked.intuition)}</p></div></details>
+        <details class="learn-card approach" open><summary><span class="learn-index">03</span><strong>Fastest exam approach</strong></summary><div class="learn-card-content worked-steps">${approach}</div></details>
+        <details class="learn-card solution" open><summary><span class="learn-index">04</span><strong>Step-by-step worked solution — ${esc(worked.title)}</strong></summary><div class="learn-card-content worked-steps">${steps}</div></details>
+        ${optionSection}
+        <details class="learn-card mistake" open><summary><span class="learn-index">${index(6)}</span><strong>Question-specific common mistakes</strong></summary><div class="learn-card-content"><ul>${mistakes}</ul></div></details>
+        <details class="learn-card shortcut" open><summary><span class="learn-index">${index(7)}</span><strong>GATE shortcut and pattern recognition</strong></summary><div class="learn-card-content"><p class="shortcut-summary">${esc(worked.shortcut)}</p><dl class="trigger-grid expanded"><dt>Trigger</dt><dd>${esc(worked.pattern.trigger)}</dd><dt>Immediate thought</dt><dd>${esc(worked.pattern.immediate)}</dd><dt>Shortcut</dt><dd>${esc(worked.pattern.shortcut)}</dd>${patternFormula}</dl></div></details>
+        <details class="learn-card sanity" open><summary><span class="learn-index">${index(8)}</span><strong>10-second sanity checks</strong></summary><div class="learn-card-content"><ul>${sanity}</ul></div></details>
+        <details class="learn-card target" open><summary><span class="learn-index">${index(9)}</span><strong>Target time and difficulty</strong></summary><div class="learn-card-content"><div class="target-time">${esc(worked.target)}</div></div></details>
+        <details class="learn-card final" open><summary><span class="learn-index">${index(10)}</span><strong>Final answer</strong></summary><div class="learn-card-content"><div class="final-answer">Q${question.questionNumber} = ${esc(worked.final)} ✓</div></div></details>
+        <details class="learn-card shortcut" open><summary><span class="learn-index">${index(11)}</span><strong>Add to GATE Cheat Sheet</strong></summary><div class="learn-card-content"><dl class="trigger-grid"><dt>Trigger</dt><dd>${esc(worked.cheat.trigger)}</dd><dt>Rule</dt><dd>${esc(worked.cheat.rule)}</dd>${cheatFormula}<dt>Trap</dt><dd>${esc(worked.cheat.trap)}</dd></dl></div></details>
+      </section>`;
+    }
     return `<section class="learning-stack" aria-label="How to solve in the exam">
       <details class="learn-card" open><summary><span class="learn-index">01</span><strong>What is this question testing?</strong></summary><div class="learn-card-content"><ul>${concepts}</ul></div></details>
       <details class="learn-card intuition" open><summary><span class="learn-index">02</span><strong>Intuition</strong></summary><div class="learn-card-content"><p>${esc(worked.intuition)}</p></div></details>
@@ -621,15 +646,16 @@
   const savedTheme = localStorage.getItem(THEME_KEY);
   if (savedTheme) document.documentElement.dataset.theme = savedTheme;
 
-  Promise.all([fetch(DATA_URL), fetch(SOLUTIONS_URL)])
-    .then(async ([dataResponse, solutionsResponse]) => {
+  Promise.all([fetch(DATA_URL), fetch(SOLUTIONS_URL), fetch(QUALITY_BATCH_URL)])
+    .then(async ([dataResponse, solutionsResponse, qualityResponse]) => {
       if (!dataResponse.ok) throw new Error(`Question data request failed (${dataResponse.status})`);
       if (!solutionsResponse.ok) throw new Error(`Worked solutions request failed (${solutionsResponse.status})`);
-      return Promise.all([dataResponse.json(), solutionsResponse.json()]);
+      if (!qualityResponse.ok) throw new Error(`Expert solution pilot request failed (${qualityResponse.status})`);
+      return Promise.all([dataResponse.json(), solutionsResponse.json(), qualityResponse.json()]);
     })
-    .then(([data, solutions]) => {
+    .then(([data, solutions, qualityBatch]) => {
       state.data = data;
-      state.solutions = solutions;
+      state.solutions = {...solutions, ...qualityBatch};
       applyRoute();
     })
     .catch(error => {

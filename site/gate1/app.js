@@ -2,11 +2,13 @@
   'use strict';
 
   const DATA_URL = '/gate1/data/questions.json';
+  const SOLUTIONS_URL = '/gate1/data/worked-solutions.json';
   const STORE_KEY = 'gate-da-2027-progress-v1';
   const THEME_KEY = 'gate-da-2027-theme';
 
   const state = {
     data: null,
+    solutions: null,
     year: 2026,
     question: 1,
     view: 'dashboard',
@@ -222,19 +224,26 @@
   }
 
   function learningStack(question) {
-    const concepts = (question.concepts || question.conceptsTested || []).map(item => `<li>${esc(item)}</li>`).join('');
-    const steps = (question.steps || []).map(item => `<li>${esc(item)}</li>`).join('');
-    const elimination = question.elimination.length ? `<div class="elimination-list">${question.elimination.map(item => `<div class="elimination-item ${item.correct ? 'correct' : ''}"><strong>${item.label}</strong><p>${esc(item.verdict)}</p></div>`).join('')}</div>` : `<p>NAT question: validate the computed value against the requested precision or accepted interval.</p>`;
+    const worked = state.solutions[`${question.year}-${question.questionNumber}`];
+    if (!worked) return `<section class="empty-state"><strong>Worked solution unavailable.</strong><p>This question has been blocked from showing a generic fallback.</p></section>`;
+    const concepts = worked.testing.map(item => `<li>${esc(item)}</li>`).join('');
+    const steps = worked.steps.map((step, index) => `<article class="worked-step">
+      <div class="worked-step-number">Step ${index + 1}</div>
+      <h3>${esc(step.heading)}</h3>
+      ${step.body ? `<p>${esc(step.body)}</p>` : ''}
+      ${(step.math || []).map(formula => `<div class="math-block">\\[${esc(formula)}\\]</div>`).join('')}
+    </article>`).join('');
+    const mistakes = worked.mistakes.map(item => `<li>${esc(item)}</li>`).join('');
+    const cheatFormula = worked.cheat.formula ? `<dt>Formula</dt><dd><span class="inline-math">\\(${esc(worked.cheat.formula)}\\)</span></dd>` : '';
     return `<section class="learning-stack" aria-label="How to solve in the exam">
       <details class="learn-card" open><summary><span class="learn-index">01</span><strong>What is this question testing?</strong></summary><div class="learn-card-content"><ul>${concepts}</ul></div></details>
-      <details class="learn-card intuition" open><summary><span class="learn-index">02</span><strong>Intuition</strong></summary><div class="learn-card-content"><p>${esc(question.intuition)}</p></div></details>
-      <details class="learn-card shortcut" open><summary><span class="learn-index">03</span><strong>Fastest exam approach</strong></summary><div class="learn-card-content"><p>${esc(question.approach)}</p>${question.formula ? `<div class="math-block">\\[${esc(question.formula)}\\]</div>` : ''}</div></details>
-      <details class="learn-card"><summary><span class="learn-index">04</span><strong>Step-by-step solution</strong></summary><div class="learn-card-content"><ol>${steps}</ol></div></details>
-      <details class="learn-card"><summary><span class="learn-index">05</span><strong>Option elimination</strong></summary><div class="learn-card-content">${elimination}</div></details>
-      <details class="learn-card mistake"><summary><span class="learn-index">06</span><strong>Common mistake</strong></summary><div class="learn-card-content"><p>${esc(question.trap)}</p></div></details>
-      <details class="learn-card shortcut"><summary><span class="learn-index">07</span><strong>Shortcut / pattern recognition</strong></summary><div class="learn-card-content"><dl class="trigger-grid"><dt>Trigger</dt><dd>${esc(question.trigger)}</dd><dt>Think</dt><dd>${esc(question.think)}</dd><dt>Rule</dt><dd>${esc(question.approach)}</dd></dl></div></details>
-      <details class="learn-card"><summary><span class="learn-index">08</span><strong>10-second exam check</strong></summary><div class="learn-card-content"><p>${esc(question.check)}</p></div></details>
-      <details class="learn-card final" open><summary><span class="learn-index">09</span><strong>Final answer + cheat-sheet note</strong></summary><div class="learn-card-content"><div class="final-answer">Answer: ${esc(question.finalAnswerText)}</div><dl class="trigger-grid" style="margin-top:16px"><dt>Trigger</dt><dd>${esc(question.trigger)}</dd><dt>Shortcut</dt><dd>${esc(question.think)}</dd><dt>Trap</dt><dd>${esc(question.trap)}</dd></dl></div></details>
+      <details class="learn-card intuition" open><summary><span class="learn-index">02</span><strong>Intuition</strong></summary><div class="learn-card-content"><p>${esc(worked.intuition)}</p></div></details>
+      <details class="learn-card solution" open><summary><span class="learn-index">03</span><strong>Step-by-step solution — ${esc(worked.title)}</strong></summary><div class="learn-card-content worked-steps">${steps}</div></details>
+      <details class="learn-card shortcut" open><summary><span class="learn-index">04</span><strong>Fastest GATE shortcut</strong></summary><div class="learn-card-content"><p>${esc(worked.shortcut)}</p></div></details>
+      <details class="learn-card mistake" open><summary><span class="learn-index">05</span><strong>Common mistakes</strong></summary><div class="learn-card-content"><ul>${mistakes}</ul></div></details>
+      <details class="learn-card shortcut" open><summary><span class="learn-index">06</span><strong>Add to GATE Cheat Sheet</strong></summary><div class="learn-card-content"><dl class="trigger-grid"><dt>Trigger</dt><dd>${esc(worked.cheat.trigger)}</dd><dt>Shortcut</dt><dd>${esc(worked.cheat.rule)}</dd>${cheatFormula}<dt>Trap</dt><dd>${esc(worked.cheat.trap)}</dd></dl></div></details>
+      <details class="learn-card target" open><summary><span class="learn-index">07</span><strong>Target time</strong></summary><div class="learn-card-content"><div class="target-time">⏱ ${esc(worked.target)}</div></div></details>
+      <details class="learn-card final" open><summary><span class="learn-index">08</span><strong>Final answer</strong></summary><div class="learn-card-content"><div class="final-answer">Q${question.questionNumber} = ${esc(worked.final)} ✓</div></div></details>
     </section>`;
   }
 
@@ -562,13 +571,15 @@
   const savedTheme = localStorage.getItem(THEME_KEY);
   if (savedTheme) document.documentElement.dataset.theme = savedTheme;
 
-  fetch(DATA_URL)
-    .then(response => {
-      if (!response.ok) throw new Error(`Data request failed (${response.status})`);
-      return response.json();
+  Promise.all([fetch(DATA_URL), fetch(SOLUTIONS_URL)])
+    .then(async ([dataResponse, solutionsResponse]) => {
+      if (!dataResponse.ok) throw new Error(`Question data request failed (${dataResponse.status})`);
+      if (!solutionsResponse.ok) throw new Error(`Worked solutions request failed (${solutionsResponse.status})`);
+      return Promise.all([dataResponse.json(), solutionsResponse.json()]);
     })
-    .then(data => {
+    .then(([data, solutions]) => {
       state.data = data;
+      state.solutions = solutions;
       applyRoute();
     })
     .catch(error => {

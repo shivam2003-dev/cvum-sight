@@ -292,17 +292,48 @@
   function renderLibrary(kind) {
     const title = kind === 'cheat' ? 'Master cheat sheet' : 'GATE shortcut library';
     const lede = kind === 'cheat'
-      ? 'Compact, topic-first revision notes distilled from all three papers—not organized by question number.'
-      : 'Train the first thought that should fire when a familiar trigger appears under exam pressure.';
-    const topics = [...new Set(state.data.questions.map(q => q.topic))];
-    const entries = topics.map(topic => state.data.questions.find(q => q.topic === topic));
-    main.innerHTML = `<div class="content-wrap"><p class="eyebrow">Revision desk · 2024–2026 patterns</p><h1 class="page-title">${title}</h1><p class="page-lede">${lede}</p>
-      <div class="library-grid">${entries.map((q, index) => `<article class="library-card">
-        <span class="topic-label">${String(index + 1).padStart(2, '0')} · ${esc(q.topic)}</span>
-        <h2>${kind === 'cheat' ? esc(q.subtopic) : esc(q.trigger)}</h2>
-        ${kind === 'cheat' ? `<div class="formula">\\[${esc(q.formula)}\\]</div>` : ''}
-        <dl><dt>Trigger</dt><dd>${esc(q.trigger)}</dd><dt>Think</dt><dd>${esc(q.think)}</dd><dt>${kind === 'cheat' ? 'Method' : 'Shortcut'}</dt><dd>${esc(q.approach)}</dd><dt>Trap</dt><dd>${esc(q.trap)}</dd><dt>Check</dt><dd>${esc(q.check)}</dd></dl>
-      </article>`).join('')}</div></div>`;
+      ? 'Every question-specific trigger, rule, formula, trap and fastest method from all 195 worked solutions—nothing reduced to one generic card per topic.'
+      : 'All 195 exam shortcuts, searchable by paper and topic. Train the first useful thought that should fire under pressure.';
+    const entries = state.data.questions.map(question => ({
+      question,
+      worked: state.solutions[`${question.year}-${question.questionNumber}`],
+    })).filter(entry => entry.worked);
+    const topics = [...new Set(entries.map(entry => entry.question.topic))].sort();
+    main.innerHTML = `<div class="content-wrap library-page">
+      <p class="eyebrow">Revision desk · complete 2024–2026 bank</p>
+      <div class="library-heading">
+        <div><h1 class="page-title">${title}</h1><p class="page-lede">${lede}</p></div>
+        <div class="library-completeness"><strong>${entries.length}</strong><span>of 195<br>patterns included</span></div>
+      </div>
+      <div class="library-toolbar" aria-label="Filter revision library">
+        <label class="library-search"><span class="material-symbols-rounded" aria-hidden="true">search</span><input id="library-search" type="search" placeholder="Search trigger, formula, topic or shortcut…"></label>
+        <select class="filter-select" id="library-year" aria-label="Filter by year"><option value="">All papers</option><option>2026</option><option>2025</option><option>2024</option></select>
+        <select class="filter-select" id="library-topic" aria-label="Filter by topic"><option value="">All topics</option>${topics.map(topic => `<option>${esc(topic)}</option>`).join('')}</select>
+      </div>
+      <div class="library-result-bar"><span id="library-count">${entries.length} revision cards</span><span>Official papers · worked-solution notes</span></div>
+      <div id="library-results">${renderLibraryCards(entries, kind)}</div>
+    </div>`;
+    main.dataset.libraryKind = kind;
+  }
+
+  function renderLibraryCards(entries, kind) {
+    if (!entries.length) return `<div class="empty-state"><strong>No revision card matches.</strong><p>Clear a filter or try a shorter keyword.</p></div>`;
+    return `<div class="library-grid">${entries.map(({question, worked}) => `<article class="library-card complete-card">
+      <div class="library-card-top"><span class="topic-label">${question.year} · Q${question.questionNumber} · ${esc(question.topic)}</span><span class="tag">${question.type}</span></div>
+      <h2>${esc(worked.title)}</h2>
+      ${worked.cheat.formula ? `<div class="formula">\\[${esc(worked.cheat.formula)}\\]</div>` : ''}
+      <dl>
+        <dt>Trigger</dt><dd>${esc(worked.cheat.trigger)}</dd>
+        <dt>${kind === 'cheat' ? 'Rule' : 'Shortcut'}</dt><dd>${esc(kind === 'cheat' ? worked.cheat.rule : worked.shortcut)}</dd>
+        ${kind === 'cheat' ? `<dt>Fast path</dt><dd>${esc(worked.shortcut)}</dd>` : ''}
+        <dt>Trap</dt><dd>${esc(worked.cheat.trap)}</dd>
+      </dl>
+      <div class="library-card-footer">
+        <span>${esc(worked.target)}</span>
+        ${kind === 'cheat' ? `<strong>${esc(worked.final)}</strong>` : ''}
+        <a href="${questionPath(question, 'learn')}" data-route>Open worked solution <span aria-hidden="true">→</span></a>
+      </div>
+    </article>`).join('')}</div>`;
   }
 
   function renderMistakes() {
@@ -501,6 +532,23 @@
     document.querySelector('#filtered-results').innerHTML = questions.length ? resultList(questions) : `<div class="empty-state"><strong>No saved question matches these filters.</strong><p>Clear a filter or bookmark more questions from Learn mode.</p></div>`;
   }
 
+  function filterLibrary() {
+    if (!['cheat', 'shortcuts'].includes(state.view)) return;
+    const query = (document.querySelector('#library-search')?.value || '').toLowerCase().trim();
+    const year = document.querySelector('#library-year')?.value || '';
+    const topic = document.querySelector('#library-topic')?.value || '';
+    const entries = state.data.questions.map(question => ({
+      question,
+      worked: state.solutions[`${question.year}-${question.questionNumber}`],
+    })).filter(entry => entry.worked)
+      .filter(({question}) => !year || String(question.year) === year)
+      .filter(({question}) => !topic || question.topic === topic)
+      .filter(({question, worked}) => !query || [question.topic, question.subtopic, question.question, worked.title, worked.shortcut, worked.cheat.trigger, worked.cheat.rule, worked.cheat.formula, worked.cheat.trap].join(' ').toLowerCase().includes(query));
+    document.querySelector('#library-count').textContent = `${entries.length} revision ${entries.length === 1 ? 'card' : 'cards'}`;
+    document.querySelector('#library-results').innerHTML = renderLibraryCards(entries, state.view);
+    typesetMath();
+  }
+
   document.addEventListener('click', event => {
     const route = event.target.closest('[data-route]');
     if (route && route.getAttribute('aria-disabled') !== 'true') {
@@ -532,9 +580,11 @@
     if (event.target.matches('[data-action="nat-input"]')) state.draftAnswers[currentQuestion().id] = [event.target.value];
     if (event.target === searchInput) renderSearchResults(event.target.value);
     if (event.target.matches('#list-search, #list-year, #list-topic, #list-difficulty')) filterSavedList();
+    if (event.target.matches('#library-search, #library-year, #library-topic')) filterLibrary();
   });
   document.addEventListener('change', event => {
     if (event.target.matches('#list-year, #list-topic, #list-difficulty')) filterSavedList();
+    if (event.target.matches('#library-year, #library-topic')) filterLibrary();
   });
 
   paperSelector.addEventListener('change', () => {

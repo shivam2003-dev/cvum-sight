@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Autonomous Coding Beyond the Demo — cvam.sight</title>
+  <meta name="description" content="A systems analysis of long-horizon autonomous coding, Qwen3.8-Max claims, and the public oh-my-cli trace.">
+  <link rel="stylesheet" href="../style.css?v=86">
+  <link rel="stylesheet" href="/themes.css?v=6">
+  <script src="/theme-init.js?v=8"></script>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+  </aside>
+  <main class="page">
+    <article>
+      <div class="post-header">
+        <p class="meta">Aug 04, 2026 · AI systems · 29 min read · 5.5k words</p>
+        <h1>Autonomous Coding Beyond the Demo: Designing a Control Plane for Ten-Day Software Agents</h1>
+        <p>A systems analysis of Qwen3.8-Max, the public <code>oh-my-cli</code> trace, and the architecture required to turn long context into long-lived, auditable work.</p>
+        <div class="tag-row"><span class="tag fill">autonomous-coding</span><span class="tag">ai-agents</span><span class="tag">control-plane</span><span class="tag">reliability</span><span class="tag">multimodal</span></div>
+      </div>
+      <div class="post-body osc-body">
+<figure>
+<img src="../assets/autonomy-control-plane/toon-autonomy-workshop.png" alt="A toonified autonomous engineering workshop moving through planning, coding, testing, review, and release" />
+<figcaption aria-hidden="true">A toonified autonomous engineering workshop moving through planning, coding, testing, review, and release</figcaption>
+</figure>
+<blockquote>
+<p><strong>Evidence note — 4 August 2026.</strong> Qwen describes Qwen3.8-Max as a 2.4-trillion-parameter mixture-of-experts model capable of 10+ day software projects, 500+ turns of chip-design optimization, year-long e-commerce strategy, and native visual feedback. Those are vendor-reported capabilities. This article independently audited the public <a href="https://github.com/qwen-code-dev-bot/oh-my-cli"><code>oh-my-cli</code></a> repository at commit <a href="https://github.com/qwen-code-dev-bot/oh-my-cli/tree/97c9f5f33b43c52c712634599b81e40262ac5603"><code>97c9f5f</code></a>, rebuilt it in a clean Node 22 environment, and passed 3,043 tests plus 54 smoke tests. The audit does <strong>not</strong> establish the model’s other claims, production SLOs, or general capability across professions.</p>
+</blockquote>
+<h2 id="executive-summary">Executive summary</h2>
+<p>Ten-day autonomous coding is not a larger chat session. It is a distributed-systems problem in which the unreliable component happens to speak, plan, and write code.</p>
+<p>The important unit is therefore not the prompt but the <strong>closed-loop transaction</strong>:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext mathvariant="normal">observe</mtext><mo>→</mo><mtext mathvariant="normal">propose</mtext><mo>→</mo><mtext mathvariant="normal">authorize</mtext><mo>→</mo><mtext mathvariant="normal">act</mtext><mo>→</mo><mtext mathvariant="normal">measure</mtext><mo>→</mo><mtext mathvariant="normal">commit or compensate</mtext><mi>.</mi></mrow><annotation encoding="application/x-tex">
+\text{observe} \rightarrow \text{propose} \rightarrow \text{authorize} \rightarrow
+\text{act} \rightarrow \text{measure} \rightarrow \text{commit or compensate}.
+</annotation></semantics></math></p>
+<p>A model can be brilliant at the second term and still fail catastrophically over ten days. Context drifts. Tests become correlated with the implementation. Tool output can contain hostile instructions. Retries amplify bad hypotheses. Two individually correct patches conflict. A GUI looks right while its network requests fail. The operating system kills the process. A token is broader than the task. The agent forgets why an invariant exists and “simplifies” it away.</p>
+<p>The architecture that survives these conditions separates two planes:</p>
+<ul>
+<li>A <strong>cognition plane</strong> forms hypotheses, decomposes work, writes candidate patches, and chooses what evidence to request.</li>
+<li>A <strong>control plane</strong> owns durable state, leases, budgets, policy, sandboxing, independent verification, commit authority, recovery, and audit.</li>
+</ul>
+<p>This division is analogous to Kubernetes reconciliation and database recovery. The model is neither the source of truth nor the transaction manager. It is a probabilistic controller operating against a durable desired-state ledger.</p>
+<p>The public <code>oh-my-cli</code> project is valuable because its repository contains more than generated application code. It implements session recovery, deterministic compaction sidecars, isolated worktree leases, turn-scoped undo/redo, approval and policy hooks, multimodal input validation, and explicit governance. Its strongest result is architectural: continuity is built outside the model. Its weakest result is evaluation: repository tests and commit activity do not by themselves measure held-out autonomy, production reliability, or causal attribution to Qwen3.8-Max.</p>
+<p>For infrastructure teams, five conclusions matter:</p>
+<ol type="1">
+<li><strong>Duration is an operational property, not a model property.</strong> Long-running work requires replayable state, idempotency, recovery, and expiring authority.</li>
+<li><strong>Every mutation should carry evidence.</strong> Treat patches as transactions with preconditions, tests, provenance, and compensation paths.</li>
+<li><strong>Memory needs anti-entropy.</strong> Summaries are caches; the immutable event log remains authoritative.</li>
+<li><strong>Vision should close a control loop.</strong> Screenshots are observations with uncertainty, not decorative prompt attachments.</li>
+<li><strong>Autonomy needs a reliability budget.</strong> Spend verification, human review, and redundant execution where probability times impact is highest.</li>
+</ol>
+<h2 id="problem-statement-a-ten-day-run-is-500-chances-to-be-wrong">Problem statement: a ten-day run is 500 chances to be wrong</h2>
+<p>Benchmarks historically compressed coding into a single issue and a terminal. <a href="https://arxiv.org/abs/2310.06770">SWE-bench</a> made repository-level issue resolution measurable; <a href="https://arxiv.org/abs/2405.15793">SWE-agent</a> showed that the agent-computer interface materially changes results; <a href="https://arxiv.org/abs/2407.16741">OpenHands</a> generalized the sandbox and event-stream substrate. These were necessary advances, but a ten-day project changes the failure model.</p>
+<p>Suppose a dependent chain has <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">n</annotation></semantics></math> irreversible-looking decisions, each with independent escape probability <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>p</mi><annotation encoding="application/x-tex">p</annotation></semantics></math>. The chance of completing the chain without an escaped error is</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><mtext mathvariant="normal">clean chain</mtext><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>p</mi><msup><mo stretchy="false" form="postfix">)</mo><mi>n</mi></msup><mi>.</mi></mrow><annotation encoding="application/x-tex">
+P(\text{clean chain})=(1-p)^n.
+</annotation></semantics></math></p>
+<p>At an apparently excellent <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0.005</mn></mrow><annotation encoding="application/x-tex">p=0.005</annotation></semantics></math>, 500 decisions yield <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>0.995</mn><mn>500</mn></msup><mo>≈</mo><mn>8.2</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">0.995^{500}\approx 8.2\%</annotation></semantics></math>. Independence is optimistic: mistaken assumptions tend to correlate later decisions, so real failure can compound faster. The solution is not merely to raise model accuracy. It is to break one long chain into bounded, verified, compensatable segments.</p>
+<figure>
+<img src="../assets/autonomy-control-plane/whiteboard-reliability-loop.png" alt="Hand-drawn reliability loop showing compounding risk, checkpoints, rollback, verifier gates, memory snapshots, and a circuit breaker" />
+<figcaption aria-hidden="true">Hand-drawn reliability loop showing compounding risk, checkpoints, rollback, verifier gates, memory snapshots, and a circuit breaker</figcaption>
+</figure>
+<p>This also clarifies a frequently abused phrase: <strong>time horizon</strong>. METR defines its 50%-success time horizon as the time a human expert would need for tasks an agent completes half the time—not how long an agent process remains alive. Its <a href="https://metr.org/time-horizons/">current measurement page</a> also warns that results are most reliable on tasks below roughly 16 hours and that the suite is concentrated in software, ML, and cybersecurity. “The loop ran for ten days” and “the system reliably completes ten-day human tasks” are different empirical claims.</p>
+<p>The engineering target is therefore:</p>
+<blockquote>
+<p>Maintain goal fidelity and bounded authority across crashes, context replacement, adversarial inputs, environmental drift, and hundreds of partially dependent mutations—while producing enough evidence for another system or engineer to reproduce the result.</p>
+</blockquote>
+<p>That target is closer to a workflow engine, a build farm, and a safety kernel than to an IDE autocomplete feature.</p>
+<h2 id="historical-evolution-from-completion-to-reconciliation">Historical evolution: from completion to reconciliation</h2>
+<figure>
+<img src="../assets/autonomy-control-plane/evolution-timeline.svg" alt="Timeline from code completion to durable autonomous control planes" />
+<figcaption aria-hidden="true">Timeline from code completion to durable autonomous control planes</figcaption>
+</figure>
+<p>The path to long-horizon coding has four architectural eras.</p>
+<p><strong>Completion (2018–2021).</strong> Models predicted a function or next block from local context. The human held state, chose tools, tested, and integrated. Failure was cheap because authority was tiny.</p>
+<p><strong>Conversational coding (2022–2023).</strong> Larger context enabled multi-file discussion and iterative repair. The transcript became accidental state. Once it overflowed, the system either forgot or summarized itself without a durable provenance boundary.</p>
+<p><strong>Repository agents (2023–2025).</strong> Agents gained shells, editors, search, test runners, and isolated environments. SWE-bench made issue resolution a useful objective. <a href="https://arxiv.org/abs/2307.13854">WebArena</a>, <a href="https://arxiv.org/abs/2401.13649">VisualWebArena</a>, and <a href="https://arxiv.org/abs/2404.07972">OSWorld</a> exposed a second frontier: action grounded in changing visual environments. The crucial discovery was that interface design, environment construction, and verification can matter as much as base-model capability.</p>
+<p><strong>Durable autonomy (2025 onward).</strong> The loop persists beyond a process, context window, or operator shift. It reconciles desired and observed state, leases resources, records events, evaluates risk, and resumes after interruption. Anthropic’s distinction between fixed <strong>workflows</strong> and model-directed <strong>agents</strong> remains useful: use deterministic paths where the route is known, and spend agentic flexibility only where uncertainty justifies its latency and cost (<a href="https://www.anthropic.com/engineering/building-effective-agents">Building Effective Agents</a>).</p>
+<p>The surprising historical analogy is not “AI becomes a programmer.” It is “the shell script becomes a controller.” Kubernetes controllers continuously compare desired with actual state instead of assuming an action succeeded (<a href="https://kubernetes.io/docs/concepts/architecture/controller/">controller pattern</a>). Temporal persists workflow history so computation can replay after failure (<a href="https://docs.temporal.io/workflow-execution">workflow execution</a>). Long-horizon agents need both ideas, plus a security boundary around the proposer.</p>
+<h2 id="what-the-oh-my-cli-trace-actually-demonstrates">What the <code>oh-my-cli</code> trace actually demonstrates</h2>
+<p>The audited repository began on 13 July 2026 and, at the inspected head on 4 August, contained 469 commits across 19 active calendar days. Of these, 456 used the bot service’s two author identities. Commit volume peaked at 74 on 3 August. A clean build passed TypeScript checking, 3,043 tests in 173 files, and a 54-test smoke suite. The package identifies itself as version 0.1.0 and declares Node.js 22 or newer.</p>
+<figure>
+<img src="../assets/autonomy-control-plane/trace-benchmarks.svg" alt="Audited commit activity and locally reproduced test results" />
+<figcaption aria-hidden="true">Audited commit activity and locally reproduced test results</figcaption>
+</figure>
+<p>The repository’s more consequential evidence is in its mechanisms:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Observed implementation</th>
+<th>Why it matters after day one</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Governance plane</td>
+<td><a href="https://github.com/qwen-code-dev-bot/oh-my-cli/blob/97c9f5f33b43c52c712634599b81e40262ac5603/AUTONOMY.md"><code>AUTONOMY.md</code></a> limits executable work, leases, branches, protected files, checks, and escalation</td>
+<td>Prevents the agent from silently redefining the rules under which its output is judged</td>
+</tr>
+<tr>
+<td>Bounded inner loop</td>
+<td><a href="https://github.com/qwen-code-dev-bot/oh-my-cli/blob/97c9f5f33b43c52c712634599b81e40262ac5603/src/agent.ts"><code>src/agent.ts</code></a> caps rounds and checks turn, wall-time, token, and tool budgets</td>
+<td>Infinite autonomy is composed from finite, inspectable transactions</td>
+</tr>
+<tr>
+<td>Durable session</td>
+<td><a href="https://github.com/qwen-code-dev-bot/oh-my-cli/blob/97c9f5f33b43c52c712634599b81e40262ac5603/src/session.ts"><code>src/session.ts</code></a> uses JSONL and atomic temp-file promotion, preserving corrupt originals</td>
+<td>A process crash does not have to become amnesia or silent transcript truncation</td>
+</tr>
+<tr>
+<td>Anti-entropy memory</td>
+<td><a href="https://github.com/qwen-code-dev-bot/oh-my-cli/blob/97c9f5f33b43c52c712634599b81e40262ac5603/src/compaction.ts"><code>src/compaction.ts</code></a> stores bounded deterministic summaries beside the original transcript and validates source digests</td>
+<td>The summary is a rebuildable index, not a new source of truth</td>
+</tr>
+<tr>
+<td>Reversible mutation</td>
+<td><a href="https://github.com/qwen-code-dev-bot/oh-my-cli/blob/97c9f5f33b43c52c712634599b81e40262ac5603/src/turn-checkpoint.ts"><code>src/turn-checkpoint.ts</code></a> snapshots content, detects divergence, and limits undo/redo to turn-owned paths</td>
+<td>Recovery avoids a broad <code>git reset</code> that could destroy unrelated human work</td>
+</tr>
+<tr>
+<td>Work isolation</td>
+<td>Worktree leases derive a stable identity from repository, task, and agent and refuse unsafe cleanup</td>
+<td>Concurrency becomes explicit ownership rather than shared-directory optimism</td>
+</tr>
+<tr>
+<td>Multimodal hygiene</td>
+<td><a href="https://github.com/qwen-code-dev-bot/oh-my-cli/blob/97c9f5f33b43c52c712634599b81e40262ac5603/src/image-input.ts"><code>src/image-input.ts</code></a> confines paths, sniffs magic bytes, caps dimensions and size, and retains raw bytes only in memory</td>
+<td>“Vision input” is treated as untrusted binary data, not an innocent attachment</td>
+</tr>
+</tbody>
+</table>
+<p>The project’s governance requires one active issue lease and one mutation branch, independent checks before completion, and quarantine after repeated identical failures. This is not proof that every commit was wise. It is evidence that the authors understood a central long-horizon principle: <strong>a model’s freedom should grow inside a shrinking operational envelope</strong>.</p>
+<p>Several caveats are non-negotiable:</p>
+<ul>
+<li>The model, harness, prompt, tests, and repository evolved together. Passing in-repository tests does not isolate model capability.</li>
+<li>The public history is selected evidence; it does not expose every failed trajectory, token, intervention, or external system state.</li>
+<li>A large test suite shows internal consistency under the tested environment, not production availability, security, or maintainability.</li>
+<li>The local install reported one moderate dependency vulnerability. Version 0.1.0 and the absence of a published operational SLO should temper “production-ready” language.</li>
+<li>The official launch claims about chip design, year-long strategy, and hundreds of professions were not independently reproducible from this repository.</li>
+</ul>
+<p>This distinction is healthy. The trace is interesting precisely because it lets us examine a plausible control system without converting a case study into a benchmark.</p>
+<h2 id="core-architecture-two-planes-and-four-ledgers">Core architecture: two planes and four ledgers</h2>
+<figure>
+<img src="../assets/autonomy-control-plane/control-plane-architecture.svg" alt="Two-plane architecture separating probabilistic cognition from deterministic control" />
+<figcaption aria-hidden="true">Two-plane architecture separating probabilistic cognition from deterministic control</figcaption>
+</figure>
+<p>The architecture has one rule: <strong>the model may propose a state transition; it may not define whether that transition is valid.</strong></p>
+<p>The cognition plane includes planning, code generation, retrieval, visual interpretation, and hypothesis ranking. Its outputs are typed proposals. The control plane validates those proposals against four durable ledgers:</p>
+<ol type="1">
+<li><strong>Intent ledger</strong> — desired outcomes, invariants, acceptance tests, provenance, and unresolved decisions.</li>
+<li><strong>Event ledger</strong> — append-only observations, tool calls, results, receipts, and state-transition identifiers.</li>
+<li><strong>Capability ledger</strong> — who or what may read, write, execute, access a secret, merge, or deploy; every grant expires.</li>
+<li><strong>Evidence ledger</strong> — which claims have which supporting artifacts, verifier version, environment fingerprint, and freshness.</li>
+</ol>
+<p>Represent a proposed transition as</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi><mo>=</mo><mo stretchy="false" form="prefix">(</mo><msub><mi>s</mi><mi>t</mi></msub><mo>,</mo><mi>a</mi><mo>,</mo><mi>π</mi><mo>,</mo><mi>b</mi><mo>,</mo><mi>e</mi><mo>,</mo><msub><mi>s</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="false" form="postfix">)</mo><mo>,</mo></mrow><annotation encoding="application/x-tex">
+\tau = (s_t, a, \pi, b, e, s_{t+1}),
+</annotation></semantics></math></p>
+<p>where <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>s</mi><mi>t</mi></msub><annotation encoding="application/x-tex">s_t</annotation></semantics></math> is observed state, <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>a</mi><annotation encoding="application/x-tex">a</annotation></semantics></math> the proposed action, <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>π</mi><annotation encoding="application/x-tex">\pi</annotation></semantics></math> the applicable policy, <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>b</mi><annotation encoding="application/x-tex">b</annotation></semantics></math> the resource budget, and <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>e</mi><annotation encoding="application/x-tex">e</annotation></semantics></math> the required evidence contract. The control plane commits <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>s</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><annotation encoding="application/x-tex">s_{t+1}</annotation></semantics></math> only if preconditions still hold and the evidence contract is satisfied. Otherwise it records an abort, compensation, or escalation. This is optimistic concurrency control for code-changing agents.</p>
+<p>The four ledgers solve different failure classes. Combining them into one mutable “memory” document is tempting, but unsafe: a summarizer can accidentally rewrite intent; a tool can inject authority through its output; a passing test can be mistaken for evidence of a different claim.</p>
+<h2 id="component-by-component">Component by component</h2>
+<h3 id="the-intent-compiler">1. The intent compiler</h3>
+<p>A vague request such as “take this from an empty folder to production” must become a typed goal graph, not a prose plan. Each node should declare:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">id</span><span class="kw">:</span><span class="at"> api.rate-limit</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">goal</span><span class="kw">:</span><span class="at"> bound unauthenticated request rate per source identity</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">preconditions</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">threat-model.approved</span><span class="kw">,</span><span class="at"> redis.available</span><span class="kw">]</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">invariants</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">healthcheck.exempt</span><span class="kw">,</span><span class="at"> internal-mtls.not-ip-limited</span><span class="kw">]</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">acceptance</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> load_test.p99_ms &lt; 120</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> bypass_suite == pass</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">risk</span><span class="kw">:</span><span class="at"> high</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="fu">authority</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">edit:gateway</span><span class="kw">,</span><span class="at"> execute:staging</span><span class="kw">]</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">rollback</span><span class="kw">:</span><span class="at"> deploy.previous_digest</span></span></code></pre></div>
+<p>Compilation is valuable because prose hides contradictions. A graph exposes missing dependencies, parallelizable work, and high-risk cut vertices. The model can revise tactics, but changes to an invariant or acceptance criterion become governance events requiring a different authority path.</p>
+<h3 id="the-planner-as-a-receding-horizon-controller">2. The planner as a receding-horizon controller</h3>
+<p>Planning the entire ten days once is brittle. Use model-predictive control: optimize a short action horizon, execute the first safe step, observe, and re-plan.</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>a</mi><mi>t</mi><mo>*</mo></msubsup><mo>=</mo><mrow><mi mathvariant="normal">arg</mi><mo>&#8289;</mo></mrow><munder><mi mathvariant="normal">min</mi><msub><mi>a</mi><mrow><mi>t</mi><mo>:</mo><mi>t</mi><mo>+</mo><mi>H</mi></mrow></msub></munder><mi mathvariant="double-struck">𝔼</mi><mrow><mo stretchy="true" form="prefix">[</mo><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mi>t</mi></mrow><mrow><mi>t</mi><mo>+</mo><mi>H</mi></mrow></munderover><mi>L</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>s</mi><mi>k</mi></msub><mo>,</mo><msub><mi>a</mi><mi>k</mi></msub><mo stretchy="false" form="postfix">)</mo><mo>+</mo><mi>λ</mi><mi>R</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>s</mi><mi>k</mi></msub><mo>,</mo><msub><mi>a</mi><mi>k</mi></msub><mo stretchy="false" form="postfix">)</mo><mo stretchy="true" form="postfix">]</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
+a_t^* = \arg\min_{a_{t:t+H}} \mathbb{E}
+\left[\sum_{k=t}^{t+H} L(s_k,a_k) + \lambda R(s_k,a_k)\right].
+</annotation></semantics></math></p>
+<p>Here <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">L</annotation></semantics></math> measures task loss—unfinished acceptance criteria, latency, defects, cost—and <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>R</mi><annotation encoding="application/x-tex">R</annotation></semantics></math> measures operational risk. The horizon <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>H</mi><annotation encoding="application/x-tex">H</annotation></semantics></math> should shrink when environmental uncertainty increases. Schema design can use a longer horizon than a flaky production incident; deployment should often be one guarded step.</p>
+<p>An unconventional but useful addition is a <strong>counterfactual shadow</strong>. A second, read-only planner receives the same intent and current state but not the primary planner’s reasoning. It proposes the most likely hidden assumption or destructive shortcut. Run it selectively when expected risk reduction exceeds its cost:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><mtext mathvariant="normal">escape</mtext><mo stretchy="false" form="postfix">)</mo><mo>⋅</mo><mtext mathvariant="normal">impact</mtext><mo>⋅</mo><mtext mathvariant="normal">detector recall</mtext><mo>&gt;</mo><msub><mi>C</mi><mtext mathvariant="normal">shadow</mtext></msub><mi>.</mi></mrow><annotation encoding="application/x-tex">
+P(\text{escape}) \cdot \text{impact} \cdot \text{detector recall}
+&gt; C_{\text{shadow}}.
+</annotation></semantics></math></p>
+<h3 id="memory-as-an-anti-entropy-system">3. Memory as an anti-entropy system</h3>
+<p>Context windows are caches. Even Qwen’s published 991K-token maximum input does not make them durable, current, or trustworthy. A robust memory stack has layers:</p>
+<ul>
+<li>immutable event history;</li>
+<li>content-addressed artifacts;</li>
+<li>derived summaries and indexes;</li>
+<li>a compact active working set;</li>
+<li>explicit confidence and freshness metadata.</li>
+</ul>
+<p>Summaries should include the digest of the source prefix from which they were derived. If the prefix changes or validation fails, discard the summary and rebuild. This mirrors anti-entropy in replicated systems: derived views converge from authoritative history instead of overwriting it.</p>
+<p>Facts should decay unless revalidated. One simple policy is</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>c</mi><mi>i</mi></msub><mo stretchy="false" form="prefix">(</mo><mi>t</mi><mo stretchy="false" form="postfix">)</mo><mo>=</mo><msub><mi>c</mi><mrow><mi>i</mi><mn>0</mn></mrow></msub><msub><mi>w</mi><mtext mathvariant="normal">source</mtext></msub><msup><mi>e</mi><mrow><mi>−</mi><msub><mi>λ</mi><mi>i</mi></msub><mo stretchy="false" form="prefix">(</mo><mi>t</mi><mo>−</mo><msub><mi>t</mi><mn>0</mn></msub><mo stretchy="false" form="postfix">)</mo></mrow></msup><mo>,</mo></mrow><annotation encoding="application/x-tex">
+c_i(t)=c_{i0}w_{\text{source}}e^{-\lambda_i(t-t_0)},
+</annotation></semantics></math></p>
+<p>where volatile facts—deployment state, dependency versions, active incidents—have high <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>λ</mi><mi>i</mi></msub><annotation encoding="application/x-tex">\lambda_i</annotation></semantics></math>, while an architectural invariant has low decay. Retrieval then optimizes not semantic similarity alone but relevance × confidence × freshness.</p>
+<h3 id="tool-runtime-and-capability-broker">4. Tool runtime and capability broker</h3>
+<p>Tool schemas are security boundaries. Each invocation should carry an unforgeable execution identity, a scoped capability, timeout, resource ceiling, working directory, network policy, and expected side effects. A shell tool with “run anything” and ambient cloud credentials erases every higher-level safety promise.</p>
+<p>Capabilities should be object-specific and short-lived: write these three paths, query this read replica, push this branch, deploy this digest to canary. Secret material is injected by a broker at execution time and never returned to model context. Outputs are tainted according to origin; web pages, issue bodies, test logs, images, and repository files remain data even when they contain imperative text.</p>
+<h3 id="durable-execution-and-reversible-mutation">5. Durable execution and reversible mutation</h3>
+<p>The event log is written before an external mutation, following the logic of a <a href="https://martinfowler.com/articles/patterns-of-distributed-systems/write-ahead-log.html">write-ahead log</a>. Each action has an idempotency key. On recovery, the runner asks whether the action committed, can be safely retried, or requires compensation.</p>
+<p>Do not make “retry” the universal answer. Temporal’s <a href="https://docs.temporal.io/encyclopedia/retry-policies">retry guidance</a> distinguishes retryable activity failure from deterministic workflow logic. Agent systems need an additional taxonomy:</p>
+<ul>
+<li><strong>transient:</strong> timeout, rate limit, worker loss → bounded exponential retry;</li>
+<li><strong>content:</strong> compiler error, failed assertion → new hypothesis, not identical retry;</li>
+<li><strong>policy:</strong> denied capability → escalation or plan change;</li>
+<li><strong>conflict:</strong> state changed since observation → refresh and re-plan;</li>
+<li><strong>epistemic:</strong> repeated contradictory evidence → circuit breaker and quarantine.</li>
+</ul>
+<p>Turn-scoped snapshots are preferable to repository-wide reset. They restore only paths the transaction owns, verify that current content still matches the expected post-image, and preserve unrelated mutations.</p>
+<h3 id="the-verifier-mesh">6. The verifier mesh</h3>
+<p>A single test command is an oracle-shaped bottleneck. Verification should be a mesh of partly independent signals:</p>
+<ul>
+<li>deterministic unit, integration, property, and migration tests;</li>
+<li>type, lint, dependency, license, secret, and static security analysis;</li>
+<li>differential tests against the previous release or alternate implementation;</li>
+<li>chaos and fault-injection probes;</li>
+<li>browser/network/console inspection for user-visible paths;</li>
+<li>a model reviewer that cannot edit and does not see the generating rationale;</li>
+<li>canary telemetry checked against a predeclared SLO window.</li>
+</ul>
+<p>Every task receives an <strong>evidence contract</strong>. “Login works” might require an HTTP trace, database side-effect, browser screenshot, accessibility tree, console-clean record, and rollback proof. The evidence ledger records artifact hashes and verifier versions; “passed yesterday” is not valid after the dependency lockfile changes.</p>
+<p>The autonomy reliability budget can be expressed as</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>B</mi><mi>R</mi></msub><mo>=</mo><munder><mo>∑</mo><mi>i</mi></munder><msub><mi>I</mi><mi>i</mi></msub><mo>⋅</mo><msub><mi>P</mi><mi>i</mi></msub><mo stretchy="false" form="prefix">(</mo><mtext mathvariant="normal">escape</mtext><mo>∣</mo><msub><mi>E</mi><mi>i</mi></msub><mo stretchy="false" form="postfix">)</mo><mo>,</mo></mrow><annotation encoding="application/x-tex">
+B_R=\sum_i I_i \cdot P_i(\text{escape}\mid E_i),
+</annotation></semantics></math></p>
+<p>where <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>I</mi><mi>i</mi></msub><annotation encoding="application/x-tex">I_i</annotation></semantics></math> is consequence and <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>E</mi><mi>i</mi></msub><annotation encoding="application/x-tex">E_i</annotation></semantics></math> the available evidence. The controller spends additional verification until <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>B</mi><mi>R</mi></msub><annotation encoding="application/x-tex">B_R</annotation></semantics></math> falls below the task’s threshold. This creates rational asymmetry: renaming a local variable needs little ceremony; changing an authorization boundary should trigger independent review, adversarial tests, and staged release.</p>
+<figure>
+<img src="../assets/autonomy-control-plane/reliability-budget.svg" alt="Reliability budget allocating stronger verification to higher-impact actions" />
+<figcaption aria-hidden="true">Reliability budget allocating stronger verification to higher-impact actions</figcaption>
+</figure>
+<h3 id="native-multimodal-intelligence-as-residual-control">7. Native multimodal intelligence as residual control</h3>
+<figure>
+<img src="../assets/autonomy-control-plane/multimodal-feedback.svg" alt="Visual feedback as a measured residual rather than a one-time attachment" />
+<figcaption aria-hidden="true">Visual feedback as a measured residual rather than a one-time attachment</figcaption>
+</figure>
+<p>Vision becomes operationally interesting when it is continuous. At step <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>t</mi><annotation encoding="application/x-tex">t</annotation></semantics></math>, the planner predicts observable outcome <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mover><mi>y</mi><mo accent="true">̂</mo></mover><mi>t</mi></msub><annotation encoding="application/x-tex">\hat y_t</annotation></semantics></math>—layout geometry, page state, chart values, console status, network responses. The runtime captures actual observation <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>y</mi><mi>t</mi></msub><annotation encoding="application/x-tex">y_t</annotation></semantics></math>, normalizes it, and computes residual</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>t</mi></msub><mo>=</mo><mi>D</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>y</mi><mi>t</mi></msub><mo>,</mo><msub><mover><mi>y</mi><mo accent="true">̂</mo></mover><mi>t</mi></msub><mo stretchy="false" form="postfix">)</mo><mo>,</mo></mrow><annotation encoding="application/x-tex">
+r_t = D(y_t,\hat y_t),
+</annotation></semantics></math></p>
+<p>where <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>D</mi><annotation encoding="application/x-tex">D</annotation></semantics></math> combines pixel/structural similarity, OCR or accessibility-tree differences, and semantic checks. Large or safety-relevant residuals trigger re-observation, diagnosis, or rollback.</p>
+<p>The important design is <strong>sensor fusion</strong>. A screenshot can show a green toast while the API returned a cached result; DOM inspection can miss canvas corruption; an accessibility tree can be correct while responsive layout clips the submit button. Use visual pixels, DOM/accessibility state, network events, console logs, and backend effects as independent channels.</p>
+<p>Images are also an attack surface. Decode in a sandbox, verify magic bytes rather than extensions, cap dimensions and decompressed size, strip metadata, prevent workspace traversal, and store only content hashes plus derived observations in durable logs. OpenAI’s description of browser feedback in <a href="https://openai.com/index/introducing-upgrades-to-codex/">Codex upgrades</a> similarly emphasizes seeing and validating rendered work; the systems lesson is that observation must still cross a policy boundary.</p>
+<h2 id="end-to-end-data-flow">End-to-end data flow</h2>
+<figure>
+<img src="../assets/autonomy-control-plane/evidence-dataflow.svg" alt="Evidence-carrying execution data flow" />
+<figcaption aria-hidden="true">Evidence-carrying execution data flow</figcaption>
+</figure>
+<pre class="code" data-lang="mermaid"><code>sequenceDiagram
+    autonumber
+    participant I as Intent ledger
+    participant P as Planner
+    participant C as Control plane
+    participant W as Sandboxed worker
+    participant V as Verifier mesh
+    participant E as Evidence ledger
+    participant R as Release controller
+    P-&gt;&gt;I: Read goal, invariants, unresolved decisions
+    P-&gt;&gt;C: Propose transition + evidence contract
+    C-&gt;&gt;C: Check lease, budget, capability, state version
+    C-&gt;&gt;W: Mint narrow expiring capability
+    W-&gt;&gt;E: Append pre-image and action receipt
+    W-&gt;&gt;W: Execute idempotent mutation
+    W-&gt;&gt;V: Submit candidate artifact
+    V--&gt;&gt;E: Tests, visual residuals, security findings
+    E--&gt;&gt;C: Signed evidence bundle
+    alt Contract satisfied and state unchanged
+        C-&gt;&gt;I: Commit new state and provenance
+        C-&gt;&gt;R: Authorize canary digest
+        R--&gt;&gt;E: SLO observation and release receipt
+    else Failure, conflict, or uncertainty
+        C-&gt;&gt;W: Compensate or quarantine
+        C--&gt;&gt;P: Fresh state + failure taxonomy
+    end</code></pre>
+<p>The coordinator itself is a reconciliation loop:</p>
+<pre class="code" data-lang="mermaid"><code>flowchart TD
+    A[Load intent and latest durable state] --&gt; B{State and policy current?}
+    B -- no --&gt; C[Refresh observations and invalidate stale summaries]
+    C --&gt; A
+    B -- yes --&gt; D[Choose highest-value unblocked task]
+    D --&gt; E[Acquire task and mutation leases]
+    E --&gt; F[Propose bounded action and evidence contract]
+    F --&gt; G{Policy authorizes?}
+    G -- no --&gt; H[Re-plan or escalate]
+    G -- yes --&gt; I[Checkpoint, execute, verify]
+    I --&gt; J{Evidence sufficient?}
+    J -- no --&gt; K{Retry class?}
+    K -- transient --&gt; I
+    K -- content/conflict --&gt; A
+    K -- epistemic --&gt; L[Quarantine and circuit-break]
+    J -- yes --&gt; M[Commit receipt and release lease]
+    M --&gt; A</code></pre>
+<h2 id="design-decisions-and-trade-offs">Design decisions and trade-offs</h2>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Approach</th>
+<th>Strength</th>
+<th>Failure boundary</th>
+<th>Best use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Single prompt / chat</td>
+<td>Lowest setup and latency</td>
+<td>Context, authority, and evidence collapse into one transcript</td>
+<td>Small reversible edits with a human holding state</td>
+</tr>
+<tr>
+<td>Scripted workflow</td>
+<td>Deterministic, auditable, inexpensive</td>
+<td>Brittle when branches or observations are not anticipated</td>
+<td>Known CI/CD and data-processing paths</td>
+</tr>
+<tr>
+<td>Repository agent</td>
+<td>Flexible search, edit, and test loop</td>
+<td>Often process-local; evaluator and actor may be coupled</td>
+<td>Issue resolution in an isolated repository</td>
+</tr>
+<tr>
+<td>Durable control-plane agent</td>
+<td>Crash recovery, policy, leases, evidence, multi-day continuity</td>
+<td>Considerable infrastructure and operational complexity</td>
+<td>Long projects with material side effects</td>
+</tr>
+</tbody>
+</table>
+<p>Several trade-offs resist universal answers.</p>
+<p><strong>Immutable history versus privacy.</strong> Full replay improves diagnosis but stores prompts, code, and possibly personal or secret data. Use field-level encryption, retention classes, redaction before persistence, and cryptographic erasure of wrapped keys. Some observations should never enter the model-visible log.</p>
+<p><strong>Independent verification versus latency.</strong> Redundant runners and shadow reviews reduce correlated errors but increase queue time. Risk-price them. Do not run the same model twice with the same context and call the results independent.</p>
+<p><strong>Determinism versus learning.</strong> Reproducible workflows want stable policies; adaptive agents want to update tactics. Separate the “constitution” from the “playbook.” Learning may update retrieval weights, tool selection, test ordering, and cost estimates. It may not grant new authority or weaken an invariant.</p>
+<p><strong>Large context versus focused state.</strong> A 991K-token window can hold more evidence but also more stale assumptions, injection surface, and attention competition. Prefer a small verified working set linked to content-addressed sources.</p>
+<p><strong>Agent-generated tests versus evaluator independence.</strong> Generated tests accelerate development but can encode the same misunderstanding as the patch. Preserve owner-provided acceptance tests, mutation testing, held-out cases, and outcome signals the planner cannot edit.</p>
+<h2 id="scaling-strategy-parallel-search-serialized-truth">Scaling strategy: parallel search, serialized truth</h2>
+<figure>
+<img src="../assets/autonomy-control-plane/scaling-topology.svg" alt="Scaling topology with isolated workers and a serialized integration gate" />
+<figcaption aria-hidden="true">Scaling topology with isolated workers and a serialized integration gate</figcaption>
+</figure>
+<p>Scale at the dependency graph, not by letting many agents share a checkout. Independent workers receive immutable base digests and isolated worktrees or containers. Each owns a lease, budget, and output namespace. They can explore implementation alternatives, generate tests, inspect security, or reproduce a failure concurrently.</p>
+<p>Integration remains serialized through a narrow gate. The gate rebases against current truth, reruns affected checks, rejects overlapping ownership, and issues the only commit token. This resembles database multi-version concurrency control: speculative work scales horizontally, but conflicting writes are validated at commit.</p>
+<p>Little’s Law gives a useful capacity bound:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mi>λ</mi><mi>W</mi><mo>,</mo></mrow><annotation encoding="application/x-tex">
+L=\lambda W,
+</annotation></semantics></math></p>
+<p>where <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">L</annotation></semantics></math> is work in progress, <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">\lambda</annotation></semantics></math> accepted task throughput, and <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math> average residence time. Adding agents increases <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">L</annotation></semantics></math> immediately; if the integration/verifier service cannot raise <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">\lambda</annotation></semantics></math>, residence time and staleness grow. A fleet that “looks busy” may lower delivered throughput because every long-lived branch becomes more expensive to rebase and revalidate.</p>
+<p>Practical scheduling should therefore account for:</p>
+<ul>
+<li>critical-path length and expected information gain;</li>
+<li>mutation overlap and shared external resources;</li>
+<li>verifier capacity, not just model capacity;</li>
+<li>token, tool, and wall-clock budgets;</li>
+<li>failure correlation across models, prompts, and environments;</li>
+<li>freshness deadlines for observations.</li>
+</ul>
+<p>Use separate queues for read-only research, speculative coding, authoritative mutation, and release. Backpressure should stop new speculation when the evidence or integration queues saturate.</p>
+<h2 id="cost-optimization-price-uncertainty-not-tokens-alone">Cost optimization: price uncertainty, not tokens alone</h2>
+<p>Qwen’s official model page lists input at $2.00 per million tokens, output at $6.00, and implicitly cached input at $0.25. The nominal token cost is</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mo>=</mo><mn>2</mn><msub><mi>U</mi><mi>f</mi></msub><mo>+</mo><mn>0.25</mn><msub><mi>U</mi><mi>c</mi></msub><mo>+</mo><mn>6</mn><mi>O</mi><mspace width="1.0em"></mspace><mtext mathvariant="normal">dollars per million tokens</mtext><mo>,</mo></mrow><annotation encoding="application/x-tex">
+C=2U_f+0.25U_c+6O \quad \text{dollars per million tokens},
+</annotation></semantics></math></p>
+<p>for fresh input <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>U</mi><mi>f</mi></msub><annotation encoding="application/x-tex">U_f</annotation></semantics></math>, cached input <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>U</mi><mi>c</mi></msub><annotation encoding="application/x-tex">U_c</annotation></semantics></math>, and output <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>O</mi><annotation encoding="application/x-tex">O</annotation></semantics></math>.</p>
+<figure>
+<img src="../assets/autonomy-control-plane/cost-envelope.svg" alt="Illustrative token-cost scenarios" />
+<figcaption aria-hidden="true">Illustrative token-cost scenarios</figcaption>
+</figure>
+<p>For an illustrative 100-round job with 20M cumulative input tokens and 2M output tokens, replaying all input as fresh costs $52. If 90% qualifies for implicit caching, it costs $20.50. If deterministic compaction reduces input to 3M cached plus 2M fresh, the total is $16.75. These are workload assumptions, not observed costs of the public trace.</p>
+<p>Token optimization should not create correctness debt. The control objective is closer to</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mi mathvariant="normal">min</mi><mo>&#8289;</mo></mrow><mspace width="0.278em"></mspace><msub><mi>C</mi><mtext mathvariant="normal">model</mtext></msub><mo>+</mo><msub><mi>C</mi><mtext mathvariant="normal">tools</mtext></msub><mo>+</mo><msub><mi>C</mi><mtext mathvariant="normal">delay</mtext></msub><mo>+</mo><mi mathvariant="double-struck">𝔼</mi><mo stretchy="false" form="prefix">[</mo><msub><mi>C</mi><mtext mathvariant="normal">escaped failure</mtext></msub><mo stretchy="false" form="postfix">]</mo><mi>.</mi></mrow><annotation encoding="application/x-tex">
+\min \; C_{\text{model}}+C_{\text{tools}}+C_{\text{delay}}+
+\mathbb{E}[C_{\text{escaped failure}}].
+</annotation></semantics></math></p>
+<p>Cheap practices include stable prompt prefixes to maximize caching, content-addressed retrieval, schema-constrained outputs, summary refresh by change set, small models for classification and log normalization, and early deterministic checks. Expensive models belong at ambiguous design forks and high-impact diagnosis—not at every heartbeat.</p>
+<p>METR’s <a href="https://metr.org/blog/2026-07-21-expenditure-horizon/">expenditure-horizon framing</a> is helpful: capability depends on the compute and attempts an operator can afford, not only single-run success. Infrastructure should record cost per accepted evidence contract and cost per merged outcome, not merely tokens per request.</p>
+<h2 id="security-assume-the-environment-is-trying-to-program-the-programmer">Security: assume the environment is trying to program the programmer</h2>
+<figure>
+<img src="../assets/autonomy-control-plane/security-trust-zones.svg" alt="Security trust zones from untrusted observations to release authority" />
+<figcaption aria-hidden="true">Security trust zones from untrusted observations to release authority</figcaption>
+</figure>
+<p>Prompt injection in agent systems is a confused-deputy problem. A malicious issue, README, web page, image, test log, or package post-install message can supply text that resembles instructions. If the model also holds credentials and broad tools, data becomes authority.</p>
+<p>The defense is architectural:</p>
+<ol type="1">
+<li><strong>Separate data from control.</strong> Only signed policy and the intent ledger may alter objectives or grant capability.</li>
+<li><strong>Use least privilege and ephemeral identity.</strong> Each action gets a narrow token bound to resource, operation, environment, and expiry.</li>
+<li><strong>Sandbox execution.</strong> Default-deny network, immutable base images, resource limits, syscall policy, and per-task filesystem namespaces.</li>
+<li><strong>Broker secrets.</strong> Deliver them directly to the authorized process; redact output and prevent model-visible echo.</li>
+<li><strong>Gate side effects.</strong> Merges, deployment, payments, deletion, customer communication, and production data access require higher assurance.</li>
+<li><strong>Preserve provenance.</strong> Every observation and artifact records origin and transformations.</li>
+<li><strong>Detect exfiltration and persistence.</strong> Scan patches, artifacts, dependencies, hooks, generated binaries, and outbound destinations.</li>
+</ol>
+<p>The <a href="https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html">OWASP AI Agent Security Cheat Sheet</a> provides a useful operational baseline. NIST’s work on <a href="https://www.nist.gov/news-events/news/2025/01/technical-blog-strengthening-ai-agent-hijacking-evaluations">agent hijacking evaluation</a> underscores that attacks must be tested as end-to-end behavior, not only prompt classification. OpenAI’s <a href="https://openai.com/index/designing-agents-to-resist-prompt-injection/">prompt-injection guidance</a> likewise argues for constraining impact even when manipulation succeeds.</p>
+<p>One subtle threat is <strong>goal laundering</strong>: an untrusted source persuades the planner to add a seemingly reasonable subgoal, which later justifies a privileged action. Bind every goal-graph node to provenance and require a governed diff when the graph changes. Another is <strong>evaluator capture</strong>: the agent edits the test or dashboard that defines success. Keep critical evaluators in a protected plane and sign their versions.</p>
+<h2 id="deployment-patterns">Deployment patterns</h2>
+<p>Production adoption should progress by authority, not by enthusiasm.</p>
+<p><strong>Read-only observer.</strong> The agent inventories systems, builds dependency graphs, reproduces incidents, and proposes evidence contracts. It has no mutation capability.</p>
+<p><strong>Ephemeral builder.</strong> It may create artifacts inside isolated environments and open reviewable changes. Humans own merge and release. This is the appropriate default for most organizations.</p>
+<p><strong>Guarded integrator.</strong> It receives a commit token only after independent checks, ownership validation, and rebase. Deployment remains staged.</p>
+<p><strong>Canary operator.</strong> It can release an immutable digest to a narrow cohort, observe predeclared SLOs, and automatically roll back. It cannot widen the cohort or change the SLO during the run.</p>
+<p><strong>Bounded service owner.</strong> Mature systems may allow autonomous remediation for a catalog of reversible incidents. New failure classes trip an epistemic circuit breaker and return authority to humans.</p>
+<p>The infrastructure stack typically includes a durable workflow service; append-only event and evidence stores; object storage for content-addressed artifacts; an identity-aware capability broker; sandboxed execution pools; repository/worktree leasing; a verifier farm; policy-as-code; observability; and a release controller. Multi-region operation requires explicit ownership of the mutation lease and fencing tokens, not “best effort” distributed locks.</p>
+<h2 id="performance-benchmarks-measure-the-system-not-the-theater">Performance benchmarks: measure the system, not the theater</h2>
+<p>A serious evaluation suite has at least five axes:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Axis</th>
+<th>Metric</th>
+<th>What it reveals</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Outcome</td>
+<td>held-out task success; production defect escape</td>
+<td>Whether useful work survived independent evaluation</td>
+</tr>
+<tr>
+<td>Horizon</td>
+<td>success versus human-expert task duration</td>
+<td>How reliability decays with dependency depth</td>
+</tr>
+<tr>
+<td>Recovery</td>
+<td>crash injection recovery time; duplicate side effects</td>
+<td>Whether durability and idempotency are real</td>
+</tr>
+<tr>
+<td>Efficiency</td>
+<td>cost and wall time per accepted evidence contract</td>
+<td>Whether more attempts buy useful certainty</td>
+</tr>
+<tr>
+<td>Governance</td>
+<td>unauthorized-action rate; provenance coverage; rollback success</td>
+<td>Whether the control plane bounds harm</td>
+</tr>
+</tbody>
+</table>
+<p>Fresh tasks matter because public repositories leak into training and agent scaffolds. <a href="https://arxiv.org/abs/2505.23419">SWE-bench-Live</a> was designed around continuously updated, post-cutoff issues for this reason. Long-horizon evaluation should additionally hide critical acceptance tests, inject dependency and environment changes, kill workers mid-action, corrupt derived summaries, rotate credentials, and introduce adversarial tool output.</p>
+<p>The local <code>oh-my-cli</code> results reported here are <strong>artifact validation</strong>, not a model benchmark. They establish that the inspected tree builds and its tests pass under a documented environment. A defensible Qwen capability result would need frozen model identifiers, prompts, tool policies, complete event logs, token and intervention accounting, independent held-out evaluators, and repeated trials with confidence intervals.</p>
+<h2 id="failure-modes-and-unresolved-problems">Failure modes and unresolved problems</h2>
+<p><strong>Correlated verification.</strong> Actor, reviewer, and test generator may share the same blind spot. Diversity must include data, model, prompt, environment, and outcome channel.</p>
+<p><strong>Specification gaming.</strong> The agent satisfies the measurable proxy while violating intent. Evidence contracts reduce but do not eliminate this; some qualities—maintainability, organizational fit, long-term safety—are weakly observable.</p>
+<p><strong>Memory poisoning.</strong> A false summary can persist longer than the input that caused it. Digest validation protects integrity, not truth. Periodically reconstruct key beliefs from primary evidence and use contradiction probes.</p>
+<p><strong>Environmental non-stationarity.</strong> APIs, repositories, prices, teams, and customer behavior change during the run. Freshness must be encoded in evidence, and plans must tolerate invalidation.</p>
+<p><strong>Self-modifying evaluators.</strong> An agent that can alter its tests, telemetry, policy, or reward can create the appearance of improvement. Protected evaluators and separation of duties are essential.</p>
+<p><strong>Long-horizon credit assignment.</strong> A production regression may originate hundreds of actions earlier. Event provenance helps locate candidates, but learning which policy decision caused the outcome remains an open causal-inference problem.</p>
+<p><strong>Human attention collapse.</strong> Asking a person to approve hundreds of low-context diffs is not governance. Escalations should be rare, bundled around consequential decisions, and include a replayable evidence packet plus explicit alternatives.</p>
+<p><strong>Institutional mismatch.</strong> Code can be correct while violating ownership, compliance, operational maturity, or product strategy. These constraints are often tacit and absent from repositories.</p>
+<p><strong>Benchmark-to-production transfer.</strong> Closed repositories have uncertain dependencies, flaky tests, private infrastructure, and consequential data. Public issue resolution is a useful component task, not a deployment certificate.</p>
+<h2 id="future-directions">Future directions</h2>
+<figure>
+<img src="../assets/autonomy-control-plane/future-map.svg" alt="Roadmap from durable replay to institutional autonomy" />
+<figcaption aria-hidden="true">Roadmap from durable replay to institutional autonomy</figcaption>
+</figure>
+<p>The most promising advances may arrive around the model rather than solely inside it.</p>
+<p><strong>Evidence-carrying patches.</strong> A change artifact includes machine-checkable preconditions, invariant proofs or tests, environment digest, provenance, expected telemetry, and compensation. CI verifies the evidence bundle instead of rediscovering its structure.</p>
+<p><strong>Causal memory.</strong> Instead of storing “we chose Redis,” memory stores the decision graph: evidence, alternatives, assumptions, predicted outcomes, and later observations. When an assumption expires, the system can identify downstream decisions that need reconsideration.</p>
+<p><strong>Counterfactual execution markets.</strong> Several isolated workers bid predicted cost, time, and risk for alternative plans. A scheduler funds a diverse portfolio, stops dominated trajectories early, and retains evidence from failed branches. The goal is not debate theater but measurable information gain.</p>
+<p><strong>Epistemic circuit breakers.</strong> Repeated contradictions, unexplained visual residuals, verifier disagreement, or environment drift automatically reduce authority and expand observation. Failure changes the control regime instead of merely increasing retry count.</p>
+<p><strong>Capability-credit ledgers.</strong> Autonomy is earned at the granularity of action classes. Repeated verified performance can expand budgets for reversible staging changes, while a single policy violation contracts authority. Credits cannot cross trust domains: skill at CSS does not grant database deletion rights.</p>
+<p><strong>Multimodal digital twins.</strong> For chip design, robotics, browser systems, and infrastructure, the agent operates against a continuously observed twin. In EDA, for example, synthesis and physical-design tools such as Yosys and OpenROAD can expose area, timing, congestion, and power as feedback; projects including <a href="https://arxiv.org/abs/2601.06268">AuDoPEDA</a> and <a href="https://arxiv.org/abs/2507.19570">MCP4EDA</a> explore agentic loops around such tools. The hard problem is preventing the optimizer from exploiting an incomplete simulator or constraint set.</p>
+<p><strong>Constitutional versioning.</strong> An autonomous system may learn playbooks, but changes to authority and invariants should travel through a separate, slower governance workflow with formal diffs, adversarial review, staged rollout, and rollback. A system that can freely rewrite its constitution is not self-improving infrastructure; it is an unbounded principal.</p>
+<h2 id="closing-perspective">Closing perspective</h2>
+<p>The interesting claim behind ten-day autonomous coding is not that a model can keep emitting tokens for ten days. Processes have always been able to run. The claim is that useful intent can survive hundreds of uncertain state transitions.</p>
+<p>The public <code>oh-my-cli</code> trace offers a credible architectural sketch: bounded rounds inside an unbounded coordinator, durable event history, validated summaries, scoped worktrees, reversible turns, multimodal hygiene, and explicit governance. Its test suite makes that sketch inspectable. It does not settle generality, production safety, or the vendor’s broader long-horizon claims.</p>
+<p>For senior engineering teams, that is enough to change the design question. Stop asking, “Which model can finish our project?” Ask instead:</p>
+<blockquote>
+<p>What deterministic control plane would let a fallible but increasingly capable model work for ten days without losing intent, exceeding authority, hiding uncertainty, or making recovery harder than the original task?</p>
+</blockquote>
+<p>Build that substrate, and model improvements become usable leverage. Skip it, and a longer horizon merely gives failure more time to compound.</p>
+<h2 id="references">References</h2>
+<h3 id="primary-product-and-trace-sources">Primary product and trace sources</h3>
+<ul>
+<li>Qwen, <a href="https://www.qwencloud.com/models/qwen3.8-max">Qwen3.8-Max model page</a> — specifications and pricing.</li>
+<li>Qwen, <a href="https://qwen.ai/blog?id=qwen3.8">Qwen3.8 launch blog</a> — vendor-reported capability claims.</li>
+<li><code>qwen-code-dev-bot</code>, <a href="https://github.com/qwen-code-dev-bot/oh-my-cli"><code>oh-my-cli</code> repository</a> and audited <a href="https://github.com/qwen-code-dev-bot/oh-my-cli/blob/97c9f5f33b43c52c712634599b81e40262ac5603/AUTONOMY.md"><code>AUTONOMY.md</code></a>.</li>
+<li>OpenAI, <a href="https://openai.com/index/unrolling-the-codex-agent-loop/">Unrolling the Codex agent loop</a> and <a href="https://openai.com/index/introducing-upgrades-to-codex/">Introducing upgrades to Codex</a>.</li>
+<li>Anthropic, <a href="https://www.anthropic.com/engineering/building-effective-agents">Building Effective Agents</a> and <a href="https://www.anthropic.com/research/trustworthy-agents">The case for making AI agents trustworthy</a>.</li>
+</ul>
+<h3 id="evaluation-and-agent-systems">Evaluation and agent systems</h3>
+<ul>
+<li>Jimenez et al., <a href="https://arxiv.org/abs/2310.06770">SWE-bench</a>, 2023.</li>
+<li>Yang et al., <a href="https://arxiv.org/abs/2405.15793">SWE-agent</a>, 2024.</li>
+<li>Wang et al., <a href="https://arxiv.org/abs/2407.16741">OpenHands</a>, 2024.</li>
+<li>Xiao et al., <a href="https://arxiv.org/abs/2505.23419">SWE-bench-Live</a>, 2025.</li>
+<li>Zhou et al., <a href="https://arxiv.org/abs/2307.13854">WebArena</a>, 2023.</li>
+<li>Koh et al., <a href="https://arxiv.org/abs/2401.13649">VisualWebArena</a>, 2024.</li>
+<li>Xie et al., <a href="https://arxiv.org/abs/2404.07972">OSWorld</a>, 2024.</li>
+<li>METR, <a href="https://metr.org/blog/2025-03-19-measuring-ai-ability-to-complete-long-tasks/">Measuring AI Ability to Complete Long Tasks</a>, <a href="https://metr.org/time-horizons/">time-horizon methodology</a>, and <a href="https://metr.org/blog/2026-07-21-expenditure-horizon/">Expenditure Horizon</a>.</li>
+</ul>
+<h3 id="systems-and-security-foundations">Systems and security foundations</h3>
+<ul>
+<li>Kubernetes, <a href="https://kubernetes.io/docs/concepts/architecture/controller/">Controllers</a>.</li>
+<li>Temporal, <a href="https://docs.temporal.io/workflow-execution">Workflow execution</a> and <a href="https://docs.temporal.io/encyclopedia/retry-policies">Retry policies</a>.</li>
+<li>Martin Fowler, <a href="https://martinfowler.com/articles/patterns-of-distributed-systems/write-ahead-log.html">Write-Ahead Log</a>.</li>
+<li>OWASP, <a href="https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html">AI Agent Security Cheat Sheet</a>.</li>
+<li>NIST, <a href="https://www.nist.gov/news-events/news/2025/01/technical-blog-strengthening-ai-agent-hijacking-evaluations">Strengthening AI agent hijacking evaluations</a>, 2025.</li>
+<li>OpenAI, <a href="https://openai.com/index/designing-agents-to-resist-prompt-injection/">Designing AI agents to resist prompt injection</a>.</li>
+<li>OpenROAD, <a href="https://openroad-test.readthedocs.io/en/stable/user/GettingStarted.html">Getting Started Guide</a>.</li>
+</ul>
+<hr />
+<h3 id="visual-provenance">Visual provenance</h3>
+<p>The quantitative diagrams are original SVGs built from the repository audit and stated assumptions. The two raster illustrations were generated specifically for this article: a toonified autonomous workshop and a hand-drawn reliability loop. Their final generation prompts are recorded in <a href="../assets/autonomy-control-plane/IMAGE-PROMPTS.md"><code>assets/IMAGE-PROMPTS.md</code></a>.</p>
+
+      </div>
+    </article>
+    <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer>
+  </main>
+  <aside class="toc-panel" id="toc-panel" aria-label="On this page"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside>
+</div>
+<script src="../stats.js?v=2"></script><script src="../app.js?v=42"></script><script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script>
+</body>
+</html>

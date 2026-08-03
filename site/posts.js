@@ -764,6 +764,18 @@ const POSTS = [
     seriesNum: "4"
   },
   {
+    slug: "frontier-digest-006",
+    title: "Frontier Digest #6 — the week the sandbox became the security perimeter.",
+    date: "Aug 2, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "security", "open-weights", "weekly"],
+    time: 27,
+    words: 5280,
+    excerpt: "Edition #6 of the weekly AI newsletter (Jul 27 – Aug 2) — the whole week, not just papers. Anthropic's three real-world cyber-evaluation incidents make containment the lead story; NVIDIA launches the Open Secure AI Alliance; Microsoft introduces MAI-Cyber-1-Flash and Project Perception; Kimi K3's full weights and technical report arrive; and ten papers connect agent interfaces, role drift, invisible reasoning, context and filesystem memory, agentic RL, TPU kernels, higher-order optimizers, and self-speculating tool calls.",
+    series: "frontier-digest",
+    seriesNum: "006"
+  },
+  {
     slug: "frontier-digest-005",
     title: "Frontier Digest #5 — the week the harness became the security boundary.",
     date: "Jul 26, 2026",

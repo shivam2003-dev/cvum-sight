@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "safe-superintelligence-survey",
+    title: "Safe Superintelligence — A Research Map for the Problem We Cannot Yet Test End to End.",
+    date: "Aug 04, 2026",
+    cat: "ai systems",
+    tags: ["safe-superintelligence", "superalignment", "ai-safety", "scalable-oversight", "interpretability"],
+    time: 15,
+    words: 2776,
+    excerpt: "A source-backed research map for superalignment: the evidence gap, scalable oversight, interpretability, evaluations, deployment controls, and the ten papers to read first."
+  },
+  {
     slug: "autonomous-coding-control-plane",
     title: "Autonomous Coding Beyond the Demo — Designing a Control Plane for Ten-Day Software Agents.",
     date: "Aug 04, 2026",

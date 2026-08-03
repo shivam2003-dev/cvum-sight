@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "autonomous-coding-control-plane",
+    title: "Autonomous Coding Beyond the Demo — Designing a Control Plane for Ten-Day Software Agents.",
+    date: "Aug 04, 2026",
+    cat: "ai systems",
+    tags: ["autonomous-coding", "ai-agents", "control-plane", "reliability", "multimodal"],
+    time: 29,
+    words: 5467,
+    excerpt: "A systems-level analysis of long-horizon coding agents: durable state, evidence-carrying execution, scoped authority, multimodal verification, cost control, and what the public oh-my-cli trace actually proves."
+  },
+  {
     slug: "how-search-works-lucene-elasticsearch",
     title: "How Search Actually Works — Lucene, Inverted Indexes, Segments, and Distributed Search.",
     date: "Aug 02, 2026",

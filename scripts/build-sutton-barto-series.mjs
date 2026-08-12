@@ -359,7 +359,7 @@ function renderChapter(chapter, index) {
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sutton &amp; Barto Chapter ${number} — ${esc(chapter.title)} Explained — cvam.sight</title>
 <meta name="description" content="${esc(`Plain-language companion notes for Reinforcement Learning: An Introduction, Chapter ${number}: ${chapter.summary}`)}">
-<link rel="stylesheet" href="../style.css?v=84"><link rel="stylesheet" href="/themes.css?v=6"><script src="/theme-init.js?v=8"></script>
+<link rel="stylesheet" href="../style.css?v=87"><script src="/theme-init.js?v=9"></script>
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg"><script defer src="/_vercel/speed-insights/script.js"></script><script defer src="/_vercel/insights/script.js"></script></head>
 <body><div class="progress-bar"></div><div class="layout has-toc"><aside class="sidebar"><a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a><p class="sidebar-sub">blog from a devops + ml apprentice</p><nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html" class="active">Discover</a><a href="../about.html">About</a></nav><div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p><a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a><a href="mailto:shivam.sk2003@gmail.com">Email</a></div></aside><div class="page"><article>
 <p class="meta" style="margin-bottom:8px"><a href="../reinforcement-learning-introduction.html" style="color:var(--ink-faint);text-decoration:none">&larr; Reinforcement Learning: An Introduction</a></p>
@@ -399,7 +399,7 @@ ${conceptHtml}
 <p>These are independent companion notes, not a replacement for the textbook. The chapter organization follows Sutton and Barto's second edition; explanations and examples here are original. Use the <a href="http://incompleteideas.net/book/the-book-2nd.html" target="_blank" rel="noopener">authors' book page</a>, the <a href="https://mitpress.mit.edu/9780262039246/reinforcement-learning/" target="_blank" rel="noopener">MIT Press edition page</a>, and the <a href="https://mitp-content-server.mit.edu/books/content/sectbyfn/books_pres_0/10094/Toc.pdf?dl=1" target="_blank" rel="noopener">official table of contents</a> for the primary source and exact section sequence.</p>
 </div><div class="post-nav">${index > 0 ? `<a href="${chapterFile(chapters[index - 1], index - 1)}">&larr; previous: Chapter ${index}</a>` : `<a href="../reinforcement-learning-introduction.html">&larr; chapter index</a>`}${nextLink(index)}</div></article><footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div>
 <aside class="toc-panel chapter-panel"><p class="toc-panel-label">// chapters</p><nav class="chapter-nav">${chapterNav(index)}</nav></aside></div>
-<script src="../stats.js?v=2"></script><script src="../app.js?v=40"></script><script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script></body></html>`;
+<script src="../stats.js?v=2"></script><script src="../app.js?v=43"></script><script defer src="../settings.js?v=17"></script><script defer src="../reader.js?v=3"></script></body></html>`;
 }
 
 function renderLanding() {
@@ -412,7 +412,7 @@ function renderLanding() {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reinforcement Learning: An Introduction — Easy Chapter Notes — cvam.sight</title>
 <meta name="description" content="Detailed, easy-to-read companion notes for Sutton and Barto's Reinforcement Learning: An Introduction, second edition—17 chapters with intuition, equations, examples, mistakes, FAQs, and study cards.">
-<link rel="stylesheet" href="style.css?v=84"><link rel="stylesheet" href="/themes.css?v=6"><script src="/theme-init.js?v=8"></script><link rel="icon" type="image/svg+xml" href="assets/favicon.svg"></head>
+<link rel="stylesheet" href="style.css?v=87"><script src="/theme-init.js?v=9"></script><link rel="icon" type="image/svg+xml" href="assets/favicon.svg"></head>
 <body><div class="layout"><aside class="sidebar"><a href="index.html" class="logo"><span class="dot"></span> cvam.sight</a><p class="sidebar-sub">blog from a devops + ml apprentice</p><nav><a href="index.html">Home</a><a href="series.html">Series</a><a href="ai-native.html">AI Native</a><a href="archive.html">Archive</a><a href="paperjuice.html">Paper Juice</a><a href="discover.html" class="active">Discover</a><a href="about.html">About</a></nav><div class="sidebar-footer"><p class="sidebar-stat" id="site-readers"></p><a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a><a href="mailto:shivam.sk2003@gmail.com">Email</a></div></aside><div class="page">
 <p class="meta" style="margin-bottom:8px"><a href="books-explained.html" style="color:var(--ink-faint);text-decoration:none">&larr; Books Explained</a></p>
 <section style="margin-bottom:32px"><p class="meta">// BOOK COMPANION · ${publishedCount}/17 LIVE</p><h1 style="margin:8px 0 12px">Reinforcement Learning: An Introduction — explained.</h1>
@@ -420,7 +420,7 @@ function renderLanding() {
 <p class="meta" style="max-width:760px">Independent learning material, written in original language. It follows the official chapter sequence without copying the book. ${publishedCount === chapters.length ? "All 17 chapters are complete and ready to read." : "Chapters are being written and published one by one."}</p></section><hr class="rule">
 <section class="series-index" style="margin-bottom:32px"><p class="meta" style="margin-bottom:12px">CHAPTERS · ${publishedCount} LIVE</p><div class="chapter-grid">${cards}</div></section>
 <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div></div>
-<script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=40"></script><script defer src="settings.js?v=16"></script><script defer src="reader.js?v=2"></script></body></html>`;
+<script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=43"></script><script defer src="settings.js?v=17"></script><script defer src="reader.js?v=3"></script></body></html>`;
 }
 
 function updateBooksExplained() {

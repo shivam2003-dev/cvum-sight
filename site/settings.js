@@ -1,15 +1,5 @@
-/* settings.js — reader settings panel (theme, text size, font, line spacing, scroll style) */
+/* settings.js — reader settings panel (text size, font, line spacing, scroll style) */
 (function () {
-  var THEMES = [
-    { id: "paper",      label: "Classic Paper" },
-    { id: "developer",  label: "Developer" },
-    { id: "hacker",     label: "Hacker" },
-    { id: "god",        label: "God" },
-    { id: "anime",      label: "Anime" },
-    { id: "minimalist", label: "Minimalist" },
-    { id: "modernist",  label: "Modernist" },
-    { id: "apple-glass", label: "Apple Glass" }
-  ];
   var SIZES = [
     { id: "text-sm", label: "S" },
     { id: "text-md", label: "M" },
@@ -31,24 +21,15 @@
     { id: "scroll-normal", label: "Scroll" },
     { id: "scroll-paged",  label: "Paged" }
   ];
-  var VIEWS = [
-    { id: "classic", label: "Classic" },
-    { id: "modern",  label: "Modern" }
-  ];
   var hasArticle = !!document.querySelector(".post-body");
 
-  var savedTheme = localStorage.getItem("cvam-theme") || "paper";
-  if (!THEMES.some(function (theme) { return theme.id === savedTheme; })) {
-    savedTheme = "paper";
-    localStorage.setItem("cvam-theme", savedTheme);
-  }
+  document.documentElement.classList.remove("view-modern", "theme-paper", "theme-developer", "theme-hacker", "theme-god", "theme-anime", "theme-minimalist", "theme-modernist", "theme-apple-glass");
+  localStorage.setItem("cvam-view", "classic");
+  localStorage.setItem("cvam-theme", "paper");
+  localStorage.removeItem("cvam-view-explicit");
   var savedSize  = localStorage.getItem("cvam-size")  || "text-md";
   var savedSpace = localStorage.getItem("cvam-ls")    || "ls-cozy";
   var savedScroll = localStorage.getItem("cvam-scroll") || "scroll-normal";
-  var savedView = localStorage.getItem("cvam-view") || "classic";
-  if (savedView !== "classic" && savedView !== "modern") savedView = "classic";
-  localStorage.setItem("cvam-view", savedView);
-  document.documentElement.classList.toggle("view-modern", savedView === "modern");
   // line width now adaptive (CSS clamp) — clear any legacy override
   localStorage.removeItem("cvam-lw");
   document.documentElement.classList.remove("lw-narrow", "lw-wide");
@@ -82,23 +63,8 @@
     }).join("");
   }
 
-  var themeSwatches = THEMES.map(function (t) {
-    var active = t.id === savedTheme ? " active" : "";
-    return '<button type="button" class="theme-swatch' + active + '" data-theme="' + t.id + '" title="' + t.label + '" aria-label="' + t.label + ' theme" aria-pressed="' + (t.id === savedTheme) + '"><span>' + t.label + '</span></button>';
-  }).join("");
-
   var html =
     '<div class="settings-panel-head"><span class="settings-panel-icon">Aa</span><span><b>Reader settings</b><small>Make this page yours</small></span><button type="button" class="settings-close" aria-label="Close reader settings">×</button></div>' +
-    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
-      '<label class="seg-label">Layout</label>' +
-      '<div class="seg-row view-row">' + seg("view-btn", "data-view", VIEWS, savedView) + '</div>' +
-    '</div>' +
-    '<div class="settings-divider"></div>' +
-    '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">' +
-      '<label>Theme</label>' +
-      '<div class="theme-picker">' + themeSwatches + '</div>' +
-    '</div>' +
-    '<div class="settings-divider"></div>' +
     '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">' +
       '<label class="seg-label">Text size</label>' +
       '<div class="seg-row font-size-row">' + seg("fs-btn", "data-size", SIZES, savedSize) + '</div>' +
@@ -150,17 +116,6 @@
     current.setAttribute("aria-pressed", "true");
   }
 
-  // ── layout view (classic / modern) ──
-  var viewBtns = panel.querySelectorAll(".view-btn");
-  viewBtns.forEach(function (b) {
-    b.addEventListener("click", function () {
-      var view = this.getAttribute("data-view");
-      document.documentElement.classList.toggle("view-modern", view === "modern");
-      localStorage.setItem("cvam-view", view);
-      activate(viewBtns, this);
-    });
-  });
-
   // ── font style ──
   var fontBtnEls = panel.querySelectorAll(".font-btn");
   fontBtnEls.forEach(function (b) {
@@ -171,25 +126,6 @@
       localStorage.setItem("cvam-font", font);
       localStorage.setItem("cvam-sans", font === "font-sans" ? "1" : "0");
       activate(fontBtnEls, this);
-    });
-  });
-
-  // ── theme ──
-  var swatches = panel.querySelectorAll(".theme-swatch");
-  swatches.forEach(function (s) {
-    s.addEventListener("click", function () {
-      var theme = this.getAttribute("data-theme");
-      var selected = this;
-      function applyTheme() {
-        ["paper", "white", "dark", "midnight", "matcha"].concat(THEMES.map(function (t) { return t.id; })).forEach(function (id) {
-          document.documentElement.classList.remove("theme-" + id);
-        });
-        if (theme !== "paper") document.documentElement.classList.add("theme-" + theme);
-        localStorage.setItem("cvam-theme", theme);
-        activate(swatches, selected);
-      }
-      if (typeof window.__cvamLoadThemeCss === "function") window.__cvamLoadThemeCss(theme, applyTheme);
-      else applyTheme();
     });
   });
 

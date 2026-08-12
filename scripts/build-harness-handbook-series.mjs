@@ -159,9 +159,8 @@ function render(article) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeHtml(article.title)} — cvam.sight</title>
 <meta name="description" content="${escapeHtml(article.description)}">
-<link rel="stylesheet" href="../style.css?v=84">
-<link rel="stylesheet" href="/themes.css?v=6">
-<script src="/theme-init.js?v=8"></script>
+<link rel="stylesheet" href="../style.css?v=87">
+<script src="/theme-init.js?v=9"></script>
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
 <script defer src="/_vercel/speed-insights/script.js"></script>
 <script defer src="/_vercel/insights/script.js"></script>
@@ -196,8 +195,8 @@ function render(article) {
     </div>
     <aside class="toc-panel"><p class="toc-panel-label">// on this page</p><nav id="toc-nav"></nav></aside>
   </div>
-  <script src="../posts.js?v=2"></script><script src="../stats.js?v=2"></script><script src="../app.js?v=40"></script>
-  <script defer src="../settings.js?v=16"></script><script defer src="../reader.js?v=2"></script>
+  <script src="../posts.js?v=2"></script><script src="../stats.js?v=2"></script><script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script><script defer src="../reader.js?v=3"></script>
 </body>
 </html>
 `;

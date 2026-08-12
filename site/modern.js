@@ -1,7 +1,6 @@
-/* Modern/classic publication shell for legacy one-line pages. */
+/* Publication shell for legacy one-line pages. Classic is the only site view. */
 (function () {
-  var savedView = localStorage.getItem("cvam-view") || "classic";
-  document.documentElement.classList.toggle("view-modern", savedView === "modern");
+  document.documentElement.classList.remove("view-modern");
   document.querySelectorAll('a[href="about.html"],a[href="../about.html"],a[href="/about.html"],a[href="/about"]').forEach(function (link) {
     link.href = "https://about.shivam2003.com/";
   });
@@ -22,17 +21,6 @@
   function install() {
     var sidebar = document.querySelector(".sidebar");
     if (sidebar && !sidebar.querySelector(".sidebar-collapse")) {
-      var brand = sidebar.querySelector(".logo");
-      if (document.documentElement.classList.contains("view-modern") && brand && !brand.querySelector(".brand-mark")) {
-        var oldDot = brand.querySelector(".dot");
-        var mark = document.createElement("img");
-        mark.className = "brand-mark";
-        mark.alt = "";
-        mark.src = document.querySelector('link[rel="stylesheet"][href*="style.css"]').href.split("style.css")[0] + "assets/cvam-sight-mark.png";
-        if (oldDot) oldDot.replaceWith(mark); else brand.insertBefore(mark, brand.firstChild);
-        var textNodes = Array.from(brand.childNodes).filter(function (n) { return n.nodeType === 3 && n.textContent.trim(); });
-        textNodes.forEach(function (n) { var span = document.createElement("span"); span.className = "brand-name"; span.textContent = n.textContent.trim(); n.replaceWith(span); });
-      }
       var navIcons = { "Home":"⌂", "Series":"▦", "AI Native":"✦", "Archive":"▤", "Tags":"#", "Paper Juice":"◈", "Discover":"⌕", "About":"ⓘ", "Overview":"◎" };
       sidebar.querySelectorAll("nav a").forEach(function (link) {
         var label = link.textContent.trim();

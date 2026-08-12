@@ -45,6 +45,8 @@ Use `/new-post` to do all of this automatically from raw writing. Manual steps:
 
 The index/archive/tags pages have no server-side logic — `app.js` reads `POSTS` from `posts.js` (loaded as a plain `<script>`) and renders everything client-side.
 
+The site intentionally supports one visual layout: Classic. Do not add layout or theme selectors, theme stylesheets, or code that restores `view-modern`. Reader settings may change typography, spacing, and scrolling only.
+
 **Important:** `site/index.html` hero section and `site/series.html` are **hardcoded HTML** — they do NOT auto-update from `posts.js`. When adding new series articles or phases, manually update both files.
 
 ## Post HTML structure
@@ -117,7 +119,7 @@ Use CSS classes defined in the SVG `<style>` block; color palette: `#ebe3cf` (pa
 
 ## CSS cache busting
 
-All HTML files reference `style.css?v=84`. Bump this version number (`?v=3`, `?v=4`, etc.) across all HTML files when making CSS changes that need to bypass browser caches.
+Shared shell asset versions live in `site/shared-asset-versions.json`. Never copy version numbers from an older page. After changing a shared shell CSS or JavaScript file, increment its manifest version and run `node scripts/check-shared-assets.mjs --fix`, then run the checker again without `--fix`. CI and the deploy workflow reject version drift.
 
 ## Existing topics/categories
 

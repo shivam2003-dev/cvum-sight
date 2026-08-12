@@ -16,6 +16,18 @@
 
 const POSTS = [
   {
+    slug: "frontier-digest-007",
+    title: "Frontier Digest #7 — Models Compete. Runtimes Decide.",
+    date: "Aug 9, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agent-harness", "evaluation", "memory", "weekly"],
+    time: 16,
+    words: 3035,
+    excerpt: "Edition #7 of the weekly AI briefing (Aug 3–9): Astra's reported cyber-driven slowdown, Washington's emerging pre-release review process, and ten papers showing why the runtime now determines failure attribution, cost, memory, evaluation, and long-horizon performance.",
+    series: "frontier-digest",
+    seriesNum: "007"
+  },
+  {
     slug: "safe-superintelligence-survey",
     title: "Safe Superintelligence — A Research Map for the Problem We Cannot Yet Test End to End.",
     date: "Aug 04, 2026",

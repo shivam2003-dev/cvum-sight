@@ -64,6 +64,9 @@ for (const file of sourceRoots.flatMap(walk)) {
   if (path.extname(file) === ".html" && source.includes("settings.js") && !source.includes(`theme-init.js?v=${versions["theme-init.js"]}`)) {
     mismatches.push(`${path.relative(root, file)} loads reader settings without the current pre-paint Classic guard`);
   }
+  if (path.extname(file) === ".html" && /class=["'][^"']*\bhas-toc\b/.test(source) && !/<aside\b[^>]*class=["'][^"']*\b(?:toc-panel|vocab-panel)\b/.test(source)) {
+    mismatches.push(`${path.relative(root, file)} declares has-toc without a right-side contents or vocabulary panel`);
+  }
   if (changed) {
     fs.writeFileSync(file, source);
     changedFiles += 1;

@@ -16,6 +16,24 @@
 
 const POSTS = [
   {
+    slug: "ycpc-16-robotics-next-year", title: "Robotics Is Always Solved Next Year — The Four Walls Still in the Way.", date: "Aug 12, 2026", cat: "paperjuice", tags: ["paperjuice", "robotics", "physical-ai", "sim-to-real"], time: 5, words: 835, excerpt: "YC Paper Club Part 4 opens with four walls between demos and dependable robots: physical modeling, action representation, sensory poverty, and embodiment drift.", series: "yc-paper-club", seriesNum: "16"
+  },
+  {
+    slug: "ycpc-17-mem-embodied-memory", title: "MEM — A Robot Needs More Than One Kind of Memory.", date: "Aug 12, 2026", cat: "paperjuice", tags: ["paperjuice", "robotics", "vla", "memory"], time: 5, words: 837, excerpt: "Dense visual short-term memory for occlusion and recovery plus compressed textual long-term memory for task progress—enabling kitchen tasks lasting up to fifteen minutes.", series: "yc-paper-club", seriesNum: "17"
+  },
+  {
+    slug: "ycpc-18-action-predictive-reasoning", title: "A Robot Should Reason About What Changes Its Next Action.", date: "Aug 12, 2026", cat: "paperjuice", tags: ["paperjuice", "robotics", "reasoning", "self-supervised"], time: 5, words: 840, excerpt: "R&B-EnCoRe keeps embodied reasoning that is concise, non-trivial, and predictive of action. Selective reasoning beats exhaustive narration.", series: "yc-paper-club", seriesNum: "18"
+  },
+  {
+    slug: "ycpc-19-simtoolreal", title: "SimToolReal — Turn Tool Use Into Object-Pose Tracking.", date: "Aug 12, 2026", cat: "paperjuice", tags: ["paperjuice", "robotics", "reinforcement-learning", "sim-to-real"], time: 4, words: 733, excerpt: "One policy learns object-pose goal reaching in simulation, then transfers zero-shot to 24 real tool tasks. Human video supplies trajectories—not actions or fine-tuning.", series: "yc-paper-club", seriesNum: "19"
+  },
+  {
+    slug: "ycpc-20-teleoperation-robotics-startups", title: "Start With Teleoperation. Earn Autonomy From Real Work.", date: "Aug 12, 2026", cat: "paperjuice", tags: ["paperjuice", "robotics", "startups", "teleoperation", "data"], time: 5, words: 852, excerpt: "Sell one narrow physical service with teleoperation, learn the customer's real loss function, then automate from a live data flywheel.", series: "yc-paper-club", seriesNum: "20"
+  },
+  {
+    slug: "ycpc-21-world-action-models", title: "World Action Models — Learn the Future, Skip the Pixel Tax.", date: "Aug 12, 2026", cat: "paperjuice", tags: ["paperjuice", "robotics", "world-models", "inference", "edge-ai"], time: 6, words: 968, excerpt: "Future prediction teaches dynamics, but video diffusion is expensive. The frontier keeps future-aware latents while removing decoders and long denoising chains.", series: "yc-paper-club", seriesNum: "21"
+  },
+  {
     slug: "frontier-digest-007",
     title: "Frontier Digest #7 — Models Compete. Runtimes Decide.",
     date: "Aug 9, 2026",

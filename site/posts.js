@@ -44,6 +44,18 @@ const POSTS = [
     slug: "ycpc-21-world-action-models", title: "World Action Models — Learn the Future, Skip the Pixel Tax.", date: "Aug 12, 2026", cat: "paperjuice", tags: ["paperjuice", "robotics", "world-models", "inference", "edge-ai"], time: 6, words: 968, excerpt: "Future prediction teaches dynamics, but video diffusion is expensive. The frontier keeps future-aware latents while removing decoders and long denoising chains.", series: "yc-paper-club", seriesNum: "21"
   },
   {
+    slug: "frontier-digest-008",
+    title: "Frontier Digest #8 — The State Your AI Keeps Is the System You Ship.",
+    date: "Aug 16, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "memory", "security", "weekly"],
+    time: 8,
+    words: 1631,
+    excerpt: "Edition #8 of the weekly AI briefing (Aug 10–16): ten papers on the state AI systems retain, reuse, compact, expose, and optimize—from scaling and reasoning traces to agent memory, tool interfaces, instruction debt, and long context.",
+    series: "frontier-digest",
+    seriesNum: "008"
+  },
+  {
     slug: "frontier-digest-007",
     title: "Frontier Digest #7 — Models Compete. Runtimes Decide.",
     date: "Aug 9, 2026",

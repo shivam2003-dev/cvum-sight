@@ -49,9 +49,9 @@ const POSTS = [
     date: "Aug 16, 2026",
     cat: "ml",
     tags: ["ml", "newsletter", "agents", "memory", "security", "weekly"],
-    time: 8,
-    words: 1631,
-    excerpt: "Edition #8 of the weekly AI briefing (Aug 10–16): ten papers on the state AI systems retain, reuse, compact, expose, and optimize—from scaling and reasoning traces to agent memory, tool interfaces, instruction debt, and long context.",
+    time: 11,
+    words: 2106,
+    excerpt: "Edition #8 of the weekly AI briefing (Aug 10–16): NVIDIA’s $500B infrastructure-financing move, Meta’s personal-superintelligence direction, active EU transparency duties, and ten papers on the state AI systems retain, reuse, compact, expose, and optimize.",
     series: "frontier-digest",
     seriesNum: "008"
   },

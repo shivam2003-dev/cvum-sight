@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "glm-5-3-frontier-coding-cyber",
+    title: "GLM-5.3: Frontier Coding with Emergent Cyber Capabilities.",
+    date: "Aug 17, 2026",
+    cat: "ml",
+    tags: ["ml", "agentic-rl", "cybersecurity", "long-context", "systems"],
+    time: 21,
+    words: 4058,
+    excerpt: "A masters- and PhD-level technical reading of GLM-5.3: environment scaling, verifier design, CyberGym and exploitation-benchmark interpretation, IndexCache sparse attention, SAO asynchronous RL, and the slime post-training runtime."
+  },
+  {
     slug: "ycpc-16-robotics-next-year", title: "Robotics Is Always Solved Next Year — The Four Walls Still in the Way.", date: "Aug 12, 2026", cat: "paperjuice", tags: ["paperjuice", "robotics", "physical-ai", "sim-to-real"], time: 5, words: 835, excerpt: "YC Paper Club Part 4 opens with four walls between demos and dependable robots: physical modeling, action representation, sensory poverty, and embodiment drift.", series: "yc-paper-club", seriesNum: "16"
   },
   {

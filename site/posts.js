@@ -44,6 +44,18 @@ const POSTS = [
     slug: "ycpc-21-world-action-models", title: "World Action Models — Learn the Future, Skip the Pixel Tax.", date: "Aug 12, 2026", cat: "paperjuice", tags: ["paperjuice", "robotics", "world-models", "inference", "edge-ai"], time: 6, words: 968, excerpt: "Future prediction teaches dynamics, but video diffusion is expensive. The frontier keeps future-aware latents while removing decoders and long denoising chains.", series: "yc-paper-club", seriesNum: "21"
   },
   {
+    slug: "frontier-digest-009",
+    title: "Frontier Digest #9 — The Harness Started Training the Model.",
+    date: "Aug 23, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "reinforcement-learning", "security", "weekly"],
+    time: 15,
+    words: 3023,
+    excerpt: "Edition #9 of the weekly AI briefing (Aug 17–23): OpenAI paces Astra after it shows preliminary evidence of a Critical cyber-capability threshold, Claude designs protein binders confirmed against 14 of 15 wet-lab targets, and ten papers on the harness as RL trainer, harness-level forgetting, skill-trigger scarcity, the control-plane serving tax, strategy lock-in, and fragile self-improvement.",
+    series: "frontier-digest",
+    seriesNum: "009"
+  },
+  {
     slug: "frontier-digest-008",
     title: "Frontier Digest #8 — The State Your AI Keeps Is the System You Ship.",
     date: "Aug 16, 2026",

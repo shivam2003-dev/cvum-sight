@@ -21,9 +21,9 @@ const POSTS = [
     date: "Aug 26, 2026",
     cat: "ml",
     tags: ["ml", "computer-architecture", "inference", "hardware", "systems"],
-    time: 26,
-    words: 4875,
-    excerpt: "A graduate-level technical reading of OpenAI's Jalapeño first-results post: the prefill/decode roofline problem it targets, the Pareto-frontier benchmark methodology, a full derivation of the InferenceX numbers across GPT-OSS-120B, DeepSeek R1 670B, and Kimi K2.5 1T, a Little's-Law analysis of the 53.7-104.3x throughput-at-matched-latency claims, the AI-designs-chip/chip-designed-for-AI development loop, and a methodological limitations section a defense committee would ask about."
+    time: 30,
+    words: 5680,
+    excerpt: "A graduate-level technical reading of OpenAI's Jalapeño first-results post: the prefill/decode roofline problem it targets, the Pareto-frontier benchmark methodology, a full derivation of the InferenceX numbers across GPT-OSS-120B, DeepSeek R1 670B, and Kimi K2.5 1T, a Little's-Law analysis of the 53.7-104.3x throughput-at-matched-latency claims, a tokenomics box deriving the $/M-token energy cost from Jalapeño's own perf/watt numbers and placing it against the Stanford AI Index's 280x-in-two-years inference price collapse, the AI-designs-chip/chip-designed-for-AI development loop, and a methodological limitations section a defense committee would ask about."
   },
   {
     slug: "glm-5-3-frontier-coding-cyber",

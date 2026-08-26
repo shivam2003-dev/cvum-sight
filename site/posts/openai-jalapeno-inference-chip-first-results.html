@@ -50,6 +50,9 @@
   details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
   details.faq[open] summary::before{content:"–"}
   details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{padding:2px 0 6px}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 </style>
 </head>
 <body>
@@ -77,7 +80,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Aug 26, 2026 · ml · 26 min read · 4875 words <span class="difficulty advanced">advanced</span></p>
+        <p class="meta">Aug 26, 2026 · ml · 30 min read · 5680 words <span class="difficulty advanced">advanced</span></p>
         <h1>OpenAI's Jalapeño — a systems analysis of the first inference-chip results.</h1>
         <div class="tag-row">
           <span class="tag fill">ml</span>
@@ -356,7 +359,30 @@
           <li><strong>KV-cache management</strong> under memory pressure — the other major decode-phase bottleneck — is the subject of PagedAttention and its successors, covered at length in <a href="pagedattention.html">this site's dedicated deep dive</a>; Jalapeño's "explicitly placed and kept local" KV-cache handling is a hardware-level answer to the same problem PagedAttention solves at the serving-software level.</li>
         </ul>
 
-        <h2 id="limitations">9. Methodological limitations — read this before citing any number above</h2>
+        <h2 id="tokenomics">9. Tokenomics — translating perf/watt into the price of a token</h2>
+        <p>Every ratio in §5–§6 is a hardware efficiency number. None of it is a price. The step from "more tokens per kilowatt" to "cheaper tokens for the buyer" runs through capex amortization, utilization, margin, and competition — and it is worth doing that translation explicitly rather than leaving "more efficient" as a vague gesture toward "cheaper." The box below does the arithmetic with sourced inputs, states every assumption, and separates what Jalapeño's own numbers imply from the broader industry trend it is one input into.</p>
+
+        <div class="bm-note" style="border:2px solid var(--ink);background:color-mix(in srgb, var(--paper) 92%, var(--accent) 8%);padding:20px 22px">
+          <p style="margin:0 0 12px;font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent,#c96442);font-weight:800">Economics box — inference cost, worked from Jalapeño's own numbers</p>
+
+          <p style="margin:0 0 10px"><strong>1. The marginal energy cost of a token, derived directly from Fig. 4's peak mixed-TPS/kW.</strong> Convert tokens/s/kW to tokens/kWh by multiplying by 3,600 s, then divide the delivered-electricity price by that figure:</p>
+          \[ \text{cost per M tokens (energy only)} = \frac{\text{price per kWh}}{(\text{TPS/kW}) \times 3{,}600 \times 10^{-6}} \]
+          <p style="margin:0 0 10px">Using the US industrial-average delivered electricity price (<strong>$0.0834/kWh</strong>) at a hyperscale PUE of <strong>1.10</strong> (both figures reported by industry benchmarking sources, cited below) — effective price ≈ <strong>$0.0917/kWh</strong> — and GPT-OSS-120B's own peak figures from Fig. 4:</p>
+          <table class="papers" style="margin:10px 0">
+            <tr><th>System</th><th>Peak TPS/kW</th><th>Tokens/kWh</th><th>Energy-only cost / M tokens</th></tr>
+            <tr><td>Jalapeño</td><td>85,448</td><td>≈307.6 M</td><td><strong>≈$0.00030</strong></td></tr>
+            <tr><td>GB200 (comparison)</td><td>44,960</td><td>≈161.9 M</td><td>≈$0.00057</td></tr>
+          </table>
+          <p style="margin:0 0 10px">The ratio of those two costs is, by construction, exactly the 1.9× perf/watt figure from Fig. 4 — converting a hardware ratio into a price ratio changes no information, it only makes the unit legible. <strong>The more important finding is the absolute magnitude: energy is roughly three ten-thousandths of a dollar per million tokens</strong> — three to four orders of magnitude below what any lab actually charges per million tokens at the API layer. That gap is the real economics story: <em>electricity is not what you are paying for when you buy inference</em>; capex amortization (the chip, the rack, the building, the network), redundancy/utilization headroom, R&amp;D recovery, and margin dominate the sticker price. A chip that is 1.5–1.9× more energy-efficient therefore does two separate things to unit economics, not one: it lowers the opex line directly, <em>and</em> — more consequentially — it lets the same power-constrained rack serve 1.5–1.9× more tokens per dollar of capital deployed, which is a capex-amortization effect, not an energy-bill effect.</p>
+
+          <p style="margin:14px 0 10px"><strong>2. Where this sits in the industry-wide price collapse.</strong> Stanford HAI's AI Index reports that the cost of querying a GPT-3.5-class model (≈64.8% MMLU) fell from <strong>$20 per million tokens in November 2022 to $0.07 per million tokens by October 2024</strong> — roughly a <strong>280× decline in under two years</strong> — with benchmark-matched price/performance across the industry falling at a median of <strong>≈50×/year</strong> since early 2024. Jalapeño's 1.5–1.9× hardware efficiency gain is a real but <em>small</em> contribution to a trend that large — the dominant drivers of the 280× figure are algorithmic (smaller models reaching the same benchmark score, better quantization, distillation), software (batching, speculative decoding, KV-cache management — see §8), and competitive margin compression, roughly in that order of magnitude. Silicon-level efficiency gains compound with all three rather than substituting for them.</p>
+
+          <p style="margin:14px 0 10px"><strong>3. The operating-leverage argument, in OpenAI's own words.</strong> The source post states this explicitly: <em>"For OpenAI, that can improve operating leverage by allowing useful work and revenue to grow faster than the cost to serve."</em> Operating leverage here means marginal serving cost grows sub-linearly with usage once capex is fixed — the standard economics of any capital-intensive infrastructure business (cloud compute, telecom, rail), now applied to token generation specifically.</p>
+
+          <p style="margin:14px 0 0"><strong>4. The caveat a demand-side economist would raise: Jevons paradox.</strong> A ≈2× drop in the marginal cost of a unit of a resource does not reliably produce a 2× drop in total spend on that resource — it can just as easily produce more-than-2× more <em>consumption</em> of it, leaving total spend flat or rising. This is exactly the risk in agentic workloads: a single agent task that used to cost one prompt-completion pair now routinely burns tens to hundreds of tool-call round trips (see this site's <a href="frontier-digest-009.html">Frontier Digest #9</a> on harness-level RL and control-plane tax). Cheaper-per-token inference is very likely to <em>increase</em> aggregate token demand from longer agent trajectories, wider tool-use fan-out, and more parallel agent instances — meaning the honest forecast is "more total compute spend, at a lower price per unit of useful work," not simply "AI gets cheaper."</p>
+        </div>
+
+        <h2 id="limitations">10. Methodological limitations — read this before citing any number above</h2>
         <p>A defense-quality reading of this result requires naming what is <em>not</em> established, not just what is claimed:</p>
         <ol>
           <li><strong>Single-source benchmark, no independent reproduction.</strong> All twelve data points in §5 come from one OpenAI-published post, using one benchmark suite, run by (or in direct coordination with) one third-party analytics firm. No competing lab or independent academic group has published a reproduction as of this writing.</li>
@@ -396,6 +422,9 @@
           <li><a href="https://arxiv.org/abs/2607.28633" target="_blank" rel="noopener">Topology-Aware Data Movement for Disaggregated GPU Inference</a> <span>— quantifies the interconnect-bandwidth cliff Jalapeño's single-domain design targets.</span></li>
           <li><a href="kimi-k3-architecture-and-infrastructure.html">cvam.sight — Kimi K3: Architecture and Infrastructure</a> <span>— MXFP4 quantization and KV-cache background used in this piece.</span></li>
           <li><a href="pagedattention.html">cvam.sight — PagedAttention deep dive</a> <span>— the serving-software-level answer to the same KV-cache problem Jalapeño addresses in hardware.</span></li>
+          <li><a href="https://hai.stanford.edu/news/ai-index-2025-state-of-ai-in-10-charts" target="_blank" rel="noopener">Stanford HAI — AI Index: State of AI in 10 charts</a> <span>— source for the 280×-in-two-years and ≈50×/year inference price-decline figures in §9.</span></li>
+          <li><a href="https://apers.app/learn/asset-classes/industrial/data-centers-power-pricing-pue-hyperscaler" target="_blank" rel="noopener">Data-center power pricing, PUE &amp; hyperscaler benchmarking</a> <span>— source for the $0.0834/kWh US industrial electricity average and 1.09–1.14 hyperscale PUE range used in §9's energy-cost derivation.</span></li>
+          <li><a href="frontier-digest-009.html">cvam.sight — Frontier Digest #9</a> <span>— harness-level RL and the agentic control-plane tax, background for the Jevons-paradox caveat in §9.</span></li>
         </ul>
 
       </div>

@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "openai-jalapeno-inference-chip-first-results",
+    title: "OpenAI's Jalapeño — a systems analysis of the first inference-chip results.",
+    date: "Aug 26, 2026",
+    cat: "ml",
+    tags: ["ml", "computer-architecture", "inference", "hardware", "systems"],
+    time: 26,
+    words: 4875,
+    excerpt: "A graduate-level technical reading of OpenAI's Jalapeño first-results post: the prefill/decode roofline problem it targets, the Pareto-frontier benchmark methodology, a full derivation of the InferenceX numbers across GPT-OSS-120B, DeepSeek R1 670B, and Kimi K2.5 1T, a Little's-Law analysis of the 53.7-104.3x throughput-at-matched-latency claims, the AI-designs-chip/chip-designed-for-AI development loop, and a methodological limitations section a defense committee would ask about."
+  },
+  {
     slug: "glm-5-3-frontier-coding-cyber",
     title: "GLM-5.3: Frontier Coding with Emergent Cyber Capabilities.",
     date: "Aug 17, 2026",

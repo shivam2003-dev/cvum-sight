@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenAI's Jalapeño — A Systems Analysis of the First Inference-Chip Results — cvam.sight</title>
+<meta name="description" content="A graduate-level technical reading of OpenAI's Jalapeño first-results post: the prefill/decode roofline problem it targets, the Pareto-frontier benchmark methodology, a full derivation of the InferenceX numbers across GPT-OSS-120B, DeepSeek R1 670B, and Kimi K2.5 1T, Little's-Law analysis of the throughput-at-matched-latency claims, the AI-designs-chip/chip-designed-for-AI development loop, and a methodological limitations section.">
+<link rel="stylesheet" href="../style.css?v=88">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:38px} h3{margin-top:26px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.92rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 9px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-axis{stroke:color-mix(in srgb,var(--ink) 35%,transparent);stroke-width:1.2}
+  svg .d-grid{stroke:color-mix(in srgb,var(--ink) 10%,transparent);stroke-width:1}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .bar-jal{fill:var(--accent,#c96442)}
+  svg .bar-base{fill:color-mix(in srgb,var(--ink) 22%,transparent)}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Aug 26, 2026 · ml · 26 min read · 4875 words <span class="difficulty advanced">advanced</span></p>
+        <h1>OpenAI's Jalapeño — a systems analysis of the first inference-chip results.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">computer-architecture</span>
+          <span class="tag">inference</span>
+          <span class="tag">hardware</span>
+          <span class="tag">systems</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">On August 25, 2026, OpenAI published <a href="https://openai.com/index/jalapeno-first-results/" target="_blank" rel="noopener">first performance results</a> for Jalapeño, its custom inference accelerator built with Broadcom (announced <a href="https://openai.com/index/openai-broadcom-jalapeno-inference-chip/" target="_blank" rel="noopener">June 24, 2026</a>). This is not a product review. It is a graduate-level reading of what the numbers actually claim, why the benchmark is constructed the way it is, and where the argument needs more scrutiny than a press release gives it. We derive the prefill/decode roofline problem the chip is architected around, formalize the throughput–latency Pareto frontier the benchmark reports against, work through <strong>all twelve published data points</strong> (three models × four metrics) with unit-consistent arithmetic, use Little's Law to explain why the "throughput at matched previous-best latency" comparison is the analytically correct one rather than a marketing trick, and close with a methodological limitations section — the part a press release does not include, and the part a defense committee would ask about first.</p>
+
+        <h2 id="context">1. What Jalapeño is, precisely</h2>
+        <p>Jalapeño is OpenAI's first <em>Intelligence Processor</em> — an ASIC designed jointly with Broadcom, purpose-built for large-language-model <strong>inference</strong> rather than training. It was announced in June 2026 as the first accelerator in a multi-generation compute platform; the August 25 post is the first disclosure of measured performance rather than architectural intent. Two facts anchor everything that follows, both stated directly by OpenAI:</p>
+        <ul>
+          <li>Jalapeño's package is <strong>rated at 700 W</strong>, and its <strong>measured sustained power stayed at or below 550 W</strong> across the tested workloads — a gap between rated and observed power that matters for how the efficiency numbers should be read (§7).</li>
+          <li>The chip went from architectural concept to <strong>tapeout in nine months</strong>, roughly a third of a typical ASIC development cycle, with OpenAI's own models used in the design loop (§8).</li>
+        </ul>
+        <p>Independent reporting (<a href="https://www.tomshardware.com/tech-industry/artificial-intelligence/broadcom-and-openai-unveil-custom-built-jalapeno-inference-processor-openais-first-chip-is-a-massive-reticle-sized-asic-built-in-an-ultra-fast-nine-month-development-cycle" target="_blank" rel="noopener">Tom's Hardware</a>, corroborated by <a href="https://newsletter.semianalysis.com/p/openai-jalapeno-better-than-nvidia" target="_blank" rel="noopener">SemiAnalysis's</a> own analyst coverage) describes a package built from a reticle-sized compute die on TSMC's N3P node paired with a separate N3E I/O chiplet, six HBM4 stacks, and two structural dummy dies for mechanical balance during packaging. <strong>These architectural specifics are third-party reported, not disclosed in OpenAI's own post</strong> — we flag that distinction throughout, because conflating vendor-confirmed numbers with analyst-reconstructed ones is exactly the kind of sourcing error a technical reader should not make.</p>
+
+        <h2 id="problem">2. The problem Jalapeño is architected to solve</h2>
+        <p>To evaluate an inference accelerator rigorously, you first need the workload model it targets. Transformer-based LLM inference has two structurally different phases, and this asymmetry is the entire reason inference chip design is a distinct discipline from training chip design.</p>
+        <h3 id="roofline">2.1 Prefill and decode sit on opposite ends of the roofline</h3>
+        <p>The standard tool for reasoning about this is the <strong>roofline model</strong> (Williams, Waterman &amp; Patterson, 2009): a kernel's achievable performance is bounded by</p>
+        \[ P_{\text{attained}} = \min\!\big(P_{\text{peak}},\; I \cdot BW_{\text{peak}}\big) \]
+        <p>where \(P_{\text{peak}}\) is the chip's peak compute throughput (FLOP/s), \(BW_{\text{peak}}\) is peak memory bandwidth (bytes/s), and \(I\) is the kernel's <strong>arithmetic intensity</strong> — FLOPs performed per byte moved from memory. A kernel is <em>compute-bound</em> when \(I\) is large enough that the compute term dominates, and <em>memory-bound</em> when it is not.</p>
+        <ul>
+          <li><strong>Prefill</strong> (processing the prompt) computes attention and MLP layers over many tokens at once. Because the same weight matrices are reused across a long sequence of tokens in a single batched matrix multiply, arithmetic intensity is high — prefill is <strong>compute-bound</strong>. This is why prefill throughput scales well with more FLOP/s.</li>
+          <li><strong>Decode</strong> (generating the response, one token at a time) performs essentially a matrix–vector product against the same weights, plus a read of the entire <strong>KV cache</strong> accumulated so far, for every single output token. The compute-to-bytes-moved ratio collapses — decode is <strong>memory-bandwidth-bound</strong>. This is why decode throughput scales with HBM bandwidth, not FLOP/s, and why the per-token latency (see §3) rarely improves just by adding more compute.</li>
+        </ul>
+        <p>A chip optimized purely for prefill (peak FLOP/s) leaves decode-phase bandwidth on the table, and vice versa. A general-purpose GPU built primarily for <em>training</em> — which is almost entirely compute-bound, large-batch matrix multiplication — inherits a compute-heavy design point that is not the correct operating point for decode-dominated serving. This is the design tension Jalapeño's own post names directly: <em>"a system that excels at one phase can lose that advantage while waiting for data or moving model state between different resources."</em></p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">The roofline problem: prefill and decode need opposite chip properties</text>
+            <line x1="70" y1="250" x2="660" y2="250" class="d-axis"/>
+            <line x1="70" y1="250" x2="70" y2="40" class="d-axis"/>
+            <text x="365" y="284" class="d-sub" text-anchor="middle">arithmetic intensity I = FLOPs / byte  (log scale, increasing →)</text>
+            <text x="34" y="145" class="d-sub" text-anchor="middle" transform="rotate(-90 34 145)">attainable perf.</text>
+            <path d="M70 230 L 260 60 L 660 60" class="d-axis" fill="none" stroke-width="2"/>
+            <text x="150" y="130" class="d-sub" transform="rotate(-42 150 130)">slope = BW_peak (memory-bound region)</text>
+            <text x="470" y="50" class="d-sub" text-anchor="middle">P_peak (compute-bound region, flat)</text>
+            <circle cx="130" cy="185" r="7" class="bar-jal"/>
+            <text x="130" y="205" class="d-lbl" text-anchor="middle">decode</text>
+            <text x="130" y="220" class="d-sub" text-anchor="middle">low I → HBM-bandwidth-bound</text>
+            <circle cx="520" cy="60" r="7" class="bar-base"/>
+            <text x="520" y="42" class="d-lbl" text-anchor="middle">prefill</text>
+            <text x="520" y="80" class="d-sub" text-anchor="middle">high I → compute-bound</text>
+            <path d="M130 178 C 250 130, 400 90, 505 63" class="d-dash"/>
+            <text x="320" y="160" class="d-note" text-anchor="middle">one request crosses both regions on every turn</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — A roofline schematic (Williams et al., 2009) placing decode in the memory-bandwidth-bound region and prefill in the compute-bound region. An inference chip must be efficient at both ends simultaneously, and must move data cheaply between them, because a single conversational turn traverses both phases.</p>
+        </div>
+
+        <h3 id="latency-def">2.2 Two latencies that are not interchangeable</h3>
+        <p>The benchmark numbers in §6 use two distinct latency metrics, and confusing them is the most common way to misread inference benchmarks:</p>
+        <ul>
+          <li><strong>TTFT</strong> (time to first token) — dominated by prefill; how long before the user sees anything.</li>
+          <li><strong>TBT</strong> (time between tokens, i.e. inter-token latency during decode) — dominated by decode-phase memory bandwidth per active stream. This is the metric OpenAI's appendix reports directly, in milliseconds, and it inverts cleanly: <span style="white-space:nowrap">\( \tau_{\text{user}} = 1 / \text{TBT} \)</span> gives tokens/second experienced by one user. We verified this identity against every published pair — e.g. GPT-OSS's <code>0.69 ms</code> TBT inverts to <code>1449</code> tok/s/user against the reported <code>1,459</code>, a rounding-level match that confirms the reported "tok/s/user" column is derived exactly from TBT, not an independently measured quantity.</li>
+        </ul>
+        <p>End-to-end latency (also reported per model below) is approximately \(\text{TTFT} + N_{\text{out}} \cdot \text{TBT}\) for an \(N_{\text{out}}\)-token response — meaning it blends both phases and depends on response length, which the benchmark holds fixed via a stated 8k-input/1k-output token profile ("nominal 8k/1k").</p>
+
+        <h2 id="methodology">3. Benchmark methodology: what "Pareto frontier at matched power" actually means</h2>
+        <p>OpenAI evaluated Jalapeño on <strong>InferenceX</strong>, a public, open-source inference benchmark maintained by SemiAnalysis (formerly <em>InferenceMAX</em>), which focuses on disaggregated serving with wide expert parallelism — the deployment pattern used in production by every frontier lab, not a synthetic microbenchmark. Three choices in the methodology deserve explicit scrutiny before trusting the headline ratios:</p>
+        <h3 id="power-norm">3.1 Normalizing by power, not by chip count</h3>
+        <p>OpenAI states explicitly that it normalizes results by each accelerator's <strong>published TDP rating</strong>, not by chip count, "because we believe the more useful standard is performance per unit of power." This is the correct engineering framing for a data-center operator, whose binding constraint is almost always power and cooling capacity per rack, not the count of physical packages. But it is <em>not</em> a chip-for-chip comparison, and the packages compared are not power-matched:</p>
+        <table class="papers">
+          <tr><th>Model tested</th><th>Comparison system</th><th>Comparison TDP</th><th>Jalapeño TDP (rated)</th></tr>
+          <tr><td>GPT-OSS 120B</td><td>NVIDIA GB200</td><td>1,200 W</td><td>700 W</td></tr>
+          <tr><td>DeepSeek R1 670B (MXFP4)</td><td>NVIDIA GB300</td><td>1,400 W</td><td>700 W</td></tr>
+          <tr><td>Kimi K2.5 1T (MXFP4)</td><td>NVIDIA GB300</td><td>1,400 W</td><td>700 W</td></tr>
+        </table>
+        <p>Because the comparison systems draw <strong>1.7–2×</strong> the rated power of a single Jalapeño package, every per-kW ratio in this article is smaller than the equivalent per-<em>package</em> ratio would be. We keep the analysis strictly in per-kW terms throughout — matching OpenAI's own units — and flag every place where the underlying package-count asymmetry matters for interpretation (see §6.4 for a worked example).</p>
+        <h3 id="pareto-def">3.2 What "Pareto frontier" means here, formally</h3>
+        <p>A serving system exposes a family of achievable operating points by varying batch size / concurrency: larger batches raise aggregate throughput but also raise per-user latency, because more concurrent decode streams compete for the same HBM bandwidth each round. A system A is said to be on the <strong>Pareto frontier</strong> relative to system B if there is no operating point of B that simultaneously matches or beats A on <em>both</em> throughput-per-watt and latency. Formally, letting \((T,L)\) denote a system's (throughput, latency) pair at some batch size:</p>
+        \[ A \text{ Pareto-dominates } B \iff \nexists\, (T_B, L_B) \text{ s.t. } T_B \ge T_A \text{ and } L_B \le L_A \]
+        <p>OpenAI's claim — "placing it on the Pareto frontier" across GPT-OSS, DeepSeek R1, and Kimi — means that at <em>every</em> batch size tested for the comparison GPU, Jalapeño has some batch size that matches or beats it on both axes simultaneously. This is a much stronger and more falsifiable claim than a single peak-throughput number, and it is the right way to compare serving systems, precisely because throughput and latency trade off against each other and a single-point comparison can always be gamed by picking the batch size that flatters one side.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">The throughput–latency Pareto frontier</text>
+            <line x1="80" y1="270" x2="660" y2="270" class="d-axis"/>
+            <line x1="80" y1="270" x2="80" y2="50" class="d-axis"/>
+            <text x="370" y="300" class="d-sub" text-anchor="middle">latency (lower is better →, plotted right-to-left)</text>
+            <text x="46" y="160" class="d-sub" text-anchor="middle" transform="rotate(-90 46 160)">throughput / kW (higher is better ↑)</text>
+            <path d="M600 250 C 480 240, 380 210, 300 150 C 250 110, 210 75, 190 60" class="d-dash" stroke-width="2"/>
+            <text x="230" y="95" class="d-sub" transform="rotate(-55 230 95)">baseline's achievable frontier</text>
+            <path d="M560 262 C 400 230, 260 150, 175 65" class="d-flow" stroke-width="2.4"/>
+            <text x="330" y="205" class="d-note" transform="rotate(-42 330 205)">Jalapeño's frontier — strictly outside baseline's</text>
+            <circle cx="480" cy="252" r="6" class="bar-base"/><text x="480" y="240" class="d-sub" text-anchor="middle">baseline @ its own min-TBT point</text>
+            <circle cx="480" cy="150" r="6" class="bar-jal"/><text x="480" y="138" class="d-sub" text-anchor="middle">Jalapeño @ SAME latency</text>
+            <path d="M480 246 L480 156" class="d-dash"/>
+            <text x="500" y="200" class="d-note">↕ "throughput at matched previous-best TBT"</text>
+          </svg>
+          <p class="diagram-label">Fig. 2 — Pareto-dominance, illustrated. The vertical gap at fixed latency (dashed arrow) is exactly the "more throughput at previous-best TBT" metric in §6 — a same-quality-of-service comparison, which is the analytically clean way to isolate an efficiency claim from a batch-size choice.</p>
+        </div>
+
+        <h3 id="single-vendor">3.3 The single-benchmark, single-report caveat</h3>
+        <p>InferenceX is open-source and its harness is publicly inspectable, which is a genuine methodological strength over a closed internal benchmark. But as of this writing, the specific numbers in OpenAI's post are <strong>self-reported by the chip vendor, on a benchmark run in coordination with a single third-party analytics firm, with no independent reproduction yet published</strong>. That is not an accusation of dishonesty — SemiAnalysis has an established reputation for adversarial, vendor-skeptical benchmarking, which is precisely why OpenAI cites them rather than an internal harness — but it is a standing limitation worth stating plainly before the numbers are treated as settled fact (expanded in §9).</p>
+
+        <h2 id="architecture">4. Package architecture (third-party reported)</h2>
+        <p>The following section relies on analyst reconstruction (Tom's Hardware, SemiAnalysis, WCCFTech) rather than OpenAI's own disclosure, and should be read with that provenance in mind.</p>
+        <ul>
+          <li><strong>Compute die</strong>: reported as reticle-sized (~840 mm², against a ~858 mm² EUV reticle limit) on TSMC's <strong>N3P</strong> process — i.e., built at essentially the maximum single-die area a lithography tool can expose in one shot, which is the standard way vendors maximize transistor budget per die before resorting to multi-die compute tiles.</li>
+          <li><strong>I/O chiplet</strong>: a separate die on the older, cheaper <strong>N3E</strong> node, disaggregating I/O logic (which does not benefit as much from the newest node) from compute logic (which does) — a now-standard chiplet economics move, also used by AMD's MI-series and NVIDIA's Blackwell packages.</li>
+          <li><strong>Memory</strong>: six <strong>HBM4</strong> stacks are reported, with combined package bandwidth cited around <strong>15.4 TB/s</strong> — the figure that matters most for the decode-phase roofline argument in §2.1, since decode throughput is bandwidth-bound.</li>
+          <li><strong>Two structural dummy dies</strong>: silicon with no logic function, included purely to balance mechanical stress across the package during thermal cycling — a packaging detail, not a compute detail, but one that signals the package is pushing toward the physical limits of what can be reliably assembled at this die size.</li>
+        </ul>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">Jalapeño package composition (analyst-reported)</text>
+            <rect x="40" y="50" width="640" height="170" rx="14" class="d-box"/>
+            <text x="360" y="72" class="d-sub" text-anchor="middle">substrate / package</text>
+            <rect x="270" y="90" width="180" height="120" rx="8" class="d-box hot"/>
+            <text x="360" y="140" class="d-lbl" text-anchor="middle">compute die</text>
+            <text x="360" y="158" class="d-sub" text-anchor="middle">N3P · reticle-sized</text>
+            <text x="360" y="174" class="d-sub" text-anchor="middle">≈840 mm²</text>
+            <rect x="60" y="120" width="60" height="60" rx="6" class="d-box cool"/><text x="90" y="196" class="d-sub" text-anchor="middle">HBM4</text>
+            <rect x="130" y="120" width="60" height="60" rx="6" class="d-box cool"/><text x="160" y="196" class="d-sub" text-anchor="middle">HBM4</text>
+            <rect x="200" y="120" width="55" height="60" rx="6" class="d-box cool"/><text x="228" y="196" class="d-sub" text-anchor="middle">HBM4</text>
+            <rect x="470" y="120" width="55" height="60" rx="6" class="d-box cool"/><text x="497" y="196" class="d-sub" text-anchor="middle">HBM4</text>
+            <rect x="535" y="120" width="60" height="60" rx="6" class="d-box cool"/><text x="565" y="196" class="d-sub" text-anchor="middle">HBM4</text>
+            <rect x="605" y="120" width="55" height="60" rx="6" class="d-box cool"/><text x="632" y="196" class="d-sub" text-anchor="middle">HBM4</text>
+            <text x="360" y="228" class="d-sub" text-anchor="middle">6× HBM4 stacks → ≈15.4 TB/s package bandwidth (reported) · separate N3E I/O chiplet not shown to scale</text>
+          </svg>
+          <p class="diagram-label">Fig. 3 — Schematic package floorplan reconstructed from third-party reporting (not an OpenAI-disclosed diagram). The compute-die-plus-HBM-ring topology directly serves the decode-phase bandwidth requirement identified in Fig. 1.</p>
+        </div>
+
+        <h2 id="results">5. The twelve published data points, in full</h2>
+        <p>OpenAI's appendix reports four metrics for each of three public models. We reproduce all twelve numbers verbatim below before any derived analysis, so the raw evidence is auditable independent of our interpretation.</p>
+        <table class="papers">
+          <tr><th>Model</th><th>Metric</th><th>Jalapeño</th><th>Comparison (GB200/GB300)</th><th>Ratio</th></tr>
+          <tr><td rowspan="4">GPT-OSS 120B <span style="color:var(--ink-faint);font-weight:400">(vs GB200, 1,200 W)</span></td><td>Peak mixed TPS/kW</td><td>85,448</td><td>44,960</td><td>≈1.9×</td></tr>
+          <tr><td>End-to-end latency</td><td>1.03 s</td><td>1.80 s</td><td>≈1.7× lower</td></tr>
+          <tr><td>Min TBT (tok/s/user)</td><td>0.69 ms (1,459)</td><td>1.87 ms (535)</td><td>≈2.7× lower</td></tr>
+          <tr><td>Throughput @ prev. TBT (535 tok/s/user)</td><td>22,935 mixed/kW</td><td>427 mixed/kW</td><td>≈53.7×</td></tr>
+          <tr><td rowspan="4">DeepSeek R1 670B, MXFP4 <span style="color:var(--ink-faint);font-weight:400">(vs GB300, 1,400 W)</span></td><td>Peak mixed TPS/kW</td><td>19,641</td><td>11,781</td><td>≈1.7×</td></tr>
+          <tr><td>End-to-end latency</td><td>1.65 s</td><td>5.99 s</td><td>≈3.6× lower</td></tr>
+          <tr><td>Min TBT (tok/s/user)</td><td>1.43 ms (700)</td><td>5.90 ms (169)</td><td>≈4.1× lower</td></tr>
+          <tr><td>Throughput @ prev. TBT (169 tok/s/user)</td><td>12,258 mixed/kW</td><td>118 mixed/kW</td><td>≈104.3×</td></tr>
+          <tr><td rowspan="4">Kimi K2.5 1T, MXFP4 <span style="color:var(--ink-faint);font-weight:400">(vs GB300, 1,400 W)</span></td><td>Peak mixed TPS/kW</td><td>18,195</td><td>11,862</td><td>≈1.5×</td></tr>
+          <tr><td>End-to-end latency</td><td>1.56 s</td><td>5.31 s</td><td>≈3.4× lower</td></tr>
+          <tr><td>Min TBT (tok/s/user)</td><td>1.44 ms (694)</td><td>5.48 ms (182)</td><td>≈3.8× lower</td></tr>
+          <tr><td>Throughput @ prev. TBT (182 tok/s/user)</td><td>6,744 mixed/kW</td><td>120 mixed/kW</td><td>≈56.1×</td></tr>
+        </table>
+
+        <h2 id="charts">6. Analysis, chart by chart</h2>
+        <h3 id="chart-peak">6.1 Peak throughput per kilowatt</h3>
+        <p>The "peak" comparison is the least conservative metric — it lets each system pick its own best batch size independent of the other. It's the right first look because it establishes that Jalapeño is not just <em>faster at one point</em>, it has strictly more headroom across the board, but it is the metric most sensitive to which operating point a vendor chooses to report.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="22" class="d-title" text-anchor="middle">Peak throughput per kW (mixed TPS/kW)</text>
+            <line x1="0" y1="0" x2="0" y2="0" opacity="0"/>
+            <g>
+              <text x="120" y="46" class="d-lbl" text-anchor="middle">GPT-OSS 120B</text>
+              <rect x="60" y="52" width="120" height="18" class="bar-jal"/><text x="185" y="66" class="d-sub">85,448 (Jalapeño)</text>
+              <rect x="60" y="74" width="63" height="18" class="bar-base"/><text x="128" y="88" class="d-sub">44,960 (GB200)</text>
+              <text x="220" y="66" class="d-note">≈1.9×</text>
+            </g>
+            <g>
+              <text x="120" y="126" class="d-lbl" text-anchor="middle">DeepSeek R1 670B</text>
+              <rect x="60" y="132" width="120" height="18" class="bar-jal"/><text x="185" y="146" class="d-sub">19,641</text>
+              <rect x="60" y="154" width="72" height="18" class="bar-base"/><text x="137" y="168" class="d-sub">11,781</text>
+              <text x="220" y="146" class="d-note">≈1.7×</text>
+            </g>
+            <g>
+              <text x="120" y="206" class="d-lbl" text-anchor="middle">Kimi K2.5 1T</text>
+              <rect x="60" y="212" width="120" height="18" class="bar-jal"/><text x="185" y="226" class="d-sub">18,195</text>
+              <rect x="60" y="234" width="78" height="18" class="bar-base"/><text x="143" y="248" class="d-sub">11,862</text>
+              <text x="220" y="226" class="d-note">≈1.5×</text>
+            </g>
+            <text x="480" y="150" class="d-sub" text-anchor="middle">each row independently scaled to its own peak — models differ by ~5× in raw scale,\nso a single shared axis would visually flatten the smaller models. Bars within a row are directly comparable; bars across rows are not.</text>
+          </svg>
+          <p class="diagram-label">Fig. 4 — Peak mixed-TPS/kW, three models. Note the shrinking advantage as model size grows (1.9× → 1.7× → 1.5×) — worth returning to in §7.</p>
+        </div>
+        <h3 id="chart-latency">6.2 End-to-end latency</h3>
+        <p>Held at the same nominal 8k-input/1k-output profile, this is a fixed-workload comparison — same prompt length, same response length, both systems doing the same amount of work. The gap here is not a batch-size artifact; it's the clearest single number for "how long does a user actually wait."</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="22" class="d-title" text-anchor="middle">End-to-end latency, nominal 8k/1k profile (lower is better)</text>
+            <g>
+              <text x="130" y="56" class="d-lbl" text-anchor="middle">GPT-OSS 120B</text>
+              <rect x="180" y="46" width="52" height="18" class="bar-jal"/><text x="238" y="60" class="d-sub">1.03 s</text>
+              <rect x="180" y="68" width="90" height="18" class="bar-base"/><text x="276" y="82" class="d-sub">1.80 s</text>
+            </g>
+            <g>
+              <text x="130" y="126" class="d-lbl" text-anchor="middle">DeepSeek R1 670B</text>
+              <rect x="180" y="116" width="45" height="18" class="bar-jal"/><text x="231" y="130" class="d-sub">1.65 s</text>
+              <rect x="180" y="138" width="166" height="18" class="bar-base"/><text x="352" y="152" class="d-sub">5.99 s</text>
+            </g>
+            <g>
+              <text x="130" y="196" class="d-lbl" text-anchor="middle">Kimi K2.5 1T</text>
+              <rect x="180" y="186" width="43" height="18" class="bar-jal"/><text x="229" y="200" class="d-sub">1.56 s</text>
+              <rect x="180" y="208" width="147" height="18" class="bar-base"/><text x="333" y="222" class="d-sub">5.31 s</text>
+            </g>
+            <text x="530" y="130" class="d-sub" text-anchor="middle">bars drawn to a shared linear scale (1 px ≈ 18 ms) — directly comparable across all three rows</text>
+          </svg>
+          <p class="diagram-label">Fig. 5 — End-to-end latency at fixed 8k/1k profile: Jalapeño (top bar, each pair) vs. comparison GPU (bottom bar). Unlike Fig. 4, these bars share one true scale.</p>
+        </div>
+        <h3 id="chart-tbt">6.3 Throughput at the comparison system's own best latency point — the headline claim</h3>
+        <p>This is the metric that produces the 53.7×, 104.3×, and 56.1× figures, and it is the most important chart to understand correctly, because those numbers look implausible until you see what they actually hold fixed. The comparison here is <strong>not</strong> "Jalapeño's peak vs. the baseline's peak." It is: <em>take the per-user token rate the baseline achieves at its own best (lowest-latency) operating point, then ask how much aggregate throughput-per-kilowatt each system delivers while serving users at that exact same per-token latency.</em> Because the baseline can only reach its lowest latency by running a very small batch (few concurrent users, since more concurrent decode streams compete for the same limited HBM bandwidth on that chip), its throughput-per-kW <em>at that operating point</em> collapses — 427 mixed/kW for GPT-OSS, a small fraction of its own 44,960 peak. Jalapeño, with more decode-phase bandwidth per package-watt, can sustain a much larger batch <em>while still hitting that same low latency</em>, so its throughput-per-kW barely drops from its peak (22,935 out of a 85,448 peak).</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="22" class="d-title" text-anchor="middle">Throughput at matched previous-best TBT (log scale, mixed/kW)</text>
+            <line x1="90" y1="270" x2="660" y2="270" class="d-axis"/>
+            <text x="95" y="288" class="d-sub">1</text><text x="220" y="288" class="d-sub">10</text><text x="345" y="288" class="d-sub">100</text><text x="470" y="288" class="d-sub">1,000</text><text x="595" y="288" class="d-sub">10,000</text>
+            <line x1="95" y1="45" x2="95" y2="270" class="d-grid"/><line x1="220" y1="45" x2="220" y2="270" class="d-grid"/><line x1="345" y1="45" x2="345" y2="270" class="d-grid"/><line x1="470" y1="45" x2="470" y2="270" class="d-grid"/><line x1="595" y1="45" x2="595" y2="270" class="d-grid"/>
+            <g>
+              <text x="60" y="80" class="d-lbl">GPT-OSS</text>
+              <circle cx="470" cy="80" r="7" class="bar-jal"/><text x="470" y="65" class="d-sub" text-anchor="middle">22,935</text>
+              <circle cx="345" cy="80" r="7" class="bar-base"/><text x="345" y="65" class="d-sub" text-anchor="middle">427</text>
+              <line x1="345" y1="80" x2="470" y2="80" class="d-dash"/><text x="405" y="95" class="d-note" text-anchor="middle">53.7×</text>
+            </g>
+            <g>
+              <text x="60" y="150" class="d-lbl">DeepSeek R1</text>
+              <circle cx="443" cy="150" r="7" class="bar-jal"/><text x="443" y="135" class="d-sub" text-anchor="middle">12,258</text>
+              <circle cx="220" cy="150" r="7" class="bar-base"/><text x="220" y="135" class="d-sub" text-anchor="middle">118</text>
+              <line x1="220" y1="150" x2="443" y2="150" class="d-dash"/><text x="330" y="165" class="d-note" text-anchor="middle">104.3×</text>
+            </g>
+            <g>
+              <text x="60" y="220" class="d-lbl">Kimi K2.5</text>
+              <circle cx="408" cy="220" r="7" class="bar-jal"/><text x="408" y="205" class="d-sub" text-anchor="middle">6,744</text>
+              <circle cx="225" cy="220" r="7" class="bar-base"/><text x="225" y="205" class="d-sub" text-anchor="middle">120</text>
+              <line x1="225" y1="220" x2="408" y2="220" class="d-dash"/><text x="315" y="235" class="d-note" text-anchor="middle">56.1×</text>
+            </g>
+            <text x="375" y="45" class="d-sub" text-anchor="middle">accent = Jalapeño · grey = comparison GPU, both at the SAME per-user latency</text>
+          </svg>
+          <p class="diagram-label">Fig. 6 — Log-scale because the range spans two orders of magnitude. These numbers describe a collapse in the baseline's usable throughput <em>at low latency</em>, not a 50–100× raw speed difference — see the worked derivation in §6.4.</p>
+        </div>
+
+        <h3 id="little-law">6.4 A Little's-Law reading of the 53.7–104.3× numbers</h3>
+        <p><strong>Little's Law</strong>, from queueing theory, states that for a stable system, the long-run average number of items in a system equals the arrival rate multiplied by the average time each item spends in the system:</p>
+        \[ L = \lambda W \]
+        <p>Applied to decode-phase serving, treat each concurrently-generating request as an "item in the system." Then \(L\) is the batch size (concurrency, i.e. number of simultaneous decode streams), \(\lambda\) is the aggregate token throughput (tokens/s across all streams), and \(W\) is the per-token latency experienced (TBT). Rearranged for our purposes:</p>
+        \[ \lambda = \frac{L}{W} = L \cdot \frac{1}{\text{TBT}} \]
+        <p>This says aggregate throughput is just <em>concurrency divided by per-token latency</em> — obvious once stated, but it is the identity that explains why the 53.7×–104.3× numbers are so large. Work the GPT-OSS case through explicitly. At the shared operating point (baseline's own min-TBT, 535.28 tok/s/user):</p>
+        <ul>
+          <li>Baseline (GB200, 1,200 W): reports 427 mixed/kW → aggregate = \(427 \times 1.2\text{ kW} = 512.4\) tok/s total. At 535.28 tok/s/user per stream, implied concurrency \(L_{\text{base}} = 512.4 / 535.28 \approx 0.96\) — the GB200 can barely sustain <em>one concurrent stream</em> at its own fastest per-token speed.</li>
+          <li>Jalapeño (700 W): reports 22,935 mixed/kW → aggregate = \(22{,}935 \times 0.7\text{ kW} = 16{,}054.5\) tok/s total. At the same 535.28 tok/s/user, implied concurrency \(L_{\text{Jal}} = 16{,}054.5 / 535.28 \approx 30\) — Jalapeño sustains roughly <strong>30 concurrent decode streams</strong> at the exact latency the baseline can only offer to one user at a time.</li>
+        </ul>
+        <p>That is the real content of "53.7× more throughput per kW" — it is a statement about <strong>concurrency headroom at fixed per-user latency</strong>, driven by the memory-bandwidth-per-watt advantage argued in §2.1, not a claim that Jalapeño executes the same single-stream computation 53.7× faster in absolute terms (peak-to-peak, the gap is the much smaller 1.9× from Fig. 4). Both statements are true and both are published; conflating them is the single easiest way to misquote this result.</p>
+        <div class="bm-warn"><strong>Package-count caveat, made concrete:</strong> because the comparison chip draws 1,200–1,400 W against Jalapeño's 700 W rated (and ≤550 W measured), a <em>per-package</em> concurrency comparison would look different from the per-kW numbers above — you would need roughly 1.7–2× as many Jalapeño packages to match one comparison package's power draw, which changes the aggregate concurrency ratio (though it does not change the underlying per-watt efficiency claim, which is the metric OpenAI explicitly chose to report and the metric that matters for a power-constrained data center).</div>
+
+        <h2 id="scaling">6.5 The advantage narrows as models grow — and OpenAI says the opposite happens internally</h2>
+        <p>Look again at the peak-throughput ratios across the three public models: <strong>1.9× (120B) → 1.7× (670B) → 1.5× (1T)</strong>. Model size and the ratio move in the same direction — larger, wider mixture-of-experts models with more experts (DeepSeek R1 and Kimi are both MXFP4 MoE models substantially larger than GPT-OSS 120B) show a smaller Jalapeño advantage on this specific metric. That is worth sitting with, because it runs counter to OpenAI's own framing: the post states that "in our internal testing, Jalapeño's advantage widened further on frontier OpenAI models, suggesting that the architecture becomes more valuable as workloads grow larger and more demanding" — but that claim is about <em>internal</em>, unpublished OpenAI models, not the three public models actually benchmarked here. The public data trends one way; the internal claim asserts the opposite trend for a different, unverifiable set of workloads. Both can be true simultaneously if internal frontier models differ structurally (e.g., different sparsity ratios, different KV-cache-to-parameter ratios, or longer context windows) from the three public MoE models tested — but a reader should notice that the one claim we can check does not obviously support the claim we cannot check, and should not average the two into a single "gets better with scale" narrative without that caveat.</p>
+
+        <h2 id="ai-loop">7. The AI-designs-chip, chip-designed-for-AI loop</h2>
+        <p>Two claims here are structurally different and should be evaluated separately.</p>
+        <h3 id="ai-design">7.1 AI-assisted design (verification/EDA acceleration)</h3>
+        <p>OpenAI states its models "helped optimize the chip's arithmetic circuits" and shortened "design, measurement, and verification loops" during the nine-month tapeout. This is consistent with a broader, independently documented industry trend of LLM-assisted EDA (electronic design automation) — using models to explore RTL implementations, accelerate verification-testbench generation, and search circuit-layout spaces faster than manual iteration. The nine-month figure (vs. a typical 24–36 month cycle) is the load-bearing evidence for this claim, and it is a real, externally observable outcome (the chip exists and was announced on schedule), even though the internal attribution of <em>how much</em> of the speedup came from AI-assisted tooling versus other factors (team experience, reused IP blocks, aggressive risk-taking on a first-generation part) is not independently separable from OpenAI's own account.</p>
+        <h3 id="chip-for-ai">7.2 A chip designed as a programming target for AI</h3>
+        <p>The more interesting and more falsifiable claim is architectural: Jalapeño is described as exposing computation through <strong>local tensors, explicit communication, and predictable synchronization</strong> — a programming model chosen specifically because it gives an AI code-generation system (Codex, paired with OpenAI's GPT-Astra) a <em>tractable</em> search space for the notoriously hard problem of parallel kernel scheduling. The reported evidence: using this toolchain, the team brought <strong>three open-weight model families that were not part of the original production plan to high performance within two months</strong>, and for <em>selected</em> GPT-OSS attention and mixture-of-experts kernel blocks, AI-generated implementations ran <strong>1.5–1.8× faster</strong> than the existing human-expert-written implementations.</p>
+        <div class="bm-note"><strong>Read the caveat OpenAI itself includes:</strong> "those figures apply to the selected blocks, not the full model." A 1.5–1.8× kernel-level speedup on cherry-picked blocks does not imply a 1.5–1.8× end-to-end model speedup — Amdahl's Law bounds the achievable whole-program speedup by the fraction of total runtime those specific blocks actually occupy, which is not disclosed. This is a real and interesting result about kernel-generation quality; it is not evidence about aggregate model throughput, and should not be quoted as if it were.</div>
+        <p>This closes an interesting loop worth naming explicitly for a systems-research audience: a hardware architecture co-designed to be legible to an AI code generator, programmed substantially by that same lab's coding models, running inference for that same lab's (and others') language models. Whether this compounds into a durable advantage — each generation's chip easier for the next generation's model to program well — is exactly the kind of multi-generational claim that cannot be evaluated from a single first-results post, but it is the strategic thesis the "multigenerational platform" framing (Gen 2 "deep in development," Gen 3 "taking shape") is staking out.</p>
+
+        <h2 id="literature">8. Where this sits in the systems-research literature</h2>
+        <p>None of Jalapeño's individual architectural bets are without academic precedent, which is useful context for judging what is genuinely novel here versus what is a first-party productization of ideas already active in the research literature:</p>
+        <ul>
+          <li><strong>Prefill/decode disaggregation</strong> is now the dominant serving pattern in the literature, precisely because of the roofline asymmetry in §2.1 — recent work on cross-datacenter KV-cache transfer (e.g. <em>Prefill-as-a-Service</em>, <a href="https://arxiv.org/abs/2604.15039" target="_blank" rel="noopener">arXiv:2604.15039</a>) explores decoupling the two phases across loosely-coupled clusters, the opposite instinct from Jalapeño's "keep the whole workload in one connected network domain" design, which trades flexibility for minimizing data movement.</li>
+          <li><strong>Topology-aware data movement</strong> for disaggregated GPU inference (<a href="https://arxiv.org/abs/2607.28633" target="_blank" rel="noopener">arXiv:2607.28633</a>) quantifies exactly the bandwidth cliff Jalapeño's single-domain network design is built to avoid — the same paper's own numbers (900 GB/s NVLink-domain vs. 50 GB/s cross-node InfiniBand vs. 12.5 GB/s cross-datacenter) explain why "keeping the entire workload within one connected system," as Jalapeño's post states, is not a marketing phrase but a direct response to a documented two-orders-of-magnitude bandwidth cliff.</li>
+          <li><strong>MXFP4 quantization</strong>, used for both DeepSeek R1 and Kimi K2.5 in this benchmark, has its own roofline implication worth noting: 4-bit weights roughly quarter the bytes moved per decode step relative to bf16, which directly increases the effective arithmetic intensity of decode and shifts it — partially — back toward the compute-bound region of Fig. 1. This piece of the article's sister post on Kimi K3 (<a href="kimi-k3-architecture-and-infrastructure.html">covered in detail here</a>) is directly relevant background for why quantization-aware serving and quantization-aware chip design are now co-evolving rather than independent decisions.</li>
+          <li><strong>KV-cache management</strong> under memory pressure — the other major decode-phase bottleneck — is the subject of PagedAttention and its successors, covered at length in <a href="pagedattention.html">this site's dedicated deep dive</a>; Jalapeño's "explicitly placed and kept local" KV-cache handling is a hardware-level answer to the same problem PagedAttention solves at the serving-software level.</li>
+        </ul>
+
+        <h2 id="limitations">9. Methodological limitations — read this before citing any number above</h2>
+        <p>A defense-quality reading of this result requires naming what is <em>not</em> established, not just what is claimed:</p>
+        <ol>
+          <li><strong>Single-source benchmark, no independent reproduction.</strong> All twelve data points in §5 come from one OpenAI-published post, using one benchmark suite, run by (or in direct coordination with) one third-party analytics firm. No competing lab or independent academic group has published a reproduction as of this writing.</li>
+          <li><strong>Power normalization masks package-count economics.</strong> As shown in §6.4, per-kW ratios and per-package ratios diverge because the compared systems are not power-matched (700 W vs. 1,200–1,400 W). Both framings are legitimate for different purposes (data-center power budget vs. capital/rack-space budget), but only one is reported.</li>
+          <li><strong>"Measured ≤550 W of 700 W rated" is disclosed but not explained.</strong> OpenAI states sustained power stayed at or below the 700 W rating on tested workloads without saying how close to 550 W, on which model, or whether the efficiency numbers in §5 were measured at the 700 W rating or at the lower observed draw — a nontrivial ambiguity, since using rated (denominator) power while workloads draw meaningfully less would inflate every per-kW figure relative to a measured-power normalization.</li>
+          <li><strong>Operating-range selection is not fully specified.</strong> The benchmark reports results "across the tested operating range," but the criteria for which batch sizes / concurrency levels were included or excluded from that range are not published in the post itself, leaving room for range selection to favor the vendor's own chip (a well-documented general risk in any self-selected benchmark range, independent of any specific claim about this one).</li>
+          <li><strong>Software-stack maturity asymmetry.</strong> NVIDIA's GB200/GB300 inference stack (TensorRT-LLM, vLLM integrations, years of kernel-level tuning by a large ecosystem) is far more mature than a first-generation chip's software stack could plausibly be at launch. Some fraction of the measured gap may reflect NVIDIA-stack tuning debt for these particular three models rather than a pure hardware-architecture delta — a confound that narrows, in the vendor's favor, only with time and independent tuning effort on both sides.</li>
+          <li><strong>The internal-model claim is unverifiable.</strong> The assertion that the advantage "widens further on frontier OpenAI models" (§6.5) references workloads no external party can test, run on a benchmark no external party can inspect, evaluated against a baseline no external party can confirm was configured fairly. Treat it as a forward-looking claim, not a result.</li>
+          <li><strong>This is a first-generation part pre-deployment.</strong> OpenAI states Jalapeño will begin deploying "within OpenAI's compute infrastructure by the end of the year" — meaning every number in this article describes lab/qualification-stage measurement, not production behavior under real multi-tenant load, thermal variance, and failure-rate conditions at scale.</li>
+        </ol>
+        <div class="bm-fix"><strong>How to hold this, on balance:</strong> none of the above implies the results are wrong — the methodology (power-normalized, Pareto-frontier framing, matched-latency comparison, open-source benchmark) is more rigorous than most first-party hardware announcements, and the underlying roofline argument for why a decode-optimized, high-bandwidth, single-domain-network chip should outperform a training-optimized GPU on inference is sound systems reasoning independent of the specific numbers. The right posture is: the architecture argument is credible on first principles: the specific magnitude of the numbers awaits independent verification.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is "mixed TPS/kW" throughput or tokens-per-second exactly defined?</summary><p>OpenAI's post uses "mixed" as InferenceX's own metric name, understood to combine prefill- and decode-phase token accounting into one throughput figure, but the exact weighting methodology between the two phases is documented in the InferenceX benchmark itself rather than in OpenAI's post — a reader who wants the precise definition should consult the InferenceX repository/methodology directly rather than infer it from this article.</p></details>
+        <details class="faq"><summary>Why does the "throughput at matched TBT" ratio (53.7–104.3×) so vastly exceed the peak ratio (1.5–1.9×)?</summary><p>Because they measure different things: peak ratio compares each system at its own best batch size (an apples-to-apples "how fast can each system go" comparison); the matched-TBT ratio compares both systems forced to the baseline's best latency, at which the baseline can only sustain roughly one concurrent stream (derived in §6.4) while Jalapeño sustains dozens. It is a concurrency-headroom claim, not a raw-speed claim.</p></details>
+        <details class="faq"><summary>Does this benchmark tell us anything about training performance?</summary><p>No — Jalapeño is explicitly an inference-only accelerator, and InferenceX is an inference-serving benchmark. Nothing here bears on training throughput, training-scale interconnect, or training numerics.</p></details>
+        <details class="faq"><summary>Is the "1.5–1.8× faster than human-written kernels" claim about the whole model?</summary><p>No — explicitly scoped by OpenAI to "selected" attention and MoE blocks, not the full model. Amdahl's Law means the end-to-end effect depends on what fraction of total runtime those blocks occupy, which is not disclosed (§7.2).</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>The architecture argument is a textbook roofline story:</strong> decode is memory-bandwidth-bound, prefill is compute-bound, and a chip co-designed with HBM4, a single-domain network, and explicit KV-cache placement targets both simultaneously rather than inheriting a training-optimized, compute-heavy design point.</li>
+          <li><strong>The benchmark methodology (Pareto-frontier, power-normalized, matched-latency) is more rigorous than a single peak number</strong> — but power normalization is not chip-count normalization, and the 700 W vs. 1,200–1,400 W TDP gap changes the story depending on which constraint (power or capital) you actually face.</li>
+          <li><strong>The headline 53.7–104.3× figures are a Little's-Law statement about concurrency headroom at fixed per-user latency</strong>, not a raw single-stream speed multiplier — the raw peak-to-peak gap is a much more modest 1.5–1.9×, and both numbers are simultaneously true and published.</li>
+          <li><strong>The Jalapeño advantage narrows across the three public models as they get larger (1.9× → 1.7× → 1.5×)</strong>, which sits in tension with — but does not necessarily contradict — OpenAI's separate, unverifiable claim about internal frontier models.</li>
+          <li><strong>The AI-generated-kernel result (1.5–1.8×) is explicitly scoped to selected blocks, not the full model</strong> — an easy number to over-quote, and one that should always carry that qualifier.</li>
+          <li><strong>This is one vendor-published post, one benchmark, no independent reproduction yet.</strong> Treat the architectural reasoning as sound and the specific magnitudes as provisional until an outside party runs the numbers.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://openai.com/index/jalapeno-first-results/" target="_blank" rel="noopener">OpenAI — Jalapeño's first results</a> <span>— the primary source for every measured number in this article.</span></li>
+          <li><a href="https://openai.com/index/openai-broadcom-jalapeno-inference-chip/" target="_blank" rel="noopener">OpenAI — OpenAI and Broadcom unveil LLM-optimized inference chip</a> <span>— the original June 2026 architectural announcement.</span></li>
+          <li><a href="https://www.tomshardware.com/tech-industry/artificial-intelligence/broadcom-and-openai-unveil-custom-built-jalapeno-inference-processor-openais-first-chip-is-a-massive-reticle-sized-asic-built-in-an-ultra-fast-nine-month-development-cycle" target="_blank" rel="noopener">Tom's Hardware — package/die reporting</a> <span>— source for the third-party architectural details in §4.</span></li>
+          <li><a href="https://newsletter.semianalysis.com/p/openai-jalapeno-better-than-nvidia" target="_blank" rel="noopener">SemiAnalysis — OpenAI Jalapeño analysis</a> <span>— independent analyst read from the benchmark's own maintainer.</span></li>
+          <li><a href="https://inferencex.semianalysis.com/" target="_blank" rel="noopener">InferenceX by SemiAnalysis</a> <span>— the open-source benchmark platform used for all measurements.</span></li>
+          <li><a href="https://arxiv.org/abs/2604.15039" target="_blank" rel="noopener">Prefill-as-a-Service: KVCache of Next-Generation Models Could Go Cross-Datacenter</a> <span>— disaggregated-serving literature, contrasting design point.</span></li>
+          <li><a href="https://arxiv.org/abs/2607.28633" target="_blank" rel="noopener">Topology-Aware Data Movement for Disaggregated GPU Inference</a> <span>— quantifies the interconnect-bandwidth cliff Jalapeño's single-domain design targets.</span></li>
+          <li><a href="kimi-k3-architecture-and-infrastructure.html">cvam.sight — Kimi K3: Architecture and Infrastructure</a> <span>— MXFP4 quantization and KV-cache background used in this piece.</span></li>
+          <li><a href="pagedattention.html">cvam.sight — PagedAttention deep dive</a> <span>— the serving-software-level answer to the same KV-cache problem Jalapeño addresses in hardware.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../archive.html">← browse the archive</a>
+        <a href="../index.html">home →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

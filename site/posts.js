@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "glm-5-3-flash-ox-alpha-architecture",
+    title: "GLM-5.3-Flash (\"Ox Alpha\") — the architecture, explained for graduate students.",
+    date: "Aug 27, 2026",
+    cat: "ml",
+    tags: ["ml", "llm-architecture", "moe", "linear-attention", "glm"],
+    time: 21,
+    words: 3949,
+    excerpt: "A graduate-level architecture teardown of Z.ai's GLM-5.3-Flash, the stealth 'Ox Alpha' model that ran anonymously on OpenRouter for a week: the 34 KDA + 11 MLA/DSA hybrid attention stack, NoPE, the Muon-Split fix for MLA, DeepSeek Sparse Attention's lightning indexer and IndexPool, the Kimi Delta Attention channel-wise gated delta rule, Manifold-Constrained Hyper-Connections (Birkhoff polytope + Sinkhorn-Knopp, and the >3,000x signal-amplification failure it fixes), the 288-expert MoE, multi-token prediction with parameter sharing, KV-cache economics (~11 KiB/token), benchmarks, and pricing."
+  },
+  {
     slug: "openai-jalapeno-inference-chip-first-results",
     title: "OpenAI's Jalapeño — a systems analysis of the first inference-chip results.",
     date: "Aug 26, 2026",

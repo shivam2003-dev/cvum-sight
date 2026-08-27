@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLM-5.3-Flash ("Ox Alpha") — Architecture, Explained for Graduate Students — cvam.sight</title>
+<meta name="description" content="A graduate-level architecture teardown of Z.ai's GLM-5.3-Flash, the stealth 'Ox Alpha' model: the 34 KDA + 11 MLA/DSA hybrid attention stack, NoPE, DeepSeek Sparse Attention's lightning indexer, IndexPool, Manifold-Constrained Hyper-Connections (Birkhoff polytope + Sinkhorn-Knopp), the 288-expert MoE, multi-token prediction with parameter sharing, KV-cache economics, benchmarks, and pricing.">
+<link rel="stylesheet" href="../style.css?v=88">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:38px} h3{margin-top:26px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.92rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 9px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{padding:2px 0 6px}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .bar-a{fill:var(--accent,#c96442)}
+  svg .bar-b{fill:color-mix(in srgb,var(--ink) 22%,transparent)}
+  svg .bar-c{fill:#527aa8}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-box.sel{fill:var(--yellow-soft,#f7e9c0);stroke:var(--ink)}
+  svg .d-box.dim{fill:color-mix(in srgb,var(--paper) 80%,var(--ink) 6%);stroke:color-mix(in srgb,var(--ink) 14%,transparent);opacity:.85}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+  svg .d-grid{stroke:color-mix(in srgb,var(--ink) 10%,transparent);stroke-width:1}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Aug 27, 2026 · ml · 21 min read · 3949 words <span class="difficulty advanced">advanced</span></p>
+        <h1>GLM-5.3-Flash ("Ox Alpha") — the architecture, explained for graduate students.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">llm-architecture</span>
+          <span class="tag">moe</span>
+          <span class="tag">linear-attention</span>
+          <span class="tag">glm</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">For a week in August 2026, a model called <strong>"Ox Alpha"</strong> ran anonymously on OpenRouter and OpenCode, and the LLM community spent that week reverse-engineering it from tokenizer fingerprints and output style alone. On August 26, Z.ai (Zhipu) confirmed it: Ox Alpha is <strong>GLM-5.3-Flash</strong>, a 320B-parameter (18B active), natively multimodal Mixture-of-Experts model, released under the <strong>MIT license</strong>, served throughout its stealth week entirely on domestically-produced Chinese AI chips. Architecturally it is the most interesting open release since Kimi Linear: it replaces most of its predecessor's MLA/DSA attention layers with <strong>Kimi Delta Attention (KDA)</strong>, keeps a thin backbone of sparse full attention, and wraps every sublayer in <strong>Manifold-Constrained Hyper-Connections (mHC)</strong> — four parallel residual streams held numerically stable by a matrix-scaling algorithm borrowed from optimal transport. This article works through every one of those components from first principles, grounded in Z.ai's own GLM-5 technical report and the primary papers behind KDA, DSA, and mHC — not just the marketing numbers.</p>
+
+        <h2 id="reveal">1. The Ox Alpha reveal, and why it matters as a data point</h2>
+        <p>Stealth model launches on OpenRouter have become a recognizable release pattern in 2026: a lab ships a model anonymously under a codename, watches how it performs against real traffic and community scrutiny with no brand attached to the number, then reveals it once confident. Ox Alpha's week fits the pattern precisely — strong agentic coding results, a distinctive tokenizer, and infrastructure fingerprints (serving latency profile, error message formats) that the community used to narrow the candidate list before Z.ai's own confirmation closed the question.</p>
+        <p>Two claims from the reveal are worth treating as separate facts, because they carry different evidentiary weight: <strong>the architecture and benchmark numbers are Z.ai's own technical disclosure</strong> (verifiable against the released weights and code), while <strong>"served entirely on domestically-produced Chinese AI chips throughout the stealth week"</strong> is a claim about infrastructure that is far harder for an outside party to verify independently — plausible given Z.ai's documented multi-chip-vendor strategy (§8), but stated here as a reported claim, not confirmed telemetry.</p>
+
+        <h2 id="numbers">2. GLM-5.3-Flash by the numbers</h2>
+        <table class="papers">
+          <tr><th>Property</th><th>Value</th></tr>
+          <tr><td>Total / active parameters</td><td><strong>320B / 18B</strong> (5.6% active)</td></tr>
+          <tr><td>Decoder layers</td><td>45 (text decoder) + 24-layer vision encoder</td></tr>
+          <tr><td>Layer mix</td><td><strong>34 KDA</strong> + <strong>11 MLA/DSA</strong> + <strong>1 MTP</strong> layer (first 3 blocks use dense SwiGLU FFNs, not MoE)</td></tr>
+          <tr><td>Attention head count</td><td>64</td></tr>
+          <tr><td>Embedding dimension</td><td>4,096</td></tr>
+          <tr><td>Vocabulary</td><td>154,880 (~155k)</td></tr>
+          <tr><td>Context window</td><td><strong>1,048,576</strong> tokens</td></tr>
+          <tr><td>MoE experts</td><td>288 total — 1 shared + 8 routed active per token</td></tr>
+          <tr><td>FFN intermediate dim</td><td>2,048 per expert</td></tr>
+          <tr><td>mHC residual streams</td><td>4 parallel streams</td></tr>
+          <tr><td>KV cache per token (bf16)</td><td><strong>≈11 KiB</strong> — very low for this scale</td></tr>
+          <tr><td>Weights</td><td>native FP8, 306 GiB checkpoint</td></tr>
+          <tr><td>Pre-training corpus</td><td>30T multimodal tokens</td></tr>
+          <tr><td>License</td><td>MIT</td></tr>
+          <tr><td>Released</td><td>2026-08-26 (as GLM-5.3-Flash; stealth-launched as "Ox Alpha" the week prior)</td></tr>
+        </table>
+        <div class="bm-note"><strong>Read the layer-mix ratio carefully.</strong> "34 KDA + 11 MLA/DSA" is <em>not</em> a per-block choice made independently at each of the 45 layers — it is the aggregate count across a repeating pattern, roughly <strong>3 KDA layers for every 1 MLA/DSA layer</strong> (the same ≈3:1 hybrid ratio the Kimi Linear line established, discussed in §5). The architecture is a hybrid stack, not a mixture of two separately-trained sub-models.</p></div>
+
+        <h2 id="lineage">3. Where this sits relative to GLM-5 and GLM-5.3</h2>
+        <p>GLM-5.3-Flash is a distinct branch from the dense-attention GLM-5.3 text model this site covered separately (<a href="glm-5-3-frontier-coding-cyber.html">GLM-5.3: Frontier Coding with Emergent Cyber Capabilities</a>) — that article's subject uses the MLA+DSA attention stack described in Z.ai's GLM-5 technical report with no linear-attention layers and no mHC. GLM-5.3-Flash is the <em>natively multimodal, KDA-hybrid, efficiency-first</em> sibling, built for high-throughput serving rather than peak single-query capability. Z.ai's own comparison states the Flash architecture reduces per-token attention computation by <strong>≈3.0×</strong> and average KV-cache size by <strong>≈4.4×</strong> relative to GLM-5.3 — the central engineering trade this article explains mechanism-by-mechanism.</p>
+        <p>The base for both lines is the GLM-5 technical report (<em>"GLM-5: from Vibe Coding to Agentic Engineering,"</em> Zhipu AI &amp; Tsinghua University), which establishes the MLA design, the Muon-Split optimizer fix, DSA's continued-pretraining recipe, and multi-token prediction with parameter sharing — all of which GLM-5.3-Flash inherits and then partially replaces with newer components. Sections 4–7 below work through each layer type using that report's own reported numbers wherever GLM-5.3-Flash reuses the mechanism unchanged, and the relevant external papers where GLM-5.3-Flash's own additions (KDA, mHC) come from further afield.</p>
+
+        <h2 id="mla">4. Multi-head Latent Attention (MLA), NoPE, and why it needed a Muon fix</h2>
+        <p>MLA is the attention mechanism GLM-5.3-Flash's remaining 11 non-KDA layers use. The idea, introduced by DeepSeek-V2 and adopted broadly since: instead of caching full per-head key/value vectors, project keys and values down into a single shared low-rank <strong>latent vector</strong> per token, cache <em>that</em> (much smaller), and up-project back to per-head K/V only at attention-computation time. This is what makes MLA's KV cache dramatically smaller than standard multi-head attention (MHA) or even grouped-query attention (GQA) at matched quality — the entire point of using it in a serving-optimized model.</p>
+        <p>Two details from the GLM-5 report are worth carrying into a graduate reading, because they are genuine engineering findings, not just architecture description:</p>
+        <ul>
+          <li><strong>MLA alone underperforms GQA-8 under the Muon optimizer.</strong> Z.ai reports that with a 576-dimension latent KV cache, plain MLA could not match an 8-query-group GQA baseline on their evaluation suite when trained with Muon. Muon orthogonalizes weight-update matrices; applied naively to MLA's larger, shared up-projection matrices \((W^{UQ}, W^{UK}, W^{UV})\), it apparently could not condition the different attention heads' effective learning rates correctly.</li>
+          <li><strong>The fix — "Muon Split" — is architectural, not just a hyperparameter change.</strong> Splitting each shared up-projection matrix into smaller <em>per-head</em> matrices before applying Muon's orthogonalization lets different heads update at different effective scales. Z.ai's own ablation (GLM-5 report, Table 1) shows this closes the gap: MLA + Muon Split matches or beats GQA-8 across HellaSwag, MMLU, C-Eval, RACE, and GSM8K, while plain MLA trails GQA-8 by roughly 5–6 points on GSM8K and HumanEval.</li>
+        </ul>
+        <p><strong>NoPE in MLA's Q/K projections</strong> (visible in the diagram as a separate annotated component) means these specific layers apply <em>no rotary or learned positional encoding</em> to the query/key vectors before the attention dot product — the model relies entirely on the KDA layers' inherent sequential, recurrent structure (§5) and on RoPE-bearing layers elsewhere in the stack (where present) to carry positional information. NoPE is a documented, if less common, design choice in the wider literature: some architectures find that at long context lengths, RoPE's periodicity can itself become a length-generalization liability, and removing position information from selected layers — especially ones that mostly attend to very recent tokens or rely on other layers for long-range signal — is a stability trade some hybrid architectures accept deliberately rather than by omission.</p>
+
+        <h2 id="dsa">5. DeepSeek Sparse Attention (DSA): the lightning indexer</h2>
+        <p>DSA is the mechanism that makes GLM-5.3-Flash's MLA layers <em>sparse</em> rather than fully dense, and it is worth explaining as a two-stage pipeline rather than a single trick, because that is exactly how the original DeepSeek-V3.2-Exp paper structures it:</p>
+        <ol>
+          <li><strong>The lightning indexer</strong> — a small, cheap neural network trained to predict, for each query token, which key-value blocks the <em>full</em> dense-attention computation would actually attend to most strongly. It is explicitly a lightweight approximation model, trained (in DeepSeek's original recipe) via distillation from a dense-attention teacher over roughly 2.1B tokens.</li>
+          <li><strong>Top-\(k\) block selection and sparse attention</strong> — using the indexer's predictions, only the top-ranked KV blocks are materialized and attended to densely; the rest are skipped entirely. This is a <em>retrieve-then-attend</em> pattern, converting the attention computation's complexity from \(O(L^2)\) to roughly \(O(L \cdot k)\) for a fixed per-query budget \(k\), where \(L\) is sequence length.</li>
+        </ol>
+        <p>Z.ai's own ablation is unusually candid about the accuracy cost: on their long-context benchmark suite (MQ-NIAH, MV-NIAH, SQuAD, HotpotQA, all at 128K context), DSA scores <strong>100.0 / 97.0 / 86.0 / 63.0</strong> against dense MLA's <strong>100.0 / 95.5 / 79.7 / 66.3</strong> — DSA actually <em>wins</em> on three of four, and only trails on HotpotQA-128k (63.0 vs. 66.3), a multi-hop reasoning benchmark where losing some genuinely-relevant-but-low-scored context plausibly hurts more. The overall picture the report argues for: roughly <strong>90% of attention entries in long contexts are redundant</strong>, and DSA is close to <em>lossless</em> at recovering the 10% that matter, at 1.5–2× less attention compute for long sequences.</p>
+
+        <h3 id="indexpool">5.1 IndexPool — compressing the indexer's own cache at 1M-token scale</h3>
+        <p>A subtlety that matters specifically at GLM-5.3-Flash's 1,048,576-token context: the lightning indexer itself needs a cache of index key vectors to score against, and at a million tokens, <em>that</em> cache becomes a new bottleneck — the exact "who watches the watchmen" problem sparse-retrieval systems run into once the retrieval index itself gets large. <strong>IndexPool</strong> is GLM-5.3-Flash's answer: it compresses groups of cached indexer key vectors via weighted pooling — reported at a 4:1 ratio (four cached index vectors pooled into one) at the 1M-context operating point — trading a small amount of indexer resolution for materially lower indexer memory and lookup latency at extreme context lengths.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">DSA: retrieve-then-attend, with IndexPool compressing the index itself</text>
+            <rect x="30" y="50" width="150" height="180" rx="12" class="d-box"/>
+            <text x="105" y="72" class="d-lbl" text-anchor="middle">full KV sequence</text>
+            <text x="105" y="90" class="d-sub" text-anchor="middle">length L (up to 1M)</text>
+            <rect x="50" y="104" width="30" height="14" class="d-box dim"/><rect x="85" y="104" width="30" height="14" class="d-box dim"/><rect x="120" y="104" width="30" height="14" class="d-box sel"/>
+            <rect x="50" y="122" width="30" height="14" class="d-box dim"/><rect x="85" y="122" width="30" height="14" class="d-box sel"/><rect x="120" y="122" width="30" height="14" class="d-box dim"/>
+            <rect x="50" y="140" width="30" height="14" class="d-box dim"/><rect x="85" y="140" width="30" height="14" class="d-box dim"/><rect x="120" y="140" width="30" height="14" class="d-box dim"/>
+            <rect x="50" y="158" width="30" height="14" class="d-box sel"/><rect x="85" y="158" width="30" height="14" class="d-box dim"/><rect x="120" y="158" width="30" height="14" class="d-box dim"/>
+            <text x="105" y="200" class="d-sub" text-anchor="middle">yellow = top-k blocks</text>
+            <text x="105" y="216" class="d-sub" text-anchor="middle">selected by the indexer</text>
+
+            <rect x="230" y="50" width="200" height="90" rx="12" class="d-box hot"/>
+            <text x="330" y="76" class="d-lbl" text-anchor="middle">lightning indexer</text>
+            <text x="330" y="96" class="d-sub" text-anchor="middle">cheap similarity model,</text>
+            <text x="330" y="112" class="d-sub" text-anchor="middle">distilled from a dense teacher</text>
+            <path d="M180 140 C 200 140, 210 95, 228 90" class="d-flow"/>
+
+            <rect x="230" y="160" width="200" height="70" rx="12" class="d-box cool"/>
+            <text x="330" y="184" class="d-lbl" text-anchor="middle">indexer's own KV cache</text>
+            <text x="330" y="202" class="d-sub" text-anchor="middle">IndexPool: 4 vectors → 1</text>
+            <text x="330" y="216" class="d-sub" text-anchor="middle">(weighted pooling, at 1M ctx)</text>
+            <path d="M330 140 L330 158" class="d-dash"/>
+
+            <rect x="490" y="90" width="200" height="60" rx="12" class="d-box"/>
+            <text x="590" y="114" class="d-lbl" text-anchor="middle">sparse dense-attention</text>
+            <text x="590" y="132" class="d-sub" text-anchor="middle">only top-k blocks materialized</text>
+            <path d="M430 90 L488 110" class="d-flow"/>
+
+            <text x="360" y="258" class="d-note" text-anchor="middle">complexity: O(L²) → O(L·k) for fixed per-query budget k</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — DeepSeek Sparse Attention's two-stage pipeline. IndexPool solves a second-order problem: at extreme context lengths, even the lightweight indexer's own cache needs compressing.</p>
+        </div>
+
+        <h2 id="kda">6. Kimi Delta Attention (KDA) — the layer that does most of the work</h2>
+        <p>34 of GLM-5.3-Flash's 45 layers are KDA, not MLA/DSA — this is the layer type that actually dominates the model's compute and memory profile, and it comes from a different lineage than DSA/MLA entirely: Moonshot AI's Kimi Linear research line, most recently productized at frontier scale in Kimi K3 (covered in depth in <a href="kimi-k3-architecture-and-infrastructure.html">this site's Kimi K3 architecture article</a>).</p>
+        <h3 id="delta-rule">6.1 The delta rule, briefly</h3>
+        <p>KDA belongs to the family of <strong>linear attention</strong> mechanisms: instead of attending over the full history of past tokens (the mechanism behind MLA's KV cache), it maintains a fixed-size <strong>state matrix</strong> \(S\) — an associative memory updated once per token — and pays constant compute and memory per generated token regardless of sequence length. The naive update rule, \(S \leftarrow S + v k^{\top}\), just accumulates outer products, and accumulation without subtraction means old and new associations blur together as the sequence grows. The <strong>delta rule</strong> fixes this by writing only the <em>prediction error</em>:</p>
+        \[ S \leftarrow S - \beta\,(Sk - v)\,k^{\top} \]
+        <p>If the state already predicts the right value for key \(k\), \(Sk - v \approx 0\) and almost nothing is written; if it was wrong, the error is exactly what gets stored — the same "learn from the surprise" principle as gradient descent, applied once per token inside the forward pass. KDA's specific contribution is making \(\beta\) a <strong>per-channel vector</strong> rather than one scalar per head — a channel-wise gated delta rule — so individual feature dimensions can independently hold information for very long spans while others refresh rapidly, which is precisely the fine-grained forgetting control that lets a fixed-size state approach full-attention recall quality on many tasks.</p>
+        <h3 id="ratio">6.2 Why 34:11 (≈3:1), not all-KDA</h3>
+        <p>A fixed-size linear-attention state is a <em>lossy summary</em> — adequate for most of what a language model tracks (topic, style, diffuse context) but structurally incapable of guaranteeing exact retrieval of one specific fact from deep in a million-token context, the way real attention over the actual tokens can. GLM-5.3-Flash's design keeps a thin backbone of the sparse MLA/DSA layers specifically for that exact-recall capability, interleaved through the stack at roughly one MLA/DSA layer for every three KDA layers — the same hybrid ratio the Kimi Linear research line established as its working point, now validated a second time by an independent lab (Z.ai) making the same architectural bet.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">The 45-layer stack: mostly KDA, with a thin MLA/DSA backbone</text>
+            <rect x="20" y="22" width="12" height="12" class="bar-a"/><text x="38" y="32" class="d-sub">KDA (linear, constant state)</text>
+            <rect x="230" y="22" width="12" height="12" class="bar-c"/><text x="248" y="32" class="d-sub">MLA/DSA (sparse, exact-recall)</text>
+            <rect x="470" y="22" width="12" height="12" class="bar-b"/><text x="488" y="32" class="d-sub">dense SwiGLU (first 3 blocks)</text>
+
+            <g id="stack"></g>
+            <text x="40" y="230" class="d-sub">layer 1</text>
+            <text x="680" y="230" class="d-sub" text-anchor="end">layer 45 (MTP)</text>
+
+            <rect x="30" y="60" width="15" height="150" class="bar-b"/>
+            <rect x="45" y="60" width="15" height="150" class="bar-b"/>
+            <rect x="60" y="60" width="15" height="150" class="bar-b"/>
+            <rect x="75" y="60" width="15" height="150" class="bar-a"/><rect x="90" y="60" width="15" height="150" class="bar-a"/><rect x="105" y="60" width="15" height="150" class="bar-a"/><rect x="120" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="135" y="60" width="15" height="150" class="bar-a"/><rect x="150" y="60" width="15" height="150" class="bar-a"/><rect x="165" y="60" width="15" height="150" class="bar-a"/><rect x="180" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="195" y="60" width="15" height="150" class="bar-a"/><rect x="210" y="60" width="15" height="150" class="bar-a"/><rect x="225" y="60" width="15" height="150" class="bar-a"/><rect x="240" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="255" y="60" width="15" height="150" class="bar-a"/><rect x="270" y="60" width="15" height="150" class="bar-a"/><rect x="285" y="60" width="15" height="150" class="bar-a"/><rect x="300" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="315" y="60" width="15" height="150" class="bar-a"/><rect x="330" y="60" width="15" height="150" class="bar-a"/><rect x="345" y="60" width="15" height="150" class="bar-a"/><rect x="360" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="375" y="60" width="15" height="150" class="bar-a"/><rect x="390" y="60" width="15" height="150" class="bar-a"/><rect x="405" y="60" width="15" height="150" class="bar-a"/><rect x="420" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="435" y="60" width="15" height="150" class="bar-a"/><rect x="450" y="60" width="15" height="150" class="bar-a"/><rect x="465" y="60" width="15" height="150" class="bar-a"/><rect x="480" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="495" y="60" width="15" height="150" class="bar-a"/><rect x="510" y="60" width="15" height="150" class="bar-a"/><rect x="525" y="60" width="15" height="150" class="bar-a"/><rect x="540" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="555" y="60" width="15" height="150" class="bar-a"/><rect x="570" y="60" width="15" height="150" class="bar-a"/><rect x="585" y="60" width="15" height="150" class="bar-a"/><rect x="600" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="615" y="60" width="15" height="150" class="bar-a"/><rect x="630" y="60" width="15" height="150" class="bar-a"/><rect x="645" y="60" width="15" height="150" class="bar-c"/>
+            <rect x="662" y="60" width="18" height="150" class="d-box sel"/>
+            <text x="671" y="140" class="d-sub" text-anchor="middle" transform="rotate(-90 671 140)">MTP</text>
+          </svg>
+          <p class="diagram-label">Fig. 2 — Schematic of the 45-layer mix (illustrative grouping, not the exact published per-layer schedule): 3 dense SwiGLU blocks, then a repeating ≈3:1 KDA-to-MLA/DSA pattern for the remaining 41 attention layers, ending in one MTP layer.</p>
+        </div>
+
+        <h3 id="shortconv">6.3 ShortConv — local mixing before the recurrent state</h3>
+        <p>Linear-attention and state-space hybrids commonly pair the recurrent state update with a small, cheap <strong>short causal convolution</strong> over a handful of adjacent tokens (typically kernel width 3–4) applied to the query/key/value projections before they enter the recurrence — the same pattern used in Based, Griffin, and Mamba-family hybrids. The intuition: a fixed-size recurrent state is well-suited to carrying long-range, slowly-changing information but is a comparatively expensive way to represent "the previous three tokens" — a cheap local convolution handles that immediate n-gram-like structure directly, leaving the KDA state free to specialize in genuinely long-range dependencies rather than spending capacity re-deriving local patterns at every step.</p>
+
+        <h2 id="mhc">7. Manifold-Constrained Hyper-Connections (mHC)</h2>
+        <h3 id="hc-origin">7.1 The problem: one residual stream is a bottleneck</h3>
+        <p>The standard transformer residual connection, \(x_{l+1} = x_l + F_l(x_l)\), routes every layer's output through a single shared pathway. ByteDance's original <strong>Hyper-Connections</strong> paper (Zhu et al., ICLR 2025) proposed widening this into \(n\) parallel residual streams with a learned mixing matrix controlling how each layer reads from and writes to each stream — strictly more expressive than a single stream, in principle letting the network route different kinds of information along different pathways and dynamically reweight how much each layer's output propagates forward.</p>
+        <h3 id="hc-failure">7.2 Why unconstrained Hyper-Connections breaks at scale</h3>
+        <p>The catch, reported directly by DeepSeek's follow-up work: an <em>unconstrained</em> learned mixing matrix has no guarantee of preserving signal magnitude across depth. At 27B parameters, DeepSeek reports unconstrained Hyper-Connections produced signal amplification exceeding <strong>3,000×</strong> through the network, causing complete training divergence — the multi-stream generalization reintroduces, in a more dangerous form, exactly the exploding/vanishing-signal problem identity residual connections were originally invented to solve.</p>
+        <h3 id="mhc-fix">7.3 The fix: constrain the mixing matrix to the Birkhoff polytope</h3>
+        <p>mHC's answer is to stop treating the per-layer mixing matrix as a free parameter and instead force it to be a <strong>doubly stochastic matrix</strong> — every row and every column sums to 1, with all entries non-negative. The set of all such matrices is the <strong>Birkhoff polytope</strong>, and a doubly-stochastic mixing matrix is guaranteed, by construction, to preserve the total signal magnitude flowing through the residual streams: it can <em>redistribute</em> signal among streams but cannot amplify or attenuate the total. The matrix is produced via the <strong>Sinkhorn–Knopp algorithm</strong> — an iterative row/column-normalization procedure, originally developed for optimal-transport problems, that projects an arbitrary non-negative matrix onto the Birkhoff polytope by alternately rescaling rows and columns until both converge to sum-to-1.</p>
+        \[ \text{Sinkhorn–Knopp: } M^{(t+1)} = D_r^{(t)} M^{(t)} D_c^{(t)}, \quad \text{iterated until row- and column-sums} \to 1 \]
+        <p>GLM-5.3-Flash uses <strong>4 parallel residual streams</strong>. Each attention or MoE sublayer is preceded and followed by an <strong>mhC mixer</strong> block (visible in the architecture diagram as the constrained-mixing layers wrapping each attention/MoE sublayer) that reads from and writes back to all 4 streams through a Sinkhorn-Knopp-constrained matrix, rather than the plain single-stream \(x + F(x)\) update. DeepSeek's reported overhead for 4 parallel lanes is modest — roughly <strong>6.7% additional training time</strong> — for the reported benefit of stable scaling that a naive multi-stream design cannot achieve.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">mHC: 4 residual streams, constrained to the Birkhoff polytope</text>
+            <text x="360" y="42" class="d-sub" text-anchor="middle">doubly-stochastic mixing (Sinkhorn–Knopp) ⇒ signal magnitude provably preserved across depth</text>
+
+            <g>
+              <line x1="60" y1="70" x2="60" y2="260" class="d-grid"/>
+              <line x1="140" y1="70" x2="140" y2="260" class="d-grid"/>
+              <line x1="220" y1="70" x2="220" y2="260" class="d-grid"/>
+              <line x1="300" y1="70" x2="300" y2="260" class="d-grid"/>
+              <text x="60" y="60" class="d-sub" text-anchor="middle">stream 1</text><text x="140" y="60" class="d-sub" text-anchor="middle">stream 2</text><text x="220" y="60" class="d-sub" text-anchor="middle">stream 3</text><text x="300" y="60" class="d-sub" text-anchor="middle">stream 4</text>
+            </g>
+
+            <rect x="30" y="100" width="300" height="50" rx="10" class="d-box hot"/>
+            <text x="180" y="130" class="d-lbl" text-anchor="middle">mhC mixer (Sinkhorn–Knopp, doubly-stochastic)</text>
+
+            <rect x="120" y="170" width="120" height="44" rx="8" class="d-box"/>
+            <text x="180" y="197" class="d-lbl" text-anchor="middle">sublayer (attention or MoE)</text>
+
+            <rect x="30" y="234" width="300" height="50" rx="10" class="d-box hot"/>
+            <text x="180" y="264" class="d-lbl" text-anchor="middle">mhC mixer (constrained mixing)</text>
+
+            <path d="M60 150 L120 178" class="d-dash"/><path d="M140 150 L150 172" class="d-dash"/><path d="M220 150 L210 172" class="d-dash"/><path d="M300 150 L240 178" class="d-dash"/>
+            <path d="M120 210 L60 232" class="d-dash"/><path d="M150 210 L140 232" class="d-dash"/><path d="M210 210 L220 232" class="d-dash"/><path d="M240 210 L300 232" class="d-dash"/>
+
+            <rect x="420" y="70" width="260" height="190" rx="14" class="d-box cool"/>
+            <text x="550" y="96" class="d-lbl" text-anchor="middle">unconstrained Hyper-Connections</text>
+            <text x="550" y="120" class="d-sub" text-anchor="middle">free mixing matrix</text>
+            <text x="550" y="150" class="d-note" text-anchor="middle" style="fill:var(--accent)">signal amplification &gt;3,000×</text>
+            <text x="550" y="170" class="d-sub" text-anchor="middle">at 27B params (DeepSeek's report)</text>
+            <text x="550" y="200" class="d-note" text-anchor="middle" style="fill:var(--accent)">→ training divergence</text>
+            <text x="550" y="230" class="d-sub" text-anchor="middle">the failure mHC's Birkhoff</text>
+            <text x="550" y="246" class="d-sub" text-anchor="middle">constraint is built to prevent</text>
+          </svg>
+          <p class="diagram-label">Fig. 3 — Left: mHC's constrained 4-stream mixing around one sublayer. Right: the unconstrained-mixing failure mode mHC exists to rule out.</p>
+        </div>
+
+        <h2 id="moe">8. The MoE layer: 288 experts, 1+8 active</h2>
+        <p>Each KDA and MLA/DSA block (except the first 3, which use dense SwiGLU FFNs) ends in an MoE feed-forward layer: a router scores all <strong>288 experts</strong> for each token, and the token's hidden state is processed by exactly <strong>1 shared expert</strong> (always active, capturing common cross-token patterns) plus the <strong>8</strong> highest-scoring routed experts, each expert an independent SwiGLU FFN with a <strong>2,048</strong>-dimension intermediate layer. Total active feed-forward compute per token comes from 9 of 288 experts — the arithmetic behind the model's headline <strong>5.6% active-parameter ratio</strong> (18B / 320B).</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">MoE routing — 1 shared + 8 of 288 routed experts per token</text>
+            <rect x="26" y="90" width="110" height="50" rx="10" class="d-box cool"/><text x="81" y="120" class="d-lbl" text-anchor="middle">token</text>
+            <path d="M136 115 L180 115" class="d-flow"/>
+            <rect x="182" y="88" width="110" height="54" rx="10" class="d-box hot"/><text x="237" y="118" class="d-lbl" text-anchor="middle">router</text>
+            <path d="M292 115 L336 115" class="d-flow"/>
+            <rect x="338" y="72" width="70" height="46" rx="8" class="d-box sel"/><text x="373" y="99" class="d-sub" text-anchor="middle">shared</text><text x="373" y="112" class="d-sub" text-anchor="middle">expert (1)</text>
+            <g>
+              <rect x="420" y="72" width="40" height="34" rx="6" class="d-box sel"/>
+              <rect x="466" y="72" width="40" height="34" rx="6" class="d-box dim"/>
+              <rect x="512" y="72" width="40" height="34" rx="6" class="d-box sel"/>
+              <rect x="558" y="72" width="40" height="34" rx="6" class="d-box dim"/>
+              <rect x="604" y="72" width="40" height="34" rx="6" class="d-box sel"/>
+              <rect x="420" y="112" width="40" height="34" rx="6" class="d-box dim"/>
+              <rect x="466" y="112" width="40" height="34" rx="6" class="d-box sel"/>
+              <rect x="512" y="112" width="40" height="34" rx="6" class="d-box dim"/>
+              <rect x="558" y="112" width="40" height="34" rx="6" class="d-box sel"/>
+              <rect x="604" y="112" width="40" height="34" rx="6" class="d-box dim"/>
+            </g>
+            <text x="530" y="164" class="d-sub" text-anchor="middle">… 288 routed experts total (yellow = 8 selected this token)</text>
+            <text x="360" y="200" class="d-note" text-anchor="middle">9 of 289 expert slots active per token (1 shared + 8 routed) → 5.6% of FFN parameters touched</text>
+            <text x="360" y="222" class="d-sub" text-anchor="middle">next token: a different 8 routed experts, same shared expert</text>
+          </svg>
+          <p class="diagram-label">Fig. 4 — The MoE feed-forward layer that follows every KDA/MLA sublayer past block 3.</p>
+        </div>
+
+        <h2 id="mtp">9. Multi-token prediction with parameter sharing</h2>
+        <p>The final layer is a single <strong>MTP (multi-token prediction)</strong> layer — a draft head trained to predict more than one future token per forward pass, used at inference time for speculative decoding. The GLM-5 report identifies a real design tension here: naively, predicting \(n\) tokens ahead needs \(n\) separate MTP layers (as in DeepSeek-V3's original recipe), and both the memory footprint and the KV-cache cost of the draft model scale linearly with \(n\). GLM's fix is <strong>parameter sharing</strong> — train a <em>single</em> MTP layer and reuse its parameters across multiple speculative steps rather than instantiating a separate layer per step, which keeps the draft model's memory cost constant instead of growing with speculation depth.</p>
+        <p>The reported trade normally expected from this simplification is a lower speculative <em>acceptance rate</em> (draft/target mismatch grows across shared-parameter steps) — but Z.ai's own measurement (GLM-5 report, Table 2) shows GLM-5's shared-parameter MTP achieves a <strong>2.76</strong> average accept length at 4 speculative steps, actually <em>higher</em> than DeepSeek-V3.2's <strong>2.55</strong> with per-step dedicated layers — evidence that the training-time/inference-time mismatch from single-layer training (predicting only the next-2-tokens during training, per DeepSeek's original recipe) is a more significant source of acceptance-rate loss than the parameter-sharing simplification itself.</p>
+
+        <h2 id="norm">10. RMSNorm, briefly</h2>
+        <p>Every sublayer in the diagram is bracketed by <strong>RMSNorm</strong> (root-mean-square layer normalization) rather than LayerNorm — a now-standard simplification that normalizes activations by their root-mean-square magnitude alone, \(\hat{x} = x / \sqrt{\tfrac{1}{d}\sum_i x_i^2 + \epsilon}\), without separately centering the mean the way LayerNorm does. It is cheaper (no mean computation or re-centering step) and empirically matches LayerNorm's training stability for transformer-scale models, which is why essentially every modern open LLM — GLM, Kimi, DeepSeek, Llama since v2 — uses it as the default normalization layer. Nothing GLM-5.3-Flash-specific happens here; it is included in the architecture diagram, and in this glossary, because "RMSNorm" is exactly the kind of load-bearing-but-invisible component a careful reading should not skip past without naming.</p>
+
+        <h2 id="vision">11. The (omitted) vision encoder — natively multimodal, briefly</h2>
+        <p>The architecture diagram this article works from explicitly notes it shows the <strong>text decoder only</strong>; GLM-5.3-Flash also ships a <strong>24-layer vision encoder</strong>, omitted from the diagram and from the parameter/layer counts in §2's text-decoder-focused table. "Natively multimodal" here means the vision encoder was trained jointly within the 30T-token multimodal pre-training corpus rather than bolted on via a later adapter stage — the same design philosophy Kimi K3 and other 2026-generation frontier releases have converged on, discussed in that article's <a href="kimi-k3-architecture-and-infrastructure.html#vision-context">native-vision section</a>.</p>
+
+        <h2 id="kv-economics">12. KV-cache and serving economics</h2>
+        <p>The ≈11 KiB/token bf16 KV-cache figure is the single number that most directly explains why this architecture exists. Compare it to what a comparably-sized dense-attention model would need:</p>
+        <table class="papers">
+          <tr><th>Mechanism</th><th>KV cache / token (illustrative, bf16)</th><th>Scaling with context</th></tr>
+          <tr><td>Standard MHA (64 heads, no compression)</td><td>hundreds of KiB, model-size-dependent</td><td>linear in context length, full head count</td></tr>
+          <tr><td>GQA-8 (grouped-query, 8 groups)</td><td>a fraction of MHA, still linear</td><td>linear in context, reduced constant</td></tr>
+          <tr><td>MLA (dense, all layers)</td><td>substantially below GQA-8</td><td>linear in context, low-rank constant</td></tr>
+          <tr><td>GLM-5.3-Flash (34 KDA + 11 MLA/DSA hybrid)</td><td><strong>≈11 KiB</strong></td><td>KDA layers: <em>constant</em> in context; only the 11 MLA/DSA layers scale with length</td></tr>
+        </table>
+        <p>Because 34 of 45 layers carry a fixed-size recurrent state rather than a growing KV cache, and the remaining 11 are sparsified by DSA, the effective per-token memory cost stays low even as the context grows toward 1M tokens — the architectural reason a 320B model can serve a million-token context at 48.7 tokens/sec output and 1.52s time-to-first-token (Z.ai's own reported serving numbers) rather than the multi-second-per-token collapse a dense-attention model of comparable scale would suffer at that context length.</p>
+        <div class="bm-fix"><strong>Pricing, as of release:</strong> $0.15 / M input tokens, $0.03 / M cached input tokens (a 5× cache-hit discount), $0.50 / M output tokens. Self-hosting the 306 GiB FP8 checkpoint needs NVIDIA Hopper-class or newer accelerators, an 8-GPU node at minimum, and is supported by vLLM, SGLang, and KTransformers at release.</div>
+
+        <h2 id="benchmarks">13. Benchmarks, as reported</h2>
+        <table class="papers">
+          <tr><th>Benchmark</th><th>GLM-5.3-Flash</th><th>Reference point</th></tr>
+          <tr><td>Terminal-Bench 2.1</td><td>84.3</td><td>Claude Opus 4.8: 85.0</td></tr>
+          <tr><td>DeepSWE v1.1</td><td>63.4</td><td>GLM-5.2: 46.2</td></tr>
+          <tr><td>AutomationBench</td><td>48.8</td><td>GLM-5.2: 26.2</td></tr>
+          <tr><td>Z.ai Code Bench v1.0</td><td>29.0</td><td>Opus 4.8: 29.5</td></tr>
+          <tr><td>Artificial Analysis Intelligence Index</td><td>57</td><td>—</td></tr>
+        </table>
+        <div class="bm-warn"><strong>Vendor-reported caveat:</strong> every number above is Z.ai's own disclosure, on Z.ai's own or third-party-but-vendor-selected benchmark suites, at the model's release. Treat the architectural mechanisms in §4–§9 — which are falsifiable against the released open weights and code — as the durable content of this article, and the benchmark table as a snapshot to be checked against independent evaluation as it appears.</div>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is GLM-5.3-Flash the same model as the GLM-5.3 covered elsewhere on this site?</summary><p>No — <a href="glm-5-3-frontier-coding-cyber.html">that article</a> covers the dense-attention (MLA+DSA only, no KDA, no mHC) GLM-5.3. GLM-5.3-Flash is a separate, natively multimodal MoE release built for efficient long-context serving, using a different attention stack entirely.</p></details>
+        <details class="faq"><summary>Why replace MLA/DSA layers with KDA instead of using KDA everywhere?</summary><p>A fixed-size linear-attention state is a lossy summary — it cannot guarantee exact retrieval of one fact from deep in a long context the way real (even sparse) attention can. The ≈3:1 hybrid keeps a thin backbone of exact-recall-capable MLA/DSA layers for that reason, discussed in §6.2.</p></details>
+        <details class="faq"><summary>What specifically does mHC add over a standard residual connection?</summary><p>Four parallel residual streams instead of one, mixed by a matrix constrained to be doubly-stochastic (the Birkhoff polytope, enforced via Sinkhorn-Knopp) — which provably preserves signal magnitude across depth, unlike an unconstrained multi-stream mixing matrix, which DeepSeek reports can amplify signal over 3,000× and diverge at scale. See §7.</p></details>
+        <details class="faq"><summary>Is the "served entirely on Chinese chips" claim verified?</summary><p>It is Z.ai's own claim about their Ox Alpha stealth-week infrastructure, consistent with their documented multi-vendor chip strategy, but not independently verifiable telemetry from outside the company — treated in this article as reported, not confirmed (§1).</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>GLM-5.3-Flash is a hybrid-attention efficiency play</strong>, not a straightforward scale-up: 34 KDA layers (constant-size state, cheap) plus a thin 11-layer MLA/DSA backbone (sparse, exact-recall) at roughly a 3:1 ratio — the same hybrid philosophy Kimi Linear established, now independently validated by a second lab.</li>
+          <li><strong>Every sparsity/compression mechanism targets the same bottleneck from a different angle:</strong> DSA sparsifies attention itself, IndexPool sparsifies the DSA indexer's own cache at extreme context, and KDA's constant-size state sidesteps the KV-cache growth problem entirely for 34 of 45 layers — together landing at ≈11 KiB/token.</li>
+          <li><strong>mHC is not a free efficiency win</strong> — it's the fix for a specific, documented failure mode (>3,000× signal amplification in unconstrained multi-stream residuals at 27B scale) rather than an unconditional architectural upgrade, and it costs a real ≈6.7% training-time overhead for that stability.</li>
+          <li><strong>Multi-token prediction with parameter sharing beat the naive multi-layer approach</strong> on Z.ai's own numbers (2.76 vs. 2.55 accept length) — evidence the acceptance-rate cost people expect from parameter sharing is dominated by a different factor (training-inference mismatch) in practice.</li>
+          <li><strong>The benchmark table is a snapshot; the architecture is the durable content.</strong> Every mechanism above is checkable against the open MIT-licensed weights and code — that is the appropriate object of scrutiny, not the vendor's own leaderboard position at launch.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://huggingface.co/zai-org/GLM-5.3-Flash" target="_blank" rel="noopener">Z.ai — GLM-5.3-Flash on Hugging Face</a> <span>— model card, weights, and the primary specs table this article works from.</span></li>
+          <li><a href="https://sebastianraschka.com/llm-architecture-gallery/" target="_blank" rel="noopener">Sebastian Raschka — LLM Architecture Gallery</a> <span>— source of the annotated GLM-5.3-Flash architecture diagram this article is a written companion to.</span></li>
+          <li><a href="https://www.marktechpost.com/2026/08/26/z-ai-releases-glm-5-3-flash-a-320b-a18b-natively-multimodal-moe-with-a-1m-token-context/" target="_blank" rel="noopener">MarkTechPost — Z.ai releases GLM-5.3-Flash</a> <span>— benchmark, pricing, and deployment details cited in §12–13.</span></li>
+          <li><a href="https://arxiv.org/abs/2409.19606" target="_blank" rel="noopener">Hyper-Connections (Zhu et al., ICLR 2025)</a> <span>— the original multi-residual-stream architecture mHC constrains.</span></li>
+          <li><a href="https://arxiv.org/abs/2512.24880" target="_blank" rel="noopener">mHC: Manifold-Constrained Hyper-Connections</a> <span>— the Birkhoff-polytope/Sinkhorn-Knopp fix, and the &gt;3,000× signal-amplification failure mode it addresses.</span></li>
+          <li><a href="https://arxiv.org/abs/2512.02556" target="_blank" rel="noopener">DeepSeek-V3.2-Exp: Boosting Long-Context Efficiency with DeepSeek Sparse Attention</a> <span>— the lightning indexer and sparse retrieve-then-attend mechanism behind DSA.</span></li>
+          <li><a href="https://arxiv.org/abs/2510.26692" target="_blank" rel="noopener">Kimi Linear: An Expressive, Efficient Attention Architecture</a> <span>— the KDA lineage GLM-5.3-Flash's 34 linear-attention layers build on.</span></li>
+          <li><a href="kimi-k3-architecture-and-infrastructure.html">cvam.sight — Kimi K3: Architecture and Infrastructure</a> <span>— the fuller derivation of the delta rule and channel-wise gating this article reuses in §6.1.</span></li>
+          <li><a href="glm-5-3-frontier-coding-cyber.html">cvam.sight — GLM-5.3: Frontier Coding with Emergent Cyber Capabilities</a> <span>— this site's coverage of the sibling dense-attention GLM-5.3 model.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../archive.html">← browse the archive</a>
+        <a href="../index.html">home →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

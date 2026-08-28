@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vLLM Optimization &amp; Tuning — A Production Deep Dive — cvam.sight</title>
+<meta name="description" content="A detailed, source-grounded guide to vLLM V1 production tuning: optimization levels (-O0 to -O3), automatic prefix caching, chunked prefill and the ITL/TTFT tradeoff, KV-cache preemption, tensor/pipeline/data/expert parallelism with a real DeepSeek-V3 deployment shape, the CPU-core provisioning formula, NUMA binding, multimodal encoder and processor caching, and a critical comparison of two different 'tuning priority' orderings.">
+<link rel="stylesheet" href="../style.css?v=88">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:38px} h3{margin-top:26px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.92rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 9px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{display:block;padding:2px 0 6px}
+  pre.code{margin:16px 0 22px;overflow-x:auto}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .bar-a{fill:var(--accent,#c96442)}
+  svg .bar-b{fill:color-mix(in srgb,var(--ink) 22%,transparent)}
+  svg .bar-c{fill:#527aa8}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-box.sel{fill:var(--yellow-soft,#f7e9c0);stroke:var(--ink)}
+  svg .d-box.dim{fill:color-mix(in srgb,var(--paper) 80%,var(--ink) 6%);stroke:color-mix(in srgb,var(--ink) 14%,transparent);opacity:.85}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+  svg .d-grid{stroke:color-mix(in srgb,var(--ink) 10%,transparent);stroke-width:1}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Aug 28, 2026 · devops · 24 min read · 4400 words <span class="difficulty advanced">advanced</span></p>
+        <h1>vLLM optimization &amp; tuning — a production deep dive.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">vllm</span>
+          <span class="tag">llm-inference</span>
+          <span class="tag">gpu</span>
+          <span class="tag">performance</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Every knob in vLLM's tuning surface exists to answer one question: <em>given a fixed amount of GPU memory and compute, how many tokens of useful work can you push through per second, at what latency, before something breaks?</em> This article works through the real mechanism behind each major lever — optimization levels, automatic prefix caching, chunked prefill, KV-cache preemption, the four parallelism strategies (TP/PP/DP/EP), CPU/NUMA provisioning, and multimodal caching — grounded directly in vLLM's own documentation and source, not paraphrase. It closes by comparing two different "tuning priority" orderings you'll see in the wild and explaining why they disagree.</p>
+
+        <h2 id="basics">1. Two prerequisites: continuous batching and PagedAttention</h2>
+        <p>Everything below assumes two foundational vLLM mechanisms that this site has covered in full elsewhere and won't re-derive here:</p>
+        <ul>
+          <li><strong>Continuous batching</strong> — rather than waiting for a fixed batch of requests to all finish before starting the next batch, the scheduler adds and removes individual sequences from the running batch every iteration, as they arrive and complete. This is what makes GPU utilization high under bursty, variable-length real traffic instead of the padding waste of static batching.</li>
+          <li><strong>PagedAttention</strong> — the KV-cache memory manager that treats cache storage like OS virtual memory: fixed-size blocks, non-contiguous physical allocation, a block table per sequence. This is the single biggest reason vLLM can run the high concurrency this article's tuning knobs assume is available. Covered in full, with the memory-fragmentation math, in <a href="pagedattention.html">this site's dedicated PagedAttention deep dive</a>.</li>
+        </ul>
+        <p>Everything that follows is about <em>how you configure</em> the scheduler and memory manager built on top of those two mechanisms — not the mechanisms themselves.</p>
+
+        <h2 id="opt-levels">2. Optimization levels: -O0 through -O3</h2>
+        <p>vLLM V1 integrates <code>torch.compile</code> by default. On first ("cold") start, it traces the model's forward pass, compiles it into fused kernels, and — for the parts of the graph with static shapes — captures CUDA graphs that replay the entire forward pass with a single kernel launch instead of hundreds of small ones. Both steps take real wall-clock time before the server can accept its first request, which is exactly the tradeoff the <code>-O&lt;n&gt;</code> flag exposes directly:</p>
+        <table class="papers">
+          <tr><th>Level</th><th>What it does</th><th>Startup</th><th>Steady-state performance</th></tr>
+          <tr><td><code>-O0</code></td><td>No compilation, no CUDA graphs (equivalent to <code>--enforce-eager</code>)</td><td>fastest</td><td>lowest</td></tr>
+          <tr><td><code>-O1</code></td><td>Simple compilation + fusions, <strong>PIECEWISE</strong> CUDA graphs</td><td>fast</td><td>good</td></tr>
+          <tr><td><code>-O2</code> (default)</td><td>Wider compilation ranges, more fusions, <strong>FULL_AND_PIECEWISE</strong> CUDA graphs</td><td>slower</td><td>best available today</td></tr>
+          <tr><td><code>-O3</code></td><td>Currently equal to <code>-O2</code>; reserved for future aggressive/experimental passes</td><td>same as O2</td><td>same as O2 (for now)</td></tr>
+        </table>
+        <p>Compiled artifacts (FX graphs, Triton kernels) are cached to disk under <code>~/.cache/vllm/torch_compile_cache</code> by default, so the expensive compilation cost is a one-time-per-model-and-config tax, not a per-restart one — subsequent warm starts load the cached artifacts directly. Two flags matter specifically for iterating during development or shortening cold starts in autoscaled/serverless deployments: <code>--enforce-eager</code> skips compilation entirely (development), and passing <code>--kv-cache-memory</code> with a previously-logged value lets vLLM skip the memory-profiling pass it would otherwise run to determine how much KV-cache space is available.</p>
+
+        <h2 id="prefix-cache">3. Automatic prefix caching</h2>
+        <p>The mechanism is simple to state precisely: vLLM hashes the KV-cache blocks (in PagedAttention's fixed-size block scheme) belonging to a request's prompt. If a new request's prompt shares a prefix with a block hash already resident in the cache — a system prompt, a repeated document, the earlier turns of a multi-turn conversation — the new request reuses those blocks instead of recomputing them, and only pays the prefill cost for the <em>new</em>, non-shared suffix.</p>
+        <div class="bm-note"><strong>What it does and does not speed up.</strong> Prefix caching only reduces <em>prefill</em> time — the initial pass over the prompt. It has zero effect on decode-phase latency, because decode already only ever attends over the (already-cached) full context one new token at a time regardless of where that context came from. If your workload is decode-bound (long generations, short prompts), enabling prefix caching won't move your numbers; if it's prefill-bound (long shared system prompts, RAG documents queried repeatedly, multi-turn chat), it is close to free throughput.</div>
+        <p>Enable with <code>enable_prefix_caching=True</code> (the flag most 2026-era deployments leave on by default for chat and agentic workloads specifically because system prompts and tool schemas are large, static, and repeated on every single request).</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">Automatic prefix caching: one system prompt, many requests</text>
+            <rect x="30" y="60" width="150" height="60" rx="10" class="d-box hot"/>
+            <text x="105" y="86" class="d-lbl" text-anchor="middle">system prompt</text>
+            <text x="105" y="104" class="d-sub" text-anchor="middle">computed once</text>
+            <path d="M180 90 L230 90" class="d-flow"/>
+            <rect x="232" y="60" width="150" height="60" rx="10" class="d-box cool"/>
+            <text x="307" y="86" class="d-lbl" text-anchor="middle">KV cache blocks</text>
+            <text x="307" y="104" class="d-sub" text-anchor="middle">hashed &amp; retained</text>
+
+            <path d="M382 78 C 440 60, 480 55, 540 60" class="d-dash"/>
+            <path d="M382 90 C 440 90, 480 90, 540 90" class="d-dash"/>
+            <path d="M382 102 C 440 120, 480 125, 540 120" class="d-dash"/>
+
+            <rect x="542" y="42" width="150" height="36" rx="8" class="d-box"/><text x="617" y="65" class="d-sub" text-anchor="middle">user request 1</text>
+            <rect x="542" y="76" width="150" height="36" rx="8" class="d-box"/><text x="617" y="99" class="d-sub" text-anchor="middle">user request 2</text>
+            <rect x="542" y="110" width="150" height="36" rx="8" class="d-box"/><text x="617" y="133" class="d-sub" text-anchor="middle">user request N</text>
+
+            <text x="360" y="180" class="d-note" text-anchor="middle">only the non-shared suffix (the user's own turn) triggers new prefill compute</text>
+            <text x="360" y="202" class="d-sub" text-anchor="middle">decode-phase latency is unaffected — this saves prefill time only</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — Every request that shares the cached prefix skips recomputing it; the effect is purely on time-to-first-token for the prefill portion.</p>
+        </div>
+
+        <h2 id="chunked-prefill">4. Chunked prefill — the ITL/TTFT tradeoff, made explicit</h2>
+        <p>Without chunking, a long prompt's entire prefill must run as one uninterrupted scheduling step — during which every other in-flight request's decode step waits, because the GPU is busy on that one prefill. Under bursty traffic with a mix of short and long prompts, this is exactly the "short requests stuck behind a huge prompt" problem the scheduler needs to avoid. <strong>Chunked prefill</strong> (default-enabled in current vLLM) splits a large prefill into smaller pieces and interleaves them with pending decode steps in the same scheduling iteration, governed by a single token budget:</p>
+        <p>Scheduling policy: at each step, the scheduler first batches <em>all</em> pending decode requests (decode gets priority), then fills whatever token budget remains — <code>max_num_batched_tokens</code> — with pending prefill work, chunking any prefill too large to fit in one pass.</p>
+        \[ \text{tokens scheduled this step} \le \text{max\_num\_batched\_tokens} \]
+        <table class="papers">
+          <tr><th><code>max_num_batched_tokens</code></th><th>Effect on ITL (inter-token latency)</th><th>Effect on TTFT (time to first token)</th></tr>
+          <tr><td>Smaller (e.g. 2,048, the current default)</td><td><strong>Better</strong> — fewer prefill chunks interrupt each decode step</td><td>Worse — long prompts take more scheduling rounds to finish prefilling</td></tr>
+          <tr><td>Larger (e.g. &gt;8,192, recommended for throughput)</td><td>Worse — bigger prefill chunks steal more time from decode</td><td><strong>Better</strong> — more of a long prompt fits in one scheduling pass</td></tr>
+        </table>
+        <p>The default value optimizes for ITL (a chat-latency-sensitive default), which is why vLLM's own docs note the default can have <em>lower throughput</em> than a purely throughput-optimized configuration — if your workload is offline batch scoring rather than interactive chat, raising <code>max_num_batched_tokens</code> is one of the highest-leverage single changes available.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">Without vs. with chunked prefill (schematic scheduling timeline)</text>
+            <text x="180" y="48" class="d-lbl" text-anchor="middle">without chunking</text>
+            <rect x="40" y="58" width="70" height="26" class="bar-c"/><text x="75" y="76" class="d-sub" text-anchor="middle">decode</text>
+            <rect x="112" y="58" width="220" height="26" class="bar-a"/><text x="222" y="76" class="d-sub" text-anchor="middle">one long prefill blocks everything</text>
+            <rect x="334" y="58" width="70" height="26" class="bar-c"/><text x="369" y="76" class="d-sub" text-anchor="middle">decode</text>
+            <text x="500" y="76" class="d-note">short requests stall</text>
+
+            <text x="180" y="128" class="d-lbl" text-anchor="middle">with chunked prefill</text>
+            <rect x="40" y="138" width="60" height="26" class="bar-c"/>
+            <rect x="102" y="138" width="55" height="26" class="bar-a"/>
+            <rect x="159" y="138" width="60" height="26" class="bar-c"/>
+            <rect x="221" y="138" width="55" height="26" class="bar-a"/>
+            <rect x="278" y="138" width="60" height="26" class="bar-c"/>
+            <rect x="340" y="138" width="55" height="26" class="bar-a"/>
+            <text x="60" y="188" class="d-sub" text-anchor="middle">decode</text>
+            <text x="130" y="188" class="d-sub" text-anchor="middle">prefill chunk</text>
+            <text x="360" y="160" class="d-note" text-anchor="middle">decode steps and prefill chunks interleave every scheduling iteration</text>
+          </svg>
+          <p class="diagram-label">Fig. 2 — Chunked prefill trades a small per-chunk overhead for eliminating head-of-line blocking from large prompts.</p>
+        </div>
+
+        <h2 id="preemption">5. KV-cache preemption: what happens when memory runs out</h2>
+        <p>PagedAttention's block-based allocation still has a hard ceiling — the fraction of GPU memory reserved for KV cache, set by <code>gpu_memory_utilization</code>. When too many concurrent sequences would exceed that budget, vLLM must <strong>preempt</strong> one or more running sequences to free blocks for the others. vLLM V1's default preemption mode is <strong>RECOMPUTE</strong>, not SWAP:</p>
+        <ul>
+          <li><strong>RECOMPUTE</strong> (default in V1) — drop the preempted sequence's KV cache entirely; when it's rescheduled, redo its prefill from scratch. Simpler, lower overhead in V1's architecture, but the cost scales with how much context has to be redone — expensive for sequences deep into a long generation.</li>
+          <li><strong>SWAP</strong> — move the preempted sequence's KV cache to CPU memory instead of discarding it, then transfer it back on resume. Avoids recomputation but adds PCIe transfer overhead and CPU memory pressure of its own.</li>
+        </ul>
+        <p>Frequent preemption is a visible warning in the logs, and it directly costs throughput — recomputed prefill is pure waste relative to a system with enough headroom to never evict. The standard remediation, in order of what to try first: <strong>increase <code>gpu_memory_utilization</code></strong> (more memory reserved for KV cache, if headroom exists), <strong>decrease <code>max_num_seqs</code> or <code>max_num_batched_tokens</code></strong> (admit fewer concurrent sequences so each gets guaranteed cache space), or — if neither is enough — add parallelism to spread the model and its cache across more accelerators (§6).</p>
+
+        <h2 id="parallelism">6. Parallelism strategies: TP, PP, DP, and EP</h2>
+        <p>These four are not interchangeable — each solves a different constraint, and production MoE deployments typically combine three of them simultaneously.</p>
+        <table class="papers">
+          <tr><th>Strategy</th><th>What it shards</th><th>When you need it</th><th>Main cost</th></tr>
+          <tr><td><strong>Tensor Parallel (TP)</strong></td><td>weight matrices within each layer, across GPUs</td><td>model too large for one GPU's memory</td><td>an all-reduce per layer — needs fast intra-node interconnect (NVLink)</td></tr>
+          <tr><td><strong>Pipeline Parallel (PP)</strong></td><td>whole layers, sequentially across GPUs/nodes</td><td>model too large even after TP, or scaling across nodes with slower interconnect</td><td>pipeline bubbles — GPUs idle waiting for earlier/later stages</td></tr>
+          <tr><td><strong>Data Parallel (DP)</strong></td><td>nothing — replicates the whole model, splits <em>requests</em> across replicas</td><td>model fits on one (TP-)group already; you just need more aggregate throughput</td><td>full memory cost per replica; no inter-replica communication needed</td></tr>
+          <tr><td><strong>Expert Parallel (EP)</strong></td><td>MoE expert weights, one subset of experts per GPU</td><td>MoE models specifically — dense-layer TP wastes the sparsity</td><td>an all-to-all token shuffle: dispatch each token to its expert's GPU, then gather results back</td></tr>
+        </table>
+        <p>Expert Parallel deserves its own sentence because the mechanism is genuinely different from TP: with EP enabled, each GPU holds a disjoint subset of the model's experts (rather than a shard of every expert). Because MoE routing sends different tokens to different experts, this requires an <strong>all-to-all communication step</strong> twice per MoE layer — once to send each token's hidden state to the GPU that owns its selected expert, once to gather the results back — which is the dominant communication cost EP-based serving has to amortize.</p>
+        <div class="bm-fix"><strong>A real deployment shape, as documented for DeepSeek-V3:</strong> 1-way tensor parallel + 8-way data-parallel <em>attention</em> + 8-way expert-parallel <em>MoE layers</em>, on 8 GPUs. Attention weights are small enough to simply replicate across all 8 GPUs (DP, no sharding needed); the MoE expert weights — the overwhelming majority of total parameters in a sparse MoE model — are what actually gets split via EP. This mixed strategy (DP for attention, EP for experts) is now the standard production pattern for large open-weight MoE models, not an exotic combination.</div>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">Four parallelism strategies, what each one shards</text>
+            <rect x="20" y="46" width="160" height="100" rx="10" class="d-box hot"/>
+            <text x="100" y="70" class="d-lbl" text-anchor="middle">TP</text>
+            <text x="100" y="90" class="d-sub" text-anchor="middle">split weights</text>
+            <text x="100" y="104" class="d-sub" text-anchor="middle">within each layer</text>
+            <text x="100" y="126" class="d-sub" text-anchor="middle">all-reduce / layer</text>
+
+            <rect x="196" y="46" width="160" height="100" rx="10" class="d-box cool"/>
+            <text x="276" y="70" class="d-lbl" text-anchor="middle">PP</text>
+            <text x="276" y="90" class="d-sub" text-anchor="middle">split layers</text>
+            <text x="276" y="104" class="d-sub" text-anchor="middle">sequentially across GPUs</text>
+            <text x="276" y="126" class="d-sub" text-anchor="middle">pipeline bubbles</text>
+
+            <rect x="372" y="46" width="160" height="100" rx="10" class="d-box"/>
+            <text x="452" y="70" class="d-lbl" text-anchor="middle">DP</text>
+            <text x="452" y="90" class="d-sub" text-anchor="middle">replicate whole model</text>
+            <text x="452" y="104" class="d-sub" text-anchor="middle">split requests</text>
+            <text x="452" y="126" class="d-sub" text-anchor="middle">no cross-replica comm</text>
+
+            <rect x="548" y="46" width="152" height="100" rx="10" class="d-box sel"/>
+            <text x="624" y="70" class="d-lbl" text-anchor="middle">EP</text>
+            <text x="624" y="90" class="d-sub" text-anchor="middle">split MoE experts</text>
+            <text x="624" y="104" class="d-sub" text-anchor="middle">1 GPU = subset of experts</text>
+            <text x="624" y="126" class="d-sub" text-anchor="middle">all-to-all token shuffle</text>
+
+            <text x="360" y="184" class="d-note" text-anchor="middle">DeepSeek-V3 production shape (documented): TP=1, DP=8 (attention), EP=8 (MoE experts)</text>
+            <rect x="120" y="204" width="480" height="52" rx="10" class="d-box dim"/>
+            <text x="220" y="234" class="d-sub" text-anchor="middle">attention: replicated, DP=8</text>
+            <text x="490" y="234" class="d-sub" text-anchor="middle">MoE layers: sharded, EP=8</text>
+            <line x1="360" y1="204" x2="360" y2="256" class="d-dash"/>
+          </svg>
+          <p class="diagram-label">Fig. 3 — Mixed-strategy serving is the norm for large MoE models: different parallelism for the dense (attention) and sparse (expert) parts of the same model.</p>
+        </div>
+
+        <h2 id="cpu-numa">7. CPU provisioning and NUMA binding</h2>
+        <p>vLLM V1's multi-process architecture — separate API server, engine core, and per-GPU worker processes — means the CPU is not a passive bystander to GPU-bound inference. Tokenization, request scheduling (the engine core runs a tight busy loop), and output detokenization/streaming all run on CPU, and under-provisioning it produces exactly the kind of tail-latency jitter that's hard to diagnose from GPU metrics alone, because the GPU looks idle while the CPU is the actual bottleneck.</p>
+        <p>vLLM's documented minimum physical-core formula for a deployment with \(A\) API server processes, data-parallel size \(DP\), and \(N\) GPU workers:</p>
+        \[ \text{minimum physical cores} = A + DP + N + \begin{cases}1 & DP > 1\\0 & DP = 1\end{cases} \]
+        <p>Worked example straight from the docs: <code>DP=4, TP=2</code> across 8 GPUs needs 4 API-server processes + 4 engine cores + 8 GPU workers + 1 DP coordinator = <strong>17 physical cores minimum</strong>. The explicit warning worth internalizing: <strong>hyperthreads are not physical cores</strong> — 1 vCPU on a hyperthreaded system is roughly 0.5 physical core for this budget, so a cloud instance advertising 17 vCPUs may only deliver ~8.5 physical cores against a 17-core requirement.</p>
+        <p>On multi-socket (NUMA) hosts, cross-socket memory access for KV-cache and activation buffers is measurably slower than same-socket access. vLLM exposes explicit binding controls: <code>--numa-bind</code> auto-detects GPU-to-NUMA-node mapping, <code>--numa-bind-nodes</code> lets you specify the mapping explicitly (e.g. <code>--numa-bind-nodes 0 0 1 1</code> pins the first two workers to NUMA node 0 and the next two to node 1), and <code>--numa-bind-cpus</code> pins specific CPU core ranges per worker. The Python API additionally requires <code>VLLM_WORKER_MULTIPROC_METHOD=spawn</code> for NUMA binding to take effect correctly.</p>
+
+        <h2 id="multimodal">8. Multimodal optimization: encoder parallelism and processor caching</h2>
+        <p>Vision-language serving adds two cost centers dense text serving doesn't have: running the vision encoder itself, and repeatedly preprocessing images/video that may recur across requests (the same product photo queried by many users, a document re-referenced across turns).</p>
+        <h3 id="mm-encoder">8.1 <code>mm_encoder_tp_mode</code></h3>
+        <p>Two modes for sharding the vision encoder's own compute: <strong>"weights"</strong> mode shards each layer's weights across the TP ranks (standard tensor parallelism, applied to the encoder). <strong>"data"</strong> mode instead uses the TP group to shard the <em>input data</em> — effectively turning the TP size into an encoder-level data-parallel factor. vLLM's own reported result: <code>mm_encoder_tp_mode="data"</code> at <code>tensor_parallel_size=8</code> improved multimodal throughput by roughly <strong>10%</strong>, at the cost of replicating encoder weights across ranks (more memory, less communication) rather than sharding them (less memory, more communication).</p>
+        <h3 id="mm-cache">8.2 Processor cache: <code>mm_processor_cache_gb</code> and <code>mm_processor_cache_type</code></h3>
+        <p>The multimodal processor cache avoids re-running the (CPU-side) preprocessing pipeline — resize, normalize, patchify — on an image the server has already processed once. Default size is <strong>4 GiB</strong>; set it to <strong>0</strong> to disable caching entirely. The <em>type</em> of cache changes where memory actually gets spent — this is the detail most deployments get wrong by assuming the config value is the whole story:</p>
+        <table class="papers">
+          <tr><th>Cache type</th><th>Where data lives</th><th>Total memory formula</th></tr>
+          <tr><td><strong>LRU</strong> (default, no IPC)</td><td>Keys + values on P0 (API process) only</td><td><code>mm_processor_cache_gb × data_parallel_size</code></td></tr>
+          <tr><td><strong>LRU with IPC</strong></td><td>Keys on P0; keys + values duplicated into each engine core</td><td><code>mm_processor_cache_gb × api_server_count</code></td></tr>
+          <tr><td><strong>Shared memory</strong> (<code>"shm"</code>, for TP&gt;1)</td><td>Keys on P0; values in shared memory reachable by all workers (no duplication)</td><td><code>mm_processor_cache_gb × api_server_count</code></td></tr>
+        </table>
+        <p>The practical implication: with multiple API server processes or a large data-parallel size, the <strong>default LRU-with-IPC scheme duplicates the actual cached image/video data into every engine-core process</strong> — at scale, that duplication can dominate host memory. <code>mm_processor_cache_type="shm"</code> exists specifically to eliminate that duplication for TP&gt;1 deployments by putting the actual cached values in one shared-memory region instead of copying them per-process.</p>
+        <div class="bm-warn"><strong>A related gotcha:</strong> scaling out with <code>--api-server-count</code> (running multiple API-server processes to relieve input-processing bottlenecks) <strong>disables multimodal IPC caching</strong> as a side effect — a tradeoff worth knowing before reaching for more API-server processes as a generic fix for a multimodal-heavy workload.</p></div>
+
+        <h2 id="priority">9. Two "tuning priority" orderings — and why they disagree</h2>
+        <p>The infographic that prompted this article lists a production tuning priority starting with <strong>prefix caching, then chunked prefill, then GPU memory utilization</strong>. vLLM's own official documentation lists a different order: <strong>verify CPU provisioning first, then pick an optimization level, then tune the batching token budget, then parallelism, then cache sizes</strong>. Both are defensible, and the disagreement is informative rather than a contradiction to resolve in favor of one:</p>
+        <table class="papers">
+          <tr><th>Ordering</th><th>Implicit assumption</th><th>Right for…</th></tr>
+          <tr><td>Prefix caching → chunked prefill → memory utilization → batching → sequences → parallelism → NUMA</td><td>Infrastructure (GPUs, CPU core count, node topology) is already fixed and adequate; you're purely tuning <em>request-handling behavior</em> for a known chat/agentic workload shape.</td><td>An already-provisioned production service being tuned for a specific traffic pattern.</td></tr>
+          <tr><td>CPU provisioning → optimization level → batching → parallelism → caches → fastokens → API servers → NUMA</td><td>You might discover the deployment is <em>fundamentally under-resourced</em> (not enough physical cores for the process topology) before any request-level tuning could possibly help.</td><td>Standing up a new deployment, or diagnosing a service that's underperforming for reasons no amount of flag-tuning will fix.</td></tr>
+        </table>
+        <p>The synthesis, not a pick-one: <strong>verify the infrastructure can support the topology you intend to run before optimizing request-serving behavior on top of it</strong> — the official docs' order is closer to correct as a global default, especially for a new deployment, but once CPU/GPU provisioning and parallelism are settled and stable, the infographic's ordering (prefix caching → chunked prefill → memory headroom) is exactly the right day-to-day tuning loop for a running service, because those are the levers that respond to <em>changes in traffic pattern</em> rather than to fixed infrastructure decisions made once at deployment time.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does prefix caching help a workload with long generations and short prompts?</summary><p>No — prefix caching only accelerates the prefill phase. A decode-bound workload (short prompt, long generation) gets essentially no benefit from it; look at chunked-prefill tuning and parallelism instead.</p></details>
+        <details class="faq"><summary>Why does vLLM V1 default to RECOMPUTE instead of SWAP for preemption?</summary><p>Lower overhead in V1's architecture specifically — swapping avoids redoing prefill compute but costs PCIe transfer bandwidth and CPU memory, and V1's design found recompute the better default tradeoff. It remains configurable per deployment.</p></details>
+        <details class="faq"><summary>Should I always use Expert Parallel for MoE models?</summary><p>EP is the standard choice specifically because plain TP applied to MoE experts wastes the sparsity — TP shards every expert's weights onto every GPU (as if all experts were always active), while EP puts only a subset of experts per GPU, matching how sparse routing actually works. Dense (non-MoE) models have no equivalent choice to make; TP is simply TP for them.</p></details>
+        <details class="faq"><summary>Is 4 GiB always the right size for mm_processor_cache_gb?</summary><p>It's the default, not a recommendation — the correct size depends on your working set of distinct images/video and your cache type's memory-duplication formula (§8.2). Compute the actual total memory footprint for your <code>api_server_count</code> / <code>data_parallel_size</code> before assuming the default is sized correctly for your deployment.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Every optimization here trades one resource for another</strong> — startup time for steady-state speed (-O levels), memory for compute (prefix caching, KV preemption headroom), latency for throughput (<code>max_num_batched_tokens</code>), and communication for memory (TP/EP vs. DP replication). There is no universally-correct setting; there is only the correct setting for your traffic shape and hardware.</li>
+          <li><strong>Prefix caching and chunked prefill both act on prefill only</strong> — a decode-bound workload needs parallelism and memory tuning, not these two levers.</li>
+          <li><strong>MoE serving needs a mixed parallelism strategy</strong>, not a single choice — DP for the (small, replicable) attention weights, EP for the (large, sparse) expert weights is the documented production pattern, not an edge case.</li>
+          <li><strong>CPU provisioning is a real, formula-computable constraint</strong> in vLLM V1's multi-process architecture, and hyperthreads don't count as full cores against it — check this before assuming a GPU-side change will fix a latency problem.</li>
+          <li><strong>The multimodal processor cache's memory cost depends on cache <em>type</em>, not just the size you set</strong> — the default IPC scheme duplicates cached data per engine-core process, which <code>mm_processor_cache_type="shm"</code> exists to fix at TP&gt;1.</li>
+          <li><strong>Two reasonable tuning-priority orderings can both be right</strong> for different situations — provisioning-first for new/underperforming deployments, request-behavior-first for an already-stable service responding to traffic changes.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://docs.vllm.ai/en/stable/configuration/optimization/" target="_blank" rel="noopener">vLLM — Optimization and Tuning (official docs)</a> <span>— the primary source this article is grounded in throughout.</span></li>
+          <li><a href="https://docs.vllm.ai/en/stable/features/automatic_prefix_caching/" target="_blank" rel="noopener">vLLM — Automatic Prefix Caching</a> <span>— mechanism and use-case detail for §3.</span></li>
+          <li><a href="https://docs.vllm.ai/en/stable/serving/parallelism_scaling/" target="_blank" rel="noopener">vLLM — Parallelism and Scaling</a> <span>— TP/PP/DP reference for §6.</span></li>
+          <li><a href="https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment/" target="_blank" rel="noopener">vLLM — Expert Parallel Deployment</a> <span>— the EP all-to-all mechanism and the DeepSeek-V3 deployment shape cited in §6.</span></li>
+          <li><a href="https://docs.vllm.ai/en/stable/getting_started/installation/cpu/" target="_blank" rel="noopener">vLLM — CPU installation &amp; NUMA binding</a> <span>— source for the core-provisioning formula and NUMA flags in §7.</span></li>
+          <li><a href="https://docs.vllm.ai/en/latest/api/vllm/config/multimodal/" target="_blank" rel="noopener">vLLM — Multimodal configuration reference</a> <span>— <code>mm_encoder_tp_mode</code> and processor-cache flags for §8.</span></li>
+          <li><a href="pagedattention.html">cvam.sight — PagedAttention deep dive</a> <span>— the KV-cache memory manager every optimization in this article builds on top of.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../archive.html">← browse the archive</a>
+        <a href="../index.html">home →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

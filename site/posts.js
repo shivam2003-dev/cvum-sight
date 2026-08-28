@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "vllm-optimization-and-tuning",
+    title: "vLLM optimization & tuning — a production deep dive.",
+    date: "Aug 28, 2026",
+    cat: "devops",
+    tags: ["devops", "vllm", "llm-inference", "gpu", "performance"],
+    time: 24,
+    words: 4400,
+    excerpt: "A source-grounded guide to vLLM V1 production tuning: optimization levels (-O0 to -O3), automatic prefix caching, chunked prefill's ITL/TTFT tradeoff, KV-cache preemption, TP/PP/DP/EP parallelism (with the real DeepSeek-V3 deployment shape), CPU/NUMA core provisioning math, multimodal encoder and processor caching, and why the infographic's 'tuning priority' list disagrees with vLLM's own official one."
+  },
+  {
     slug: "glm-5-3-flash-ox-alpha-architecture",
     title: "GLM-5.3-Flash (\"Ox Alpha\") — the architecture, explained for graduate students.",
     date: "Aug 27, 2026",

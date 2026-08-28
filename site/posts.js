@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "26-llm-architecture-concepts-explained",
+    title: "26 LLM architecture concepts, explained in plain language.",
+    date: "Aug 28, 2026",
+    cat: "ml",
+    tags: ["ml", "llm-architecture", "attention", "moe", "glossary"],
+    time: 32,
+    words: 9100,
+    excerpt: "Every concept from the modern LLM architecture gallery in one field guide: RMSNorm, QK-Norm, PolyNorm, MHA, GQA, MLA, SWA, NoPE, RoPE, Gated Attention, Hybrid Attention, DeepSeek Sparse Attention, Attention Budgeting, Attention Residuals, CCA, CSA/HCA, KV Sharing, MoE, LatentMoE, IndexShare, MTP, ShortConv, Looped Depth Sharing, mHC, PLE, and SiLU — each explained in plain language with two links to go deeper."
+  },
+  {
     slug: "vllm-optimization-and-tuning",
     title: "vLLM optimization & tuning — a production deep dive.",
     date: "Aug 28, 2026",

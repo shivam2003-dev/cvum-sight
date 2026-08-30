@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "cutlass-crash-course-for-beginners",
+    title: "CUTLASS crash course for beginners.",
+    date: "Aug 30, 2026",
+    cat: "ml",
+    tags: ["ml", "cuda", "gpu", "cutlass", "gemm"],
+    time: 27,
+    words: 5100,
+    excerpt: "A from-zero walkthrough of NVIDIA CUTLASS: why hand-written GEMM is hard to make fast on a GPU, the device/kernel/threadblock/warp/thread tiling hierarchy, reading your first 2.x template instantiation, the CUTLASS 3.x rewrite (CuTe layouts, collective builders, thread-block clusters), software pipelining, and how to actually build and run the profiler."
+  },
+  {
     slug: "26-llm-architecture-concepts-explained",
     title: "26 LLM architecture concepts, explained in plain language.",
     date: "Aug 28, 2026",

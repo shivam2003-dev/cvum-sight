@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUTLASS Crash Course for Beginners — cvam.sight</title>
+<meta name="description" content="A from-scratch, beginner-friendly walkthrough of NVIDIA CUTLASS: why hand-written GEMM is hard to make fast on a GPU, the device/kernel/threadblock/warp/thread tiling hierarchy, CUTLASS 2.x template instantiation, the CUTLASS 3.x collective-builder redesign, CuTe layouts and layout algebra, software pipelining, building and running the profiler, and where to go next.">
+<link rel="stylesheet" href="../style.css?v=88">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:40px} h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.92rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 9px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{display:block;padding:2px 0 6px}
+  pre.code{margin:16px 0 22px;overflow-x:auto;background:color-mix(in srgb,var(--ink) 92%,var(--paper) 8%);color:#e8e2cf;border-radius:10px;padding:16px 18px;font-family:var(--font-mono,monospace);font-size:.82rem;line-height:1.6}
+  pre.code .c{color:#9a9382}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .bar-a{fill:var(--accent,#c96442)}
+  svg .bar-b{fill:color-mix(in srgb,var(--ink) 22%,transparent)}
+  svg .bar-c{fill:#527aa8}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-box.sel{fill:var(--yellow-soft,#f7e9c0);stroke:var(--ink)}
+  svg .d-box.dim{fill:color-mix(in srgb,var(--paper) 80%,var(--ink) 6%);stroke:color-mix(in srgb,var(--ink) 14%,transparent);opacity:.85}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+  svg .d-grid{stroke:color-mix(in srgb,var(--ink) 10%,transparent);stroke-width:1}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Aug 30, 2026 · ml · 27 min read · 5100 words <span class="difficulty beginner">beginner</span></p>
+        <h1>CUTLASS crash course for beginners.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">cuda</span>
+          <span class="tag">gpu</span>
+          <span class="tag">cutlass</span>
+          <span class="tag">gemm</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">CUTLASS is NVIDIA's open-source C++ (and now Python) template library for writing GPU matrix-multiply kernels that run close to the speed of hand-tuned libraries like cuBLAS. This is a from-zero walkthrough for someone who has written CUDA before but has never opened CUTLASS: why matrix multiplication is deceptively hard to make fast on a GPU, the tiling hierarchy CUTLASS is built around, how to instantiate your first GEMM kernel, what changed in the CUTLASS 3.x rewrite (CuTe, collective builders), and how to actually build and run something from the repo.</p>
+
+        <div class="bm-note"><strong>Who this is for.</strong> You should know roughly what a GPU thread, block, and grid are, and you should have seen a matrix multiply before. You do <em>not</em> need to have written a CUDA kernel from scratch, and you don't need any GPU-architecture-team background — every concept below is built up from first principles.</div>
+
+        <h2 id="what-is-cutlass">1. What CUTLASS actually is</h2>
+        <p>Start with the official one-line description, then unpack every word in it: CUTLASS is <em>"a collection of CUDA C++ template abstractions and Python domain-specific languages designed to enable high-performance matrix-matrix multiplication (GEMM) and related computations."</em></p>
+        <ul>
+          <li><strong>"Collection of C++ template abstractions"</strong> — CUTLASS isn't a black-box function you call. It's a toolbox of C++ template classes, each representing one layer of how a matrix multiply gets decomposed and executed on a GPU. You compose these templates together, and the compiler generates a specialized kernel for your exact combination of data types, matrix shapes, and target GPU.</li>
+          <li><strong>"GEMM"</strong> — General Matrix Multiply, the operation \( C = \alpha \cdot A \times B + \beta \cdot C \). It sounds narrow, but GEMM is the single most important compute pattern in modern deep learning — every linear layer, every attention projection, and (via a reformulation covered later) every convolution boils down to it.</li>
+          <li><strong>"High-performance"</strong> — the entire reason CUTLASS exists. A GEMM kernel you write yourself in an afternoon will typically run at 10-30% of a GPU's peak throughput. cuBLAS (NVIDIA's closed-source, hand-tuned GEMM library) routinely hits 80-95%+. CUTLASS's goal is to get you into that same range, but with source code you can read, modify, and specialize — which cuBLAS, being a compiled black box, never lets you do.</li>
+        </ul>
+        <p>Put differently: CUTLASS exists because "write a fast GEMM kernel" is genuinely one of the hardest one-function programming problems in all of systems software, and NVIDIA decided to open-source their own internal solution to it rather than let every ML framework and inference engine reinvent it badly.</p>
+
+        <h2 id="why-hard">2. Why is matrix multiplication hard to make fast on a GPU?</h2>
+        <p>This is the question that makes the rest of CUTLASS's design make sense. If you've never asked it, the natural assumption is "just write three nested loops" — and that assumption is exactly what makes GEMM a trap for beginners.</p>
+        <pre class="code"><span class="c">// The "obviously correct" GEMM. Also catastrophically slow on a GPU.</span>
+for (int i = 0; i < M; i++)
+  for (int j = 0; j < N; j++)
+    for (int k = 0; k < K; k++)
+      C[i][j] += A[i][k] * B[k][j];</pre>
+        <p>This is correct. It is also, if run naively with each thread reading directly from global memory (GPU DRAM) on every access, roughly an order of magnitude or more slower than a well-tuned kernel. The reason is a mismatch between how much <em>arithmetic</em> GEMM does versus how much <em>data movement</em> it needs — a relationship engineers call <strong>arithmetic intensity</strong>.</p>
+        <p>For an \(M \times K\) matrix times a \(K \times N\) matrix, the naive loop performs \(2MNK\) floating-point operations (one multiply and one add per inner-loop iteration) but re-reads the same elements of \(A\) and \(B\) from memory over and over — element \(A[i][k]\) gets re-read for every one of the \(N\) values of \(j\); element \(B[k][j]\) gets re-read for every one of the \(M\) values of \(i\). GPU global memory bandwidth is enormous compared to a CPU's, but it is still <em>orders of magnitude slower</em> than the GPU's arithmetic throughput — modern GPUs can do far more floating-point operations per second than they can move bytes per second. A kernel that re-fetches data instead of reusing it will spend nearly all its time waiting on memory, not computing — this is what "memory-bound" means, and it's the default failure mode for a naive GEMM.</p>
+        <div class="bm-warn"><strong>The core problem in one sentence:</strong> a fast GEMM kernel isn't really about doing the multiply-adds efficiently — GPUs are already extremely good at that. It's about arranging memory accesses so that every byte fetched from slow global memory gets reused as many times as possible before being evicted, keeping the arithmetic units fed instead of idle.</div>
+        <p>The standard fix — and the organizing principle behind CUTLASS's entire design — is <strong>tiling</strong>: instead of one thread reading directly from global memory for every single multiply-add, cooperatively load a <em>block</em> (a "tile") of \(A\) and a tile of \(B\) into fast on-chip shared memory once, and then have many threads reuse that same on-chip copy for many multiply-adds before moving to the next tile. This single idea — load once, reuse many times, at every level of the hardware hierarchy — is what the rest of this article is really about.</p>
+
+        <h2 id="gpu-memory">3. A 60-second refresher on the GPU memory hierarchy</h2>
+        <p>Tiling only makes sense once you can picture the hardware it's designed around. A GPU has (at least) three tiers of memory, each roughly an order of magnitude faster — and smaller — than the one below it.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 640 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="320" y="24" class="d-title" text-anchor="middle">GPU memory hierarchy: smaller and faster as you go up</text>
+            <polygon points="320,44 420,44 460,96 180,96" class="d-box hot"/>
+            <text x="320" y="65" class="d-lbl" text-anchor="middle">registers</text>
+            <text x="320" y="82" class="d-sub" text-anchor="middle">per-thread · fastest · tiny (KBs)</text>
+
+            <polygon points="180,96 460,96 500,150 140,150" class="d-box sel"/>
+            <text x="320" y="118" class="d-lbl" text-anchor="middle">shared memory / L1</text>
+            <text x="320" y="135" class="d-sub" text-anchor="middle">per-threadblock · fast · small (~100s of KB)</text>
+
+            <polygon points="140,150 500,150 560,206 80,206" class="d-box cool"/>
+            <text x="320" y="172" class="d-lbl" text-anchor="middle">L2 cache</text>
+            <text x="320" y="189" class="d-sub" text-anchor="middle">shared across whole GPU · a few MB</text>
+
+            <polygon points="80,206 560,206 600,246 40,246" class="d-box dim"/>
+            <text x="320" y="228" class="d-lbl" text-anchor="middle">global memory (HBM/DRAM)</text>
+            <text x="320" y="244" class="d-sub" text-anchor="middle">slowest per-byte · huge (tens of GB) · where A, B, C actually live</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — Every tier up this pyramid is faster and smaller. CUTLASS's whole job is moving data up this pyramid as few times as possible per byte of useful arithmetic.</p>
+        </div>
+        <p>CUTLASS's tiling hierarchy is essentially a direct mirror of this memory hierarchy — a tile of work sized to fit in shared memory gets staged there once and reused by many threads; a smaller tile sized to fit in registers gets staged there and reused by many arithmetic instructions. Every level of tiling described in the next section exists to match a level of this pyramid.</p>
+
+        <h2 id="hierarchy-2x">4. The CUTLASS 2.x hierarchy: device, kernel, threadblock, warp, thread</h2>
+        <p>CUTLASS structures a GEMM as five nested levels, each owned by a different unit of GPU execution, each responsible for tiling the problem down to what the level below can handle. This is the "classic" CUTLASS design (versions 2.x, targeting Volta through Ampere/Turing) — the newer 3.x model in §6 restructures the lower levels, but this hierarchy is still the right mental model to learn first because every later concept is defined relative to it.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="24" class="d-title" text-anchor="middle">CUTLASS 2.x tiling hierarchy</text>
+            <rect x="30" y="42" width="660" height="46" rx="8" class="d-box hot"/>
+            <text x="360" y="70" class="d-lbl" text-anchor="middle">Device — whole GPU, one full M×N×K GEMM problem</text>
+            <path d="M360 88 L360 100" class="d-dash"/>
+
+            <rect x="30" y="102" width="660" height="46" rx="8" class="d-box cool"/>
+            <text x="360" y="130" class="d-lbl" text-anchor="middle">Kernel — launches a grid; each threadblock gets one output tile</text>
+            <path d="M360 148 L360 160" class="d-dash"/>
+
+            <rect x="30" y="162" width="660" height="46" rx="8" class="d-box sel"/>
+            <text x="360" y="190" class="d-lbl" text-anchor="middle">Threadblock — stages a tile of A, B into shared memory, loops over K</text>
+            <path d="M360 208 L360 220" class="d-dash"/>
+
+            <rect x="30" y="222" width="660" height="46" rx="8" class="d-box"/>
+            <text x="360" y="250" class="d-lbl" text-anchor="middle">Warp — 32 threads compute a sub-tile using Tensor Core MMA instructions</text>
+            <path d="M360 268 L360 280" class="d-dash"/>
+
+            <rect x="30" y="282" width="660" height="30" rx="8" class="d-box dim"/>
+            <text x="360" y="302" class="d-lbl" text-anchor="middle">Thread — holds a small fragment of the accumulator in registers</text>
+          </svg>
+          <p class="diagram-label">Fig. 2 — Each level tiles the problem smaller and stages data one tier closer to the compute units, matching the memory pyramid in Fig. 1.</p>
+        </div>
+        <table class="papers">
+          <tr><th>Level</th><th>CUTLASS namespace</th><th>What it does</th></tr>
+          <tr><td>Device</td><td><code>cutlass::gemm::device::Gemm</code></td><td>The host-callable entry point. Takes matrix pointers, shapes, and launches the CUDA kernel grid.</td></tr>
+          <tr><td>Kernel</td><td><code>cutlass::gemm::kernel::*</code></td><td>Runs once per threadblock. Computes which output tile this threadblock owns and drives the main loop over the K dimension.</td></tr>
+          <tr><td>Threadblock</td><td><code>cutlass::gemm::threadblock::Mma</code></td><td>Cooperatively loads a tile of A and a tile of B from global memory into shared memory, once per K-loop iteration, for the whole threadblock to reuse.</td></tr>
+          <tr><td>Warp</td><td><code>cutlass::gemm::warp::Mma</code></td><td>A group of 32 threads reads a sub-tile out of shared memory into registers and issues Tensor Core (or CUDA core) matrix-multiply-accumulate instructions.</td></tr>
+          <tr><td>Thread / Instruction</td><td><code>cutlass::arch::Mma</code></td><td>The literal hardware instruction — a single Tensor Core MMA op, or a scalar fused-multiply-add on older architectures without Tensor Cores.</td></tr>
+        </table>
+        <p>The tile size chosen at each level — usually written as <code>ThreadblockShape::{kM, kN, kK}</code> and <code>WarpShape::{kM, kN, kK}</code> in code — is one of the biggest levers for performance, and it's a genuine tradeoff, not a free parameter to just maximize: a larger threadblock tile means fewer, larger reads from global memory (good — less bandwidth pressure), but it also means each thread needs to hold more of the accumulator in registers. Registers are the scarcest resource in the whole hierarchy (a few hundred per thread), and accumulator elements alone can eat up half a thread's entire register budget at large tile sizes — leaving too few registers active at once hurts the GPU's ability to hide memory latency by switching between threads. Picking tile sizes is exactly the kind of problem CUTLASS's template system is built to make explorable: change one template parameter, recompile, and get a completely different — but still correct — kernel.</p>
+
+        <h3 id="pipelining">4.1 Software pipelining: hiding latency, not just avoiding it</h3>
+        <p>Tiling alone gets data close to the compute units, but there's still a real trip to global memory required to bring in the <em>next</em> tile of A and B for every iteration of the K-loop. CUTLASS overlaps that fetch with the current tile's computation using <strong>double buffering</strong>: at the threadblock level, two shared-memory tiles exist side by side — while warps compute against tile 0, the hardware's asynchronous copy engines are already fetching tile 1's data from global memory in the background. The same double-buffering trick is applied one level down, with register fragments, at the warp level. The effect is that the (unavoidable) memory latency for tile N+1 is hidden entirely behind the (already-happening) compute for tile N, rather than being paid as dead time between iterations.</p>
+
+        <h2 id="first-gemm">5. Your first GEMM: reading a CUTLASS 2.x template instantiation</h2>
+        <p>Everything above was theory. Here's what it looks like as actual code — the classic CUTLASS 2.x pattern for declaring a half-precision GEMM that runs on Tensor Cores on an SM75 (Turing) GPU:</p>
+        <pre class="code"><span class="c">#include &lt;cutlass/gemm/device/gemm.h&gt;
+#include &lt;cutlass/util/host_tensor.h&gt;</span>
+
+using Gemm = cutlass::gemm::device::Gemm&lt;
+  cutlass::half_t,                    <span class="c">// ElementA — fp16 input</span>
+  cutlass::layout::ColumnMajor,       <span class="c">// LayoutA</span>
+  cutlass::half_t,                    <span class="c">// ElementB — fp16 input</span>
+  cutlass::layout::ColumnMajor,       <span class="c">// LayoutB</span>
+  cutlass::half_t,                    <span class="c">// ElementOutput — fp16 output</span>
+  cutlass::layout::ColumnMajor,       <span class="c">// LayoutOutput</span>
+  float,                              <span class="c">// ElementAccumulator — fp32 accumulation</span>
+  cutlass::arch::OpClassTensorOp,     <span class="c">// use Tensor Cores</span>
+  cutlass::arch::Sm75                 <span class="c">// target: Turing</span>
+&gt;;
+
+Gemm gemm_op;
+cutlass::Status status = gemm_op({
+  {M, N, K},
+  A.device_ref(), B.device_ref(),
+  C.device_ref(), C.device_ref(),
+  {alpha, beta}
+});</pre>
+        <p>Every one of those template parameters is a decision CUTLASS is handing you explicitly, rather than hiding inside a compiled library like cuBLAS would:</p>
+        <ul>
+          <li><strong>Element types can differ per matrix.</strong> Notice <code>ElementA</code>/<code>ElementB</code> are fp16 but <code>ElementAccumulator</code> is fp32 — this is <strong>mixed-precision accumulation</strong>, and it's not an edge case, it's the default recipe for every serious low-precision kernel: multiply in a narrow, fast format, but accumulate the running sum in a wider format so you don't lose precision over thousands of additions. The same pattern extends to fp8, and to the block-scaled MXFP4/MXFP6/MXFP8 formats CUTLASS also supports for the newest hardware.</li>
+          <li><strong>Layout is explicit, per matrix, and matters.</strong> <code>ColumnMajor</code> vs <code>RowMajor</code> for A and B individually change which memory-access pattern is contiguous — get this wrong and you silently get correct-but-slow code, since a mismatched layout defeats the coalesced-access patterns the kernel was tuned around.</li>
+          <li><strong><code>OpClassTensorOp</code> is an architecture decision, not a performance hint.</strong> It tells CUTLASS to target the GPU's dedicated matrix-multiply hardware (Tensor Cores) instead of doing scalar fused-multiply-adds on ordinary CUDA cores — Tensor Cores are what actually gets you into cuBLAS's performance range on any GPU built since Volta.</li>
+          <li><strong><code>Sm75</code> pins the target architecture</strong> at compile time — CUTLASS is a template library, so the actual specialized kernel is a different, separately-compiled binary for every architecture you target; there's no runtime dispatch magic hiding underneath.</li>
+        </ul>
+        <p>This is the essential trade CUTLASS makes versus calling cuBLAS: you write (or generate) more code, and you compile once per configuration, but every one of these decisions is visible and changeable — which is exactly what you need if your matrix shapes, data types, or fusion requirements don't match one of cuBLAS's pre-baked kernel variants.</p>
+
+        <h2 id="cutlass3x">6. CUTLASS 3.x: CuTe, collectives, and why the redesign happened</h2>
+        <p>CUTLASS 3.0 (targeting Hopper and newer) is a substantial rewrite, not an incremental update — and understanding <em>why</em> it changed is more useful than memorizing the new API by itself. Two things drove it:</p>
+        <ol>
+          <li><strong>New hardware features had no clean place in the 2.x hierarchy.</strong> Hopper introduced thread-block <em>clusters</em> (groups of threadblocks that can cooperate and communicate directly, not just independently), the Tensor Memory Accelerator (TMA, a dedicated async copy engine for bulk tensor transfers), and warp-group-level MMA instructions. None of these map cleanly onto "threadblock → warp → thread" — they need a level <em>between</em> kernel and threadblock, and a fundamentally more flexible way to describe data movement than the fixed layout templates 2.x used.</li>
+          <li><strong>The 2.x layout system didn't generalize.</strong> 2.x described tensor layouts (row-major, column-major, and a handful of special swizzled formats for shared memory) as a fixed enumeration of cases. Every new hardware feature or data format tended to need a new hand-written layout class. CuTe replaces that with an actual <em>algebra</em> — a small set of composable operations that can express essentially any layout, including the exotic swizzled and hierarchical layouts modern Tensor Core and TMA hardware need.</li>
+        </ol>
+
+        <h3 id="cute">6.1 CuTe: layouts as shape + stride, composed algebraically</h3>
+        <p>CuTe's central object is a <strong>Layout</strong>, and a Layout is just two pieces of information glued together: a <strong>Shape</strong> (how many valid coordinates exist in each dimension — the tensor's logical size) and a <strong>Stride</strong> (how many elements to jump in linear memory to move by one step in each dimension). A simple example: a 4×8 row-major matrix has shape <code>(4,8)</code> and stride <code>(8,1)</code> — moving one step in the row direction jumps 8 elements in memory; moving one step in the column direction jumps 1 element. That's it — that's a Layout.</p>
+        <p>What makes CuTe powerful isn't that basic definition, it's that shapes and strides can be arbitrarily <em>nested</em> (a shape can itself contain a tuple of shapes), and CuTe defines an algebra of operations — composition, complement, logical division, logical product — that let you combine Layouts to express tiling, partitioning across threads, and memory swizzling, all through the same small vocabulary instead of a new hand-written class per case. In practice this is what lets a single CuTe-based kernel description cleanly target wildly different physical memory patterns (a swizzled shared-memory tile, a TMA-friendly global-memory descriptor, a per-thread register fragment) without those being conceptually different kinds of objects — they're all just Layouts, composed differently.</p>
+
+        <h3 id="collective">6.2 The 3.x hierarchy: Device → Kernel → Collective → Tiled MMA/Copy → Atom</h3>
+        <p>The 3.x hierarchy keeps Device and Kernel at the top (same idea as before — host entry point, then grid-level scheduling) but replaces "threadblock → warp → thread" with a new middle layer built around the word <strong>Collective</strong> — defined in the docs as "the largest collection of threads onto which mma atoms and copy atoms are tiled." A Collective can span a full thread-block cluster, not just one threadblock, which is precisely the hardware capability 2.x had no way to describe.</p>
+        <table class="papers">
+          <tr><th>3.x concept</th><th>Lives in</th><th>Role</th></tr>
+          <tr><td><code>CollectiveMainloop</code></td><td><code>cutlass::gemm::collective::CollectiveMma</code></td><td>The main K-dimension loop — the direct successor to 2.x's threadblock-level Mma, but cluster-aware and TMA-capable.</td></tr>
+          <tr><td><code>CollectiveEpilogue</code></td><td><code>cutlass::epilogue::collective::</code></td><td>Post-matmul work: applying <code>alpha</code>/<code>beta</code> scaling, writing the result, optionally fusing in an activation function.</td></tr>
+          <tr><td><code>GemmUniversal</code> (Kernel layer)</td><td><code>cutlass::gemm::kernel::</code></td><td>Orchestrates the collectives across the grid. Deliberately "stateless" and "universal" — it can dispatch to either 3.x or 2.x-style collectives via template introspection.</td></tr>
+          <tr><td><code>GemmUniversalAdapter</code> (Device layer)</td><td><code>cutlass::gemm::device::</code></td><td>Host-side interface — marshals user-facing <code>Arguments</code> into kernel <code>Params</code> and handles cluster-aware kernel launches.</td></tr>
+          <tr><td><code>CollectiveBuilder</code></td><td><code>cutlass::gemm::collective::</code></td><td>A convenience layer that takes familiar 2.x-style parameters (element types, tile shape) and auto-generates an optimized <code>CollectiveMma</code>, so you don't have to hand-assemble every low-level template argument yourself.</td></tr>
+        </table>
+        <pre class="code"><span class="c">// CUTLASS 3.x: building a collective mainloop via CollectiveBuilder</span>
+using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder&lt;
+  cutlass::arch::Sm90,
+  cutlass::arch::OpClassTensorOp,
+  ElementA, LayoutA, AlignmentA,
+  ElementB, LayoutB, AlignmentB,
+  ElementAccumulator,
+  TileShape, ClusterShape,
+  cutlass::gemm::collective::StageCountAuto,
+  cutlass::gemm::collective::KernelScheduleAuto
+&gt;::CollectiveOp;</pre>
+        <p>Notice the shift in spirit versus the 2.x example in §5: you're no longer hand-picking a fixed Mma implementation — you're describing <em>requirements</em> (architecture, tile shape, cluster shape) and letting <code>StageCountAuto</code>/<code>KernelScheduleAuto</code> pick good defaults, with the option to override any of them explicitly once you know what you're tuning. This is CUTLASS's <strong>dispatch-policy pattern</strong>: a given mainloop implementation declares which kernel schedule it requires (for example, one named <code>MainloopSm90TmaGmmaWarpSpecialized</code> pairs with a schedule called <code>KernelTmaWarpSpecializedCooperative</code>), which lets many different kernel schedules compose with the same underlying mainloop implementation instead of every combination needing its own hand-written specialization — the same "avoid combinatorial duplication" motivation that drove CuTe's layout algebra shows up again here at the scheduling level.</p>
+
+        <h2 id="beyond-gemm">7. Beyond GEMM: convolution as implicit GEMM</h2>
+        <p>CUTLASS's scope isn't limited to literal matrix multiplication — it also supports convolution, via a reformulation called <strong>implicit GEMM</strong>. The insight: a convolution's sliding-window dot products can be re-expressed as a single (larger) matrix multiply, by unfolding overlapping input patches into rows of an implicit matrix and treating the convolution filters as the other operand — without ever materializing that unfolded matrix in memory (which is what makes it "implicit," as opposed to the classic and much more memory-hungry "im2col" approach). This lets convolution reuse essentially all of the same tiling, pipelining, and Tensor Core machinery already built for GEMM, rather than needing an entirely separate optimized code path.</p>
+
+        <h2 id="building">8. Building CUTLASS and running your first kernel</h2>
+        <p>CUTLASS is header-heavy template code plus a CMake build for its tests, examples, and profiler tool. Prerequisites: CUDA Toolkit 11.4+ (12.0+ recommended), CMake 3.18+, and a C++17-capable compiler (g++ 7.5.0 minimum).</p>
+        <pre class="code"><span class="c"># point CMake at nvcc, then configure for your target GPU architecture</span>
+export CUDACXX=${CUDA_INSTALL_PATH}/bin/nvcc
+mkdir build && cd build
+cmake .. -DCUTLASS_NVCC_ARCHS=90a    <span class="c"># Hopper</span>
+<span class="c"># cmake .. -DCUTLASS_NVCC_ARCHS=100a   # Blackwell</span>
+<span class="c"># cmake .. -DCUTLASS_NVCC_ARCHS=80     # Ampere</span></pre>
+        <p>A full build (all tests, all example kernels, every data-type combination) takes a genuinely long time — CUTLASS's template instantiation surface is huge. For a first pass, restricting the build is worth doing:</p>
+        <pre class="code"><span class="c"># faster: build just the profiler, skip the full test suite</span>
+cmake .. -DCUTLASS_NVCC_ARCHS=90a -DCUTLASS_ENABLE_TESTS=OFF \
+  -DCUTLASS_UNITY_BUILD_ENABLED=ON
+
+<span class="c"># or filter by operation / kernel name if you know what you want</span>
+cmake .. -DCUTLASS_NVCC_ARCHS=90a -DCUTLASS_LIBRARY_OPERATIONS=conv2d
+cmake .. -DCUTLASS_NVCC_ARCHS=90a -DCUTLASS_LIBRARY_KERNELS=cutlass3x*</pre>
+        <p>Once built, the profiler tool is the fastest way to see CUTLASS actually run and benchmark itself against a specific problem shape — no need to write any code yet:</p>
+        <pre class="code">make cutlass_profiler -j12
+./tools/profiler/cutlass_profiler --kernels=sgemm --m=4352 --n=4096 --k=4096</pre>
+        <p>This prints the matched kernel, timing, achieved memory bandwidth, and GFLOP/s — a genuinely useful first exercise is running the same M/N/K shape across a few different kernel names and comparing throughput, to get a feel for how much tile-size and data-type choice actually move the needle in practice, before writing a single line of your own template code.</p>
+        <div class="bm-fix"><strong>Using CUTLASS as a header-only library in your own project</strong> is simpler than the full build: just add CUTLASS's <code>/include</code> directory to your compiler's include path and compile with <code>-std=c++17</code> or newer. You don't need to build the tests, examples, or profiler at all if you're only including headers and instantiating templates directly, the way the GEMM example in §5 does.</div>
+
+        <h2 id="learning-path">9. A suggested learning path from here</h2>
+        <ol>
+          <li><strong>Run the profiler</strong> (§8) against a few problem shapes and kernel names — build intuition for what "fast" looks like before reading more theory.</li>
+          <li><strong>Read (don't skim) the <code>examples/</code> directory</strong> in the CUTLASS repo, starting from the lowest-numbered basic GEMM examples before jumping to fused-epilogue or grouped-GEMM examples.</li>
+          <li><strong>Learn CuTe's Layout and layout-algebra docs directly</strong> — §6.1 above is deliberately a simplified entry point; the real payoff of CuTe only shows up once you've worked through composing a few layouts by hand.</li>
+          <li><strong>Instantiate your own 2.x GEMM first</strong>, changing one template parameter at a time (data type, then layout, then tile shape) and re-running the profiler to see the effect — before attempting a 3.x collective-builder kernel, since 3.x assumes you already have the 2.x mental model as a baseline.</li>
+          <li><strong>Only then move to 3.x collectives and CuTe kernels</strong> if you're targeting Hopper/Blackwell specifically — the extra conceptual machinery (clusters, TMA, dispatch policies) pays for itself only once you actually need those hardware features.</li>
+        </ol>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Do I need CUTLASS if I can just call cuBLAS?</summary><p>For a standard, well-shaped GEMM on a supported data type, cuBLAS is usually the right first choice — it's a mature, hand-tuned closed-source library and will often match or beat a first attempt at a CUTLASS kernel. CUTLASS earns its complexity when you need something cuBLAS doesn't offer as a pre-baked kernel: a fused epilogue (activation function, bias add, or another matmul fused directly into the same kernel), an unusual data type or mixed-precision combination, or when you're building an inference engine or kernel-generation tool that needs source-level control over the kernel rather than a fixed library call.</p></details>
+        <details class="faq"><summary>Is CUTLASS 3.x a strict replacement for 2.x?</summary><p>Not in the sense of deprecating it outright — 2.x is still the right model for Volta/Turing/Ampere-class GPUs that don't have thread-block clusters or TMA, and the <code>GemmUniversal</code> kernel layer in 3.x is explicitly designed to still dispatch to 2.x-style collectives via template introspection. But for new development on Hopper or newer, 3.x's collective-builder pattern is the recommended entry point.</p></details>
+        <details class="faq"><summary>What's the practical difference between CUTLASS's Python DSL and the C++ templates?</summary><p>The C++ templates are compile-time specialized — every configuration is its own separately-compiled kernel, which gives maximum performance but a slow edit-compile-run loop. The Python DSL layer uses JIT compilation for a much faster iteration cycle while still generating kernels reported to run within about 2% of hand-written C++ on Blackwell — a meaningfully smaller gap than Python bindings around compute kernels have historically carried.</p></details>
+        <details class="faq"><summary>Why does accumulation happen in a wider type than the inputs?</summary><p>Summing thousands of low-precision products (as any GEMM's K-dimension reduction does) accumulates rounding error faster in a narrow format like fp16 or fp8 than in fp32. Multiplying in the narrow, fast format but accumulating the running sum in fp32 keeps the speed benefit of low-precision inputs while avoiding the accuracy collapse that pure low-precision accumulation would cause over a long reduction — this is why <code>ElementAccumulator</code> is a separate template parameter from <code>ElementA</code>/<code>ElementB</code> in every CUTLASS GEMM declaration.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>The entire reason CUTLASS is structured the way it is comes from one fact</strong>: GPUs can do far more arithmetic per second than they can move bytes per second, so a fast GEMM kernel is fundamentally a data-reuse problem, not a raw-compute problem.</li>
+          <li><strong>Tiling is the single unifying idea</strong> — device → kernel → threadblock → warp → thread (2.x) or device → kernel → collective → tiled-MMA → atom (3.x) is the same strategy applied recursively: stage a smaller chunk of data one memory tier closer to the compute units, and reuse it as many times as possible before moving on.</li>
+          <li><strong>Software pipelining (double buffering) is what turns "tiling reduces memory traffic" into "the kernel never actually waits on memory"</strong> — by prefetching the next tile while computing on the current one.</li>
+          <li><strong>CUTLASS 3.x's redesign wasn't a rewrite for its own sake</strong> — thread-block clusters and TMA on Hopper genuinely had no clean place in the old threadblock/warp/thread hierarchy, and CuTe's layout algebra genuinely replaces an unbounded set of hand-written layout special cases with one small composable vocabulary.</li>
+          <li><strong>Mixed-precision accumulation (narrow inputs, wide accumulator) is the default recipe, not a special case</strong> — expect to see it in essentially every low-precision GEMM template you read, in CUTLASS or elsewhere.</li>
+          <li><strong>Start with the profiler and 2.x templates before touching CuTe and collectives</strong> — the 3.x machinery is genuinely more powerful, but it's built as a superset of concepts the 2.x hierarchy teaches first.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://docs.nvidia.com/cutlass/latest/index.html" target="_blank" rel="noopener">NVIDIA — CUTLASS documentation (official, latest)</a> <span>— the primary source this article is grounded in throughout.</span></li>
+          <li><a href="https://docs.nvidia.com/cutlass/latest/media/docs/cpp/quickstart.html" target="_blank" rel="noopener">CUTLASS C++ Quickstart</a> <span>— build instructions and the 2.x GEMM instantiation pattern referenced in §5 and §8.</span></li>
+          <li><a href="https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_api_3x.html" target="_blank" rel="noopener">CUTLASS 3.x GEMM API</a> <span>— CollectiveMainloop, CollectiveEpilogue, and the dispatch-policy pattern covered in §6.2.</span></li>
+          <li><a href="https://docs.nvidia.com/cutlass/latest/media/docs/cpp/efficient_gemm.html" target="_blank" rel="noopener">Efficient GEMM in CUDA</a> <span>— the tiling and double-buffering rationale behind §2 and §4.1.</span></li>
+          <li><a href="https://docs.nvidia.com/cutlass/media/docs/cpp/cute/01_layout.html" target="_blank" rel="noopener">CuTe Layouts</a> <span>— the shape/stride formalism behind §6.1.</span></li>
+          <li><a href="https://docs.nvidia.com/cutlass/media/docs/cpp/cute/02_layout_algebra.html" target="_blank" rel="noopener">CuTe Layout Algebra</a> <span>— composition, complement, logical division/product; the operations that make CuTe more than a data structure.</span></li>
+          <li><a href="https://github.com/NVIDIA/cutlass" target="_blank" rel="noopener">NVIDIA/cutlass on GitHub</a> <span>— source, examples directory, and issue tracker.</span></li>
+          <li><a href="https://research.colfax-intl.com/cutlass-tutorial-gemm-with-thread-block-clusters-on-nvidia-blackwell-gpus/" target="_blank" rel="noopener">Colfax Research — CUTLASS Tutorial: GEMM with Thread Block Clusters on Blackwell</a> <span>— a hands-on walkthrough of the cluster/collective concepts from §6.2 on the newest hardware.</span></li>
+          <li><a href="26-llm-architecture-concepts-explained.html">cvam.sight — 26 LLM Architecture Concepts, Explained</a> <span>— many of those concepts (MLA, MoE, attention) are ultimately served by GEMM kernels like the ones this article covers.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../archive.html">← browse the archive</a>
+        <a href="../index.html">home →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

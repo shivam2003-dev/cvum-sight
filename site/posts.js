@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "openai-architectural-contributions-paradigm-shifts",
+    title: "From GPT to recurrent depth: OpenAI's architectural contributions and the paradigm shifts that shaped modern AI.",
+    date: "Sep 2, 2026",
+    cat: "ml",
+    tags: ["ml", "openai", "llm-architecture", "reasoning", "survey"],
+    time: 58,
+    words: 12800,
+    excerpt: "A research-survey-grade audit of what OpenAI actually invented, co-invented, scaled, or popularized — PPO, RLHF, GPT, Sparse Transformers, scaling laws, CLIP, guided diffusion, WebGPT, InstructGPT, Whisper, process supervision, consistency models, o1's test-time compute — versus what it didn't (the Transformer, chain-of-thought, diffusion models, the Universal Transformer), ending with a careful, clearly-labeled look at Astra's industry-reported use of recurrent depth."
+  },
+  {
     slug: "cutlass-crash-course-for-beginners",
     title: "CUTLASS crash course for beginners.",
     date: "Aug 30, 2026",

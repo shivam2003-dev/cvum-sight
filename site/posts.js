@@ -16,6 +16,30 @@
 
 const POSTS = [
   {
+    slug: "frontier-digest-011",
+    title: "Frontier Digest #11 — A new frontier, uneven access.",
+    date: "Sep 5, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "world-models", "security", "weekly"],
+    time: 12,
+    words: 2260,
+    excerpt: "August 31–September 5, week-to-date: GPT-6 Astra, Claude Fable and Mythos 5.1, Gemini 3.8 Flash, Muse Spark 1.3, Hy4 open weights, Atlas and Solaris previews, cyber defense, and ten new research papers. Sunday is outside this edition’s cutoff.",
+    series: "frontier-digest",
+    seriesNum: "011"
+  },
+  {
+    slug: "frontier-digest-010",
+    title: "Frontier Digest #10 — The cost of putting AI to work.",
+    date: "Sep 5, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "inference", "hardware", "weekly"],
+    time: 11,
+    words: 2007,
+    excerpt: "August 24–30 retrospective: Jalapeño’s first results, GLM-5.3-Flash, Qwen3.8-Flash-Next, Yutori n2, PhoneLLM, NVIDIA earnings, the Cursor access decision, cyber defense, and all ten papers in DAIR.AI’s weekly selection—with sources beside every entry.",
+    series: "frontier-digest",
+    seriesNum: "010"
+  },
+  {
     slug: "openai-architectural-contributions-paradigm-shifts",
     title: "From GPT to recurrent depth: OpenAI's architectural contributions and the paradigm shifts that shaped modern AI.",
     date: "Sep 2, 2026",

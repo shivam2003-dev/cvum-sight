@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Post-quantum cryptography: a survey of foundations, standards, and security assumptions — cvam.sight</title>
+  <meta name="description" content="A survey of the quantum threat, ML-KEM, ML-DSA, SLH-DSA, code-based alternatives, standardized byte sizes, security assumptions, and lessons from cryptanalysis.">
+  <link rel="stylesheet" href="../style.css?v=88">
+  <script src="/theme-init.js?v=9"></script>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="canonical" href="https://shivam2003.com/posts/post-quantum-cryptography-foundations-survey">
+<style>
+/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
+.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
+.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
+.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
+.pqc-survey table td{vertical-align:top}
+.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
+.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
+.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.pqc-survey .callout.math{font-size:1em;line-height:1.8}
+.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
+.pqc-survey h2{scroll-margin-top:24px}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+  </aside>
+  <main class="page">
+    <article>
+      <div class="post-header">
+        <p class="meta">Sep 5, 2026 · security · 13 min read · 2,568 words</p>
+        <h1>Post-quantum cryptography: a survey of foundations, standards, and security assumptions</h1>
+        <p>Part I · From the quantum threat model to lattices, codes, hash-based signatures, and the evidence behind algorithm selection.</p>
+        <div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span><span class="tag">survey</span></div>
+      </div>
+      <div class="post-body osc-body pqc-survey">
+<h2 id="abstract">Abstract</h2>
+<p>Post-quantum cryptography (PQC) replaces public-key constructions threatened by large quantum computers with algorithms intended to resist both classical and quantum attacks. The central question is now broader than which mathematical problems appear hard: which standardized primitives can be composed, implemented, and maintained as trustworthy systems? This survey connects the quantum threat model to lattice-based, code-based, and hash-based constructions; compares the finalized NIST algorithms; and examines what security reductions, parameter categories, and cryptanalysis actually establish. Its main finding is that algorithm selection is a portfolio decision constrained by protocol role, security assumptions, message size, and implementation risk. ML-KEM, ML-DSA, and SLH-DSA provide concrete starting points, while diversification and continuing analysis remain essential. Migration and protocol integration are examined in the <a href="post-quantum-cryptography-migration-survey.html">companion survey</a>.</p>
+<blockquote><p><strong>Reading this survey.</strong> Standards and source status were checked on September 5, 2026. Sizes below come from published specifications; this article reports no new benchmarks or cryptanalytic experiments. “Quantum-resistant” expresses a security assessment under stated assumptions, not a proof against every future algorithm.</p></blockquote>
+
+<h2 id="scope-method">1. Scope and review method</h2>
+<p>This is a focused narrative survey, organized around four questions: what changes in the attacker model; how the leading constructions work; which tradeoffs distinguish standardized choices; and what evidence should guide deployment? The audience is engineers and researchers who understand public and private keys but need a bridge between mathematical descriptions and system decisions.</p>
+<p>The literature search prioritized NIST publications, IETF documents, original scheme specifications, and original attack papers. Searches covered the standardized algorithm names, their predecessor designs, hybrid key establishment, implementation attacks, and migration guidance. Sources were followed backward to foundational work and forward to current standards pages. Final specifications take precedence over submission-era names and sizes; current publisher records determine whether a document is final, draft, or superseded. Vendor rankings and quantum-arrival predictions were excluded from the comparative evidence.</p>
+<p>The result is deliberately selective. It is not a systematic review with an exhaustive database search or a meta-analysis of performance studies. Quantum error correction, quantum key distribution hardware, zero-knowledge proof systems, and a complete catalog of signature candidates are outside scope. Bernstein and Lange’s overview supplies a useful historical framing: preserving usability and confidence is as central as identifying new mathematical assumptions. <a href="https://eprint.iacr.org/2017/314">[1]</a></p>
+
+<h2 id="quantum-threat">2. The threat changes unevenly</h2>
+<h3>2.1 Shor: public-key assumptions fail structurally</h3>
+<p>Shor’s algorithms solve integer factorization and discrete logarithms in polynomial time on an appropriate quantum computer. That threatens the assumptions underlying RSA and finite-field Diffie–Hellman, with the discrete-logarithm approach also motivating the replacement of elliptic-curve systems. Increasing an RSA modulus is therefore a different kind of response from replacing the underlying assumption: it raises concrete cost without removing the asymptotic vulnerability. <a href="https://arxiv.org/abs/quant-ph/9508027">[2]</a></p>
+<p>The relevant machine is a <em>cryptographically relevant quantum computer</em>, capable of executing an attack at the scale and reliability required by the target. A laboratory qubit count is not itself a cryptanalytic capability. This survey assigns no calendar date to that machine. A defensible migration argument can instead start from information lifetime and replacement lead time.</p>
+<h3>2.2 Grover: generic search improves, but not in the same way</h3>
+<p>Grover’s algorithm reduces generic search over an unstructured space of size <var>N</var> to order √<var>N</var> oracle queries. For a uniform <var>k</var>-bit key search, the idealized query expression becomes order 2<sup>k/2</sup>. This is a query-complexity statement: reversible implementation, circuit depth, error correction, and parallelization affect the resources of a real attack. It should not be presented as an unconditional wall-clock estimate or as “all cryptography is broken.” <a href="https://arxiv.org/abs/quant-ph/9605043">[3]</a></p>
+<p>Consequently, public-key replacement and symmetric-parameter review are separate workstreams. Neither a longer symmetric key nor a stronger hash repairs a vulnerable public-key exchange that exposes the symmetric key. Conversely, replacing RSA does not eliminate nonce misuse, weak randomness, or endpoint compromise.</p>
+<h3>2.3 Why migration can be urgent without a quantum deadline</h3>
+<p>Mosca’s migration framing compares the confidentiality lifetime of data, the time needed to move systems, and the time until an adversary gains the relevant capability. A simple planning expression is:</p>
+<div class="callout math" role="math" aria-label="Data secrecy lifetime plus migration duration exceeds time until quantum attack capability">T<sub>secrecy</sub> + T<sub>migration</sub> &gt; T<sub>quantum</sub></div>
+<p>When that inequality holds, waiting until the quantum computer exists leaves an exposure window. An adversary can record vulnerable encrypted exchanges today and attempt decryption later. The expression is a risk heuristic, not a probability distribution or a prediction. Its value is that uncertainty about the right-hand side does not erase the two lead times on the left. <a href="https://eprint.iacr.org/2015/1075">[4]</a></p>
+
+<h2 id="primitive-contracts">3. Separate the cryptographic jobs</h2>
+<p>A key-encapsulation mechanism (KEM) establishes shared secret material. Its abstract interface consists of key generation, encapsulation, and decapsulation:</p>
+<div class="callout math" role="math" aria-label="KEM interfaces">(ek, dk) ← KeyGen()<br>(K, c) ← Encaps(ek)<br>K′ ← Decaps(dk, c)</div>
+<p>The public encapsulation key is <var>ek</var>; the private decapsulation key is <var>dk</var>; <var>c</var> is the ciphertext. For correctly generated inputs, both parties should obtain the same secret, except for any permitted negligible failure probability. A protocol then uses appropriate key derivation and authenticated symmetric encryption. The KEM does not by itself establish the identity of the peer. NIST SP 800-227 treats authentication, key confirmation, and secret-key usage as additional parts of secure key establishment. <a href="https://csrc.nist.gov/pubs/sp/800/227/final">[5]</a></p>
+<p>A digital signature answers a different question: does a verification key validate a signature on a particular message? An unforgeability claim typically considers an attacker that has already obtained signatures on chosen messages. Verification still needs an authenticated association between the public key and its owner. A valid signature from an attacker-controlled key establishes no trusted identity.</p>
+<div class="pqc-table-wrap" role="region" aria-label="Cryptographic roles comparison" tabindex="0"><table>
+<caption>Table 1. Distinct jobs in a secure system</caption>
+<thead><tr><th scope="col">Role</th><th scope="col">Typical component</th><th scope="col">What remains outside it</th></tr></thead>
+<tbody><tr><th scope="row">Establish secret material</th><td>KEM such as ML-KEM</td><td>Peer authentication and application policy</td></tr>
+<tr><th scope="row">Authenticate a message</th><td>Signature such as ML-DSA</td><td>Trust in the verification key; replay policy</td></tr>
+<tr><th scope="row">Protect application bytes</th><td>Authenticated symmetric encryption</td><td>Key establishment, nonce discipline, endpoint safety</td></tr>
+<tr><th scope="row">Distribute trust</th><td>Certificates and trust stores</td><td>Issuance, revocation, updates, and lifecycle decisions</td></tr></tbody></table></div>
+<p>This separation prevents a frequent category error: comparing an ML-KEM ciphertext with an ML-DSA signature as though they were competing encodings of the same operation. The meaningful comparison is within a role and at an explicitly stated security target.</p>
+
+<h2 id="lattices">4. Lattices: structured arithmetic with carefully controlled noise</h2>
+<h3>4.1 From linear equations to Module-LWE</h3>
+<p>A useful starting model is a public system of noisy linear equations:</p>
+<div class="callout math" role="math" aria-label="Noisy linear equations over a modulus">t = A s + e (mod q)</div>
+<p>If the error <var>e</var> disappeared, ordinary linear algebra could reveal the secret <var>s</var> under suitable conditions. Carefully chosen noise turns recovery and distinguishing problems into cryptographic assumptions. Module constructions organize entries as polynomials and perform arithmetic over a specified ring. Structure makes representations and multiplication efficient, while also defining the precise problem whose hardness must be studied.</p>
+<p>The Kyber specification illustrates the design: polynomial vectors, bounded noise, compression, and fast polynomial arithmetic combine to make key establishment practical. The intuition above is not the complete encryption scheme or its proof. Concrete security also depends on the distribution, dimensions, modulus, attack models, and parameters; a generic statement that “lattices are hard” does not settle those choices. <a href="https://pq-crystals.org/kyber/data/kyber-specification-round3-20210804.pdf">[6]</a></p>
+<h3>4.2 ML-KEM is the standardized object</h3>
+<p>FIPS 203 specifies ML-KEM, derived from CRYSTALS-Kyber, with three parameter sets. Its public-key encryption component is embedded inside a KEM construction with validity checks and ciphertext re-encryption during decapsulation. On a ciphertext mismatch, implicit rejection selects alternative secret material instead of exposing the decrypted candidate. Exact byte encodings and checks matter: a tutorial implementation of the noisy equation is not ML-KEM, and a submission-era Kyber implementation should not be assumed interchangeable with the final standard. <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf">[7]</a></p>
+<h3>4.3 ML-DSA: proving knowledge without leaking the signing key</h3>
+<p>Dilithium, the predecessor of ML-DSA, uses a Fiat–Shamir-with-aborts design. At a high level, the signer commits using a fresh masking value, derives a challenge from a hash, and produces a response involving the secret. Rejection conditions prevent the response distribution from revealing too much about that secret. Rounding and hints reduce the data a verifier needs. Removing rejection sampling as a performance optimization would alter the security argument rather than merely speed up an implementation. <a href="https://pq-crystals.org/dilithium/data/dilithium-specification-round3-20210208.pdf">[8]</a></p>
+<p>FIPS 204 defines ML-DSA-44, ML-DSA-65, and ML-DSA-87, along with the external signing and verification interfaces. Applications must agree on context and message processing, including whether a standardized prehash interface is in use. The predecessor paper explains the construction; the final specification governs interoperable implementations. <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf">[9]</a></p>
+<h3>4.4 What a reduction does and does not prove</h3>
+<p>A security reduction connects a successful adversary against a construction to a solver for an underlying problem, under a specified model. It supplies a disciplined conditional argument. It does not establish an unconditional lower bound on every attack against concrete parameters, and it does not prove that compiled machine code has no leakage. Treat the theorem, concrete attack estimates, and implementation assessment as complementary evidence. Conflating them turns a qualified result into a stronger claim than the literature supports.</p>
+
+<h2 id="hash-signatures">5. Hash-based signatures: another assumption, another cost profile</h2>
+<p>Hash-based signatures build authentication from carefully arranged hash evaluations. The SPHINCS+ framework combines a few-time signature construction, FORS, with a hypertree of Merkle trees and one-time signatures. Authentication paths connect message-level evidence to a compact public root. Its stateless design avoids requiring the application to maintain a single monotonically advancing signing index across every signing operation. This removes a difficult operational dependency, while increasing the amount of signature material and computation. <a href="https://sphincs.org/data/sphincs%2B-paper.pdf">[10]</a></p>
+<p>FIPS 205 standardizes SLH-DSA with SHA-2 and SHAKE variants. The <em>s</em> and <em>f</em> parameter families make different size–speed tradeoffs. Their small public keys do not imply small signatures. “Based on hashes” also does not reduce the security argument to one generic collision-resistance claim: the construction uses several domain-separated functions and specific security properties. <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf">[11]</a></p>
+<p>Stateful schemes are a separate option. NIST SP 800-208 specifies LMS/HSS and XMSS variants. Their operational contract includes preserving signing state so that one-time key material is not reused. Backups, replicas, failover, and snapshot restoration must respect that contract. A firmware-signing service with tightly controlled key hardware may have a different fit from a replicated general-purpose signing service. Algorithm choice therefore reaches into system architecture. <a href="https://csrc.nist.gov/pubs/sp/800/208/final">[12]</a></p>
+
+<h2 id="codes-alternatives">6. Codes and the wider research portfolio</h2>
+<p>Code-based cryptography uses the difficulty of decoding appropriately constructed error patterns without the secret structure needed by the legitimate party. HQC is a code-based KEM whose stated assumption concerns quasi-cyclic syndrome decoding. Its appeal in a portfolio is the use of a different mathematical foundation from Module-LWE, rather than a claim that it wins every performance comparison. <a href="https://pqc-hqc.org/">[13]</a></p>
+<p>NIST’s fourth-round report selected HQC for standardization after considering BIKE, Classic McEliece, HQC, and SIKE. The report is useful precisely because it evaluates more than one axis: security confidence, performance, suitability, and portfolio needs all shape a standardization decision. A construction can remain scientifically important without being the selected deployment standard. <a href="https://nvlpubs.nist.gov/nistpubs/ir/2025/NIST.IR.8545.pdf">[14]</a></p>
+<p>The wider signature landscape includes multivariate constructions and proof-based approaches that turn knowledge of a secret into a noninteractive signature. These families deserve continued analysis, but a research taxonomy should not imply equal maturity. NIST’s additional-signature process seeks alternative assumptions and useful performance profiles; advancement in that process is not a final standard. <a href="https://csrc.nist.gov/projects/pqc-dig-sig">[15]</a></p>
+<p>The evidence supports <em>specific</em> diversification. Two implementations sharing the same vulnerable arithmetic code may not provide much implementation diversity. Two schemes built around related structured assumptions may not provide the mathematical diversity an operator intended. A portfolio should state which failure modes its components are expected to avoid sharing.</p>
+
+<h2 id="standards-status">7. Standards snapshot: September 5, 2026</h2>
+<div class="pqc-table-wrap" role="region" aria-label="NIST standards status" tabindex="0"><table>
+<caption>Table 2. Final standards and continuing standardization</caption>
+<thead><tr><th scope="col">Construction</th><th scope="col">Role / foundation</th><th scope="col">Verified status</th></tr></thead>
+<tbody><tr><th scope="row">ML-KEM</th><td>KEM / module lattices</td><td>FIPS 203, final August 13, 2024</td></tr>
+<tr><th scope="row">ML-DSA</th><td>Signature / module lattices</td><td>FIPS 204, final August 13, 2024</td></tr>
+<tr><th scope="row">SLH-DSA</th><td>Signature / hashes</td><td>FIPS 205, final August 13, 2024</td></tr>
+<tr><th scope="row">Falcon / FN-DSA</th><td>Signature / NTRU lattices</td><td>Selected; ongoing standardization</td></tr>
+<tr><th scope="row">HQC</th><td>KEM / codes</td><td>Selected; ongoing standardization</td></tr></tbody></table></div>
+<p>NIST’s current project overview identifies the first three as the principal published standards and Falcon and HQC as continuing standardization work. This survey consequently does not present five finalized NIST PQC standards. Selection, draft publication, finalization, implementation support, and module validation are different milestones. <a href="https://csrc.nist.gov/Projects/post-quantum-cryptography">[16]</a></p>
+
+<h2 id="size-comparison">8. Compare sizes before making performance claims</h2>
+<div class="pqc-table-wrap" role="region" aria-label="ML-KEM byte sizes" tabindex="0"><table>
+<caption>Table 3. ML-KEM serialized sizes, bytes. FIPS 203, Table 3.</caption>
+<thead><tr><th scope="col">Parameter set</th><th scope="col">Public key</th><th scope="col">Private key</th><th scope="col">Ciphertext</th><th scope="col">Shared secret</th></tr></thead>
+<tbody><tr><th scope="row">ML-KEM-512</th><td>800</td><td>1,632</td><td>768</td><td>32</td></tr>
+<tr><th scope="row">ML-KEM-768</th><td>1,184</td><td>2,400</td><td>1,088</td><td>32</td></tr>
+<tr><th scope="row">ML-KEM-1024</th><td>1,568</td><td>3,168</td><td>1,568</td><td>32</td></tr></tbody></table></div>
+<p>These are algorithm encodings, not complete protocol messages or total runtime memory. The equal shared-secret length does not make the parameter sets equivalent in security. <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf">[7]</a></p>
+<div class="pqc-table-wrap" role="region" aria-label="Digital signature byte sizes" tabindex="0"><table>
+<caption>Table 4. Signature sizes, bytes. FIPS 204, Table 2; FIPS 205, Table 2. SLH-DSA rows apply to both SHA2 and SHAKE.</caption>
+<thead><tr><th scope="col">Parameter set</th><th scope="col">NIST category</th><th scope="col">Public key</th><th scope="col">Signature</th></tr></thead>
+<tbody><tr><th scope="row">ML-DSA-44</th><td>2</td><td>1,312</td><td>2,420</td></tr>
+<tr><th scope="row">ML-DSA-65</th><td>3</td><td>1,952</td><td>3,309</td></tr>
+<tr><th scope="row">ML-DSA-87</th><td>5</td><td>2,592</td><td>4,627</td></tr>
+<tr><th scope="row">SLH-DSA-128s</th><td>1</td><td>32</td><td>7,856</td></tr>
+<tr><th scope="row">SLH-DSA-128f</th><td>1</td><td>32</td><td>17,088</td></tr>
+<tr><th scope="row">SLH-DSA-192s</th><td>3</td><td>48</td><td>16,224</td></tr>
+<tr><th scope="row">SLH-DSA-192f</th><td>3</td><td>48</td><td>35,664</td></tr>
+<tr><th scope="row">SLH-DSA-256s</th><td>5</td><td>64</td><td>29,792</td></tr>
+<tr><th scope="row">SLH-DSA-256f</th><td>5</td><td>64</td><td>49,856</td></tr></tbody></table></div>
+<p>NIST categories compare attack costs with specified symmetric reference problems; they are not measurements of actual quantum attack time. Category 2 and category 1 rows should not be silently treated as an equal-security contest. Even at the same category, signature size alone does not determine signing throughput, verification latency, memory, or energy. <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf">[9]</a> <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf">[11]</a></p>
+
+<h2 id="cryptanalysis">9. What failures teach us</h2>
+<p>Castryck and Decru’s SIDH attack exploited information supplied by the protocol, notably torsion-point images. It broke the security of the SIDH construction underlying SIKE using classical computation. This is evidence against that construction, not a proof that every isogeny-based proposal is broken. The general lesson is to analyze the full public transcript rather than infer security from the apparent difficulty of an isolated mathematical task. <a href="https://eprint.iacr.org/2022/975">[17]</a></p>
+<p>KyberSlash demonstrates a different failure class: secret-dependent division timing in implementations. The authors reported key recovery on the studied platforms and coordinated patches. That finding concerns how code exposes secrets; it does not establish a mathematical break of Module-LWE. The two cases belong in different columns of a security review, because changing an implementation and replacing an algorithm are different responses. <a href="https://eprint.iacr.org/2024/1049">[18]</a></p>
+<p>There is also a current portfolio update. NIST states that HAWK was withdrawn after a vulnerability announced on July 28, 2026, and that the finding does not affect its finalized PQC standards. This is a source-attributed status report, not an independent reproduction of the attack. It reinforces the value of continuing public evaluation while resisting the unsupported leap from one candidate’s failure to a failure of an entire family. <a href="https://www.nist.gov/pqc">[19]</a></p>
+
+<h2 id="research-agenda">10. Synthesis and open research questions</h2>
+<p>Across these constructions, four tensions recur. Compact representations can require more structured assumptions. Small public keys can accompany large signatures. Strong mathematical evidence can coexist with vulnerable machine code. A published standard can still require substantial protocol and lifecycle work before a system gains the intended property.</p>
+<p>Research remains valuable where it reduces those tensions: better concrete attack estimates; tighter and more applicable reductions; implementation verification that survives compiler and platform changes; practical signatures under different assumptions; and reproducible comparisons that report network and lifecycle costs alongside primitive timings. Constrained devices also need studies that include stack usage, persistent storage, update paths, and energy rather than importing server-class results.</p>
+<p>The engineering conclusion is specific. Start with the cryptographic role and threat model, choose among relevant finalized standards, inspect the complete implementation and protocol contract, and retain a way to replace the choice. Treat mathematical diversity as a resource to evaluate, and treat every performance claim as dependent on its measurement setup. The <a href="post-quantum-cryptography-migration-survey.html">second survey</a> follows that argument through hybrid TLS, certificate and firmware dependencies, migration evidence, and operational testing.</p>
+
+<h2 id="references">References</h2>
+<p>Sources checked September 5, 2026. Numbered citations link directly to the corresponding publication. Word count excludes this reference list.</p>
+<ol class="pqc-references">
+<li id="ref-1"><a href="https://eprint.iacr.org/2017/314">Bernstein and Lange. Post-quantum cryptography—dealing with the fallout of physics success. 2017.</a></li>
+<li id="ref-2"><a href="https://arxiv.org/abs/quant-ph/9508027">Shor. Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer. 1995 preprint; journal version 1997.</a></li>
+<li id="ref-3"><a href="https://arxiv.org/abs/quant-ph/9605043">Grover. A fast quantum mechanical algorithm for database search. 1996.</a></li>
+<li id="ref-4"><a href="https://eprint.iacr.org/2015/1075">Mosca. Cybersecurity in an era with quantum computers: will we be ready? 2015.</a></li>
+<li id="ref-5"><a href="https://csrc.nist.gov/pubs/sp/800/227/final">NIST SP 800-227. Recommendations for Key-Encapsulation Mechanisms. Final, September 2025.</a></li>
+<li id="ref-6"><a href="https://pq-crystals.org/kyber/data/kyber-specification-round3-20210804.pdf">Avanzi et al. CRYSTALS-Kyber, version 3.02. Submission specification, August 2021.</a></li>
+<li id="ref-7"><a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf">NIST FIPS 203. Module-Lattice-Based Key-Encapsulation Mechanism Standard. August 2024; Table 3.</a></li>
+<li id="ref-8"><a href="https://pq-crystals.org/dilithium/data/dilithium-specification-round3-20210208.pdf">Ducas et al. CRYSTALS-Dilithium, version 3.1. Submission specification, February 2021.</a></li>
+<li id="ref-9"><a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf">NIST FIPS 204. Module-Lattice-Based Digital Signature Standard. August 2024; Table 2.</a></li>
+<li id="ref-10"><a href="https://sphincs.org/data/sphincs%2B-paper.pdf">Bernstein et al. The SPHINCS+ Signature Framework. ACM CCS, 2019.</a></li>
+<li id="ref-11"><a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf">NIST FIPS 205. Stateless Hash-Based Digital Signature Standard. August 2024; Table 2.</a></li>
+<li id="ref-12"><a href="https://csrc.nist.gov/pubs/sp/800/208/final">NIST SP 800-208. Recommendation for Stateful Hash-Based Signature Schemes. October 2020.</a></li>
+<li id="ref-13"><a href="https://pqc-hqc.org/">HQC team. Scheme overview and resources. Accessed September 5, 2026.</a></li>
+<li id="ref-14"><a href="https://nvlpubs.nist.gov/nistpubs/ir/2025/NIST.IR.8545.pdf">NIST IR 8545. Status Report on the Fourth Round of the NIST Post-Quantum Cryptography Standardization Process. March 2025.</a></li>
+<li id="ref-15"><a href="https://csrc.nist.gov/projects/pqc-dig-sig">NIST. Additional Digital Signature Schemes project. Accessed September 5, 2026.</a></li>
+<li id="ref-16"><a href="https://csrc.nist.gov/Projects/post-quantum-cryptography">NIST. Post-Quantum Cryptography project overview. Accessed September 5, 2026.</a></li>
+<li id="ref-17"><a href="https://eprint.iacr.org/2022/975">Castryck and Decru. An efficient key recovery attack on SIDH. 2022 preprint; EUROCRYPT 2023.</a></li>
+<li id="ref-18"><a href="https://eprint.iacr.org/2024/1049">Bernstein et al. KyberSlash: Exploiting secret-dependent division timings in Kyber implementations. 2024 preprint; TCHES 2025.</a></li>
+<li id="ref-19"><a href="https://www.nist.gov/pqc">NIST. Post-quantum cryptography; HAWK withdrawal update. Accessed September 5, 2026.</a></li>
+</ol>
+      </div>
+<nav class="post-nav" aria-label="Survey navigation"><a href="post-quantum-cryptography-migration-survey.html">Continue to Part II: migration →</a><a href="../archive.html">All articles →</a></nav>
+    </article>
+  </main>
+  <aside class="toc-panel" aria-label="On this page">
+    <p class="toc-panel-label">// on this page</p>
+    <nav id="toc-nav" aria-label="Table of contents"></nav>
+  </aside>
+</div>
+<script src="../stats.js?v=4"></script>
+<script src="../app.js?v=43"></script>
+<script src="../settings.js?v=17"></script>
+<script src="../reader.js?v=3"></script>
+</body>
+</html>

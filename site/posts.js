@@ -16,6 +16,26 @@
 
 const POSTS = [
   {
+    slug: "post-quantum-cryptography-foundations-survey",
+    title: "Post-quantum cryptography: a survey of foundations, standards, and security assumptions",
+    date: "Sep 5, 2026",
+    cat: "security",
+    tags: ["security", "post-quantum", "cryptography", "survey", "standards"],
+    time: 13,
+    words: 2568,
+    excerpt: "A survey of the quantum threat, ML-KEM, ML-DSA, SLH-DSA, code-based alternatives, standardized byte sizes, security assumptions, and lessons from cryptanalysis."
+  },
+  {
+    slug: "post-quantum-cryptography-migration-survey",
+    title: "Post-quantum cryptography in practice: a survey of hybrid protocols, migration, and implementation security",
+    date: "Sep 5, 2026",
+    cat: "security",
+    tags: ["security", "post-quantum", "cryptography", "survey", "migration"],
+    time: 14,
+    words: 2734,
+    excerpt: "A survey of hybrid TLS, RFC 10024, certificate and firmware dependencies, implementation attacks, crypto agility, and a reproducible migration evaluation process."
+  },
+  {
     slug: "frontier-digest-011",
     title: "Frontier Digest #11 — A new frontier, uneven access.",
     date: "Sep 5, 2026",

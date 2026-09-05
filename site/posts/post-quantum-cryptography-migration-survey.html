@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Post-quantum cryptography in practice: a survey of hybrid protocols, migration, and implementation security — cvam.sight</title>
+  <meta name="description" content="A survey of hybrid TLS, RFC 10024, certificate and firmware dependencies, implementation attacks, crypto agility, and a reproducible migration evaluation process.">
+  <link rel="stylesheet" href="../style.css?v=88">
+  <script src="/theme-init.js?v=9"></script>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="canonical" href="https://shivam2003.com/posts/post-quantum-cryptography-migration-survey">
+<style>
+/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
+.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
+.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
+.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
+.pqc-survey table td{vertical-align:top}
+.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
+.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
+.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.pqc-survey .callout.math{font-size:1em;line-height:1.8}
+.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
+.pqc-survey h2{scroll-margin-top:24px}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+  </aside>
+  <main class="page">
+    <article>
+      <div class="post-header">
+        <p class="meta">Sep 5, 2026 · security · 14 min read · 2,734 words</p>
+        <h1>Post-quantum cryptography in practice: a survey of hybrid protocols, migration, and implementation security</h1>
+        <p>Part II · How standardized primitives become verified protection across networks, certificates, stored data, and long-lived devices.</p>
+        <div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span><span class="tag">survey</span></div>
+      </div>
+      <div class="post-body osc-body pqc-survey">
+<h2 id="abstract">Abstract</h2>
+<p>Deploying post-quantum cryptography is a coordinated change to key establishment, authentication, software implementations, and cryptographic lifecycles. This survey reviews the system boundaries that separate algorithm support from effective protection. It examines hybrid TLS, public-key infrastructure, stored data, firmware trust, side-channel security, and migration measurement. Current NIST guidance and IETF publications are combined with original implementation research to derive an evidence-driven migration process. The principal conclusion is that progress should be measured in verified cryptographic relationships and recoverable operating procedures: a library exposing an algorithm or a server advertising a group is insufficient. The companion <a href="post-quantum-cryptography-foundations-survey.html">foundations survey</a> explains the constructions and their standardized parameter sizes.</p>
+<blockquote><p><strong>Scope and evidence.</strong> This is a narrative literature survey with an engineering synthesis, checked September 5, 2026. Protocol sizes are specification facts; the worked calculation is derived arithmetic. Test plans and inventory examples are proposals, not measurements from a deployed system.</p></blockquote>
+
+<h2 id="method">1. Review method and the unit of migration</h2>
+<p>The review prioritizes final standards, current publisher records, protocol security sections, original attack reports, and NIST’s migration work. It distinguishes normative protocol requirements from guidance and from the author’s proposed operating practices. Historical draft experiments are useful for identifying failure modes, but their results cannot establish performance or interoperability for a later standardized encoding.</p>
+<p>The unit of migration should be a <em>cryptographic relationship</em>: a producer and consumer that must agree on algorithms, encodings, identities, policy, and lifecycle. Examples include a browser and gateway, a package signer and updater, or a backup writer and future recovery tool. A server inventory is incomplete when it omits the client population or the trust anchor that makes the connection meaningful.</p>
+<p>NIST’s NCCoE project separates cryptographic discovery from interoperability testing. That distinction is useful: discovering a vulnerable dependency tells an organization where it must act, while an interoperability experiment establishes whether a proposed replacement works across a defined boundary. Neither evidence substitutes for the other. <a href="https://www.nccoe.nist.gov/applied-cryptography/migration-to-pqc">[1]</a></p>
+
+<h2 id="threat-boundaries">2. Three threat boundaries that should not be collapsed</h2>
+<h3>2.1 Recorded traffic and future decryption</h3>
+<p>For long-lived confidential information, the relevant event can be collection rather than immediate compromise. An attacker records an exchange and later obtains the ability to defeat its key-establishment assumption. Mosca’s lifetime-versus-migration framing explains why the replacement program must begin before the threat becomes operational. Different data classes have different secrecy lifetimes; a short-lived status message and a long-lived industrial design need not receive the same priority. <a href="https://eprint.iacr.org/2015/1075">[2]</a></p>
+<h3>2.2 Live authentication</h3>
+<p>A hybrid key exchange can protect secret establishment while certificates and handshake signatures still use traditional algorithms. That can help against passive collection without providing a complete post-quantum authentication story. When an attacker can forge the signatures trusted during a live connection, identity verification becomes a separate failure boundary. RFC 9954 explicitly places next-generation authentication outside its hybrid key-exchange scope. <a href="https://www.rfc-editor.org/rfc/rfc9954.html">[3]</a></p>
+<h3>2.3 Authenticity that must survive for years</h3>
+<p>Firmware, signed records, packages, and trust anchors may outlive the systems that created them. The question is not whether a past handshake can be changed retroactively, but what a future verifier will accept. A device with an immutable verifier can be harder to migrate than a web gateway even if it communicates rarely. Our synthesis is to track confidentiality exposure, live impersonation, and long-term verification as separate rows of the migration register.</p>
+
+<h2 id="hybrid-design">3. Hybrid key establishment: a precise composition</h2>
+<p>A post-quantum/traditional hybrid combines secret material from different key-establishment mechanisms with the goal of retaining protection when one component fails. RFC 9954 defines a TLS 1.3 construction in which a combination is negotiated as a single method and the component outputs feed the existing key schedule. It is an <strong>Informational RFC</strong>, published in July 2026. Its composition goal depends on the protocol construction and assumptions; the word “hybrid” alone does not prove a security property. <a href="https://www.rfc-editor.org/rfc/rfc9954.html">[3]</a></p>
+<p>At an architectural level, both parties generate the prescribed shares, perform the component operations, combine the resulting secret values in the specified order, and authenticate the surrounding exchange. A KEM API returning bytes is only one step. NIST SP 800-227 discusses the broader obligations around authentication, key confirmation, validation, and derived-key usage. <a href="https://csrc.nist.gov/pubs/sp/800/227/final">[4]</a></p>
+<p>Hybridization also creates work: more parsers and key material, more negotiation combinations, and more behaviors to test. It should have an explicit objective and an exit policy. Otherwise an organization may retain every old option indefinitely, adding complexity while losing track of the protection actually negotiated.</p>
+
+<h2 id="tls-standard">4. The current TLS specification and its byte costs</h2>
+<p>RFC 10024, published in August 2026 on the Standards Track, defines three TLS 1.3 groups combining ML-KEM with ECDHE. Its status is Proposed Standard. These are no longer merely the earlier Internet-Draft’s experimental choices. <a href="https://www.rfc-editor.org/rfc/rfc10024.html">[5]</a></p>
+<div class="pqc-table-wrap" role="region" aria-label="TLS hybrid key share sizes" tabindex="0"><table>
+<caption>Table 1. RFC 10024 key_exchange payloads, bytes; not entire TLS messages.</caption>
+<thead><tr><th scope="col">Group</th><th scope="col">Client share</th><th scope="col">Server share</th><th scope="col">Combined secret</th></tr></thead>
+<tbody><tr><th scope="row">X25519MLKEM768</th><td>1,216</td><td>1,120</td><td>64</td></tr>
+<tr><th scope="row">SecP256r1MLKEM768</th><td>1,249</td><td>1,153</td><td>64</td></tr>
+<tr><th scope="row">SecP384r1MLKEM1024</th><td>1,665</td><td>1,665</td><td>80</td></tr></tbody></table></div>
+<p>For X25519MLKEM768, ML-KEM material comes first in both transmitted shares and the combined secret; the P-curve groups place ECDHE first. Implementations must follow the specification rather than infer serialization order from the group’s name. The RFC also specifies input and ECDHE validity checks. <a href="https://www.rfc-editor.org/rfc/rfc10024.html">[5]</a></p>
+<p>A useful worked comparison considers only one X25519 share in each direction, with 32 bytes per share, versus one X25519MLKEM768 share in each direction:</p>
+<div class="callout math" role="math" aria-label="Additional key share payload bytes">ΔB = (1,216 + 1,120) − (32 + 32) = 2,272 bytes</div>
+<p>This is derived payload growth, not a measured bandwidth increase for an application session. It excludes extension and record framing, certificates, retransmissions, alternative offered shares, and resumption. It cannot predict latency without a transport model. A small serialization increase may have little impact on one network and cross a packet or flight threshold on another.</p>
+
+<h2 id="protocol-coverage">5. TLS is one dependency among many</h2>
+<p>Start by drawing termination boundaries. A browser-to-edge connection and an edge-to-origin connection are distinct cryptographic relationships. A protected external handshake does not establish how traffic is handled by a reverse proxy, service mesh, internal client, or export process. The same applies to an encrypted database whose backup is wrapped under a different key-management path.</p>
+<p>Stored-message formats need their own integration. RFC 9936, a March 2026 Standards Track publication, specifies ML-KEM use in Cryptographic Message Syntax (CMS). It supplies a protocol-specific treatment for encapsulation and the derived keys used in the message envelope. The existence of a TLS group does not automatically make mail, file containers, or archived envelopes interoperable. <a href="https://www.rfc-editor.org/rfc/rfc9936.html">[6]</a></p>
+<p>For stored data, inspect the hierarchy: application bytes are often encrypted with a symmetric data key, which is protected by another key or a public-key mechanism. Rewrapping can change a key-protection layer without rewriting the payload, but it does not revoke previously collected vulnerable envelopes or recover confidentiality already lost. A migration design must say which retained objects remain exposed and how future readers obtain the correct format and keys.</p>
+<div class="pqc-table-wrap" role="region" aria-label="Migration boundaries and evidence" tabindex="0"><table>
+<caption>Table 2. Proposed review boundaries for an application estate</caption>
+<thead><tr><th scope="col">Boundary</th><th scope="col">Migration question</th><th scope="col">Useful evidence</th></tr></thead>
+<tbody><tr><th scope="row">Network hop</th><td>What was actually negotiated?</td><td>Handshake traces tied to client and server versions</td></tr>
+<tr><th scope="row">Certificate path</th><td>Can every relying party verify the chain?</td><td>Issuance, chain-building, revocation, and renewal trials</td></tr>
+<tr><th scope="row">Stored envelope</th><td>Can future software decrypt retained objects?</td><td>Versioned fixtures and recovery exercises</td></tr>
+<tr><th scope="row">Firmware trust</th><td>Can the installed verifier accept the transition?</td><td>Tests against actual deployed device generations</td></tr>
+<tr><th scope="row">Key recovery</th><td>Do restore and failover preserve security?</td><td>Hardware, backup, state, and policy checks</td></tr></tbody></table></div>
+
+<h2 id="pki-signatures">6. Signatures turn migration into a trust-distribution problem</h2>
+<p>Changing a signature algorithm affects producers and verifiers simultaneously. A certificate authority may be able to issue a new certificate before browsers, service clients, appliances, or offline validators can parse and validate it. Certificate chains also multiply overhead: each certificate carries its own fields, public key, and issuer signature. A raw signature size is therefore not a complete certificate-chain size.</p>
+<p>ML-DSA and SLH-DSA provide different size profiles, as the <a href="post-quantum-cryptography-foundations-survey.html#size-comparison">foundations tables</a> show. The application must additionally choose an appropriate standardized interface and preserve its message and context semantics. Treating a custom prehash or an ad hoc concatenation of signatures as interchangeable with a specified scheme risks both compatibility and security. <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf">[7]</a> <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf">[8]</a></p>
+<p>A dual-signature policy illustrates why composition rules matter. If a verifier accepts either signature, compromise of either accepted algorithm may suffice. Requiring both has different security and availability consequences and requires both bindings to cover the intended object and context. This is an analysis of acceptance logic, not a recommendation to invent a certificate format. Use the protocol profile supported by the full relying-party population.</p>
+<p>For stateful hash signatures, disaster recovery is part of cryptographic correctness. SP 800-208’s LMS and XMSS families require a different operational treatment from stateless signatures. A restored machine must not reuse one-time signing state that was already consumed before the backup. The relevant test is a realistic failover or restore, not only a successful signature immediately after key generation. <a href="https://csrc.nist.gov/pubs/sp/800/208/final">[9]</a></p>
+
+<h2 id="implementation-security">7. Implementation security remains a separate research problem</h2>
+<h3>7.1 Timing behavior can defeat correct mathematics</h3>
+<p>KyberSlash identified secret-dependent division timing in multiple Kyber implementations, including reference code. The authors demonstrated key recovery on their studied Arm platforms and reported coordinated patches. They also investigated dynamic analysis and formal approaches to detecting variable-time instructions on secrets. The result shows why source-level intent must be checked against compiler output and the target processor; it is not a blanket claim that all ML-KEM implementations are vulnerable. <a href="https://eprint.iacr.org/2024/1049">[10]</a></p>
+<p>A reasonable implementation review records the exact library revision, compiler, flags, CPU features, and mitigations. Ordinary functional vectors establish that outputs match expected values; timing and other leakage analyses address a different property. A result on one microarchitecture is evidence for that environment, not a certificate for every platform the library can compile on.</p>
+<h3>7.2 Rejection paths and error handling are security behavior</h3>
+<p>ML-KEM decapsulation includes ciphertext checks and implicit rejection. Altering the failure path, exposing intermediate decrypted material, or returning extra diagnostic information can undermine the intended boundary. FIPS 203’s algorithm definition and its distinction between conformance and whole-system security should guide the implementation review. Secret randomness, private keys, and established secrets remain sensitive even when the underlying construction is quantum-resistant. <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf">[11]</a></p>
+<p>Tests should cover malformed encodings, invalid sizes, truncated messages, failed randomness, and caller misuse. Define how errors propagate without logging secret inputs or turning an implementation detail into a remotely observable oracle. Public input rejection and secret-dependent internal behavior require different scrutiny; simply making every error message identical does not prove constant-time execution.</p>
+<h3>7.3 Validation labels answer bounded questions</h3>
+<p>A published standard, passing algorithm vectors, a validated cryptographic module, and a secure application are separate claims. NIST’s project links algorithm standards and the Cryptographic Module Validation Program as related but distinct pieces of the ecosystem. Record the module version and operating environment relevant to an assurance claim instead of inferring validation from the algorithm name alone. <a href="https://csrc.nist.gov/Projects/post-quantum-cryptography">[12]</a></p>
+
+<h2 id="agility">8. Crypto agility is the ability to execute a controlled change</h2>
+<p>NIST CSWP 39-upd1, incorporating updates dated June 29, 2026, surveys strategies and practices for crypto agility. The updated publication replaces the earlier record. Its broader framing matters: change involves protocol and application design as well as operational management. An algorithm dropdown is not enough if every certificate, backup format, or downstream verifier remains fixed. <a href="https://csrc.nist.gov/pubs/cswp/39/upd1/considerations-for-achieving-crypto-agility/final">[13]</a></p>
+<p>The following process is this survey’s engineering synthesis. Maintain an inventory with owners; isolate cryptographic policy from scattered application decisions; keep versioned compatibility fixtures; rehearse key and certificate rollover; and define rollback constraints. Rollback should restore a known operating state while making any reduction in protection visible. Quietly falling back to traditional-only key exchange can make an availability dashboard look healthy while invalidating the migration objective.</p>
+<p>Availability and cryptographic policy must therefore be evaluated together. If a new client cannot negotiate the required protection, the acceptable result may be a clearly reported failure rather than an invisible fallback. Where compatibility exceptions are necessary, assign an owner, affected population, expiry condition, and evidence needed to remove the exception.</p>
+
+<h2 id="migration-process">9. A staged migration process with reviewable outputs</h2>
+<ol>
+<li><strong>Discover relationships.</strong> Combine source and dependency inspection with certificate inventories, configuration evidence, and observed handshakes. Include internal hops and offline verification. Record unknowns explicitly.</li>
+<li><strong>Prioritize by exposure and lead time.</strong> Consider data secrecy lifetime, harvestability, replacement difficulty, device lifetime, and external dependencies. Keep the scoring explanation with the result.</li>
+<li><strong>Select a complete target profile.</strong> Specify algorithm and parameter set, protocol version, authentication path, library/module version, and fallback policy. Do not select a primitive without its integration contract.</li>
+<li><strong>Test representative pairs.</strong> Include old and new clients, proxies, constrained links, hardware devices, and failure paths. Retain artifacts that another engineer can reproduce.</li>
+<li><strong>Canary with observable negotiation.</strong> Measure the fraction of eligible relationships that actually obtain the target protection, plus failures, latency, resource pressure, and exceptions.</li>
+<li><strong>Complete lifecycle trials.</strong> Exercise issuance, rotation, expiration, revocation, key recovery, backup restoration, and retirement of superseded mechanisms.</li>
+<li><strong>Reassess.</strong> Track new cryptanalysis and document revisions, update the inventory, and retest affected boundaries when implementations or policies change.</li>
+</ol>
+<p>This sequence develops the NCCoE discovery/interoperability split into a proposed operating workflow; it is not a claim that NIST prescribes these exact seven steps. <a href="https://www.nccoe.nist.gov/applied-cryptography/migration-to-pqc">[1]</a></p>
+<p>For example, an inventory row for a payroll export might record the producer, receiving organization, CMS profile, data retention period, key-protection path, receiving software, migration owner, and last successful restore. The example is hypothetical. Its purpose is to expose the missing counterparty and lifetime information that an “RSA present” scanner result cannot supply.</p>
+
+<h2 id="evaluation">10. How to evaluate a migration without inventing a leaderboard</h2>
+<p>A reproducible evaluation should separate three layers. Primitive measurements isolate key generation, encapsulation, decapsulation, signing, and verification. Protocol measurements include the full exchange and network conditions. Application measurements include connection reuse, concurrency, retries, and user-visible failures. Comparing a primitive microbenchmark with an application response time mixes different quantities.</p>
+<div class="pqc-table-wrap" role="region" aria-label="Proposed reproducible evaluation matrix" tabindex="0"><table>
+<caption>Table 3. Proposed reporting matrix; no results are asserted</caption>
+<thead><tr><th scope="col">Dimension</th><th scope="col">Record or vary</th><th scope="col">Report</th></tr></thead>
+<tbody><tr><th scope="row">Implementation</th><td>Revision, build flags, CPU, acceleration, module mode</td><td>Operation cost, memory, variability</td></tr>
+<tr><th scope="row">Transport</th><td>RTT, loss, MTU, bandwidth, proxy path</td><td>Handshake latency, bytes, retransmissions, failures</td></tr>
+<tr><th scope="row">Population</th><td>Client versions, supported groups, trust stores</td><td>Negotiated profile and compatibility exceptions</td></tr>
+<tr><th scope="row">Workload</th><td>Full handshakes, resumption, concurrency, object sizes</td><td>Median and tail latency, throughput, error rate</td></tr>
+<tr><th scope="row">Lifecycle</th><td>Rotation, expiry, restore, rollback</td><td>Successful recovery and preserved security policy</td></tr></tbody></table></div>
+<p>Measure full handshakes and resumed sessions separately. Report both numerator and denominator for adoption, and make the eligible population explicit. “Supported” means a capability exists; “offered” means it was advertised; “negotiated” means the peers selected it; “verified protection” additionally depends on correct implementation and the stated trust assumptions. An attractive percentage should not erase those differences.</p>
+<p>The NCCoE FAQ specifically notes that some preliminary interoperability results used draft KEM standards in tests conducted before December 2023. Those observations can identify useful test cases, but they should not be relabeled as measurements of final ML-KEM deployments. This survey therefore provides a test matrix rather than recycling incomparable timing numbers. <a href="https://pages.nist.gov/nccoe-migration-post-quantum-cryptography/">[14]</a></p>
+
+<h2 id="dates-research">11. Transition dates and unresolved questions</h2>
+<p>NIST IR 8547’s publication record identifies it as an <strong>Initial Public Draft</strong> from November 2024 describing the expected transition approach. NIST’s current PQC overview discusses removal of quantum-vulnerable algorithms from its standards by 2035, with high-risk transitions earlier. These are transition-planning statements, not a prediction that a quantum computer will arrive in 2035 or a universal deadline for every organization. Check the applicable profile and final publication status for each deployment. <a href="https://csrc.nist.gov/pubs/ir/8547/ipd">[15]</a> <a href="https://csrc.nist.gov/Projects/post-quantum-cryptography">[12]</a></p>
+<p>Several research gaps remain operationally consequential. How complete are discovery tools when cryptography is hidden inside managed services or device firmware? Which client and middlebox populations account for migration failures? How can compiled-code assurance scale across architectures? What evidence supports retirement of a hybrid component? How should long-lived archives preserve authenticity as algorithms and verification software change?</p>
+<p>Those questions call for published artifacts: versioned inventories, reusable compatibility fixtures, platform-specific implementation analysis, and realistic lifecycle trials. Better evidence can improve decisions without pretending that an uncertain quantum timeline has become certain.</p>
+
+<h2 id="conclusion">12. Conclusion</h2>
+<p>Post-quantum migration is complete only relative to a defined scope and threat model. The meaningful claim identifies which relationships use which protection, who verifies identity, what happens during failure and recovery, and which exceptions remain. Finalized primitives and current protocol specifications make that work concrete. The remaining task is to preserve their security properties through implementation, deployment, and years of change.</p>
+<p>The practical research agenda is to make every layer inspectable. Keep mathematical security separate from implementation evidence, record what was negotiated rather than what was advertised, and rehearse the next replacement before it becomes urgent. The <a href="post-quantum-cryptography-foundations-survey.html">foundations survey</a> provides the algorithm-level map underlying these decisions.</p>
+
+<h2 id="references">References</h2>
+<p>Sources checked September 5, 2026. Numbered citations link directly to the corresponding publication. Word count excludes this reference list.</p>
+<ol class="pqc-references">
+<li id="ref-1"><a href="https://www.nccoe.nist.gov/applied-cryptography/migration-to-pqc">NIST NCCoE. Migration to Post-Quantum Cryptography project. Accessed September 5, 2026.</a></li>
+<li id="ref-2"><a href="https://eprint.iacr.org/2015/1075">Mosca. Cybersecurity in an era with quantum computers: will we be ready? 2015.</a></li>
+<li id="ref-3"><a href="https://www.rfc-editor.org/rfc/rfc9954.html">Stebila, Fluhrer, and Gueron. RFC 9954: Hybrid Key Exchange in TLS 1.3. Informational, July 2026.</a></li>
+<li id="ref-4"><a href="https://csrc.nist.gov/pubs/sp/800/227/final">NIST SP 800-227. Recommendations for Key-Encapsulation Mechanisms. Final, September 2025.</a></li>
+<li id="ref-5"><a href="https://www.rfc-editor.org/rfc/rfc10024.html">Kwiatkowski et al. RFC 10024: Post-Quantum Traditional (PQ/T) Hybrid Key Agreement Mechanisms for TLS 1.3. Proposed Standard, August 2026.</a></li>
+<li id="ref-6"><a href="https://www.rfc-editor.org/rfc/rfc9936.html">Prat, Ounsworth, and Van Geest. RFC 9936: Use of ML-KEM in the Cryptographic Message Syntax (CMS). Standards Track, March 2026.</a></li>
+<li id="ref-7"><a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf">NIST FIPS 204. Module-Lattice-Based Digital Signature Standard. August 2024; Table 2.</a></li>
+<li id="ref-8"><a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf">NIST FIPS 205. Stateless Hash-Based Digital Signature Standard. August 2024; Table 2.</a></li>
+<li id="ref-9"><a href="https://csrc.nist.gov/pubs/sp/800/208/final">NIST SP 800-208. Recommendation for Stateful Hash-Based Signature Schemes. October 2020.</a></li>
+<li id="ref-10"><a href="https://eprint.iacr.org/2024/1049">Bernstein et al. KyberSlash: Exploiting secret-dependent division timings in Kyber implementations. 2024 preprint; TCHES 2025.</a></li>
+<li id="ref-11"><a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf">NIST FIPS 203. Module-Lattice-Based Key-Encapsulation Mechanism Standard. August 2024; Table 3.</a></li>
+<li id="ref-12"><a href="https://csrc.nist.gov/Projects/post-quantum-cryptography">NIST. Post-Quantum Cryptography project overview. Accessed September 5, 2026.</a></li>
+<li id="ref-13"><a href="https://csrc.nist.gov/pubs/cswp/39/upd1/considerations-for-achieving-crypto-agility/final">NIST CSWP 39-upd1. Considerations for Achieving Crypto Agility: Strategies and Practices. December 2025, updated June 29, 2026.</a></li>
+<li id="ref-14"><a href="https://pages.nist.gov/nccoe-migration-post-quantum-cryptography/">NIST NCCoE. Frequently Asked Questions about Post-Quantum Cryptography. Accessed September 5, 2026.</a></li>
+<li id="ref-15"><a href="https://csrc.nist.gov/pubs/ir/8547/ipd">NIST IR 8547. Transition to Post-Quantum Cryptography Standards. Initial Public Draft, November 2024.</a></li>
+</ol>
+      </div>
+<nav class="post-nav" aria-label="Survey navigation"><a href="post-quantum-cryptography-foundations-survey.html">← Part I: foundations and standards</a><a href="../archive.html">All articles →</a></nav>
+    </article>
+  </main>
+  <aside class="toc-panel" aria-label="On this page">
+    <p class="toc-panel-label">// on this page</p>
+    <nav id="toc-nav" aria-label="Table of contents"></nav>
+  </aside>
+</div>
+<script src="../stats.js?v=4"></script>
+<script src="../app.js?v=43"></script>
+<script src="../settings.js?v=17"></script>
+<script src="../reader.js?v=3"></script>
+</body>
+</html>

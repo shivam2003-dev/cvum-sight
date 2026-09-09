@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenPGP Trust and Key Distribution — WoT, SKS Collapse, WKD — cvam.sight</title>
+<meta name="description" content="Part 5 of the OpenPGP Internals series: certification semantics, the Web of Trust's actual trust-propagation algorithm with marginals and completes, why the SKS keyserver network collapsed under CVE-2019-13050 certificate flooding, and the modern replacements — verifying keyservers, Web Key Directory, DANE, and key transparency.">
+<link rel="stylesheet" href="../style.css?v=88">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:40px} h3{margin-top:26px;scroll-margin-top:20px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.9rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:9px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .post-body a[target="_blank"]{color:var(--accent,#c96442);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent);font-weight:500}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{display:block;padding:2px 0 6px}
+  pre.hex{margin:16px 0 22px;overflow-x:auto;background:color-mix(in srgb,var(--ink) 92%,var(--paper) 8%);color:#e8e2cf;border-radius:10px;padding:16px 18px;font-family:var(--font-mono,monospace);font-size:.79rem;line-height:1.6;white-space:pre}
+  pre.hex .c{color:#9a9382}
+  pre.hex .hl{color:#f0c040;font-weight:700}
+  pre.hex .bad{color:#e08a70;font-weight:700}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-box.sel{fill:var(--yellow-soft,#f7e9c0);stroke:var(--ink)}
+  svg .d-box.dim{fill:color-mix(in srgb,var(--paper) 80%,var(--ink) 6%);stroke:color-mix(in srgb,var(--ink) 14%,transparent);opacity:.85}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">OpenPGP Internals — An Implementer's Series</p>
+        <p class="series-banner-title">Trust &amp; Distribution</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 5 of 7 · WoT, SKS collapse, WKD, key transparency</p>
+        <div class="series-banner-nav">
+          <a href="pgp-1-packet-format.html" class="done">1. Wire Format</a>
+          <a href="pgp-2-keys-s2k.html" class="done">2. Keys &amp; S2K</a>
+          <a href="pgp-3-encryption-aead.html" class="done">3. Encryption</a>
+          <a href="pgp-4-signatures.html" class="done">4. Signatures</a>
+          <a href="pgp-5-trust-distribution.html" class="active">5. Trust</a>
+          <a href="pgp-6-pqc-implementations.html">6. PQC</a>
+          <a href="pgp-7-resources.html">7. Resources</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 9, 2026 · security · 15 min read · 2940 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Trust and key distribution: the Web of Trust, and what replaced it.</h1>
+        <div class="tag-row">
+          <span class="tag fill">security</span>
+          <span class="tag">openpgp</span>
+          <span class="tag">pgp</span>
+          <span class="tag">pki</span>
+          <span class="tag">key-distribution</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Every cryptographic component in the previous four articles works. The unsolved problem — the one that has limited OpenPGP's real-world deployment for thirty years — is answering "is this key actually the right key for this person?" This article covers the certification and trust primitives precisely, gives the Web of Trust's actual propagation algorithm rather than the usual hand-wave, walks through how the SKS keyserver network was destroyed by an attack that required no vulnerability in any implementation, and evaluates what replaced it: verifying keyservers, WKD, DANE, and key transparency.</p>
+
+        <div class="bm-note"><strong>Prerequisites.</strong> <a href="pgp-2-keys-s2k.html">Article 2</a> for certificate structure and binding signatures, <a href="pgp-4-signatures.html">Article 4</a> for signature types and the hashed/unhashed split — certification signatures are signature types 0x10 through 0x13 and inherit every property discussed there.</div>
+
+        <h2 id="primitives">1. Certification: the primitive</h2>
+
+        <p>A certification is a signature by one key over the binding between another key and one of its User IDs. The four types express confidence in the <em>identity verification process</em>:</p>
+
+        <table class="papers">
+          <tr><th>Type</th><th>Name</th><th>Intended meaning</th></tr>
+          <tr><td><code>0x10</code></td><td>Generic certification</td><td>No claim made about verification. The default, and the least informative.</td></tr>
+          <tr><td><code>0x11</code></td><td>Persona certification</td><td>No verification performed.</td></tr>
+          <tr><td><code>0x12</code></td><td>Casual certification</td><td>Some casual verification.</td></tr>
+          <tr><td><code>0x13</code></td><td>Positive certification</td><td>Substantial verification. Self-signatures are conventionally this type.</td></tr>
+        </table>
+
+        <p>In practice these distinctions carry almost no information, because there is no shared definition of "casual" or "substantial" and tools rarely surface the difference. The genuinely load-bearing parameters live in subpackets instead.</p>
+
+        <h3 id="params">1.1 Trust Signature: depth and amount</h3>
+
+        <p>The Trust Signature subpacket (type 5) turns a certification into a delegation, with two fields:</p>
+
+        <ul>
+          <li><strong>Trust amount</strong> — 0 to 255, how convinced the issuer is that the binding is correct. Values ≥120 mean fully convinced; 60 conventionally means partially (marginally) convinced.</li>
+          <li><strong>Trust depth</strong> — 0 means "I vouch for this binding only." 1 means "this key is a trusted introducer — I will accept bindings it certifies." 2 means "and I will accept introducers it designates," and so on.</li>
+        </ul>
+
+        <p>Depth is where the Web of Trust becomes a graph problem rather than a list. Depth &gt;1 delegates the ability to delegate, which is powerful and dangerous in exactly the way intermediate CAs are in X.509.</p>
+
+        <h3 id="regex">1.2 Regular Expression scoping</h3>
+
+        <p>The Regular Expression subpacket (type 6) constrains a trust signature to User IDs matching a pattern — typically limiting an introducer to a single domain, e.g. <code>&lt;[^&gt;]+[@.]example\.com&gt;$</code>. This is OpenPGP's equivalent of X.509 name constraints, and it is the mechanism that makes organizational trust roots safe: your company's CA key can be a depth-2 introducer scoped to your own domain, unable to vouch for anything else.</p>
+
+        <p>It is also, historically, under-implemented and inconsistently enforced. If you are relying on regex scoping for security, verify that every implementation in your deployment actually enforces it rather than parsing and ignoring it.</p>
+
+        <h2 id="wot">2. The Web of Trust algorithm</h2>
+
+        <p>The classic GnuPG model has two knobs: <code>--marginals-needed</code> (default 3) and <code>--completes-needed</code> (default 1). A key is considered <strong>valid</strong> if:</p>
+
+        \[ \text{valid}(K) \iff \big(n_{\text{full}} \ge \texttt{completes-needed}\big) \ \lor \ \big(n_{\text{marginal}} \ge \texttt{marginals-needed}\big) \]
+
+        <p>where \(n_{\text{full}}\) counts certifications from fully-trusted keys and \(n_{\text{marginal}}\) counts certifications from marginally-trusted keys — subject to a maximum path length (<code>--max-cert-depth</code>, default 5).</p>
+
+        <p>Crucially, <strong>ownertrust is a local, private assignment</strong> — you decide whether you trust a key's owner to certify others, and that assignment never leaves your machine. Validity is computed; ownertrust is assigned.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="22" class="d-title" text-anchor="middle">Trust propagation: computed validity vs. assigned ownertrust</text>
+
+            <rect x="20" y="52" width="130" height="52" rx="8" class="d-box hot"/>
+            <text x="85" y="72" class="d-lbl" text-anchor="middle">You</text>
+            <text x="85" y="88" class="d-sub" text-anchor="middle">ultimate trust</text>
+
+            <path d="M150 78 L200 78" class="d-flow"/>
+            <text x="175" y="70" class="d-sub" text-anchor="middle">cert</text>
+
+            <rect x="202" y="52" width="140" height="52" rx="8" class="d-box sel"/>
+            <text x="272" y="72" class="d-lbl" text-anchor="middle">Alice</text>
+            <text x="272" y="88" class="d-sub" text-anchor="middle">valid + full ownertrust</text>
+
+            <path d="M342 78 L392 78" class="d-flow"/>
+
+            <rect x="394" y="52" width="140" height="52" rx="8" class="d-box cool"/>
+            <text x="464" y="72" class="d-lbl" text-anchor="middle">Bob</text>
+            <text x="464" y="88" class="d-sub" text-anchor="middle">valid (1 full ≥ completes)</text>
+
+            <rect x="202" y="126" width="140" height="44" rx="8" class="d-box dim"/>
+            <text x="272" y="144" class="d-sub" text-anchor="middle">Carol · marginal</text>
+            <rect x="202" y="176" width="140" height="44" rx="8" class="d-box dim"/>
+            <text x="272" y="194" class="d-sub" text-anchor="middle">Dave · marginal</text>
+
+            <path d="M342 148 C 380 148, 400 120, 400 104" class="d-dash"/>
+            <path d="M342 198 C 400 198, 420 120, 410 104" class="d-dash"/>
+
+            <text x="600" y="140" class="d-note" text-anchor="middle">2 marginals &lt; 3</text>
+            <text x="600" y="158" class="d-sub" text-anchor="middle">would not be enough</text>
+            <text x="600" y="174" class="d-sub" text-anchor="middle">alone under defaults</text>
+
+            <text x="360" y="238" class="d-note" text-anchor="middle">validity is derived from the graph · ownertrust is your private input to it</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — GnuPG's defaults: one fully-trusted certifier, or three marginally-trusted ones, within five hops.</p>
+        </div>
+
+        <h3 id="sequoia-wot">2.1 The modern formulation</h3>
+
+        <p><a href="https://sequoia-pgp.gitlab.io/sequoia-wot/" target="_blank" rel="noopener">Sequoia's WoT implementation</a> reframes this as an explicit network flow problem: trust amounts are capacities on edges, and a certificate is authenticated if the maximum flow from your trust roots to the target binding meets a threshold (120 for full authentication). The resolution runs as a breadth-first traversal from the ultimate keys, updating validity in topological order until a fixed point is reached or the depth limit is hit.</p>
+
+        <p>This formulation is strictly better for implementers: it makes the semantics of partial trust explicit rather than emergent from counter thresholds, and it composes properly with depth and regex constraints. If you are building trust evaluation today, model it as flow, not as counting.</p>
+
+        <h3 id="wot-reality">2.2 Why the Web of Trust did not work in practice</h3>
+
+        <p>Stating this without editorializing, because the reasons are technical:</p>
+
+        <ul>
+          <li><strong>The social graph is a metadata disclosure.</strong> Certifications are public and describe who has met whom. The WoT publishes a social network as a side effect of doing security.</li>
+          <li><strong>Trust does not compose semantically.</strong> "I verified Alice's passport" and "I am willing to vouch for Alice's judgment about other people's passports" are unrelated claims, but depth ≥1 conflates them.</li>
+          <li><strong>Revocation propagation is unsolved</strong>, as covered in Article 2 — there is no freshness requirement, so a revoked certification may never reach a relying party.</li>
+          <li><strong>The graph is sparse and clustered.</strong> Research on the strong set — see <a href="https://www.researchgate.net/publication/283083265_Challenging_the_Trustworthiness_of_PGP_Is_the_Web-of-Trust_Tear-Proof" target="_blank" rel="noopener">Barenghi et al., "Is the Web-of-Trust Tear-Proof?"</a> — found that connectivity depends on a small number of high-degree nodes, so removing a few keys partitions the graph badly.</li>
+          <li><strong>Nobody did it.</strong> Key-signing parties never scaled beyond the cryptographic community, and the fraction of real-world keys with meaningful WoT paths is small.</li>
+        </ul>
+
+        <h2 id="sks">3. The SKS collapse</h2>
+
+        <p>The SKS keyserver network was the original distribution infrastructure: a set of federated servers that gossiped certificates using a set-reconciliation protocol, designed on one principle — <strong>append-only, never delete</strong>. That principle was a deliberate anti-censorship measure. It was also the vulnerability.</p>
+
+        <h3 id="flooding">3.1 Certificate flooding, CVE-2019-13050</h3>
+
+        <p>In late June 2019, unknown actors attacked the certificates of Robert J. Hansen and Daniel Kahn Gillmor, two prominent OpenPGP contributors. The attack abused three properties that are all <em>by design</em>:</p>
+
+        <ol>
+          <li>An OpenPGP certificate can carry an unlimited number of third-party certifications.</li>
+          <li>Anyone can append a certification to anyone's certificate — no authorization is required, since a certification is an assertion by the signer, not a modification by the key owner.</li>
+          <li>There is no way to distinguish a legitimate certification from garbage without checking every signature against keys you may not have.</li>
+        </ol>
+
+        <p>The attackers appended roughly 150,000 signatures to the targeted certificates. Because the network is append-only and gossips aggressively, the poisoned certificates propagated to every server and <strong>cannot be removed</strong>. Any GnuPG client that fetched one would attempt to process every signature and effectively hang — a persistent denial of service against the local keyring, which in some configurations broke the user's GnuPG installation until manual intervention.</p>
+
+        <div class="bm-warn"><strong>There was no software vulnerability.</strong> Every component behaved as specified. The attack composed three intentional design decisions into a permanent, unfixable outcome. This is worth internalizing as a design lesson: append-only plus unauthenticated writes plus unbounded object size is a denial-of-service primitive, in any system, regardless of the cryptography involved.</div>
+
+        <p>The practical fallout: <a href="https://www.gentoo.org/news/2019/07/03/sks-key-poisoning.html" target="_blank" rel="noopener">distributions warned users away from the SKS pool</a>, GnuPG added import limits and eventually began ignoring third-party certifications on import by default, and the network was effectively abandoned as a general-purpose distribution mechanism. The <a href="https://blog.pgpkeys.eu/state-keyservers-2024.html" target="_blank" rel="noopener">state of the keyservers</a> has been one of managed decline since.</p>
+
+        <h3 id="mitigations">3.2 What implementations do now</h3>
+
+        <table class="papers">
+          <tr><th>Mitigation</th><th>Effect</th></tr>
+          <tr><td>Cap certifications processed per certificate on import</td><td>Bounds the DoS; may silently drop legitimate certifications</td></tr>
+          <tr><td>Ignore third-party certifications by default (GnuPG's <code>self-sigs-only</code> import behavior)</td><td>Immunizes the client; effectively abandons the WoT</td></tr>
+          <tr><td>Cap total certificate size</td><td>Blunt but effective</td></tr>
+          <tr><td>Only accept certifications from keys already in the local keyring</td><td>Preserves useful WoT edges while dropping unknown noise</td></tr>
+        </table>
+
+        <h2 id="modern">4. What replaced it</h2>
+
+        <h3 id="verifying">4.1 Verifying keyservers (keys.openpgp.org)</h3>
+
+        <p><a href="https://keys.openpgp.org/about/" target="_blank" rel="noopener">keys.openpgp.org</a>, running the Rust <a href="https://gitlab.com/keys.openpgp.org/hagrid" target="_blank" rel="noopener">Hagrid</a> software, makes different tradeoffs than SKS on every axis:</p>
+
+        <ul>
+          <li><strong>Email verification required.</strong> A key becomes discoverable by an address only after the uploader proves control of it via a confirmation email. This makes the address-to-key mapping meaningful rather than merely asserted.</li>
+          <li><strong>Third-party certifications are stripped.</strong> The server distributes the key with its self-signatures only. This structurally prevents certificate flooding — the flooding vector simply does not exist.</li>
+          <li><strong>Deletion is supported.</strong> An address can be removed by its owner, which is a privacy requirement (GDPR, among other things) that append-only design cannot satisfy.</li>
+        </ul>
+
+        <p>The tradeoff is explicit and worth naming: this design gives up the Web of Trust entirely in exchange for a distribution channel that works. It answers "here is a key that someone who controls this email address uploaded," which is a weaker claim than the WoT aspired to and a far stronger one than SKS actually delivered.</p>
+
+        <h3 id="wkd">4.2 Web Key Directory</h3>
+
+        <p>WKD (<a href="https://datatracker.ietf.org/doc/draft-koch-openpgp-webkey-service/" target="_blank" rel="noopener">draft-koch-openpgp-webkey-service</a>) removes the third party. The key is published on the domain that owns the email address, fetched over HTTPS:</p>
+
+        <pre class="hex"><span class="c"># Advanced method (preferred)</span>
+https://openpgpkey.example.org/.well-known/openpgpkey/example.org/hu/<span class="hl">&lt;hashed-local&gt;</span>?l=alice
+
+<span class="c"># Direct method (fallback)</span>
+https://example.org/.well-known/openpgpkey/hu/<span class="hl">&lt;hashed-local&gt;</span>?l=alice
+
+<span class="c"># hashed-local = Z-Base-32( SHA-1( lowercase(local-part) ) )</span>
+<span class="c"># Response: binary (not armored) transferable public key.</span></pre>
+
+        <p>Two design points that regularly confuse implementers:</p>
+
+        <ul>
+          <li><strong>SHA-1 here is not a security claim.</strong> It is a mapping function producing a fixed-length filename, chosen to avoid exposing the raw local-part in a URL. Its collision weakness is irrelevant to this use, because an attacker who could produce a colliding local-part would still need control of the domain to publish anything.</li>
+          <li><strong>The security root is TLS and DNS.</strong> WKD's trust reduces to the Web PKI plus domain control — the same root as the rest of the web. That is a meaningful downgrade from the WoT's aspirations and a large upgrade over its reality.</li>
+        </ul>
+
+        <p>WKD is now the practical default for automatic key discovery: GnuPG queries it via <code>--auto-key-locate</code>, and it works without any user action for organizations that publish correctly.</p>
+
+        <h3 id="dane">4.3 DANE OPENPGPKEY</h3>
+
+        <p><a href="https://www.rfc-editor.org/rfc/rfc7929.html" target="_blank" rel="noopener">RFC 7929</a> defines an OPENPGPKEY DNS record type, placing the key in DNS with DNSSEC as the integrity mechanism. Conceptually clean — it moves the trust root from the Web PKI to DNSSEC — but deployment is thin because DNSSEC deployment is thin, and because keys are large enough that DNS record size becomes awkward. Worth knowing, rarely worth deploying in 2026 unless you already have a DNSSEC-everywhere posture.</p>
+
+        <h3 id="kt">4.4 Key transparency</h3>
+
+        <p>The structural gap all of the above share: you must trust that the server gave <em>you</em> the same key it gives everyone else. A compromised or coerced WKD host can serve an attacker's key to one targeted user and the real key to everyone else, and nothing detects it.</p>
+
+        <p>Key transparency addresses this with the Certificate Transparency pattern: publish all key bindings in an append-only, cryptographically verifiable log (a Merkle tree), so that any equivocation — showing different bindings to different parties — is detectable by auditors. The <a href="https://datatracker.ietf.org/wg/keytrans/about/" target="_blank" rel="noopener">IETF KEYTRANS working group</a> is developing the general architecture, and the <a href="https://datatracker.ietf.org/doc/charter-ietf-openpgp/" target="_blank" rel="noopener">OpenPGP working group charter</a> states an intent to integrate its output.</p>
+
+        <div class="bm-note"><strong>Status as of September 2026:</strong> the KEYTRANS architecture work is active and progressing; there is no finished, deployed OpenPGP key transparency system in general use. Treat it as the credible direction of travel rather than something you can adopt today. What you <em>can</em> do now is design your key-fetching layer so that a transparency check is addable later — cache observed bindings, detect changes, and surface them.</div>
+
+        <h2 id="comparison">5. Comparing the distribution mechanisms</h2>
+
+        <table class="papers">
+          <tr><th>Mechanism</th><th>Trust root</th><th>Answers</th><th>Flooding-resistant</th><th>Detects equivocation</th></tr>
+          <tr><td>Manual fingerprint exchange</td><td>Your own verification</td><td>Exactly the right question</td><td>n/a</td><td>Yes (you saw it yourself)</td></tr>
+          <tr><td>Web of Trust</td><td>Your certification graph</td><td>Identity binding, transitively</td><td>No</td><td>No</td></tr>
+          <tr><td>SKS keyservers</td><td>None</td><td>"Someone uploaded this"</td><td><strong>No — fatally</strong></td><td>No</td></tr>
+          <tr><td>keys.openpgp.org</td><td>Server + email control</td><td>"An address-controller uploaded this"</td><td>Yes (strips certs)</td><td>No</td></tr>
+          <tr><td>WKD</td><td>TLS + domain control</td><td>"The domain publishes this for this address"</td><td>Yes</td><td>No</td></tr>
+          <tr><td>DANE OPENPGPKEY</td><td>DNSSEC</td><td>Same as WKD, different root</td><td>Yes</td><td>No</td></tr>
+          <tr><td>Key transparency</td><td>Log + auditors</td><td>Same, plus consistency</td><td>Yes</td><td><strong>Yes</strong> (the point)</td></tr>
+        </table>
+
+        <h2 id="uid">6. User IDs as an attack surface</h2>
+
+        <p>A User ID is unstructured UTF-8 (<a href="pgp-1-packet-format.html">Article 1</a>). Everything displayed from it is attacker-controlled:</p>
+
+        <ul>
+          <li><strong>Homoglyphs.</strong> <code>аlice@example.org</code> with a Cyrillic <code>а</code> renders identically to the Latin form. Any UI that matches identities visually is defeated.</li>
+          <li><strong>Bidirectional override characters</strong> can reorder displayed text so that the rendered address differs from the stored bytes.</li>
+          <li><strong>Embedded newlines and control characters</strong> feed directly into the SigSpoof-class injection problem from <a href="pgp-4-signatures.html">Article 4</a> — a User ID containing a newline plus a fake status line is the same bug in a different field.</li>
+          <li><strong>The comment field</strong> — <code>Name (comment) &lt;email&gt;</code> — is free text that some tools display prominently and some hide, which is precisely the inconsistency an attacker wants.</li>
+        </ul>
+
+        <p>User Attribute packets (tag 17), typically JPEG images, are worse: they hand an attacker-controlled image to an image decoder, adding an entire memory-corruption surface for a feature almost nobody uses. Reject or ignore them unless you have a specific need.</p>
+
+        <h2 id="operational">7. Operational guidance</h2>
+
+        <div class="bm-fix"><strong>For an organization deploying OpenPGP today,</strong> the defensible design is: publish keys via WKD on your own domain; do not rely on the SKS pool for anything; use trust signatures with regex scoping to your domain to establish an internal introducer rather than expecting an external WoT; pin fingerprints for the small number of external correspondents that matter; and build your key-fetch layer to cache and diff observed bindings so that a substitution is at least visible after the fact.</div>
+
+        <table class="papers">
+          <tr><th>Rule</th><th>Prevents</th></tr>
+          <tr><td>Cap certification count and total size on certificate import</td><td>Certificate flooding DoS</td></tr>
+          <tr><td>Only process certifications from keys already known locally</td><td>Unbounded verification work from unknown signers</td></tr>
+          <tr><td>Enforce regex scoping on trust signatures, or refuse to honor depth &gt;0</td><td>Over-broad delegation</td></tr>
+          <tr><td>Never render User IDs without normalization and control-character stripping</td><td>Homoglyph and bidi spoofing, status-line injection</td></tr>
+          <tr><td>Treat User Attribute packets as untrusted binary; ignore by default</td><td>Image-decoder memory corruption</td></tr>
+          <tr><td>Cache observed key bindings and surface changes to the user</td><td>Silent key substitution by a distribution point</td></tr>
+          <tr><td>Prefer WKD over keyserver lookup; require TLS validation</td><td>Unauthenticated key sourcing</td></tr>
+          <tr><td>Re-check revocation state on every use, not just at import</td><td>Acting on a key revoked after you imported it</td></tr>
+        </table>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Is the Web of Trust dead?</summary><p>As a global, internet-scale identity system, yes — the graph is too sparse, the metadata leak is unacceptable to most users, and the SKS collapse removed its distribution layer. As a bounded mechanism inside an organization, with a scoped introducer key and regex constraints, it works and is genuinely useful. The failure was of the global aspiration, not of the primitive.</p></details>
+        <details class="faq"><summary>Can poisoned certificates be cleaned up?</summary><p>Not from the SKS network — it is append-only by design and there is no delete operation. The mitigation was entirely client-side: import limits and ignoring third-party certifications. The affected certificates remain poisoned on those servers permanently, which is exactly why the network was abandoned rather than repaired.</p></details>
+        <details class="faq"><summary>Why does WKD use SHA-1 if SHA-1 is broken?</summary><p>Because it is not being used as a security primitive. It maps a local-part to a fixed-length filename. Forging a collision would let an attacker occupy the same URL path — but publishing at that path requires control of the domain, which is the actual security boundary. Collision resistance is not load-bearing here.</p></details>
+        <details class="faq"><summary>Should I still publish my key to keyservers?</summary><p>To keys.openpgp.org, yes — it is verified, strips flooding vectors, and supports deletion. To the SKS pool, no. And publish via WKD on your own domain if you control one; that is the mechanism with the best combination of automatic discovery and meaningful trust root available today.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Ownertrust is assigned locally; validity is computed from the graph.</strong> Conflating the two is the most common conceptual error in WoT discussions.</li>
+          <li><strong>Model trust as network flow, not as threshold counting</strong> — it composes correctly with depth and scoping, which counters do not.</li>
+          <li><strong>SKS was destroyed without any implementation vulnerability.</strong> Append-only + unauthenticated writes + unbounded size is a DoS primitive in any system.</li>
+          <li><strong>Modern distribution trades the WoT for something that works</strong>: WKD's trust root is TLS and domain control, which is weaker in theory and far stronger in practice than an unreachable social graph.</li>
+          <li><strong>Nothing deployed today detects a distribution point equivocating</strong> — that is precisely the gap key transparency exists to close, and it is not closed yet.</li>
+          <li><strong>User IDs are attacker-controlled display strings.</strong> Every rendering path needs normalization and control-character handling.</li>
+        </ul>
+
+        <h2 id="next">Next in this series</h2>
+        <p><a href="pgp-6-pqc-implementations.html"><strong>Article 6 — Post-quantum OpenPGP and the LibrePGP schism</strong></a>: RFC 9980's composite ML-KEM and ML-DSA constructions, SLH-DSA, why the working group chose hybrid over pure PQC, the technical substance of the OpenPGP/LibrePGP split, and a comparison of the major implementations.</p>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="https://gist.github.com/rjhansen/67ab921ffb4084c865b3618d6955275f" target="_blank" rel="noopener">Robert J. Hansen — SKS Keyserver Network Under Attack</a> <span>— the primary first-hand account of the 2019 flooding attack, by one of its targets.</span></li>
+          <li><a href="https://access.redhat.com/articles/4264021" target="_blank" rel="noopener">CVE-2019-13050 — certificate spamming against SKS and GnuPG</a> <span>— vendor analysis of the persistent DoS.</span></li>
+          <li><a href="https://sequoia-pgp.org/blog/2019/07/08/certificate-flooding-sks-gnupg-issues-the-sequoia-project/" target="_blank" rel="noopener">Sequoia — Certificate Flooding, SKS and GnuPG Issues</a> <span>— implementer's perspective on mitigations.</span></li>
+          <li><a href="https://sequoia-pgp.gitlab.io/sequoia-wot/" target="_blank" rel="noopener">Sequoia — OpenPGP Web of Trust</a> <span>— the network-flow formulation of trust propagation, with worked examples.</span></li>
+          <li><a href="https://datatracker.ietf.org/doc/draft-koch-openpgp-webkey-service/" target="_blank" rel="noopener">draft-koch-openpgp-webkey-service — OpenPGP Web Key Directory</a> <span>— normative WKD specification, direct and advanced methods.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc7929.html" target="_blank" rel="noopener">RFC 7929 — DNS-Based Authentication of Named Entities (DANE) for OpenPGP</a></li>
+          <li><a href="https://keys.openpgp.org/about/" target="_blank" rel="noopener">keys.openpgp.org — design and policy</a> <span>— why it verifies addresses and strips third-party certifications.</span></li>
+          <li><a href="https://www.ietf.org/ietf-ftp/internet-drafts/draft-ietf-keytrans-architecture-05.html" target="_blank" rel="noopener">draft-ietf-keytrans-architecture — Key Transparency Architecture</a> <span>— the general design the OpenPGP WG intends to build on.</span></li>
+          <li><a href="https://www.researchgate.net/publication/283083265_Challenging_the_Trustworthiness_of_PGP_Is_the_Web-of-Trust_Tear-Proof" target="_blank" rel="noopener">Barenghi et al. — Is the Web-of-Trust Tear-Proof?</a> <span>— graph-theoretic analysis of strong-set connectivity and its fragility.</span></li>
+          <li><a href="https://blog.pgpkeys.eu/state-keyservers-2024.html" target="_blank" rel="noopener">The State of the Keyservers</a> <span>— survey of what actually still runs.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="pgp-4-signatures.html">← prev: Signatures</a>
+        <a href="pgp-6-pqc-implementations.html">next: PQC &amp; Implementations →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

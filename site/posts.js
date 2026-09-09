@@ -16,6 +16,90 @@
 
 const POSTS = [
   {
+    slug: "pgp-1-packet-format",
+    title: "OpenPGP on the Wire — Packets, Lengths, and Armor.",
+    date: "Sep 9, 2026",
+    cat: "security",
+    tags: ["security", "openpgp", "pgp", "rfc9580", "cryptography"],
+    time: 18,
+    words: 3600,
+    excerpt: "Part 1 of the OpenPGP Internals series: the byte-level wire format of RFC 9580 — OpenPGP vs legacy packet headers, all six length encodings including partial body lengths, the complete tag table and the critical/non-critical split, MPI vs native encoding, the message grammar, ASCII armor and CRC24, plus a parser hardening checklist.",
+    series: "openpgp",
+    seriesNum: "1"
+  },
+  {
+    slug: "pgp-2-keys-s2k",
+    title: "Keys, Fingerprints, and Secret-Key Protection.",
+    date: "Sep 9, 2026",
+    cat: "security",
+    tags: ["security", "openpgp", "pgp", "key-management", "kdf"],
+    time: 15,
+    words: 3080,
+    excerpt: "Part 2: certificate structure as a signed graph, v4 vs v6 key packets, fingerprint computation and how bad SHA-1 in v4 actually is, why key IDs are never identifiers, subkey binding and the back signature that prevents signature-attribution theft, and S2K from Simple through Argon2 with AEAD-protected secret keys.",
+    series: "openpgp",
+    seriesNum: "2"
+  },
+  {
+    slug: "pgp-3-encryption-aead",
+    title: "Confidentiality — CFB, the MDC, EFAIL, and SEIPDv2.",
+    date: "Sep 9, 2026",
+    cat: "security",
+    tags: ["security", "openpgp", "pgp", "aead", "cryptanalysis"],
+    time: 14,
+    words: 2820,
+    excerpt: "Part 3: OpenPGP's non-standard CFB and the quick-check oracle, why the MDC was structurally unable to protect a streaming decryptor, the full EFAIL CFB-gadget construction and its three integrity bypasses, and how SEIPDv2's chunked AEAD with a final length tag fixes it.",
+    series: "openpgp",
+    seriesNum: "3"
+  },
+  {
+    slug: "pgp-4-signatures",
+    title: "Signatures — Subpackets, Canonicalization, and SigSpoof.",
+    date: "Sep 9, 2026",
+    cat: "security",
+    tags: ["security", "openpgp", "pgp", "digital-signatures", "cryptography"],
+    time: 15,
+    words: 2900,
+    excerpt: "Part 4: signature packet anatomy, the hash input and trailer construction, the hashed vs unhashed split that leaves half the packet attacker-modifiable, signature types and type confusion, one-pass signatures, cleartext canonicalization traps, and SigSpoof — twenty years of spoofed verification in the interface, not the cryptography.",
+    series: "openpgp",
+    seriesNum: "4"
+  },
+  {
+    slug: "pgp-5-trust-distribution",
+    title: "Trust and Key Distribution — the Web of Trust, and What Replaced It.",
+    date: "Sep 9, 2026",
+    cat: "security",
+    tags: ["security", "openpgp", "pgp", "pki", "key-distribution"],
+    time: 15,
+    words: 2940,
+    excerpt: "Part 5: certification semantics with trust depth and amount, the Web of Trust's real propagation algorithm and its modern network-flow formulation, how CVE-2019-13050 certificate flooding permanently destroyed the SKS network without any software vulnerability, and the replacements — verifying keyservers, WKD, DANE and key transparency.",
+    series: "openpgp",
+    seriesNum: "5"
+  },
+  {
+    slug: "pgp-6-pqc-implementations",
+    title: "Post-Quantum OpenPGP, and the Schism.",
+    date: "Sep 9, 2026",
+    cat: "security",
+    tags: ["security", "openpgp", "pgp", "post-quantum", "ml-kem"],
+    time: 13,
+    words: 2500,
+    excerpt: "Part 6: RFC 9980's composite ML-KEM+X25519 and ML-DSA+EdDSA constructions, why a KEM combiner must bind ciphertexts and public keys, SLH-DSA for long-lived roots, the technical substance of the RFC 9580 vs LibrePGP split at tag 18-v2 versus tag 20, an implementation comparison, and a staged migration plan.",
+    series: "openpgp",
+    seriesNum: "6"
+  },
+  {
+    slug: "pgp-7-resources",
+    title: "The Complete OpenPGP Resource Map and Roadmap.",
+    date: "Sep 9, 2026",
+    cat: "security",
+    tags: ["security", "openpgp", "pgp", "resources", "roadmap"],
+    time: 14,
+    words: 2730,
+    excerpt: "Part 7: every RFC, active draft, research paper, attack disclosure, book, talk, course, library, CLI tool, test suite and mailing list worth your time — plus three learning roadmaps (implementer, researcher, security engineer) and an honest list of widely-recommended resources that are now out of date.",
+    series: "openpgp",
+    seriesNum: "7"
+  },
+  {
     slug: "post-quantum-cryptography-foundations-survey",
     title: "Post-quantum cryptography: a survey of foundations, standards, and security assumptions",
     date: "Sep 5, 2026",

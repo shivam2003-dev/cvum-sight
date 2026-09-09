@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Post-Quantum OpenPGP (RFC 9980) and the LibrePGP Schism — cvam.sight</title>
+<meta name="description" content="Part 6 of the OpenPGP Internals series: RFC 9980's composite ML-KEM and ML-DSA constructions, SLH-DSA, why hybrid rather than pure post-quantum, the KEM combiner and its binding properties, the technical substance of the OpenPGP/LibrePGP split at tag 20 and v5 vs v6 keys, and a comparison of GnuPG, Sequoia, RNP, OpenPGP.js and GopenPGP.">
+<link rel="stylesheet" href="../style.css?v=88">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:40px} h3{margin-top:26px;scroll-margin-top:20px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.9rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:9px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .post-body a[target="_blank"]{color:var(--accent,#c96442);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent);font-weight:500}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{display:block;padding:2px 0 6px}
+  pre.hex{margin:16px 0 22px;overflow-x:auto;background:color-mix(in srgb,var(--ink) 92%,var(--paper) 8%);color:#e8e2cf;border-radius:10px;padding:16px 18px;font-family:var(--font-mono,monospace);font-size:.79rem;line-height:1.6;white-space:pre}
+  pre.hex .c{color:#9a9382}
+  pre.hex .hl{color:#f0c040;font-weight:700}
+  pre.hex .bad{color:#e08a70;font-weight:700}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-box.sel{fill:var(--yellow-soft,#f7e9c0);stroke:var(--ink)}
+  svg .d-box.dim{fill:color-mix(in srgb,var(--paper) 80%,var(--ink) 6%);stroke:color-mix(in srgb,var(--ink) 14%,transparent);opacity:.85}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">OpenPGP Internals — An Implementer's Series</p>
+        <p class="series-banner-title">PQC &amp; The Schism</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 6 of 7 · RFC 9980, LibrePGP, implementations</p>
+        <div class="series-banner-nav">
+          <a href="pgp-1-packet-format.html" class="done">1. Wire Format</a>
+          <a href="pgp-2-keys-s2k.html" class="done">2. Keys &amp; S2K</a>
+          <a href="pgp-3-encryption-aead.html" class="done">3. Encryption</a>
+          <a href="pgp-4-signatures.html" class="done">4. Signatures</a>
+          <a href="pgp-5-trust-distribution.html" class="done">5. Trust</a>
+          <a href="pgp-6-pqc-implementations.html" class="active">6. PQC</a>
+          <a href="pgp-7-resources.html">7. Resources</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 9, 2026 · security · 13 min read · 2500 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Post-quantum OpenPGP, and the schism.</h1>
+        <div class="tag-row">
+          <span class="tag fill">security</span>
+          <span class="tag">openpgp</span>
+          <span class="tag">pgp</span>
+          <span class="tag">post-quantum</span>
+          <span class="tag">ml-kem</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Two things happened to OpenPGP in the 2020s. It got a credible post-quantum story — <a href="https://www.rfc-editor.org/rfc/rfc9980" target="_blank" rel="noopener">RFC 9980</a>, published June 2026, specifying composite ML-KEM+ECDH encryption, composite ML-DSA+EdDSA signatures, and standalone SLH-DSA. And it split into two incompatible standards, with GnuPG pursuing LibrePGP and the IETF working group and Sequoia pursuing RFC 9580. This article covers the cryptographic constructions in detail — including why hybrid rather than pure PQC, and what a KEM combiner must actually bind — then treats the schism as the concrete interoperability problem it is, and ends with an implementation comparison for people who have to choose a library.</p>
+
+        <div class="bm-note"><strong>Prerequisites.</strong> <a href="pgp-2-keys-s2k.html">Article 2</a> for key packets and the v6 explicit-length field that makes new algorithms addable, <a href="pgp-3-encryption-aead.html">Article 3</a> for PKESK and SEIPDv2.</div>
+
+        <h2 id="threat">1. The threat model, stated precisely</h2>
+
+        <p>A cryptographically relevant quantum computer running Shor's algorithm breaks RSA, DSA, and every elliptic-curve scheme OpenPGP currently uses. No such machine is known to exist. The reason to act now is <strong>harvest-now-decrypt-later</strong>: an adversary who records ciphertext today and stores it can decrypt it whenever such a machine arrives.</p>
+
+        <p>This threat is unusually severe for OpenPGP specifically. Email and file encryption produce artifacts with very long confidentiality requirements — archives, legal documents, journalistic source material, medical records. A TLS session key protects data for the lifetime of the connection; an encrypted archive may need to stay confidential for decades.</p>
+
+        <div class="bm-note"><strong>Signatures are a different, milder problem.</strong> A quantum adversary can forge signatures once the machine exists, but cannot retroactively forge a signature that was verified in the past by a party that recorded the result. There is no "harvest-now-forge-later" — forgery is only useful going forward. This asymmetry is why encryption migration is more urgent than signature migration, and why RFC 9980 makes ML-KEM-768+X25519 mandatory-to-implement while the signature side has more latitude.</div>
+
+        <h2 id="hybrid">2. Why hybrid, not pure post-quantum</h2>
+
+        <p>RFC 9980 does not replace ECC. It <strong>combines</strong> ECC and PQC, so that the construction stays secure if either component survives. The reasoning is explicit in the RFC: deploy post-quantum in combination with traditional schemes such that security is retained even if all schemes but one in the combination are broken.</p>
+
+        <table class="papers">
+          <tr><th>Concern</th><th>Pure PQC</th><th>Hybrid</th></tr>
+          <tr><td>Classical cryptanalysis of new lattice assumptions</td><td>Total loss if broken</td><td>Falls back to ECC security</td></tr>
+          <tr><td>Implementation bugs in new, less-exercised code</td><td>Total loss</td><td>ECC path still holds</td></tr>
+          <tr><td>Quantum adversary</td><td>Secure</td><td>Secure (PQ component holds)</td></tr>
+          <tr><td>Key and ciphertext size</td><td>Large</td><td>Larger</td></tr>
+          <tr><td>Compute cost</td><td>Moderate</td><td>Both operations</td></tr>
+        </table>
+
+        <p>The lattice assumptions underlying ML-KEM and ML-DSA are roughly a decade old in their current form and have had far less cryptanalytic attention than RSA or the discrete log problem. Hybrid is the conservative response to that asymmetry in scrutiny, not a hedge against NIST's judgment.</p>
+
+        <h2 id="mlkem">3. Composite encryption: ML-KEM + ECDH</h2>
+
+        <p>RFC 9980 defines two composite encryption algorithms:</p>
+
+        <table class="papers">
+          <tr><th>Algorithm</th><th>Components</th><th>Requirement level</th></tr>
+          <tr><td>ML-KEM-768 + X25519</td><td>NIST security category 3 + Curve25519</td><td><strong>MUST implement</strong></td></tr>
+          <tr><td>ML-KEM-1024 + X448</td><td>NIST security category 5 + Curve448</td><td>SHOULD implement</td></tr>
+        </table>
+
+        <h3 id="combiner">3.1 The KEM combiner</h3>
+
+        <p>Both KEMs are run independently, producing two shared secrets, which are then combined through a KDF into the key that actually wraps the session key:</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="22" class="d-title" text-anchor="middle">Composite KEM: two independent encapsulations, one combined key</text>
+
+            <rect x="30" y="48" width="200" height="56" rx="8" class="d-box cool"/>
+            <text x="130" y="70" class="d-lbl" text-anchor="middle">ML-KEM-768 encaps</text>
+            <text x="130" y="88" class="d-sub" text-anchor="middle">→ ct_pq , ss_pq</text>
+
+            <rect x="30" y="120" width="200" height="56" rx="8" class="d-box"/>
+            <text x="130" y="142" class="d-lbl" text-anchor="middle">X25519 ECDH</text>
+            <text x="130" y="160" class="d-sub" text-anchor="middle">→ ct_ecc , ss_ecc</text>
+
+            <path d="M230 76 C 280 76, 300 100, 328 112" class="d-flow"/>
+            <path d="M230 148 C 280 148, 300 124, 328 116" class="d-flow"/>
+
+            <rect x="330" y="94" width="180" height="56" rx="8" class="d-box sel"/>
+            <text x="420" y="116" class="d-lbl" text-anchor="middle">KEM combiner (KDF)</text>
+            <text x="420" y="134" class="d-sub" text-anchor="middle">binds both ct + both pk</text>
+
+            <path d="M510 122 L556 122" class="d-flow"/>
+
+            <rect x="558" y="94" width="140" height="56" rx="8" class="d-box hot"/>
+            <text x="628" y="116" class="d-lbl" text-anchor="middle">KEK</text>
+            <text x="628" y="134" class="d-sub" text-anchor="middle">wraps session key</text>
+
+            <text x="360" y="202" class="d-note" text-anchor="middle">breaking one component leaves the KEK secure — that is the entire design goal</text>
+            <text x="360" y="226" class="d-sub" text-anchor="middle">the combiner must bind ciphertexts and public keys, or the composition is not robust</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — Concatenating shared secrets is not sufficient. The combiner's KDF input must include both ciphertexts and both public keys.</p>
+        </div>
+
+        <p>The binding requirement is the subtle part and worth stating explicitly. A naive combiner \(K = \text{KDF}(ss_{pq} \| ss_{ecc})\) is <em>not</em> robust: it fails to bind the derived key to the specific ciphertexts and public keys involved, which opens the door to re-encapsulation and key-substitution attacks where an adversary swaps one component's ciphertext for one of their own. RFC 9980's combiner includes both ciphertexts, both public keys, and a domain-separation label, which is what makes the composition secure rather than merely convenient.</p>
+
+        <h3 id="sizes">3.2 Size consequences</h3>
+
+        <table class="papers">
+          <tr><th>Quantity</th><th>X25519 alone</th><th>ML-KEM-768 + X25519</th></tr>
+          <tr><td>Public key</td><td>32 B</td><td>~1,216 B</td></tr>
+          <tr><td>Ciphertext / PKESK payload</td><td>32 B</td><td>~1,120 B</td></tr>
+          <tr><td>Private key</td><td>32 B</td><td>~2,432 B</td></tr>
+        </table>
+
+        <p>Roughly a 35× growth in key size. For most OpenPGP use this is irrelevant — a 1 KB PKESK on a 50 KB email is noise. It matters in three places: constrained hardware tokens (many smartcards cannot store keys this size), keyserver and WKD storage and bandwidth at scale, and any protocol that embeds OpenPGP certificates in size-limited fields — DNS records for DANE being the obvious casualty.</p>
+
+        <div class="bm-fix"><strong>This is where <a href="pgp-2-keys-s2k.html">Article 2</a>'s v6 explicit key-material length pays off.</strong> Because a v6 public key packet declares how many octets its key material occupies, an implementation that has never heard of ML-KEM can still parse past the packet correctly. Without that field, adding a new algorithm with a new key size would break every older parser. Forward compatibility was designed in one revision before it was needed.</div>
+
+        <h2 id="signatures">4. Post-quantum signatures</h2>
+
+        <h3 id="mldsa">4.1 Composite ML-DSA + EdDSA</h3>
+
+        <p>Signatures follow the same hybrid pattern: both signatures are computed over the same message and both must verify. RFC 9980 defines composites pairing ML-DSA-65 with Ed25519 and ML-DSA-87 with Ed448.</p>
+
+        \[ \text{verify}(m, \sigma) = \text{verify}_{\text{ML-DSA}}(m, \sigma_{pq}) \ \land \ \text{verify}_{\text{EdDSA}}(m, \sigma_{ecc}) \]
+
+        <p>The conjunction matters. An implementation that accepts the signature if <em>either</em> component verifies has built a downgrade: an attacker who breaks one component can forge freely. Both, always, or reject.</p>
+
+        <h3 id="slhdsa">4.2 SLH-DSA standalone</h3>
+
+        <p>SLH-DSA (formerly SPHINCS+) is included as a <em>standalone</em> algorithm rather than as a hybrid component, and the reason is structural: it is hash-based, so its security rests only on the hash function's properties rather than on lattice assumptions. There is no need to hedge it with ECC, because its assumptions are the most conservative available.</p>
+
+        <p>The cost is size. SLH-DSA signatures are large — on the order of 8–30 KB depending on parameter set, versus 64 bytes for Ed25519. That makes it unsuitable for routine message signing and well-suited to exactly one thing: <strong>long-lived root and code-signing keys</strong>, where signature size is irrelevant and the strongest possible assumption is worth paying for.</p>
+
+        <table class="papers">
+          <tr><th>Use case</th><th>Recommended</th><th>Why</th></tr>
+          <tr><td>Routine message signing</td><td>ML-DSA-65 + Ed25519</td><td>Reasonable size, hybrid safety</td></tr>
+          <tr><td>Software release signing</td><td>SLH-DSA, or composite</td><td>Verified rarely, must last decades</td></tr>
+          <tr><td>Long-lived offline root key</td><td>SLH-DSA</td><td>Most conservative assumptions available</td></tr>
+          <tr><td>Encryption subkey</td><td>ML-KEM-768 + X25519</td><td>MTI, harvest-now-decrypt-later urgency</td></tr>
+        </table>
+
+        <h2 id="schism">5. The schism</h2>
+
+        <p>This section is factual rather than partisan. Both sides have coherent positions; the consequence for you is an interoperability matrix you must plan around.</p>
+
+        <h3 id="timeline">5.1 What happened</h3>
+
+        <p>The OpenPGP working group spent years revising RFC 4880. In <strong>September 2022</strong>, GnuPG announced it would implement an earlier draft rather than the direction the rest of the working group had agreed. The working group continued and published <a href="https://www.rfc-editor.org/rfc/rfc9580.html" target="_blank" rel="noopener">RFC 9580</a> in July 2024, defining version 6 keys, SEIPDv2, and the AEAD design covered in Articles 2 and 3. GnuPG and allied implementers formalized their alternative as <strong>LibrePGP</strong>, based on the v5 design.</p>
+
+        <p>Werner Koch's stated position is that the IETF's changes were harmful to existing deployments and that users need long-term stability over disruptive change. The working group's position, as described in <a href="https://lwn.net/Articles/953797/" target="_blank" rel="noopener">LWN's coverage</a>, is that the changes were substantive security improvements: protection against key-overwriting attacks, a wire-format change to prevent signature aliasing, and downgrade protection.</p>
+
+        <h3 id="technical">5.2 The technical disagreements</h3>
+
+        <table class="papers">
+          <tr><th>Area</th><th>RFC 9580</th><th>LibrePGP</th><th>Consequence</th></tr>
+          <tr><td>AEAD container</td><td>SEIPD <strong>version 2</strong> (tag 18)</td><td>AEAD Encrypted Data, <strong>tag 20</strong></td><td><strong>Ciphertext does not decrypt across implementations</strong></td></tr>
+          <tr><td>Key version</td><td>v6 — SHA-256 fingerprints, explicit lengths, salted sigs</td><td>v5 — different layout and fingerprint construction</td><td>Certificates are not mutually parseable</td></tr>
+          <tr><td>Chunking</td><td>Exponent-based chunk sizes in SEIPDv2</td><td>Different chunking scheme</td><td>Even where both do AEAD, framing differs</td></tr>
+          <tr><td>Secret-key AEAD binding</td><td>AD binds the public key packet</td><td>Different construction</td><td>The key-overwriting protection differs</td></tr>
+          <tr><td>Signature salting</td><td>v6 signatures salted</td><td>Not adopted</td><td>Different collision-resistance posture</td></tr>
+        </table>
+
+        <div class="bm-warn"><strong>The practical rule for 2026:</strong> "OpenPGP-compatible" is no longer a meaningful claim in a spec or a procurement document. You must state which: RFC 4880, RFC 9580, or LibrePGP — and for encryption, whether you emit SEIPDv2 (tag 18 v2) or AEAD Encrypted Data (tag 20). Write it into your interface documentation and your test matrix.</div>
+
+        <h3 id="posture">5.3 A defensible engineering posture</h3>
+
+        <p>Given the split, the interoperability-maximizing configuration for general correspondence in 2026 is unglamorous:</p>
+
+        <ul>
+          <li><strong>v4 keys</strong> with Ed25519 signing and X25519 encryption subkeys — parsed by everything.</li>
+          <li><strong>SEIPDv1 with a correctly-enforced MDC</strong> for messages to unknown peers, per <a href="pgp-3-encryption-aead.html">Article 3</a>'s strict-rejection rules.</li>
+          <li><strong>SEIPDv2 AEAD</strong> where you know the peer speaks RFC 9580.</li>
+          <li><strong>v6 keys and post-quantum algorithms</strong> where you control both ends — internal systems, machine-to-machine, archival encryption with a known toolchain.</li>
+        </ul>
+
+        <p>For <em>archival</em> encryption specifically, the harvest-now-decrypt-later argument overrides interoperability: if you are encrypting something that must stay confidential for twenty years and you control the decryption side, use ML-KEM-768+X25519 now.</p>
+
+        <h2 id="implementations">6. The implementation landscape</h2>
+
+        <table class="papers">
+          <tr><th>Implementation</th><th>Language</th><th>Standard</th><th>Interface</th><th>Notes</th></tr>
+          <tr><td><a href="https://gnupg.org/" target="_blank" rel="noopener">GnuPG</a></td><td>C</td><td>RFC 4880 + LibrePGP</td><td>CLI, plus GPGME</td><td>The reference deployment. CLI-parsing integrations carry the SigSpoof bug class (Article 4).</td></tr>
+          <tr><td><a href="https://sequoia-pgp.org/" target="_blank" rel="noopener">Sequoia</a></td><td>Rust</td><td>RFC 9580</td><td>Library-first; <code>sq</code> CLI</td><td>Memory-safe, independently audited, strict policy engine. The reference for new work.</td></tr>
+          <tr><td><a href="https://www.rnpgp.org/" target="_blank" rel="noopener">RNP</a></td><td>C++</td><td>RFC 4880 + AEAD</td><td>Library</td><td>Used by Thunderbird. C++ memory-safety caveats apply.</td></tr>
+          <tr><td><a href="https://openpgpjs.org/" target="_blank" rel="noopener">OpenPGP.js</a></td><td>JavaScript</td><td>RFC 4880 + parts of 9580</td><td>Library</td><td>Browser/Node. Memory-safe runtime; see CVE-2025-47934 for API-shape hazards.</td></tr>
+          <tr><td><a href="https://github.com/ProtonMail/gopenpgp" target="_blank" rel="noopener">GopenPGP</a></td><td>Go</td><td>RFC 4880 + extensions</td><td>Library</td><td>Proton's native-app stack; wraps Go's <code>crypto/openpgp</code> lineage.</td></tr>
+        </table>
+
+        <h3 id="memory">6.1 Memory safety is not a slogan here</h3>
+
+        <p>An OpenPGP implementation parses attacker-controlled, deeply-nested, variably-length binary from untrusted sources — the archetypal environment for memory-corruption bugs. Rust and Go eliminate buffer overflows and use-after-free by construction; C and C++ do not. That is a genuine, measurable difference in attack surface for this specific workload, independent of any team's competence.</p>
+
+        <p>Memory safety is not sufficient, though, and OpenPGP.js's <a href="https://nvd.nist.gov/vuln/detail/CVE-2025-47934" target="_blank" rel="noopener">CVE-2025-47934</a> makes the point: message-spoofing through an API-shape confusion, in a memory-safe language. Logic bugs in verification interfaces survive any language choice.</p>
+
+        <h3 id="choosing">6.2 Choosing a library</h3>
+
+        <div class="bm-fix"><strong>Decision guide.</strong>
+          <ul>
+            <li><strong>New system, Rust or FFI-tolerant:</strong> Sequoia. RFC 9580, memory-safe, audited, and its explicit policy engine forces you to state your algorithm and version constraints rather than inheriting defaults.</li>
+            <li><strong>Browser or Node:</strong> OpenPGP.js — read its verification API documentation carefully and check each result object's verified status individually.</li>
+            <li><strong>Go service:</strong> GopenPGP.</li>
+            <li><strong>Must interoperate with existing GnuPG deployments:</strong> GPGME, not CLI output parsing. If you must shell out, never merge status and stderr, and escape everything you print.</li>
+            <li><strong>Whatever you choose:</strong> pin an explicit algorithm and version policy, and test against the other implementations, because the schism guarantees your assumptions are wrong somewhere.</li>
+          </ul>
+        </div>
+
+        <h2 id="migration">7. A migration plan</h2>
+
+        <table class="papers">
+          <tr><th>Phase</th><th>Action</th><th>Rationale</th></tr>
+          <tr><td>1 — Inventory</td><td>Enumerate keys, algorithms, key versions, and which implementation each consumer uses</td><td>You cannot plan a migration you cannot describe</td></tr>
+          <tr><td>2 — Retire the indefensible</td><td>Remove RSA &lt;3072, DSA, Elgamal, SED (tag 9) acceptance, S2K usage 255</td><td>These are weak today, independent of quantum concerns</td></tr>
+          <tr><td>3 — Modernize classically</td><td>Ed25519 + X25519, SEIPDv2 where peers allow, Argon2-protected secret keys</td><td>Best available classical posture; prerequisite for the rest</td></tr>
+          <tr><td>4 — Hybrid PQC where you control both ends</td><td>ML-KEM-768+X25519 encryption subkeys for archival and internal use</td><td>Harvest-now-decrypt-later is the live threat</td></tr>
+          <tr><td>5 — PQC signatures for long-lived roots</td><td>SLH-DSA for offline roots and release signing</td><td>Size is irrelevant there; assumption strength is not</td></tr>
+          <tr><td>6 — Instrument</td><td>Log algorithm and version usage across your fleet</td><td>Migration progress is unmeasurable otherwise</td></tr>
+        </table>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Should I move to post-quantum OpenPGP now?</summary><p>For encryption of long-lived data where you control decryption, yes — harvest-now-decrypt-later means waiting has a real cost that arrives retroactively. For general correspondence, not yet; interoperability is poor and the classical algorithms are not broken. For signatures, there is no urgency, because forgery cannot be applied retroactively to already-verified signatures.</p></details>
+        <details class="faq"><summary>Is hybrid just hedging against NIST?</summary><p>It is hedging against <em>cryptanalytic immaturity</em>, which is a different and more defensible claim. The lattice assumptions are far less studied than RSA or discrete log, and the implementations are new. Hybrid means a break in either the assumption or the implementation is survivable. The cost is size and compute, both of which OpenPGP can afford.</p></details>
+        <details class="faq"><summary>Which side of the schism should I build on?</summary><p>If you control both ends: RFC 9580, via Sequoia. It is the IETF standard, it has the better security properties discussed in Articles 2 and 3, and it is where the post-quantum work landed. If you must interoperate with the installed GnuPG base: support v4 keys and SEIPDv1 as your baseline, and treat v6/SEIPDv2 as an opportunistic upgrade. Do not build a system that assumes one dialect is universal.</p></details>
+        <details class="faq"><summary>Why is SLH-DSA standalone rather than hybrid?</summary><p>Its security rests on hash function properties alone — the most conservative assumption in the entire toolkit, and one that has survived far more scrutiny than lattices. Adding ECC would increase size and complexity to hedge against an assumption that does not need hedging.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Harvest-now-decrypt-later makes encryption migration urgent and signature migration not.</strong> The asymmetry should drive your prioritization.</li>
+          <li><strong>A KEM combiner must bind ciphertexts and public keys</strong>, not merely concatenate shared secrets, or the composition loses the robustness that is the whole point of going hybrid.</li>
+          <li><strong>Composite signature verification is a conjunction.</strong> Accepting either component is a built-in downgrade.</li>
+          <li><strong>SLH-DSA is for roots, not for messages</strong> — 8–30 KB signatures are fine on a key you verify once a year.</li>
+          <li><strong>The schism is concrete, not political</strong>: tag 18 v2 versus tag 20 means ciphertext that does not decrypt. Specify your dialect explicitly.</li>
+          <li><strong>Memory safety materially reduces attack surface for this workload</strong>, but does not touch the verification-interface bug class that has caused the most damage.</li>
+        </ul>
+
+        <h2 id="next">Next in this series</h2>
+        <p><a href="pgp-7-resources.html"><strong>Article 7 — The complete resource map</strong></a>: every RFC, research paper, book, video, course, tool, and mailing list worth your time, plus a structured learning roadmap for implementers and researchers.</p>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="https://www.rfc-editor.org/info/rfc9980/" target="_blank" rel="noopener">RFC 9980 — Post-Quantum Cryptography in OpenPGP</a> <span>— Proposed Standard, June 2026. Composite ML-KEM/ML-DSA constructions, SLH-DSA, and the combiner definition.</span></li>
+          <li><a href="https://datatracker.ietf.org/doc/draft-ietf-openpgp-pqc/" target="_blank" rel="noopener">draft-ietf-openpgp-pqc — working group history</a> <span>— the draft series behind RFC 9980; useful for design rationale the RFC compresses.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9580.html" target="_blank" rel="noopener">RFC 9580 — OpenPGP</a> <span>— the standard LibrePGP diverges from.</span></li>
+          <li><a href="https://librepgp.org/" target="_blank" rel="noopener">LibrePGP specification</a> <span>— the other side of the split, in its own words.</span></li>
+          <li><a href="https://lwn.net/Articles/953797/" target="_blank" rel="noopener">LWN — A schism in the OpenPGP world</a> <span>— the most balanced account of the disagreement and its origins.</span></li>
+          <li><a href="https://gnupg.org/blog/20250117-aheinecke-on-sequoia.html" target="_blank" rel="noopener">GnuPG — thoughts on Sequoia and LibrePGP</a> <span>— the GnuPG-side position, worth reading directly rather than through summaries.</span></li>
+          <li><a href="https://sequoia-pgp.org/blog/2024/09/04/202409-out-and-about/" target="_blank" rel="noopener">Sequoia — on the standardization situation</a> <span>— the RFC 9580-side position.</span></li>
+          <li><a href="https://csrc.nist.gov/pubs/fips/203/final" target="_blank" rel="noopener">FIPS 203 — ML-KEM</a> <span>— the underlying KEM standard.</span></li>
+          <li><a href="https://csrc.nist.gov/pubs/fips/204/final" target="_blank" rel="noopener">FIPS 204 — ML-DSA</a> <span>— the underlying signature standard.</span></li>
+          <li><a href="https://csrc.nist.gov/pubs/fips/205/final" target="_blank" rel="noopener">FIPS 205 — SLH-DSA</a> <span>— the hash-based signature standard.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="pgp-5-trust-distribution.html">← prev: Trust &amp; Distribution</a>
+        <a href="pgp-7-resources.html">next: The Resource Map →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

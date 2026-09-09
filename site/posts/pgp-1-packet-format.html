@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenPGP Packet Format — Wire Format, Tags, Lengths, Armor — cvam.sight</title>
+<meta name="description" content="Part 1 of the OpenPGP Internals series: the byte-level wire format defined by RFC 9580 — packet framing (OpenPGP vs legacy headers), the six length encodings including partial body lengths, all packet tags, MPI and native encoding rules, the message grammar, ASCII armor and CRC24, and the parser bugs each of these has historically produced.">
+<link rel="stylesheet" href="../style.css?v=88">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:40px} h3{margin-top:26px;scroll-margin-top:20px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.9rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:9px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .post-body a[target="_blank"]{color:var(--accent,#c96442);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent);font-weight:500}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{display:block;padding:2px 0 6px}
+  pre.hex{margin:16px 0 22px;overflow-x:auto;background:color-mix(in srgb,var(--ink) 92%,var(--paper) 8%);color:#e8e2cf;border-radius:10px;padding:16px 18px;font-family:var(--font-mono,monospace);font-size:.79rem;line-height:1.6;white-space:pre}
+  pre.hex .c{color:#9a9382}
+  pre.hex .hl{color:#f0c040;font-weight:700}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-box.sel{fill:var(--yellow-soft,#f7e9c0);stroke:var(--ink)}
+  svg .d-box.dim{fill:color-mix(in srgb,var(--paper) 80%,var(--ink) 6%);stroke:color-mix(in srgb,var(--ink) 14%,transparent);opacity:.85}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">OpenPGP Internals — An Implementer's Series</p>
+        <p class="series-banner-title">The Wire Format</p>
+        <div class="series-banner-progress">
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 1 of 7 · Packets, lengths, armor</p>
+        <div class="series-banner-nav">
+          <a href="pgp-1-packet-format.html" class="active">1. Wire Format</a>
+          <a href="pgp-2-keys-s2k.html">2. Keys &amp; S2K</a>
+          <a href="pgp-3-encryption-aead.html">3. Encryption</a>
+          <a href="pgp-4-signatures.html">4. Signatures</a>
+          <a href="pgp-5-trust-distribution.html">5. Trust</a>
+          <a href="pgp-6-pqc-implementations.html">6. PQC</a>
+          <a href="pgp-7-resources.html">7. Resources</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 9, 2026 · security · 18 min read · 3600 words <span class="difficulty advanced">advanced</span></p>
+        <h1>OpenPGP on the wire: packets, lengths, and armor.</h1>
+        <div class="tag-row">
+          <span class="tag fill">security</span>
+          <span class="tag">openpgp</span>
+          <span class="tag">pgp</span>
+          <span class="tag">rfc9580</span>
+          <span class="tag">cryptography</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">An OpenPGP message is a concatenation of self-describing packets. Everything else in this series — key material, encryption, signatures, trust — is a specific packet type carrying a specific payload. This article covers the framing layer exclusively: the two header formats, all six length encodings (including the one that has caused the most parser CVEs), the complete tag table, the encoding rules for numbers and strings, the grammar that says which packet sequences are legal, and ASCII armor. If you are writing a parser, this is the layer that will hurt you first.</p>
+
+        <div class="bm-note"><strong>Spec baseline.</strong> This series is written against <a href="https://www.rfc-editor.org/rfc/rfc9580.html" target="_blank" rel="noopener">RFC 9580</a> (July 2024), which obsoletes RFC 4880 and its extensions. Where RFC 4880 behavior still matters for interoperability — and it matters constantly — it is called out explicitly. Article 6 covers the LibrePGP fork, which disagrees with RFC 9580 at exactly the layers this article describes.</div>
+
+        <h2 id="model">1. The mental model: a message is a packet stream</h2>
+
+        <p>There is no OpenPGP "file header," no global length field, no table of contents. An OpenPGP object — a message, a certificate, a detached signature, a private keyring — is a bare concatenation of packets, each of which announces its own type and length in its first few octets. Parsing is therefore a loop:</p>
+
+        <pre class="hex"><span class="c">while bytes remain:
+    tag, length_type = parse_header(next_octet)
+    body_length      = parse_length(length_type, following_octets)
+    body             = read(body_length)
+    dispatch(tag, body)</span></pre>
+
+        <p>That simplicity is the format's great virtue and its central hazard. Because a packet stream is context-free at the framing layer, <em>any</em> packet can syntactically follow <em>any</em> other packet. Semantic legality is enforced by a separate grammar (§6), and implementations that parse without enforcing that grammar have historically accepted messages the standard never intended to exist. A large fraction of OpenPGP's security history is the story of parsers that were too permissive at exactly this boundary.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="22" class="d-title" text-anchor="middle">An encrypted, signed message on the wire</text>
+            <rect x="20" y="44" width="150" height="52" rx="8" class="d-box cool"/>
+            <text x="95" y="66" class="d-lbl" text-anchor="middle">PKESK</text>
+            <text x="95" y="82" class="d-sub" text-anchor="middle">tag 1 · session key</text>
+
+            <rect x="182" y="44" width="518" height="52" rx="8" class="d-box hot"/>
+            <text x="441" y="66" class="d-lbl" text-anchor="middle">SEIPD — tag 18</text>
+            <text x="441" y="82" class="d-sub" text-anchor="middle">encrypted; everything below is inside this ciphertext</text>
+
+            <path d="M441 96 L441 112" class="d-flow"/>
+
+            <rect x="182" y="114" width="160" height="46" rx="8" class="d-box"/>
+            <text x="262" y="134" class="d-lbl" text-anchor="middle">One-Pass Sig</text>
+            <text x="262" y="149" class="d-sub" text-anchor="middle">tag 4</text>
+
+            <rect x="352" y="114" width="180" height="46" rx="8" class="d-box sel"/>
+            <text x="442" y="134" class="d-lbl" text-anchor="middle">Literal Data</text>
+            <text x="442" y="149" class="d-sub" text-anchor="middle">tag 11 · the actual plaintext</text>
+
+            <rect x="542" y="114" width="158" height="46" rx="8" class="d-box"/>
+            <text x="621" y="134" class="d-lbl" text-anchor="middle">Signature</text>
+            <text x="621" y="149" class="d-sub" text-anchor="middle">tag 2</text>
+
+            <text x="360" y="188" class="d-note" text-anchor="middle">nesting is expressed by containment in a packet body, not by any bracket syntax</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — Structure is implied by what lives inside which packet body. A parser that forgets it is inside a SEIPD has already lost.</p>
+        </div>
+
+        <h2 id="header">2. The packet header</h2>
+
+        <p>Every packet begins with a Packet Tag octet. Bit 7 is always set — a first octet with bit 7 clear is malformed, and this is the cheapest sanity check a parser has. Bit 6 then selects between two mutually incompatible framings.</p>
+
+        <pre class="hex"><span class="c">bit    7   6   5   4   3   2   1   0</span>
+     ┌───┬───┬───┬───┬───┬───┬───┬───┐
+     │ 1 │ f │  packet type / length  │
+     └───┴───┴───┴───┴───┴───┴───┴───┘
+       │   │
+       │   └─ f=1 → OpenPGP format:  bits 5..0 = packet type (0–63)
+       │      f=0 → Legacy format:   bits 5..2 = packet type (0–15)
+       │                             bits 1..0 = length type
+       └───── always 1</pre>
+
+        <h3 id="openpgp-format">2.1 OpenPGP format (bit 6 set)</h3>
+
+        <p>The current framing. Six bits of tag space gives 64 packet types, and the length is encoded separately in the octets that follow. This is what RFC 9580 requires implementations to generate.</p>
+
+        <h3 id="legacy-format">2.2 Legacy format (bit 6 clear)</h3>
+
+        <p>Inherited from RFC 1991 and RFC 2440. Only four bits of tag space (types 0–15), with the low two bits selecting one of four length encodings:</p>
+
+        <table class="papers">
+          <tr><th>Length type</th><th>Encoding</th><th>Notes</th></tr>
+          <tr><td><code>0</code></td><td>1-octet length</td><td>0–255 octets</td></tr>
+          <tr><td><code>1</code></td><td>2-octet big-endian length</td><td>0–65535</td></tr>
+          <tr><td><code>2</code></td><td>4-octet big-endian length</td><td>up to 2<sup>32</sup>−1</td></tr>
+          <tr><td><code>3</code></td><td><strong>Indeterminate</strong> — runs to end of input</td><td>The dangerous one. See §3.3.</td></tr>
+        </table>
+
+        <p>You must still <em>parse</em> legacy format — decades of stored messages and certificates use it, and GnuPG emitted it by default for years. You should not generate it.</p>
+
+        <div class="bm-warn"><strong>Implementer's trap.</strong> Because tag space differs between the two formats, the same tag number is a different packet depending on bit 6. A parser that reads bits 5–0 unconditionally will misinterpret every legacy packet: a legacy header <code>0xB4</code> is tag 13 (User ID), but read as OpenPGP format the low six bits give 52. Handle the branch before touching the tag.</div>
+
+        <h2 id="lengths">3. Length encodings — where parsers die</h2>
+
+        <p>In OpenPGP format there are four length forms, distinguished by the value of the first length octet. This is a variable-length integer scheme with a deliberately awkward second range.</p>
+
+        <table class="papers">
+          <tr><th>First octet</th><th>Form</th><th>Length computation</th><th>Range</th></tr>
+          <tr><td><code>0 – 191</code></td><td>One-octet</td><td><code>len = octet[0]</code></td><td>0 – 191</td></tr>
+          <tr><td><code>192 – 223</code></td><td>Two-octet</td><td><code>len = ((o[0] − 192) &lt;&lt; 8) + o[1] + 192</code></td><td>192 – 8383</td></tr>
+          <tr><td><code>224 – 254</code></td><td><strong>Partial body</strong></td><td><code>len = 1 &lt;&lt; (o[0] &amp; 0x1F)</code></td><td>1 – 1073741824 (powers of 2)</td></tr>
+          <tr><td><code>255</code></td><td>Five-octet</td><td><code>len = o[1..4]</code> big-endian</td><td>0 – 2<sup>32</sup>−1</td></tr>
+        </table>
+
+        <h3 id="two-octet">3.1 Why the two-octet form has that +192</h3>
+
+        <p>The offset exists to make the encoding <em>canonical</em> — there is exactly one valid encoding for each length. Without the bias, lengths 0–191 would be representable in both the one- and two-octet forms, and a canonical-encoding check would be impossible. Concretely:</p>
+
+        \[ \text{len} = ((o_0 - 192) \times 256) + o_1 + 192, \qquad 192 \le o_0 \le 223 \]
+
+        <p>Worked example: octets <code>0xC5 0x2E</code> → \(((197 - 192) \times 256) + 46 + 192 = 1280 + 238 = 1518\).</p>
+
+        <p>If you are writing an encoder, emit the shortest legal form. If you are writing a parser that needs to detect malicious or fingerprintable output, note that non-canonical length encodings (a 5-octet form encoding the value 10, say) are legal to parse but are a strong signal about which implementation produced the message.</p>
+
+        <h3 id="partial">3.2 Partial body lengths — streaming, and its costs</h3>
+
+        <p>Partial body lengths exist so that an encryptor can begin emitting ciphertext before knowing the total plaintext length — essential for streaming large files or piping. A packet body is split into a sequence of chunks: zero or more <em>partial</em> chunks, each a power of two in size, terminated by exactly one chunk with a normal (non-partial) length.</p>
+
+        <pre class="hex"><span class="c"># A literal data packet streamed in chunks</span>
+<span class="hl">CB</span>              <span class="c"># tag 11 (Literal Data), OpenPGP format</span>
+<span class="hl">E9</span>              <span class="c"># partial length: 1 &lt;&lt; (0xE9 &amp; 0x1F) = 1 &lt;&lt; 9 = 512 octets</span>
+.. 512 bytes ..
+<span class="hl">E8</span>              <span class="c"># partial length: 1 &lt;&lt; 8 = 256 octets</span>
+.. 256 bytes ..
+<span class="hl">2A</span>              <span class="c"># final chunk, one-octet length: 42 octets  → packet ends here</span>
+.. 42 bytes ..</pre>
+
+        <p>Three rules that implementations get wrong:</p>
+        <ul>
+          <li><strong>Only the first chunk's length octet is part of the packet header.</strong> Subsequent chunk lengths are inline in the body stream and must not be treated as new packets.</li>
+          <li><strong>Partial lengths are legal only for the first length octet of a packet</strong>, and RFC 9580 restricts them to packets whose bodies are streams — Literal Data, Compressed Data, and the encrypted-data packets. A partial-length User ID packet is malformed.</li>
+          <li><strong>The minimum partial chunk is 512 octets</strong> in practice (RFC 9580 forbids partial lengths below that for the first chunk), which exists to stop an attacker forcing pathological chunking.</li>
+        </ul>
+
+        <div class="bm-warn"><strong>The classic resource-exhaustion bug.</strong> A parser that allocates a buffer sized to the declared length before reading is trivially DoS-able: a 5-octet length of <code>0xFFFFFFFF</code> asks for 4 GiB. A parser that instead accumulates partial chunks without bound is DoS-able by an infinite stream of partial chunks. The correct posture is streaming with an enforced total ceiling, applied to the <em>decompressed and decrypted</em> size as well — see the decompression-bomb discussion in Article 3.</div>
+
+        <h3 id="indeterminate">3.3 Indeterminate length, and why it enabled EFAIL-adjacent tricks</h3>
+
+        <p>Legacy length type 3 means "this packet extends to the end of the input." It cannot be nested meaningfully, it makes truncation undetectable, and it removes the parser's ability to know where a packet was supposed to end. RFC 9580 keeps it only for backward compatibility and effectively forbids generating it.</p>
+
+        <p>The security consequence is direct: if a packet has no declared end, an attacker can append data and a naive parser will treat the appended bytes as part of the legitimate packet body. Article 3 covers how this class of trick combined with missing integrity protection to produce practical plaintext exfiltration.</p>
+
+        <h2 id="tags">4. The packet tag table</h2>
+
+        <p>RFC 9580 divides the tag space at 40: packets with type IDs 0–39 are <strong>critical</strong> — an implementation that does not recognize one MUST reject the message rather than skip it. Types 40–63 are non-critical and MAY be ignored. This is a meaningful improvement over RFC 4880, where "unknown packet" handling was underspecified and implementations diverged.</p>
+
+        <table class="papers">
+          <tr><th>Tag</th><th>Packet</th><th>Role · covered in</th></tr>
+          <tr><td>0</td><td>Reserved</td><td>MUST NOT be used. A zero tag is a strong malformed-input signal.</td></tr>
+          <tr><td>1</td><td>Public-Key Encrypted Session Key (PKESK)</td><td>Session key wrapped to a recipient key · Article 3</td></tr>
+          <tr><td>2</td><td>Signature</td><td>All signature types · Article 4</td></tr>
+          <tr><td>3</td><td>Symmetric-Key Encrypted Session Key (SKESK)</td><td>Session key wrapped by a passphrase · Articles 2, 3</td></tr>
+          <tr><td>4</td><td>One-Pass Signature</td><td>Lets a verifier hash in one pass · Article 4</td></tr>
+          <tr><td>5</td><td>Secret-Key</td><td>Primary private key · Article 2</td></tr>
+          <tr><td>6</td><td>Public-Key</td><td>Primary public key · Article 2</td></tr>
+          <tr><td>7</td><td>Secret-Subkey</td><td>Subordinate private key · Article 2</td></tr>
+          <tr><td>8</td><td>Compressed Data</td><td>ZIP / ZLIB / BZip2 container</td></tr>
+          <tr><td>9</td><td>Symmetrically Encrypted Data (SED)</td><td><strong>Deprecated, unauthenticated.</strong> MUST NOT be generated; see Article 3.</td></tr>
+          <tr><td>10</td><td>Marker</td><td>Legacy no-op containing "PGP". Ignore it.</td></tr>
+          <tr><td>11</td><td>Literal Data</td><td>The actual payload plus filename/timestamp metadata</td></tr>
+          <tr><td>12</td><td>Trust</td><td>Local keyring state only. MUST NOT be exported.</td></tr>
+          <tr><td>13</td><td>User ID</td><td>UTF-8 identity string, conventionally <code>Name &lt;email&gt;</code> · Article 5</td></tr>
+          <tr><td>14</td><td>Public-Subkey</td><td>Subordinate public key · Article 2</td></tr>
+          <tr><td>17</td><td>User Attribute</td><td>Structured identity, in practice a JPEG image · Article 5</td></tr>
+          <tr><td>18</td><td>Sym. Encrypted and Integrity Protected Data (SEIPD)</td><td>v1 (MDC) and v2 (AEAD) · Article 3</td></tr>
+          <tr><td>19</td><td>Modification Detection Code (MDC)</td><td>Only inside SEIPDv1. Removed conceptually in v2 · Article 3</td></tr>
+          <tr><td>20</td><td>Reserved (was AEAD Encrypted Data)</td><td><strong>The fork point.</strong> LibrePGP uses this; RFC 9580 does not · Article 6</td></tr>
+          <tr><td>21</td><td>Padding</td><td>New in RFC 9580. Traffic-analysis resistance; content MUST be ignored.</td></tr>
+        </table>
+
+        <div class="bm-note"><strong>Tag 20 is the single most important interoperability fact in this series.</strong> RFC 9580 marks it reserved and does its AEAD work inside SEIPD version 2 (tag 18). LibrePGP defines an entirely separate AEAD Encrypted Data packet at tag 20. A message using tag 20 will not decrypt on a strict RFC 9580 implementation, and vice versa. Article 6 covers the full split.</div>
+
+        <h2 id="encoding">5. Encoding primitives inside packet bodies</h2>
+
+        <h3 id="mpi">5.1 Multiprecision Integers (MPI)</h3>
+
+        <p>The traditional container for big numbers — RSA moduli, DSA parameters, and so on. An MPI is a 2-octet big-endian <em>bit</em> count followed by the value, big-endian, with no leading zero octets:</p>
+
+        <pre class="hex"><span class="c"># The integer 511 (0x01FF) as an MPI</span>
+<span class="hl">00 09</span>     <span class="c"># 9 bits of significance</span>
+<span class="hl">01 FF</span>     <span class="c"># value, ceil(9/8) = 2 octets</span></pre>
+
+        \[ \text{octets consumed} = 2 + \left\lceil \frac{\text{bitcount}}{8} \right\rceil \]
+
+        <p>RFC 9580 tightened this: the encoded bit length MUST match the position of the most significant non-zero bit. Non-canonical MPIs — a declared length of 16 bits for the value 511, say — must be rejected. RFC 4880 was looser here, and permissive MPI parsing has been a reliable source of implementation divergence, since two implementations disagreeing about how many octets a field consumed will disagree about where every subsequent field starts.</p>
+
+        <h3 id="native">5.2 Native (fixed-length) encoding</h3>
+
+        <p>Modern algorithms do not use MPIs. X25519, X448, Ed25519, Ed448, and the post-quantum algorithms of RFC 9980 all use <strong>fixed-length octet strings</strong> in their algorithm-specific native encoding. This is a deliberate simplification: a 32-octet X25519 public key is 32 octets, always, with no length prefix and no leading-zero ambiguity. It also eliminates a whole class of parsing bug, because there is nothing to get wrong.</p>
+
+        <p>The practical consequence for parser authors: the encoding of key material is a function of the public-key algorithm ID, not a uniform rule. You need a per-algorithm table. Getting this wrong for a single algorithm produces a parser that works on 95% of real-world keys and silently corrupts the rest.</p>
+
+        <h3 id="time-strings">5.3 Times, strings, and key IDs</h3>
+
+        <ul>
+          <li><strong>Timestamps</strong> are 4-octet big-endian seconds since the Unix epoch. This overflows in 2106. RFC 9580 is aware of this and has not fixed it; treat it as a known long-term defect.</li>
+          <li><strong>User IDs</strong> are UTF-8 with no length prefix inside the body — the packet length bounds them. There is no structure requirement; <code>Name (comment) &lt;email&gt;</code> is convention, not syntax. Do not write a parser that assumes it (Article 5 covers why comment fields are an attack surface).</li>
+          <li><strong>Key IDs</strong> are 8 octets. Where they come from differs by key version and is covered in Article 2 — and the difference matters, because key IDs are not collision-resistant and must never be used as a security-relevant identifier.</li>
+        </ul>
+
+        <h2 id="grammar">6. The message grammar</h2>
+
+        <p>A syntactically valid packet stream is not necessarily a valid OpenPGP message. RFC 9580 specifies a grammar, and enforcing it is a security requirement rather than a politeness. Informally:</p>
+
+        <pre class="hex">OpenPGP Message   := Encrypted | Signed | Compressed | Literal
+
+Encrypted         := (PKESK | SKESK)+  SEIPD
+Compressed        := Compressed Data Packet   <span class="c"># body decompresses to a Message</span>
+Signed            := One-Pass Signed Message | Signature Packet, Message
+One-Pass Signed   := OPS Packet, Message, corresponding Signature Packet
+Literal           := Literal Data Packet</pre>
+
+        <p>Note the recursion: the body of a Compressed Data packet must itself be a valid Message, and the plaintext of a SEIPD packet must itself be a valid Message. This is why "decrypt then parse" is a loop and not a step.</p>
+
+        <div class="bm-fix"><strong>Why grammar enforcement is a security control.</strong> A stream like <code>[Literal] [Literal]</code> is syntactically fine and semantically meaningless — but a permissive implementation might display the first and ignore the second, while another displays the concatenation. Any place two implementations disagree about what a message "is" becomes an exploitable gap: signature-scope confusion (Article 4), partially-signed message display, and encryption-status confusion in mail clients all live here. Parse to the grammar, reject anything that does not fit, and report the failure rather than doing something reasonable-looking.</div>
+
+        <h2 id="armor">7. ASCII armor</h2>
+
+        <p>Armor is the transport encoding that lets binary packet streams survive email and text channels. It is not a security mechanism and provides no integrity guarantee beyond a non-cryptographic checksum.</p>
+
+        <pre class="hex">-----BEGIN PGP MESSAGE-----          <span class="c"># armor header line</span>
+Comment: optional armor headers      <span class="c"># Key: Value, then a blank line</span>
+
+hQIMA0f7Zk8lQ1n2AQ//SgQx3jN1cB1Y...  <span class="c"># base64 of the packet stream</span>
+...more base64...
+=njUN                                <span class="c"># CRC24, base64, '=' prefixed (optional in 9580)</span>
+-----END PGP MESSAGE-----            <span class="c"># armor tail; type MUST match header</span></pre>
+
+        <p>Points worth knowing:</p>
+        <ul>
+          <li><strong>The CRC24 became optional in RFC 9580.</strong> It was always a transport-error check, never a security control, and its presence gave some users the false impression of integrity. If present it must be correct; its absence is not an error.</li>
+          <li><strong>Armor headers are attacker-controlled.</strong> A <code>Comment:</code> line is arbitrary text that many tools display. Anything that renders armor headers to a user or logs them unescaped inherits an injection surface.</li>
+          <li><strong>The header and tail types must match.</strong> A <code>BEGIN PGP MESSAGE</code> closed by <code>END PGP PUBLIC KEY BLOCK</code> is malformed, and accepting the mismatch has been used to confuse tools about what kind of object they just processed.</li>
+          <li><strong>Cleartext Signed Messages are a different construct</strong> with their own dash-escaping and trailing-whitespace rules, and they are the single most bug-prone corner of the format. Article 4 covers them in full, because their failure modes are signature failures rather than framing failures.</li>
+        </ul>
+
+        <h2 id="worked">8. Reading a real message, octet by octet</h2>
+
+        <p>A password-encrypted message. Every octet is accounted for:</p>
+
+        <pre class="hex"><span class="hl">C3</span>                      <span class="c"># 1100_0011 → bit7=1, bit6=1 → OpenPGP format, tag 3 = SKESK</span>
+<span class="hl">1D</span>                      <span class="c"># length 29 octets (one-octet form, 0x1D &lt; 192)</span>
+   <span class="hl">06</span>                   <span class="c"># SKESK version 6</span>
+   <span class="hl">09 02 09</span>             <span class="c"># cipher AES-256, AEAD OCB, S2K field lengths</span>
+   <span class="hl">04</span>                   <span class="c"># S2K type 4 = Argon2</span>
+   .. 16 octets salt ..
+   <span class="hl">03 04 10</span>             <span class="c"># Argon2: 3 passes, parallelism 4, memory exponent 16</span>
+   .. AEAD nonce and wrapped session key ..
+
+<span class="hl">D2</span>                      <span class="c"># OpenPGP format, tag 18 = SEIPD</span>
+<span class="hl">FF 00 00 04 A1</span>          <span class="c"># 5-octet length form → 1185 octets</span>
+   <span class="hl">02</span>                   <span class="c"># SEIPD version 2 → AEAD, not MDC</span>
+   <span class="hl">09 02 06</span>             <span class="c"># AES-256, OCB, chunk size exponent 6</span>
+   .. 32 octets salt ..
+   .. ciphertext chunks, each with an authentication tag ..
+   .. final authentication tag over the whole message ..</pre>
+
+        <p>Two things to notice. First, the framing layer told us nothing about whether this message is <em>trustworthy</em> — that determination lives entirely in the SEIPD's AEAD tags and, if there is a signature inside, in the signature verification. Second, the SKESK version (6) and the SEIPD version (2) must agree; RFC 9580 pairs v6 PKESK/SKESK with SEIPDv2, and v3 PKESK/v4 SKESK with SEIPDv1. Mixing them is malformed, and the pairing rule exists specifically to prevent downgrade attacks in which an attacker swaps a modern container for a weak one.</p>
+
+        <h2 id="checklist">9. A parser hardening checklist</h2>
+
+        <table class="papers">
+          <tr><th>Check</th><th>Why</th></tr>
+          <tr><td>Reject first octet with bit 7 clear</td><td>Cheapest possible malformed-input rejection</td></tr>
+          <tr><td>Branch on bit 6 <em>before</em> extracting the tag</td><td>Legacy and OpenPGP formats use different tag widths</td></tr>
+          <tr><td>Enforce a total input ceiling, streaming</td><td>5-octet lengths and unbounded partial chunks are both DoS vectors</td></tr>
+          <tr><td>Enforce partial lengths only on streamable packets</td><td>Prevents partial-length abuse on fixed-structure packets</td></tr>
+          <tr><td>Reject packet type 0 and unknown critical types (&lt;40)</td><td>Required by RFC 9580; silently skipping is a downgrade surface</td></tr>
+          <tr><td>Reject non-canonical MPI bit lengths</td><td>Prevents field-offset divergence between implementations</td></tr>
+          <tr><td>Enforce the message grammar, not just packet syntax</td><td>Prevents scope-confusion and status-confusion classes</td></tr>
+          <tr><td>Bound recursion depth for Compressed and SEIPD nesting</td><td>A packet whose body decompresses to another compressed packet, repeatedly, is a zip bomb</td></tr>
+          <tr><td>Require armor header and tail types to match</td><td>Prevents object-type confusion</td></tr>
+          <tr><td>Treat armor headers as untrusted display data</td><td>Attacker-controlled text; escape before rendering or logging</td></tr>
+          <tr><td>Refuse to emit legacy format or indeterminate lengths</td><td>Reduces the surface you ask your peers to parse</td></tr>
+        </table>
+
+        <h2 id="tools">10. Tools for inspecting the wire format</h2>
+
+        <p>You should not be reading hex by hand for long. The standard instruments:</p>
+
+        <pre class="hex"><span class="c"># GnuPG's packet dumper — the most widely available</span>
+gpg --list-packets --verbose message.pgp
+
+<span class="c"># Sequoia's, which is stricter and reports policy violations</span>
+sq packet dump --hex message.pgp
+
+<span class="c"># Strip armor to raw binary for hexdump work</span>
+gpg --dearmor &lt; message.asc &gt; message.bin
+xxd message.bin | head -40
+
+<span class="c"># pgpdump — long-standing, very readable annotations</span>
+pgpdump -i -l -m message.pgp</pre>
+
+        <p>A useful habit when implementing: dump the same message with two independent tools. Where they disagree about packet boundaries, you have found either a bug in one of them or an ambiguity in your test vector — and both are worth investigating before you trust your own parser.</p>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Do I need to support legacy-format packets in a new implementation?</summary><p>For parsing, yes — the installed base of stored messages and certificates is large and old, and a parser that rejects legacy framing will fail on real data constantly. For generation, no: emit OpenPGP format only. The asymmetry between what you accept and what you produce is deliberate.</p></details>
+        <details class="faq"><summary>Why does the two-octet length form have that strange 192 offset?</summary><p>Canonicality. Without the bias, every length under 192 would have two valid encodings, making it impossible to require a unique wire representation. The offset makes the one-octet and two-octet ranges disjoint, so "shortest encoding" is well-defined and checkable.</p></details>
+        <details class="faq"><summary>Is ASCII armor providing any security?</summary><p>No. It is base64 plus a framing convention plus an optional non-cryptographic CRC24. It survives text transport; it does not detect tampering. RFC 9580 making the CRC optional reflects exactly this — it was never doing security work.</p></details>
+        <details class="faq"><summary>What is the Padding packet actually for?</summary><p>Traffic analysis resistance. Message sizes leak information — a 40-byte encrypted message and a 40-kilobyte one are distinguishable regardless of how strong the cipher is. Tag 21 lets an implementation pad to a size bucket. Its contents must be ignored by receivers, which also means it must never be included in any hash computation.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>The format is self-describing and context-free at the framing layer</strong>, which makes parsing easy and makes grammar enforcement mandatory rather than optional.</li>
+          <li><strong>Length parsing is the highest-risk code in an OpenPGP implementation.</strong> Four encodings, one of which is a streaming chunk protocol with its own rules, and one legacy form with no end at all.</li>
+          <li><strong>Tag 20 is the fork.</strong> RFC 9580 reserves it; LibrePGP uses it for AEAD. Interoperability failures at this tag are not bugs, they are the schism.</li>
+          <li><strong>MPI is legacy encoding.</strong> Modern algorithms use fixed-length native encodings, and your parser needs a per-algorithm dispatch table rather than one uniform rule.</li>
+          <li><strong>Version pairing between session-key packets and encryption containers is a downgrade defense</strong>, not bookkeeping. Enforce it.</li>
+        </ul>
+
+        <h2 id="next">Next in this series</h2>
+        <p><a href="pgp-2-keys-s2k.html"><strong>Article 2 — Keys, fingerprints, and secret-key protection</strong></a>: the v4 → v6 transition, why key IDs are not identifiers, SHA-1 in v4 fingerprints and what actually breaks, the full S2K story including Argon2, and the AEAD-protected secret key format.</p>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9580.html" target="_blank" rel="noopener">RFC 9580 — OpenPGP</a> <span>— the normative spec this article follows. Sections 4 (packet syntax), 6 (armor), and 10 (message grammar) are the direct sources here.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc4880.html" target="_blank" rel="noopener">RFC 4880 — OpenPGP Message Format (obsoleted)</a> <span>— still the format most deployed software implements; read it for the legacy behavior you must parse.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc1991.html" target="_blank" rel="noopener">RFC 1991 — PGP Message Exchange Formats</a> <span>— where legacy packet framing comes from, if you want the archaeology.</span></li>
+          <li><a href="https://arxiv.org/pdf/2008.06913" target="_blank" rel="noopener">SoK: Why Johnny Can't Fix PGP Standardization</a> <span>— systematization of how the standardization process itself produced the ambiguities this article's hardening checklist defends against.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9580.html#name-packet-types" target="_blank" rel="noopener">RFC 9580 §5 — Packet Types</a> <span>— the authoritative tag table, including the critical/non-critical split at 40.</span></li>
+          <li><a href="https://sequoia-pgp.org/" target="_blank" rel="noopener">Sequoia PGP</a> <span>— its <code>openpgp</code> crate is the most readable modern reference implementation of this parsing layer.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../archive.html">← browse the archive</a>
+        <a href="pgp-2-keys-s2k.html">next: Keys &amp; S2K →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

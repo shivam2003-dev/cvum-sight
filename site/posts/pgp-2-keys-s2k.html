@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenPGP Keys, Fingerprints and S2K — cvam.sight</title>
+<meta name="description" content="Part 2 of the OpenPGP Internals series: certificate structure, v4 vs v6 key packets, fingerprint computation and why SHA-1 in v4 fingerprints matters, key IDs and short-ID collisions, subkey binding and cross-certification, the complete S2K story through Argon2, and AEAD-protected secret keys.">
+<link rel="stylesheet" href="../style.css?v=88">
+<link rel="stylesheet" href="/themes.css?v=6">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:40px} h3{margin-top:26px;scroll-margin-top:20px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.9rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:9px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .post-body a[target="_blank"]{color:var(--accent,#c96442);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent);font-weight:500}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{display:block;padding:2px 0 6px}
+  pre.hex{margin:16px 0 22px;overflow-x:auto;background:color-mix(in srgb,var(--ink) 92%,var(--paper) 8%);color:#e8e2cf;border-radius:10px;padding:16px 18px;font-family:var(--font-mono,monospace);font-size:.79rem;line-height:1.6;white-space:pre}
+  pre.hex .c{color:#9a9382}
+  pre.hex .hl{color:#f0c040;font-weight:700}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint);font-size:.92rem}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-box.sel{fill:var(--yellow-soft,#f7e9c0);stroke:var(--ink)}
+  svg .d-box.dim{fill:color-mix(in srgb,var(--paper) 80%,var(--ink) 6%);stroke:color-mix(in srgb,var(--ink) 14%,transparent);opacity:.85}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">OpenPGP Internals — An Implementer's Series</p>
+        <p class="series-banner-title">Keys &amp; S2K</p>
+        <div class="series-banner-progress">
+          <div class="series-pip done"></div>
+          <div class="series-pip current"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+          <div class="series-pip"></div>
+        </div>
+        <p class="series-banner-meta">Article 2 of 7 · Certificates, fingerprints, key derivation</p>
+        <div class="series-banner-nav">
+          <a href="pgp-1-packet-format.html" class="done">1. Wire Format</a>
+          <a href="pgp-2-keys-s2k.html" class="active">2. Keys &amp; S2K</a>
+          <a href="pgp-3-encryption-aead.html">3. Encryption</a>
+          <a href="pgp-4-signatures.html">4. Signatures</a>
+          <a href="pgp-5-trust-distribution.html">5. Trust</a>
+          <a href="pgp-6-pqc-implementations.html">6. PQC</a>
+          <a href="pgp-7-resources.html">7. Resources</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 9, 2026 · security · 15 min read · 3080 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Keys, fingerprints, and secret-key protection.</h1>
+        <div class="tag-row">
+          <span class="tag fill">security</span>
+          <span class="tag">openpgp</span>
+          <span class="tag">pgp</span>
+          <span class="tag">key-management</span>
+          <span class="tag">kdf</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">An OpenPGP "key" is not a key. It is a <em>transferable public key</em> — a certificate: a primary key packet plus identities, subkeys, and the self-signatures that bind them together. This article covers what that structure actually contains, how fingerprints are computed in v4 and v6 and why the SHA-1 in v4 is a real problem with a narrow blast radius, why key IDs must never be treated as identifiers, how subkey binding and cross-certification prevent a specific class of key-theft attack, and the full string-to-key story from the 1990s Simple S2K through Argon2 and AEAD-protected secret keys.</p>
+
+        <div class="bm-note"><strong>Prerequisite.</strong> <a href="pgp-1-packet-format.html">Article 1</a> covered packet framing, MPI vs native encoding, and the tag table. This article assumes you can already read a packet stream.</div>
+
+        <h2 id="certificate">1. What a certificate actually is</h2>
+
+        <p>When someone sends you "their PGP key," what arrives is a packet stream in a specific canonical order:</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 290" xmlns="http://www.w3.org/2000/svg">
+            <text x="360" y="22" class="d-title" text-anchor="middle">Transferable public key (certificate) structure</text>
+
+            <rect x="150" y="40" width="420" height="40" rx="8" class="d-box hot"/>
+            <text x="360" y="58" class="d-lbl" text-anchor="middle">Primary Public Key — tag 6</text>
+            <text x="360" y="73" class="d-sub" text-anchor="middle">identity anchor · fingerprint computed from this packet only</text>
+
+            <path d="M360 80 L360 96" class="d-flow"/>
+
+            <rect x="30" y="98" width="200" height="42" rx="8" class="d-box"/>
+            <text x="130" y="117" class="d-lbl" text-anchor="middle">User ID — tag 13</text>
+            <text x="130" y="132" class="d-sub" text-anchor="middle">"Alice &lt;a@example.org&gt;"</text>
+
+            <rect x="240" y="98" width="200" height="42" rx="8" class="d-box sel"/>
+            <text x="340" y="117" class="d-lbl" text-anchor="middle">Self-signature — tag 2</text>
+            <text x="340" y="132" class="d-sub" text-anchor="middle">binds UID + carries prefs</text>
+
+            <rect x="450" y="98" width="240" height="42" rx="8" class="d-box dim"/>
+            <text x="570" y="117" class="d-lbl" text-anchor="middle">Third-party certifications</text>
+            <text x="570" y="132" class="d-sub" text-anchor="middle">optional · the Web of Trust edges</text>
+
+            <rect x="30" y="156" width="200" height="42" rx="8" class="d-box cool"/>
+            <text x="130" y="175" class="d-lbl" text-anchor="middle">Public Subkey — tag 14</text>
+            <text x="130" y="190" class="d-sub" text-anchor="middle">encryption subkey</text>
+
+            <rect x="240" y="156" width="200" height="42" rx="8" class="d-box sel"/>
+            <text x="340" y="175" class="d-lbl" text-anchor="middle">Subkey Binding Sig</text>
+            <text x="340" y="190" class="d-sub" text-anchor="middle">type 0x18</text>
+
+            <rect x="450" y="156" width="240" height="42" rx="8" class="d-box"/>
+            <text x="570" y="175" class="d-lbl" text-anchor="middle">+ Embedded Back Signature</text>
+            <text x="570" y="190" class="d-sub" text-anchor="middle">type 0x19 · required for signing subkeys</text>
+
+            <text x="360" y="230" class="d-note" text-anchor="middle">the primary key signs everything below it; nothing is trusted on position alone</text>
+            <text x="360" y="252" class="d-sub" text-anchor="middle">a parser that accepts a subkey without verifying its binding signature has accepted</text>
+            <text x="360" y="266" class="d-sub" text-anchor="middle">an attacker-chosen key as belonging to the certificate holder</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — Order matters for parsing; signatures matter for trust. Position in the stream conveys association, but only a verified signature conveys authorization.</p>
+        </div>
+
+        <p>The critical property: <strong>packet order expresses association, not authorization</strong>. A subkey packet appearing after a primary key does not mean the primary key holder authorized it. Only a valid subkey binding signature does. An implementation that reads certificates positionally and skips signature verification will happily import a certificate in which an attacker has appended their own encryption subkey — and will then encrypt to the attacker. This is not theoretical; permissive certificate import has been a recurring bug class.</p>
+
+        <h2 id="keypacket">2. The public key packet</h2>
+
+        <h3 id="v4">2.1 Version 4</h3>
+
+        <pre class="hex"><span class="hl">04</span>              <span class="c"># version 4</span>
+<span class="hl">5F 8A 2C 10</span>     <span class="c"># creation time, 4-octet Unix seconds — part of the fingerprint!</span>
+<span class="hl">01</span>              <span class="c"># public-key algorithm ID (1 = RSA)</span>
+.. algorithm-specific key material (MPIs for RSA) ..</pre>
+
+        <p>Note that the creation time is inside the fingerprint input. This means <strong>you cannot change a key's creation timestamp without changing its fingerprint</strong> — the timestamp is cryptographically bound to the identity of the key, not metadata attached to it. This surprises people who try to "fix" a wrong system clock after generating a key.</p>
+
+        <h3 id="v6">2.2 Version 6</h3>
+
+        <pre class="hex"><span class="hl">06</span>              <span class="c"># version 6</span>
+<span class="hl">67 A1 3B 40</span>     <span class="c"># creation time</span>
+<span class="hl">1B</span>              <span class="c"># algorithm ID (27 = Ed25519)</span>
+<span class="hl">00 00 00 20</span>     <span class="c"># NEW in v6: 4-octet count of key material octets (32)</span>
+.. 32 octets of native-encoded Ed25519 public key ..</pre>
+
+        <p>The one structural addition in v6 is that explicit 4-octet length prefix on the key material. It looks minor. It is not: it means a parser encountering an <em>unknown</em> public-key algorithm can still skip the packet correctly, because it knows how many octets the material occupies without understanding the algorithm. In v4, unknown-algorithm key material is unparseable — you cannot determine its length — which forces implementations into either rejecting the whole certificate or guessing. That single field is what makes v6 forward-compatible with algorithms nobody has invented yet, which is precisely what the post-quantum work in <a href="pgp-6-pqc-implementations.html">Article 6</a> needed.</p>
+
+        <h2 id="fingerprints">3. Fingerprints</h2>
+
+        <p>A fingerprint is the canonical identifier of a key. Both versions hash a synthetic prefix followed by the key packet contents.</p>
+
+        <h3 id="v4fp">3.1 Version 4 fingerprint</h3>
+
+        \[ \text{FP}_{v4} = \text{SHA-1}\big(\texttt{0x99} \,\|\, \text{len}_{16} \,\|\, \text{version} \,\|\, \text{time} \,\|\, \text{alg} \,\|\, \text{key material}\big) \]
+
+        <p>20 octets. The <code>0x99</code> is a synthetic old-format packet header for a public-key packet, and <code>len</code> is a 2-octet big-endian length of everything after it. The Key ID is the <strong>last 8 octets</strong>.</p>
+
+        <h3 id="v6fp">3.2 Version 6 fingerprint</h3>
+
+        \[ \text{FP}_{v6} = \text{SHA-256}\big(\texttt{0x9B} \,\|\, \text{len}_{32} \,\|\, \text{version} \,\|\, \text{time} \,\|\, \text{alg} \,\|\, \text{len}_{\text{material}} \,\|\, \text{key material}\big) \]
+
+        <p>32 octets. Different synthetic prefix (<code>0x9B</code>), 4-octet length, SHA-256. The Key ID is the <strong>first 8 octets</strong> — note the reversal from v4. Getting this backwards produces key IDs that never match anything, and it is a classic porting bug.</p>
+
+        <div class="bm-warn"><strong>How bad is SHA-1 in v4 fingerprints, honestly?</strong> SHA-1 is broken for collision resistance — <a href="https://shattered.io/" target="_blank" rel="noopener">SHAttered</a> (2017) demonstrated a practical collision, and <a href="https://sha-mbles.github.io/" target="_blank" rel="noopener">SHA-1 is a Shambles</a> (2020) demonstrated a chosen-prefix collision for around $45k of compute at the time. It is <em>not</em> broken for preimage resistance, and that distinction is what bounds the damage.
+        <br><br>Practically: an attacker cannot take your existing fingerprint and construct a different key matching it (that needs a second preimage). An attacker <em>can</em>, with chosen-prefix collision capability, generate two keys they control that share a fingerprint — which matters for scenarios where an attacker gets a colliding key certified and then substitutes the twin. This is a real attack against certification workflows, not against fingerprint verification of a key you already hold. v6's move to SHA-256 removes the concern entirely; until you are on v6, the mitigation is that certification decisions should not rest on fingerprint equality alone.</div>
+
+        <h3 id="keyids">3.3 Key IDs are not identifiers</h3>
+
+        <p>A Key ID is 8 octets — 64 bits. A "short key ID," still displayed by some tooling, is 4 octets — <strong>32 bits</strong>. In 2016 the <a href="https://evil32.com/" target="_blank" rel="noopener">Evil32</a> project generated colliding short key IDs for the entire strong set of the Web of Trust, demonstrating that 32-bit identifiers are trivially collidable on commodity hardware.</p>
+
+        <table class="papers">
+          <tr><th>Identifier</th><th>Bits</th><th>Collision work</th><th>Safe to use for…</th></tr>
+          <tr><td>Short Key ID</td><td>32</td><td>Trivial (seconds)</td><td><strong>Nothing.</strong> Do not display, do not accept.</td></tr>
+          <tr><td>Long Key ID</td><td>64</td><td>~2<sup>32</sup> birthday — hours on a GPU</td><td>Local lookup hints only, never trust decisions</td></tr>
+          <tr><td>v4 Fingerprint</td><td>160 (SHA-1)</td><td>Chosen-prefix collision feasible for funded attackers</td><td>Verification of held keys; caution in certification flows</td></tr>
+          <tr><td>v6 Fingerprint</td><td>256 (SHA-256)</td><td>Infeasible</td><td>Everything</td></tr>
+        </table>
+
+        <p>The implementation rule follows directly: key IDs are a <em>database index</em>, used to narrow a keyring lookup quickly. Once you have candidate keys, the actual decision must be made by verifying a signature or comparing a full fingerprint. Any code path where a key ID alone selects a key for a trust decision is a bug.</p>
+
+        <h2 id="binding">4. Subkeys, binding, and cross-certification</h2>
+
+        <p>The standard operational pattern separates a long-lived primary key (certification only, kept offline) from short-lived subkeys for signing and encryption. This requires the primary key to authorize each subkey, via a <strong>Subkey Binding Signature</strong> (type <code>0x18</code>) issued by the primary over the concatenation of the primary key packet and the subkey packet.</p>
+
+        <p>For subkeys capable of <em>signing</em>, that is not sufficient. RFC 9580 requires an additional <strong>Primary Key Binding Signature</strong> (type <code>0x19</code>, the "back signature") issued <em>by the subkey</em> over the same data, embedded in the binding signature's unhashed subpackets.</p>
+
+        <div class="bm-fix"><strong>Why the back signature exists — a concrete attack.</strong> Without it, Mallory takes Alice's published signing subkey packet and binds it into Mallory's own certificate, issuing the <code>0x18</code> binding with Mallory's primary key (which Mallory obviously controls). Mallory now has a certificate that claims Alice's signing subkey as its own. Signatures Alice made now appear to verify as coming from Mallory's certificate — Mallory has stolen attribution for Alice's signatures without ever touching Alice's private key.
+        <br><br>The back signature closes this because it requires proof of possession of the <em>subkey's private half</em>, which Mallory does not have. Verifying <code>0x18</code> without also verifying the embedded <code>0x19</code> for signing-capable subkeys reintroduces the vulnerability in full.</div>
+
+        <h2 id="s2k">5. String-to-Key: turning a passphrase into a key</h2>
+
+        <p>Secret key material at rest is encrypted under a key derived from a passphrase. S2K is that derivation. Its history is a compressed history of password hashing generally.</p>
+
+        <table class="papers">
+          <tr><th>ID</th><th>Type</th><th>Construction</th><th>Status in RFC 9580</th></tr>
+          <tr><td>0</td><td>Simple S2K</td><td><code>H(passphrase)</code></td><td>MUST NOT generate. No salt: rainbow-tableable, identical passphrases produce identical keys.</td></tr>
+          <tr><td>1</td><td>Salted S2K</td><td><code>H(salt ‖ passphrase)</code>, 8-octet salt</td><td>Only for high-entropy input. Salt defeats precomputation but there is no work factor.</td></tr>
+          <tr><td>3</td><td>Iterated + Salted</td><td><code>H(</code>repeat <code>salt‖passphrase</code> to a count<code>)</code></td><td>Acceptable fallback if Argon2 unavailable.</td></tr>
+          <tr><td>4</td><td>Argon2</td><td><a href="https://www.rfc-editor.org/rfc/rfc9106.html" target="_blank" rel="noopener">RFC 9106</a> memory-hard KDF</td><td><strong>Recommended.</strong> 16-octet salt, explicit passes/parallelism/memory.</td></tr>
+        </table>
+
+        <h3 id="iterated">5.1 The Iterated-and-Salted encoding quirk</h3>
+
+        <p>Type 3's iteration count is stored as a single octet, decoded into an octet count via a mantissa/exponent scheme:</p>
+
+        \[ \text{count} = (16 + (c \,\&\, 15)) \ll \left(\frac{c}{16} + 6\right) \]
+
+        <p>Two things follow. First, the count is a count of <em>octets hashed</em>, not iterations of a hash — you repeatedly feed <code>salt‖passphrase</code> into the hash context until that many octets have been consumed, then finalize. Implementations that treat it as an iteration count are off by a factor of <code>len(salt‖passphrase)</code>, producing keys that do not interoperate. Second, the maximum representable count is 65,011,712 octets, which sounds large and is not: on modern hardware this is a small fraction of a second, and it is the <em>hard ceiling</em> of the encoding. There is no way to express a stronger type-3 S2K. That ceiling is the entire argument for Argon2.</p>
+
+        <h3 id="argon2">5.2 Argon2</h3>
+
+        <p>Argon2id is memory-hard: the attacker's cost scales with memory as well as time, which specifically degrades GPU and ASIC advantage — the exact advantage that makes type-3 S2K weak. Its parameters are explicit in the packet:</p>
+
+        <pre class="hex"><span class="hl">04</span>              <span class="c"># S2K type 4 = Argon2</span>
+.. 16 octets salt ..
+<span class="hl">03</span>              <span class="c"># t = 3 passes</span>
+<span class="hl">04</span>              <span class="c"># p = 4 lanes (parallelism)</span>
+<span class="hl">10</span>              <span class="c"># m = 2^16 KiB = 64 MiB memory</span></pre>
+
+        <div class="bm-warn"><strong>Argon2 is permitted only with AEAD-protected secret keys</strong> (S2K usage octet 253). Pairing Argon2 with CFB protection is forbidden by RFC 9580. The reason is that a memory-hard KDF protecting a malleable, unauthenticated ciphertext gives you a strong lock on a door with no frame — the effort goes into resisting offline guessing while leaving the ciphertext tamperable. Enforce the pairing.</div>
+
+        <h2 id="secretprotection">6. Secret-key protection</h2>
+
+        <p>The S2K usage octet in a secret key packet selects how the private material is protected:</p>
+
+        <table class="papers">
+          <tr><th>Usage</th><th>Protection</th><th>Assessment</th></tr>
+          <tr><td><code>0</code></td><td>Unencrypted</td><td>Private material in the clear. Legitimate for HSM-adjacent flows and automation, catastrophic by accident.</td></tr>
+          <tr><td><code>253</code></td><td><strong>AEAD</strong> (key = HKDF of S2K output)</td><td>The modern choice. Tamper-evident.</td></tr>
+          <tr><td><code>254</code></td><td>CFB, with SHA-1 checksum over plaintext</td><td>Legacy. The checksum detects a wrong passphrase, not tampering.</td></tr>
+          <tr><td><code>255</code></td><td>"MalleableCFB" — CFB with a 16-bit sum check</td><td>v4 only. Named in RFC 9580 exactly as harshly as it deserves. MUST NOT generate.</td></tr>
+        </table>
+
+        <h3 id="malleable">6.1 Why "malleable" is the correct word</h3>
+
+        <p>Usage 255 protects the plaintext with a 16-bit additive checksum, encrypted alongside the data in CFB mode. CFB is malleable: flipping a ciphertext bit flips the corresponding plaintext bit in a predictable position. A 16-bit checksum has 65,536 possible values, so a blind attacker guessing has a 2<sup>-16</sup> chance per attempt — and a non-blind attacker can often craft modifications that preserve an additive checksum outright.</p>
+
+        <p>The consequence is that an attacker with write access to your private keyring can modify the encrypted private key material in structured ways. Against certain algorithms this enables fault-style key recovery: an attacker who can induce controlled corruption of key parameters and then observe the resulting signatures can, for some parameter sets, recover the private key. This class of concern is why usage 253's AEAD tag — which makes any modification detectable before the material is ever used — is a genuine security improvement rather than a modernization for its own sake.</p>
+
+        <h3 id="aead-secret">6.2 The AEAD-protected format</h3>
+
+        <p>With usage 253, the key derivation includes context binding via HKDF, and the AEAD's associated data includes the public key packet. That binding matters: it means the encrypted private material is cryptographically tied to the specific public key it belongs to, so an attacker cannot lift the encrypted secret blob from one key and splice it into another certificate. This is the key-overwriting protection that was one of the working group's stated motivations for the v6 work — and one of the changes the LibrePGP fork disputes (<a href="pgp-6-pqc-implementations.html">Article 6</a>).</p>
+
+        <h2 id="expiry">7. Expiration, revocation, and the offline primary pattern</h2>
+
+        <p>Neither expiration nor revocation is a property of the key packet. Both live in signatures:</p>
+
+        <ul>
+          <li><strong>Expiration</strong> is the Key Expiration Time subpacket in the primary key's self-signature, expressed as seconds <em>after the key creation time</em> — not an absolute date. Extending an expiry means issuing a new self-signature, which is why expiry is a soft renewable commitment rather than a hard deadline.</li>
+          <li><strong>Revocation</strong> is a signature of type <code>0x20</code> (key revocation) or <code>0x28</code> (subkey revocation), which can carry a machine-readable reason code — key compromised, superseded, no longer used. The reason matters semantically: "superseded" means past signatures remain valid, "compromised" means they do not.</li>
+          <li><strong>Designated revokers</strong> let a key authorize another key to revoke it, which is the only real answer to "what if I lose the primary key." Set this up before you need it, because you cannot add it afterwards without the primary key.</li>
+        </ul>
+
+        <div class="bm-note"><strong>Revocation is a distribution problem, not a cryptography problem.</strong> A revocation signature is only meaningful to someone who receives it. There is no OCSP, no CRL fetch, no mandatory freshness check. This is one of OpenPGP's genuine structural weaknesses and it is what key transparency work aims at — covered in <a href="pgp-5-trust-distribution.html">Article 5</a>.</div>
+
+        <h2 id="algorithms">8. Algorithm inventory as of RFC 9580</h2>
+
+        <table class="papers">
+          <tr><th>ID</th><th>Algorithm</th><th>Encoding</th><th>Status</th></tr>
+          <tr><td>1</td><td>RSA (encrypt or sign)</td><td>MPI</td><td>Supported; ≥3072-bit for new keys</td></tr>
+          <tr><td>2, 3</td><td>RSA encrypt-only / sign-only</td><td>MPI</td><td>Deprecated — the split was always a mistake</td></tr>
+          <tr><td>16</td><td>Elgamal (encrypt-only)</td><td>MPI</td><td>Legacy; parameter-validation pitfalls</td></tr>
+          <tr><td>17</td><td>DSA</td><td>MPI</td><td>Legacy; nonce-reuse fragility, avoid</td></tr>
+          <tr><td>18</td><td>ECDH</td><td>OID + MPI + KDF params</td><td>Supported</td></tr>
+          <tr><td>19</td><td>ECDSA</td><td>OID + MPI</td><td>Supported</td></tr>
+          <tr><td>22</td><td>EdDSALegacy</td><td>OID + MPI</td><td>Deprecated in favor of ID 27</td></tr>
+          <tr><td>25</td><td>X25519</td><td>Native, 32 octets</td><td><strong>MTI in RFC 9580</strong></td></tr>
+          <tr><td>26</td><td>X448</td><td>Native, 56 octets</td><td>Supported</td></tr>
+          <tr><td>27</td><td>Ed25519</td><td>Native, 32 octets</td><td><strong>MTI in RFC 9580</strong></td></tr>
+          <tr><td>28</td><td>Ed448</td><td>Native, 57 octets</td><td>Supported</td></tr>
+        </table>
+
+        <p>The direction of travel is clear: MPI-encoded, parameter-heavy algorithms out; fixed-length, misuse-resistant curve algorithms in. The post-quantum additions in RFC 9980 continue exactly this pattern with native encodings and no negotiable parameters.</p>
+
+        <h2 id="checklist">9. Implementation checklist</h2>
+
+        <table class="papers">
+          <tr><th>Check</th><th>Prevents</th></tr>
+          <tr><td>Verify every subkey binding signature before using a subkey</td><td>Attacker-appended encryption subkeys</td></tr>
+          <tr><td>Verify the embedded back signature (0x19) for signing subkeys</td><td>Signature attribution theft</td></tr>
+          <tr><td>Never make a trust decision from a key ID</td><td>Evil32-class collision attacks</td></tr>
+          <tr><td>Reject short (32-bit) key IDs entirely, including in UI</td><td>Trivially forgeable identifiers</td></tr>
+          <tr><td>Compute v6 key IDs from the <em>first</em> 8 octets, v4 from the <em>last</em></td><td>Silent lookup failures on v6 keys</td></tr>
+          <tr><td>Reject Argon2 paired with CFB protection</td><td>Strong KDF over malleable ciphertext</td></tr>
+          <tr><td>Refuse to generate S2K usage 255 or type 0</td><td>Malleable and unsalted secret-key protection</td></tr>
+          <tr><td>Bind AEAD associated data to the public key packet</td><td>Secret-blob splicing between certificates</td></tr>
+          <tr><td>Treat expiry and revocation as signature state, re-evaluated per use</td><td>Stale validity caching</td></tr>
+          <tr><td>Enforce a certification-count ceiling on import</td><td>Certificate flooding DoS (see Article 5)</td></tr>
+        </table>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Should I migrate to v6 keys now?</summary><p>It depends entirely on who you need to interoperate with. v6 is technically better in every dimension discussed here — SHA-256 fingerprints, explicit key-material lengths, AEAD secret protection, Argon2. But GnuPG's LibrePGP position means a large installed base does not consume v6 the way RFC 9580 specifies. For internal systems where you control both ends, v6. For public correspondence, v4 remains the pragmatic default in 2026. Article 6 covers this decision properly.</p></details>
+        <details class="faq"><summary>Can I change my key's creation date if my clock was wrong?</summary><p>No. The creation timestamp is hashed into the fingerprint, so changing it produces a different key with a different fingerprint and no relationship to the original. Generate a new key and use the old one to sign the new one, establishing continuity.</p></details>
+        <details class="faq"><summary>Is SHA-1 in v4 fingerprints an emergency?</summary><p>No, but it is a real constraint. Preimage resistance holds, so nobody can forge a key matching an existing fingerprint you already verified. Collision resistance is broken, so an attacker who controls both keys in a pair can exploit workflows where a fingerprint is used to decide equivalence between keys they supplied. Verify keys out of band with full fingerprints, and prefer v6 where you can.</p></details>
+        <details class="faq"><summary>Why do I need both a binding signature and a back signature?</summary><p>They prove different things. The binding signature proves the primary key holder authorized this subkey. The back signature proves whoever controls the subkey's private half agreed to be bound to this primary. Without the second, anyone can claim a published signing subkey as their own.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>A certificate is a signed graph, not a container.</strong> Position implies association; only verified signatures imply authorization.</li>
+          <li><strong>Key IDs are lookup hints, never identifiers.</strong> 32-bit short IDs are forgeable in seconds and should not exist in your codebase or UI.</li>
+          <li><strong>The back signature requirement for signing subkeys is load-bearing</strong>, preventing signature-attribution theft that costs an attacker nothing to attempt.</li>
+          <li><strong>Type-3 S2K has a hard ceiling</strong> at roughly 65 MB of hashing, which is why Argon2 exists in the spec rather than as a nicety.</li>
+          <li><strong>Argon2 requires AEAD protection.</strong> A memory-hard KDF over a malleable ciphertext is a mismatched pair, and the spec forbids it.</li>
+          <li><strong>v6's explicit key-material length is the quiet enabler of algorithm agility</strong>, which is exactly what made post-quantum key material addable without a new key version.</li>
+        </ul>
+
+        <h2 id="next">Next in this series</h2>
+        <p><a href="pgp-3-encryption-aead.html"><strong>Article 3 — Confidentiality: CFB, the MDC, EFAIL, and SEIPDv2</strong></a>: OpenPGP's non-standard CFB variant, why the MDC was a bolt-on that failed, the full EFAIL gadget mechanics, and how AEAD with chunking fixes it.</p>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9580.html#name-key-material-packets" target="_blank" rel="noopener">RFC 9580 §5.5 — Key Material Packets</a> <span>— normative source for v4/v6 key packet layout and fingerprint computation.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9106.html" target="_blank" rel="noopener">RFC 9106 — Argon2</a> <span>— the memory-hard KDF and its parameter guidance.</span></li>
+          <li><a href="https://evil32.com/" target="_blank" rel="noopener">Evil32: Short Key IDs are bad news</a> <span>— generated colliding 32-bit key IDs for the entire WoT strong set.</span></li>
+          <li><a href="https://sha-mbles.github.io/" target="_blank" rel="noopener">SHA-1 is a Shambles — Leurent &amp; Peyrin</a> <span>— practical chosen-prefix SHA-1 collision; the paper that bounds the v4 fingerprint concern.</span></li>
+          <li><a href="https://shattered.io/" target="_blank" rel="noopener">SHAttered — first practical SHA-1 collision</a> <span>— Stevens et al., 2017.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9580.html#name-secret-key-packet-formats" target="_blank" rel="noopener">RFC 9580 §5.5.3 — Secret-Key Packet Formats</a> <span>— S2K usage octets and the AEAD-protected secret key format.</span></li>
+          <li><a href="https://sequoia-pgp.gitlab.io/sequoia-wot/" target="_blank" rel="noopener">Sequoia Web of Trust documentation</a> <span>— clear treatment of certification semantics that build on this article's binding signatures.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="pgp-1-packet-format.html">← prev: Wire Format</a>
+        <a href="pgp-3-encryption-aead.html">next: Encryption &amp; AEAD →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

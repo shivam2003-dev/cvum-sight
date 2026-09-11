@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-03-quantum-threat",
+  "title": "How Quantum Algorithms Threaten Classical Public-Key Cryptography",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 15,
+  "words": 2808,
+  "excerpt": "Understand Shor, Grover, resource estimates, and harvest-now-decrypt-later without confusing mathematical algorithms with machines that already exist.",
+  "series": "pqc",
+  "seriesNum": "3"
+},
+{
   "slug": "pqc-02-cryptography-foundations",
   "title": "The Cryptography You Need Before Learning PQC",
   "date": "Sep 11, 2026",

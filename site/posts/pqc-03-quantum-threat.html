@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>How Quantum Algorithms Threaten Classical Public-Key Cryptography — cvam.sight</title>
+  <meta name="description" content="Understand Shor, Grover, resource estimates, and harvest-now-decrypt-later without confusing mathematical algorithms with machines that already exist.">
+  <link rel="stylesheet" href="../style.css?v=88">
+  <script src="/theme-init.js?v=9"></script>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="canonical" href="https://shivam2003.com/posts/pqc-03-quantum-threat">
+<style>
+/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
+.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
+.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
+.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
+.pqc-survey table td{vertical-align:top}
+.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
+.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
+.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.pqc-survey .callout.math{font-size:1em;line-height:1.8}
+.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
+.pqc-survey h2{scroll-margin-top:24px}
+.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+  </aside>
+  <main class="page">
+    <article>
+      <div class="post-header"><p class="meta">Sep 11, 2026 · security · 15 min read · 2,808 words</p><h1>How Quantum Algorithms Threaten Classical Public-Key Cryptography</h1><p>Post-Quantum Cryptography · Part 3 of 18 · intermediate</p><div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span></div></div>
+<div class="post-body osc-body pqc-survey">
+<blockquote>
+<p>The quantum threat is specific. Shor changes the difficulty of factoring and discrete logarithms; Grover improves generic search. Neither statement says that a present-day device can break a production key. This chapter connects the algorithms to their resource assumptions and then to an actionable migration threat model.</p>
+</blockquote>
+<h2 id="objectives-and-prerequisites">Objectives and prerequisites</h2>
+<p>Read Part 2 first if key agreement, signatures, or hash security goals are unfamiliar. Here you need only integer arithmetic and the idea of a probability. You will learn enough quantum vocabulary to understand the cryptographic threat, work through a small order-finding reduction, interpret a resource estimate, and build a migration scenario without inventing a quantum arrival date.</p>
+<p>Our fictional records service has three concerns: someone may collect its encrypted traffic, forge future updates, or steal a current endpoint key. Quantum cryptanalysis changes the first two in important ways. It does not replace the third with a new problem. A useful assessment keeps these attack paths separate so a quantum migration does not distract from an exposed signing service or an unpatched endpoint.</p>
+<h2 id="a-qubit-is-not-an-ordinary-bit-with-an-unknown-value">A qubit is not an ordinary bit with an unknown value</h2>
+<p>A classical bit is observed as zero or one. A qubit can have a state described by amplitudes associated with the basis states zero and one. The squared magnitudes of the amplitudes determine measurement probabilities, and their total is one. Amplitudes can carry phase information, which affects how later operations combine them.</p>
+<p>For intuition, imagine two paths through an experiment whose contributions can reinforce or cancel. That is more useful than imagining a database containing readable answers to every question. A superposition is manipulated by operations on the whole state. When measured, it produces an outcome distributed according to the resulting probabilities, not a printout of all the amplitudes.</p>
+<p>Multiple qubits allow a joint state with many basis possibilities. This large mathematical description does not itself prove an exponential computational advantage for every task. A useful algorithm needs structure that makes desired information survive interference and measurement. Preparing inputs, performing operations, extracting a result, and repeating when necessary all contribute to its cost. Shor and Grover exploit different kinds of structure.</p>
+<p>The practical lesson is to distrust the slogan “a quantum computer tries every key at once.” It omits the part that determines whether the computation is useful: how the algorithm makes a measurement reveal the needed answer with adequate probability. That omission leads directly to incorrect claims about symmetric keys and to confusion between qubit count and cryptanalytic capability.</p>
+<h2 id="reversible-computation-and-the-cost-of-an-oracle">Reversible computation and the cost of an oracle</h2>
+<p>A quantum algorithm is commonly described using gates and oracle calls. An oracle is an operation that computes or marks a property of an input in the required model. It is an abstraction for analysis, not a magic service that already exists for free. A cryptographic oracle may require a reversible implementation of a block cipher, modular arithmetic, or a verification function.</p>
+<p>Reversible computation must manage intermediate information. Temporary workspace can require additional qubits, and clearing it may require uncomputing earlier steps. A design can trade space against depth or repeat work to reduce memory. These tradeoffs are why a count of abstract oracle queries is not directly a count of wall-clock seconds.</p>
+<p>Error correction adds another layer. A long computation must maintain a sufficiently low total probability of failure, not merely demonstrate one successful physical operation. A logical qubit is an error-protected computational object; its physical realization can involve many noisy physical qubits and supporting operations. The ratio depends on the architecture, error rates, code, and reliability target. There is no universal conversion constant.</p>
+<h2 id="factoring-becomes-order-finding">Factoring becomes order finding</h2>
+<p>RSA exposes a modulus built from large factors whose recovery undermines its security. Shor's factoring method connects that task to finding the period of modular exponentiation. The quantum subroutine addresses the period; classical arithmetic performs the surrounding reduction and checks the result. <a href="https://arxiv.org/abs/quant-ph/9508027">Shor</a></p>
+<p>Let N be the integer to factor and choose an integer a relatively prime to N. The order r of a modulo N is the smallest positive exponent satisfying a^r = 1 modulo N. If r is even and a^(r/2) is not −1 modulo N, greatest-common-divisor calculations can reveal nontrivial factors. Some choices fail the needed conditions, so the algorithm includes repetition.</p>
+<p>For a tiny example, N = 15 and a = 2 produce the residues 2, 4, 8, 1. The order is four. Then a^(r/2) = 4, and gcd(4 − 1, 15) = 3 while gcd(4 + 1, 15) = 5. We have recovered both factors. This example demonstrates the reduction, not quantum speed: anyone can enumerate four residues on paper.</p>
+<pre><code class="language-text">Choose a and check gcd(a, N)
+             |
+Find the period of a^x mod N
+             |
+Recover and verify a candidate order r
+             |
+Check r is even and the reduction conditions hold
+             |
+Compute gcd(a^(r/2) - 1, N) and gcd(a^(r/2) + 1, N)
+             |
+Verify factors; otherwise retry
+</code></pre>
+<p>The distinction between “period finding is useful” and “a machine executed the full attack at cryptographic scale” matters. A compiled demonstration for a tiny known integer can remove much of the work a general attack must perform. Its educational value can be real without constituting evidence of RSA-2048 compromise.</p>
+<h2 id="why-discrete-logarithms-are-affected-too">Why discrete logarithms are affected too</h2>
+<p>Diffie–Hellman publishes group elements derived from secret exponents. Recovering a discrete logarithm means finding the secret exponent corresponding to a public element. The quantum approach exploits periodic structure in an appropriate algebraic formulation. The broader hidden-subgroup perspective helps connect these problems, but not every hidden-subgroup problem automatically has an efficient known quantum solution.</p>
+<p>Finite-field DH and elliptic-curve systems use different groups, arithmetic, and concrete resource profiles. Both nevertheless face a structural quantum threat to their discrete-logarithm foundation. A smaller elliptic-curve key is not evidence of quantum safety, nor should an estimate for one group be copied as an estimate for another. Algorithm families, parameters, and implementation costs need separate analysis.</p>
+<p>For signatures, a successful recovery of the relevant secret can allow future forgery. For recorded key agreement, recovering an ephemeral secret can reveal a recorded session's established material. These are different effects of attacking related mathematical assumptions. Whether a specific protocol transcript exposes enough information, and how the recovered value feeds its key schedule, must be checked at the protocol level.</p>
+<p>This chapter uses Shor's original result as the algorithmic anchor. It does not infer a concrete elliptic-curve attack runtime from an RSA factoring paper. Resource estimates are conditional constructions with defined targets, not universal scores assigned to all classical public-key cryptography.</p>
+<h2 id="grover-through-four-possibilities">Grover through four possibilities</h2>
+<p>Grover's algorithm amplifies the probability of a marked solution in an unstructured search. Its ideal query complexity for one marked item among N possibilities is order √N. The algorithm alternates an operation marking the desired state with an operation that changes amplitudes so the solution becomes more likely to appear when measured. <a href="https://arxiv.org/abs/quant-ph/9605043">Grover</a></p>
+<p>A four-item toy example makes the arithmetic visible. Start with amplitude 1/2 on each item, so each has probability 1/4. Mark one target by changing its amplitude to −1/2. The mean amplitude is now 1/4. Reflecting each amplitude about that mean maps the target to 1 and each other item to 0. In this ideal special case, measuring after one iteration returns the target.</p>
+<p>This is not a recipe for breaking a real cipher with four arithmetic operations. The oracle must recognize a correct candidate, the input space is enormous, and the implementation has physical costs. The example explains amplification while deliberately omitting those engineering details. It also shows why merely creating an initial uniform state is not the entire algorithm.</p>
+<p>For key search, the oracle may test a candidate key against known input/output relationships. The complete attack has to implement that test coherently, manage workspace, and sustain the required sequence of operations. Extra observations may be necessary to identify a unique key. A single successful match in a simplified model does not establish that every real cryptanalytic task has the same structure.</p>
+<h2 id="interpreting-symmetric-key-security-responsibly">Interpreting symmetric-key security responsibly</h2>
+<p>The informal expression “k-bit keys become k/2-bit secure” is a rough ideal-query shorthand for generic search. It is not an unconditional estimate of time, energy, or hardware. Parallel quantum search does not give the same simple scaling story as dividing classical exhaustive search into independent chunks. Realistic depth limits can materially change the useful tradeoff.</p>
+<p>A practical migration discussion therefore distinguishes three statements: the generic quantum algorithm exists; a concrete reversible implementation has an estimated cost; and an adversary has a machine capable of paying that cost. The first is established mathematics. The second is a model-based estimate. The third requires evidence about actual capability. Moving between these levels without saying so creates false certainty.</p>
+<p>NIST's PQC FAQ discusses why symmetric-parameter decisions should not be reduced to a simplistic quantum multiplier. It also separates the urgency of replacing vulnerable public-key schemes from the continued usefulness of symmetric cryptography. The right question is which construction, security goal, and usage limits apply—not whether the word “quantum” makes all existing cryptography obsolete. <a href="https://csrc.nist.gov/projects/post-quantum-cryptography/faqs">NIST FAQ</a></p>
+<h2 id="why-sha-256-does-not-suddenly-become-useless">Why SHA-256 does not suddenly become useless</h2>
+<p>A hash can appear in very different roles: identifying an artifact, building a MAC, compressing a transcript, deriving a challenge, or contributing to a hash-based signature. Each role calls for a specific property. Finding any collision is not the same as finding a preimage for a fixed target. Security conclusions must follow the property actually needed by the construction.</p>
+<p>Even a generic quantum speedup does not turn a hash digest into reversible encryption. It changes the resources for a search problem. A password hash can remain weak because its input is predictable, while a cryptographic construction using the same underlying hash can have a very different security argument. Input entropy, output length, domain separation, and query model all matter.</p>
+<p>For the records service, replacing a certificate algorithm does not imply removing SHA-256 from every build manifest. Instead, inventory how hashes are used and what trusts their values. A digest cannot independently authenticate an untrusted publisher today, with or without a future quantum computer. Preserving that elementary distinction prevents a quantum review from overlooking an existing classical design error.</p>
+<h2 id="reading-resource-estimates-as-estimates">Reading resource estimates as estimates</h2>
+<p>Gidney and Ekerå's work estimates a construction for factoring RSA-2048 using twenty million noisy qubits in eight hours under specified physical assumptions. It models error correction and other overheads rather than equating logical gates with physical execution. Its publication is a research result about a possible construction, not a report of such a machine operating. <a href="https://arxiv.org/abs/1905.09749">Gidney and Ekerå</a></p>
+<p>Gidney's 2025 paper estimates fewer than one million noisy qubits with a runtime below a week under stated assumptions, including a 0.1% gate error rate, a one-microsecond surface-code cycle, and a ten-microsecond control reaction time. The changed space/time tradeoff illustrates why estimates evolve with algorithm and architecture choices. It is not a calendar prediction. <a href="https://arxiv.org/abs/2505.15917">Gidney, 2025</a></p>
+<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table>
+<thead>
+<tr>
+<th>Question for a resource paper</th>
+<th>Why the answer matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>What exact cryptographic target and key size?</td>
+<td>Different groups and parameters require different arithmetic</td>
+</tr>
+<tr>
+<td>Logical or physical qubits?</td>
+<td>Error correction and supporting machinery change the count</td>
+</tr>
+<tr>
+<td>Which error rates and connectivity?</td>
+<td>Hardware assumptions determine whether the schedule is feasible</td>
+</tr>
+<tr>
+<td>Which depth, gate count, and runtime?</td>
+<td>Space alone does not describe the full attack cost</td>
+</tr>
+<tr>
+<td>What success probability and repetitions?</td>
+<td>A reliable result can require more than one execution</td>
+</tr>
+<tr>
+<td>Which costs are omitted?</td>
+<td>Control, routing, factories, and storage may matter materially</td>
+</tr>
+<tr>
+<td>Measured, simulated, or analytically estimated?</td>
+<td>These are different forms of evidence</td>
+</tr>
+</tbody>
+</table></div>
+<p>The table is a reading aid, not a checklist that makes every estimate comparable. Two papers may optimize different objectives. A smaller qubit count paired with a longer runtime is not a contradiction. A responsible summary preserves enough assumptions to explain the comparison instead of extracting the most dramatic number from each abstract.</p>
+<h2 id="what-a-cryptographically-relevant-quantum-computer-means">What a cryptographically relevant quantum computer means</h2>
+<p>The term CRQC describes capability relative to a cryptographic target. It is not a single qubit-count threshold applicable to every problem. A device must support the required operations, reliability, connectivity, computation length, and control to execute an attack at the needed scale. Different targets may cross a practical threshold at different times.</p>
+<p>No authoritative evidence reviewed for this chapter establishes an operational CRQC capable of breaking the deployed public-key examples discussed here. That is a statement about the evidence used, not a promise that the situation cannot change. Current threat planning should remain sensitive to credible developments without treating every quantum benchmark as a cryptanalytic milestone. <a href="https://csrc.nist.gov/projects/post-quantum-cryptography">NIST's future-threat framing</a></p>
+<p>The engineering response does not need a precise prediction. It needs a defensible inventory, a migration lead-time estimate, and an update process for the assumptions. If a new paper changes an attack-cost estimate, teams should be able to revise priorities without discovering that their systems have no algorithm-update mechanism at all.</p>
+<h2 id="a-threat-model-for-the-records-service">A threat model for the records service</h2>
+<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table>
+<thead>
+<tr>
+<th>Asset and adversary action</th>
+<th>Classical boundary</th>
+<th>Quantum concern</th>
+<th>Additional controls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Collect public-network traffic</td>
+<td>Ephemeral classical DH/ECDH</td>
+<td>Later recovery of recorded session material</td>
+<td>Standardized PQ/hybrid establishment; protect endpoints</td>
+</tr>
+<tr>
+<td>Forge an update in the future</td>
+<td>Classical signature trust</td>
+<td>Future private-key recovery or forgery capability</td>
+<td>PQ signatures, trusted update channels, rollback policy</td>
+</tr>
+<tr>
+<td>Read encrypted backups</td>
+<td>Data key and its wrapping/storage</td>
+<td>Depends on vulnerable public-key protection in the chain</td>
+<td>Inventory key wrapping, retention, and access</td>
+</tr>
+<tr>
+<td>Steal today's process memory</td>
+<td>Endpoint isolation and key lifecycle</td>
+<td>Does not require quantum computation</td>
+<td>Patch, isolate, minimize privileges, erase secrets</td>
+</tr>
+<tr>
+<td>Replay a valid old command</td>
+<td>Protocol freshness checks</td>
+<td>Not repaired by changing signature family</td>
+<td>Authenticate context and enforce freshness</td>
+</tr>
+</tbody>
+</table></div>
+<p>Forward secrecy against later compromise of a long-term signing key does not imply resistance to solving the original ephemeral key agreement from a stored transcript. Similarly, stronger authentication does not retroactively repair old captured ciphertext. These temporal distinctions should appear in an assessment, not be hidden behind a single compliance field.</p>
+<h2 id="worked-migration-scenario">Worked migration scenario</h2>
+<p>Assume, purely for planning, that records require twelve years of confidentiality. A gateway can be upgraded in six months, but the slowest relevant client dependency takes three years. Evaluate attack-capability horizons of five, ten, and twenty years as scenarios, without assigning them probabilities. The combined secrecy-and-migration duration is fifteen years for the slow path.</p>
+<p>Under the five- and ten-year scenarios, delaying that slow path leaves an obvious concern under the S + M &gt; Q heuristic. Under the twenty-year scenario, the inequality does not hold for these particular inputs, but it does not prove zero risk. The model omits uncertainty in implementation quality, supply-chain delays, hidden dependencies, and collection reach. <a href="https://eprint.iacr.org/2015/1075">Mosca</a></p>
+<p>Next split the path. A gateway change might reduce exposure for updated clients quickly, while a legacy export channel remains vulnerable. Record the fraction and sensitivity of traffic still using that channel, but do not call a partial deployment complete. Revisit the data classification too: some records may need a longer lifetime than the default, and copies in downstream systems may outlive the original retention policy.</p>
+<p>This scenario produces an actionable question: which dependency makes the largest sensitive exposure persist longest? It is more useful than asking for a single organizational “quantum readiness percentage.” Part 16 will turn the same idea into inventory fields, ownership, milestones, and telemetry.</p>
+<h2 id="a-small-verification-exercise">A small verification exercise</h2>
+<p>Use Python 3 to verify the classical arithmetic and the ideal four-item amplification. This is not quantum simulation at cryptographic scale and does not measure a quantum attack.</p>
+<pre><code class="language-python">from math import gcd
+assert [pow(2, r, 15) for r in range(1, 5)] == [2, 4, 8, 1]
+assert (gcd(4 - 1, 15), gcd(4 + 1, 15)) == (3, 5)
+amplitudes = [-0.5, 0.5, 0.5, 0.5]
+mean = sum(amplitudes) / len(amplitudes)
+after = [2 * mean - a for a in amplitudes]
+assert after == [1.0, 0.0, 0.0, 0.0]
+assert sum(a * a for a in after) == 1.0
+print('Toy arithmetic checks passed')
+</code></pre>
+<p>The exercise tests two claims that are small enough to reproduce exactly. It cannot validate the hardware assumptions of a resource paper. Keeping those forms of evidence distinct is part of learning to read cryptographic research critically.</p>
+<h2 id="knowledge-check-and-next-step">Knowledge check and next step</h2>
+<p><strong>Why does a superposition not reveal every candidate key?</strong> Measurement returns an outcome. The algorithm must arrange useful interference and amplification before that measurement.</p>
+<p><strong>Why can an estimate with fewer qubits take longer?</strong> Space, parallel resources, and operation depth trade against one another. The objective and assumptions determine the comparison.</p>
+<p><strong>Does replacing classical signatures protect old recorded TLS sessions?</strong> Not by itself. Recorded confidentiality depends on the key-establishment and key-protection path used for those sessions.</p>
+<p>The quantum threat is neither a reason to panic nor a reason to ignore migration until a machine is demonstrated. It is a reason to replace vulnerable assumptions through a controlled process. Part 4 builds the mathematical vocabulary needed to understand the alternative assumptions and the security definitions used to analyze them.</p>
+</div><nav class="post-nav" aria-label="Series navigation"><a href="pqc-02-cryptography-foundations.html">← Part 2</a><a href="../series-pqc.html">All 18 parts</a></nav>
+    </article>
+  </main>
+  <aside class="toc-panel" aria-label="On this page">
+    <p class="toc-panel-label">// on this page</p>
+    <nav id="toc-nav" aria-label="Table of contents"></nav>
+  </aside>
+</div>
+<script src="../stats.js?v=4"></script>
+<script src="../app.js?v=43"></script>
+<script src="../settings.js?v=17"></script>
+<script src="../reader.js?v=3"></script>
+</body>
+</html>

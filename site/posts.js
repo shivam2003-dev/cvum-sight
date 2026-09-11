@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-11-hybrid-tls",
+  "title": "Hybrid Post-Quantum Cryptography and TLS 1.3",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2530,
+  "excerpt": "Trace standardized ML-KEM hybrid groups through TLS 1.3, exact share ordering, negotiation, retry behavior, transport costs, and a verified local OpenSSL exchange.",
+  "series": "pqc",
+  "seriesNum": "11"
+},
+{
   "slug": "pqc-10-alternatives",
   "title": "FN-DSA, HQC, and Algorithms Beyond the First Three Standards",
   "date": "Sep 11, 2026",

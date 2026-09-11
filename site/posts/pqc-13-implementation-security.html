@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Secure PQC Implementations: Side Channels, Faults, Randomness, and Verification — cvam.sight</title>
+  <meta name="description" content="Build an assurance argument across constant-time code, decapsulation behavior, physical attacks, randomness, memory safety, test vectors, fuzzing, and scoped formal verification.">
+  <link rel="stylesheet" href="../style.css?v=88">
+  <script src="/theme-init.js?v=9"></script>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="canonical" href="https://shivam2003.com/posts/pqc-13-implementation-security">
+<style>
+/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
+.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
+.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
+.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
+.pqc-survey table td{vertical-align:top}
+.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
+.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
+.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.pqc-survey .callout.math{font-size:1em;line-height:1.8}
+.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
+.pqc-survey h2{scroll-margin-top:24px}
+.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+  </aside>
+  <main class="page">
+    <article>
+      <div class="post-header"><p class="meta">Sep 11, 2026 · security · 13 min read · 2,512 words</p><h1>Secure PQC Implementations: Side Channels, Faults, Randomness, and Verification</h1><p>Post-Quantum Cryptography · Part 13 of 18 · advanced</p><div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span></div></div>
+<div class="post-body osc-body pqc-survey">
+<blockquote>
+<p>A standard defines the algorithm's behavior. A deployed implementation must also preserve its secrets while executing that behavior on a real compiler, processor, operating system, and application boundary.</p>
+</blockquote>
+<h2 id="objectives-and-evidence-boundaries">Objectives and evidence boundaries</h2>
+<p>Parts 7–9 explained the standardized algorithms; this article examines how an implementation can violate their assumptions without changing their mathematical descriptions. You will learn to distinguish timing leakage, physical leakage, fault attacks, randomness failures, memory defects, and integration errors, then assemble evidence appropriate to each threat.</p>
+<p>The source checkpoint is September 11, 2026. The finalized algorithm specifications remain <a href="https://csrc.nist.gov/pubs/fips/203/final">FIPS 203</a>, <a href="https://csrc.nist.gov/pubs/fips/204/final">FIPS 204</a>, and <a href="https://csrc.nist.gov/pubs/fips/205/final">FIPS 205</a>, with current potential errata consulted where relevant. Implementation assurance is a separate claim from implementing those standards.</p>
+<p>This is a defensive review framework, not a production cryptographic implementation. The patterns below are deliberately schematic. Replacing a maintained library's internals with a short example would remove the testing, architecture review, and assurance work that this article argues for preserving.</p>
+<h2 id="start-with-the-attacker-and-the-boundary">Start with the attacker and the boundary</h2>
+<p>A remote client can submit chosen ciphertexts or signatures and measure response times. A colocated process may observe shared caches or other microarchitectural effects. An attacker holding a device may measure power or electromagnetic emissions, manipulate voltage or clock behavior, or access debug interfaces. These are different capabilities and require different evaluations.</p>
+<p>Name the protected assets: long-term private keys, regenerating seeds, ephemeral secrets, internal rejection decisions, and derived session material. Name the observable outputs: return codes, timing, packet sizes, logs, crashes, power traces, and fault responses. An assurance claim is meaningful only after identifying what must remain independent of the secrets.</p>
+<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:680px">
+<thead>
+<tr>
+<th>Threat</th>
+<th>Typical observation</th>
+<th>Useful evidence</th>
+<th>Important limitation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Remote timing</td>
+<td>Request latency distributions</td>
+<td>Constant-time review and targeted timing tests</td>
+<td>Network noise can hide leakage</td>
+</tr>
+<tr>
+<td>Cache leakage</td>
+<td>Secret-dependent memory behavior</td>
+<td>Access-pattern analysis and target-specific review</td>
+<td>Timing proofs may model only selected effects</td>
+</tr>
+<tr>
+<td>Power or EM</td>
+<td>Physical traces</td>
+<td>Masking assessment and laboratory evaluation</td>
+<td>Branchless code alone is insufficient</td>
+</tr>
+<tr>
+<td>Fault injection</td>
+<td>Corrupted computations or skipped checks</td>
+<td>Fault-model analysis and countermeasure testing</td>
+<td>Functional tests do not reproduce physical faults</td>
+</tr>
+<tr>
+<td>Memory defects</td>
+<td>Crashes or unintended reads/writes</td>
+<td>Sanitizers, fuzzing, memory-safety proofs</td>
+<td>A safe buffer can still contain a leaked secret</td>
+</tr>
+</tbody>
+</table></div>
+<p>A cloud KEM service and a smart-meter firmware signer should not inherit identical review checklists without considering their environments. Conversely, excluding physical attacks should be an explicit scope decision, not an assumption inferred from passing remote tests.</p>
+<h2 id="what-constant-time-programming-means">What constant-time programming means</h2>
+<p>In the usual software leakage model, control flow, memory addresses, and variable-latency operations should not depend on secrets. “Constant time” does not mean every request takes exactly the same wall-clock duration. Scheduling, caches affected by public inputs, and other environmental effects can vary while the sensitive computation preserves its intended independence.</p>
+<p>A comparison that returns at the first unequal byte can reveal how long a prefix matched. A table indexed by a secret coefficient can reveal cache-line access. A division instruction may have operand-dependent latency on a target processor even when the source contains no branch. Review must therefore examine operations and generated code, not only search for if statements.</p>
+<p>The <a href="https://eprint.iacr.org/2024/1049">KyberSlash paper</a> documents exploitable secret-dependent division timing in implementations of the Kyber family. It is an implementation lesson, not evidence that every ML-KEM implementation is broken. The authors describe affected implementations, platforms, disclosure, and fixes; those details matter when assessing whether a particular deployed binary is affected.</p>
+<p>A safer engineering pattern is to use the library's reviewed constant-time arithmetic and comparison primitives, preserve their documented input ranges, and inspect the target build. Copying a bit trick from another project without its range assumptions can introduce overflow or compiler behavior that defeats the intended property.</p>
+<h2 id="bad-and-safer-patterns-at-the-api-boundary">Bad and safer patterns at the API boundary</h2>
+<pre><code class="language-text">Unsafe design idea:
+    if internal_ciphertext_check_failed:
+        log recovered_message
+        return a special authentication error immediately
+
+Safer responsibility split:
+    library performs the specified decapsulation and implicit rejection
+    application checks public API errors and expected output length
+    protocol performs its normal transcript/key-confirmation checks
+    telemetry records public failure categories without secret intermediates
+</code></pre>
+<p>The second pattern is not complete code. It assigns sensitive decisions to a reviewed primitive and keeps the application from turning internal validity into an oracle. Public malformed-length rejection remains legitimate where specified; hiding every error indiscriminately is not the goal.</p>
+<p>Another unsafe idea is indexing a lookup table with secret data because it is “faster than arithmetic.” A safer candidate may use a documented constant-time implementation whose memory pattern is independent of the secret. Whether that candidate is actually safe depends on the target architecture and compiler, so the label must be supported by evidence.</p>
+<p>Likewise, a constant-time selection primitive must receive a properly formed mask and valid buffers. Converting a secret condition into a mask through an ordinary branch can reintroduce the leak before the selection occurs. Review the entire data path rather than approving one line in isolation.</p>
+<h2 id="decapsulation-failures-and-chosen-ciphertexts">Decapsulation failures and chosen ciphertexts</h2>
+<p>ML-KEM decapsulation processes attacker-controlled ciphertexts together with secret key material. Its reencryption check and fallback-secret selection must preserve implicit rejection. A correct-length invalid ciphertext normally yields alternate secret material without exposing the internal check; later protocol authentication fails because the peers derived different keys.</p>
+<p>Length errors, malformed keys, provider failures, and failed final authentication are distinct events. Tests should exercise all of them through supported interfaces. An application that assumes every nonempty secret output means authenticated peer success misunderstands the KEM contract. An application that logs the internal validity flag undermines the construction for the sake of diagnostics.</p>
+<p>Rate limiting and abuse controls can reduce attack opportunities, but they do not repair an oracle. An attacker may distribute requests or exploit a low-noise local path. Use operational controls as defense in depth while fixing the sensitive behavior itself.</p>
+<p>The Part 7 lab checked agreement, same-length corruption, and truncation. Those tests establish a few functional outcomes for one binary. They do not establish that the two same-length paths have indistinguishable timing, nor that faulted reencryption behaves safely. Each stronger claim requires additional analysis.</p>
+<h2 id="power-electromagnetic-leakage-and-faults">Power, electromagnetic leakage, and faults</h2>
+<p>A processor can execute the same instructions and memory addresses while consuming data-dependent power. Physical leakage therefore requires a different model from ordinary constant-time software. Masking splits sensitive values into shares so individual intermediates reveal less, but the implementation must preserve the masking assumptions through arithmetic, randomness, and compiler transformations.</p>
+<p>Masking is not achieved by XORing a secret with one random value and forgetting how subsequent operations combine it. Nonlinear functions and share interactions require specialized techniques. Evaluation must consider the order of leakage, quality of masks, reuse, glitches in hardware, and how traces are collected. This is specialist implementation work.</p>
+<p>Fault injection can skip checks, corrupt sampled values, alter addresses, or damage a signature computation. A faulty signature can expose information in some constructions even if ordinary signatures are secure. Countermeasures may include redundancy, consistency checks, protected control flow, or verifying a generated signature before release, depending on the algorithm and fault model.</p>
+<p>No single countermeasure covers every fault. A fault that bypasses both computation and its check defeats naive duplication. A secure-device evaluation should state the assumed attacker capabilities and test the actual hardware/firmware combination. A software unit test that flips one buffer byte is useful fault simulation, but it is not equivalent to a physical fault campaign.</p>
+<h2 id="randomness-entropy-drbgs-and-failure-handling">Randomness: entropy, DRBGs, and failure handling</h2>
+<p>An entropy source supplies unpredictable input; a deterministic random-bit generator expands suitable seed material into a pseudorandom stream. These roles are distinct. NIST's <a href="https://csrc.nist.gov/pubs/sp/800/90b/final">SP 800-90B</a> addresses entropy sources, while <a href="https://csrc.nist.gov/pubs/sp/800/90a/r1/final">SP 800-90A Revision 1</a> specifies DRBG mechanisms. A statistical-looking byte sequence alone does not prove adequate entropy.</p>
+<p>Use the maintained library's random-generation interface and check failure returns. Do not replace unavailable randomness with a timestamp, process identifier, fixed seed, or a retry that silently reuses previous output. Cloned virtual machines, early boot, process forks, and device manufacturing can create repeated-state risks that ordinary desktop tests miss.</p>
+<p>ML-KEM key generation and encapsulation need fresh random inputs. ML-DSA supports hedged and deterministic signing, but both require secure key generation, and deterministic mode does not make every implementation attack disappear. SLH-DSA also derives sensitive material from seeds whose protection is fundamental. Algorithm-specific requirements should guide the randomness interface.</p>
+<p>Test randomness failure through controlled dependency injection in a test build. Confirm that key generation or signing fails safely, outputs are not treated as usable, and the application does not continue with stale buffers. Never ship a test-entropy override enabled in production merely because it makes failures reproducible.</p>
+<h2 id="memory-safety-and-secret-lifecycle">Memory safety and secret lifecycle</h2>
+<p>Bounds checks, integer ranges, aliasing requirements, and ownership rules matter in polynomial arithmetic and serialization. A buffer overflow can reveal keys even if the cryptographic operation is mathematically correct. An integer overflow can change a distribution or norm check without an obvious crash. Sanitizers and static analysis help expose these defects under tested paths.</p>
+<p>Memory-safe languages reduce classes of accidental memory corruption, but foreign-function interfaces, unsafe blocks, assembly, and secret-dependent behavior still need review. A safe slice API does not prove constant-time execution. Conversely, a formally reviewed arithmetic backend can be undermined by an unsafe wrapper or an incorrect output-length assumption.</p>
+<p>Zeroization aims to remove secrets when their lifetime ends. Ordinary dead-store elimination can remove a naive clearing loop if the compiler concludes the buffer is never read again. Use documented clearing mechanisms supplied by the language runtime or cryptographic library, and understand their limits regarding copies, registers, swap, crash dumps, and persistent storage.</p>
+<p>Key custody extends beyond the live process. Private-key seeds in backups, container layers, debug attachments, or CI artifacts remain usable secrets. Define which process can obtain raw key material, which operations a signing service authorizes, and how key retirement reaches replicas and recovery copies. Cryptographic code cannot enforce a lifecycle that the surrounding system ignores.</p>
+<h2 id="compiler-and-vector-backend-changes-are-security-changes">Compiler and vector-backend changes are security changes</h2>
+<p>A compiler upgrade can transform arithmetic, introduce branches, or select instructions with different latency characteristics. Link-time optimization and architecture flags can change the generated path. Therefore, the reviewed source file is not the entire release identity: retain compiler version, flags, target architecture, and the actual binary or reproducible build reference.</p>
+<p>Vectorized implementations introduce lane ordering, alignment, packing, and target-dispatch concerns. AVX2, NEON, and other backends should be tested against the same known-answer and negative cases. A runtime CPU-feature check must not dispatch to unsupported instructions, and a fallback path should not quietly lose required security properties.</p>
+<p>Performance optimizations can also change stack size or register pressure, creating spills of sensitive intermediates. An optimization should include functional, memory, and leakage review appropriate to its scope. A faster benchmark is insufficient justification for replacing a reviewed constant-time operation with a target-specific shortcut.</p>
+<h2 id="tests-establish-different-kinds-of-evidence">Tests establish different kinds of evidence</h2>
+<p>Known-answer tests reproduce exact outputs for fixed test inputs, often including controlled randomness. They detect implementation disagreement with vectors but do not cover all inputs. Randomized functional tests explore additional cases and should include key agreement, sign/verify, wrong keys, altered messages, and malformed inputs.</p>
+<p>NIST's <a href="https://github.com/usnistgov/ACVP-Server">ACVP server repository</a> publishes material supporting algorithm testing. Pin the vector release and algorithm revision. Passing locally downloaded vectors is useful engineering evidence; it is not the same as obtaining an official validation certificate through the relevant process.</p>
+<p>Fuzzing exercises parsers and APIs with generated or mutated inputs. Use sanitizers, resource limits, and minimized regression cases. Differential testing compares independent implementations on equivalent inputs; agreement increases confidence, but two implementations can share the same bug or interpretation. Disagreement is a starting point for investigation, not automatic proof that one specific side is correct.</p>
+<p>Statistical timing tools such as <a href="https://github.com/oreparaz/dudect">dudect</a> compare timing distributions for selected input classes. A detected difference warrants investigation. Failure to detect a difference does not prove constant-time behavior across all secrets, devices, compilers, or attack models. Test design, noise, sample count, and class selection determine what the result can reveal.</p>
+<h2 id="formal-verification-read-the-scope-before-the-headline">Formal verification: read the scope before the headline</h2>
+<p>The maintained <a href="https://github.com/pq-code-package/mlkem-native">mlkem-native project</a> is a useful implementation-study example. Its documentation describes memory and type-safety proofs for specified C code and functional-correctness, memory-safety, and secret-independent timing proofs for its AArch64 and x86_64 assembly. Those are scoped claims about identified components and models.</p>
+<p>The same documentation explicitly excludes other attack classes, including power/EM, some microarchitectural effects, and fault injection, from its timing-resistance target. This is good assurance communication: it lets an integrator understand what evidence exists and what remains outside the model. Do not expand a component claim into “the whole application is formally secure.”</p>
+<p>Review the proof's trusted computing base, specification, architecture model, assumptions about callers, and correspondence to the shipped revision. Replacing a hash backend, changing a compiler path, or modifying an interface can move the deployment outside the established proof boundary. The project's soundness documentation is as important as its performance chart.</p>
+<h2 id="standardization-algorithm-testing-and-module-validation">Standardization, algorithm testing, and module validation</h2>
+<p>FIPS 203/204/205 define algorithms. Algorithm testing evaluates conformity to specified operations. The <a href="https://csrc.nist.gov/projects/cryptographic-module-validation-program">Cryptographic Module Validation Program</a> evaluates cryptographic modules under a separate framework, including an identified module boundary and operational conditions. These are related but distinct statements.</p>
+<p>A product using a standardized algorithm is not automatically a validated module. A module certificate does not automatically cover every version, platform, provider configuration, or application integration. Check the actual certificate and security policy when validation is required, and record the approved operating conditions rather than relying on a marketing phrase.</p>
+<p>Likewise, enabling a provider named FIPS does not establish that the entire application uses only approved operations correctly. Key import, protocol composition, entropy, configuration, and boundary conditions matter. Compliance evidence should identify the concrete module and deployment, while security review continues to examine the complete system.</p>
+<h2 id="release-evidence-must-survive-upgrades">Release evidence must survive upgrades</h2>
+<p>Keep the assurance record alongside the dependency update process. A library patch may fix a timing issue while changing supported providers, encodings, or performance. The release owner should identify which tests need rerunning and which proof claims still match the shipped source and object code.</p>
+<p>An emergency rollback also needs scrutiny. Returning to a version with a known side-channel flaw can restore availability while reopening the original vulnerability. Prefer a documented mitigation or corrected build when possible, and record the residual exposure when an operational exception is unavoidable. The important artifact is a traceable decision tied to exact versions, not a permanent green security badge.</p>
+<h2 id="a-review-exercise-with-a-useful-deliverable">A review exercise with a useful deliverable</h2>
+<p>Choose one KEM or signature integration and draw its boundary from untrusted input to final authorization decision. Mark parsing, random generation, private-key access, cryptographic operation, output handling, logging, and cleanup. For each boundary, identify a test, review, or proof that supports its behavior and an explicit limitation.</p>
+<p>Then simulate three failures: unavailable randomness, malformed public input, and a cryptographic verification failure. Confirm that no stale output becomes a success and no secret material reaches logs. These are application-level tests and can be performed without writing a new primitive or exposing internal rejection flags.</p>
+<p>Your deliverable is an assurance record: exact versions, threat model, covered components, test results, proof scope, residual risks, and the changes that require reevaluation. Part 14 applies the same discipline to performance claims, where measurement boundaries and reproducibility are equally important.</p>
+</div><nav class="post-nav" aria-label="Series navigation"><a href="pqc-12-pki-trust.html">← Part 12</a><a href="../series-pqc.html">All 18 parts</a></nav>
+    </article>
+  </main>
+  <aside class="toc-panel" aria-label="On this page">
+    <p class="toc-panel-label">// on this page</p>
+    <nav id="toc-nav" aria-label="Table of contents"></nav>
+  </aside>
+</div>
+<script src="../stats.js?v=4"></script>
+<script src="../app.js?v=43"></script>
+<script src="../settings.js?v=17"></script>
+<script src="../reader.js?v=3"></script>
+</body>
+</html>

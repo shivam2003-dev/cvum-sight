@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-13-implementation-security",
+  "title": "Secure PQC Implementations: Side Channels, Faults, Randomness, and Verification",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2512,
+  "excerpt": "Build an assurance argument across constant-time code, decapsulation behavior, physical attacks, randomness, memory safety, test vectors, fuzzing, and scoped formal verification.",
+  "series": "pqc",
+  "seriesNum": "13"
+},
+{
   "slug": "pqc-12-pki-trust",
   "title": "PQC in PKI, X.509, Certificates, and Digital Trust",
   "date": "Sep 11, 2026",

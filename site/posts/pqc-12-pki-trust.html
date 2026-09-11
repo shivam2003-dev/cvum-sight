@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PQC in PKI, X.509, Certificates, and Digital Trust — cvam.sight</title>
+  <meta name="description" content="Separate certificate keys from issuer signatures, understand RFC 9881 ML-DSA encodings, test a local chain, and plan CA, revocation, artifact-signing, and long-term trust migration.">
+  <link rel="stylesheet" href="../style.css?v=88">
+  <script src="/theme-init.js?v=9"></script>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="canonical" href="https://shivam2003.com/posts/pqc-12-pki-trust">
+<style>
+/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
+.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
+.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
+.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
+.pqc-survey table td{vertical-align:top}
+.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
+.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
+.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.pqc-survey .callout.math{font-size:1em;line-height:1.8}
+.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
+.pqc-survey h2{scroll-margin-top:24px}
+.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+  </aside>
+  <main class="page">
+    <article>
+      <div class="post-header"><p class="meta">Sep 11, 2026 · security · 13 min read · 2,549 words</p><h1>PQC in PKI, X.509, Certificates, and Digital Trust</h1><p>Post-Quantum Cryptography · Part 12 of 18 · advanced</p><div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span></div></div>
+<div class="post-body osc-body pqc-survey">
+<blockquote>
+<p>Key establishment protects a session's secret material. A public-key infrastructure establishes which keys are trusted for which identities and purposes. Their migration schedules overlap, but neither migration proves the other complete.</p>
+</blockquote>
+<h2 id="scope-and-current-standards">Scope and current standards</h2>
+<p>Part 11 demonstrated a hybrid TLS connection authenticated by a classical certificate. This part examines the separate signature and trust infrastructure. You will distinguish a certificate's subject key from its issuer signature, understand the standardized ML-DSA identifiers, generate a local chain, and identify the dependencies that make trust-anchor migration slow.</p>
+<p>The principal profile is <a href="https://www.rfc-editor.org/rfc/rfc9881.html">RFC 9881</a>, published in October 2025 on the Standards Track. It specifies ML-DSA conventions for X.509 certificates and certificate revocation lists, including public and private key representations. It builds on the certificate-processing framework in <a href="https://www.rfc-editor.org/rfc/rfc5280.html">RFC 5280</a>.</p>
+<p>As checked on September 11, 2026, the separate <a href="https://datatracker.ietf.org/doc/draft-ietf-tls-mldsa/">ML-DSA-in-TLS document</a> is still an Internet-Draft, revision 05. An advanced approval state does not make it a published RFC. Certificate encoding, TLS handshake-signature negotiation, browser trust policy, and library support are separate readiness questions.</p>
+<h2 id="read-a-certificate-as-two-cryptographic-statements">Read a certificate as two cryptographic statements</h2>
+<p>An X.509 certificate contains a subject public key and an issuer's signature over the encoded certificate body. The subject key may be used later by the subject to sign a handshake or artifact. The issuer signature binds that key and the certificate's identity, validity, and constraints according to the CA's policy.</p>
+<p>These algorithms need not be the same. An ML-DSA CA can issue a certificate containing an ECDSA subject key, or a classical CA can issue one containing an ML-DSA key if the software and profile permit it. The first changes the certificate signature; the second changes the subject's signing capability. Neither alone makes every link in a trust path post-quantum.</p>
+<pre><code class="language-text">locally trusted root key
+          │ verifies issuer signature
+          ▼
+intermediate certificate: identity + constraints + subject key
+          │ verifies issuer signature
+          ▼
+leaf certificate: service identity + purpose + subject key
+          │ verifies proof of possession / application signature
+          ▼
+authenticated handshake or signed artifact
+</code></pre>
+<p>The root is trusted because it was securely provisioned into the verifier's policy or trust store. Its self-signature does not manufacture that trust. A root rollover must therefore reach verifiers through an already trusted update mechanism or another explicitly authorized provisioning process.</p>
+<h2 id="path-validation-remains-more-than-signature-verification">Path validation remains more than signature verification</h2>
+<p>A cryptographically valid signature is only one check in certificate path validation. The verifier also considers validity periods, issuer relationships, basic constraints, path length, key usage, extended key usage, name constraints where applicable, and trust policy. Service identity verification adds the expected hostname or other application identity.</p>
+<p>For example, an ML-DSA signature can verify on a certificate issued for another hostname. Accepting that certificate for your intended server would still be an authentication failure. The application must preserve its identity checks when adding a new algorithm. A library's successful key parse is even further from a completed trust decision.</p>
+<p>A migration inventory should record each certificate's subject-key algorithm and issuer-signature algorithm separately. It should also record the path actually built by important clients, because cross-signing and multiple intermediates can lead different clients to different roots. Counting certificates with ML-DSA subject keys alone does not measure complete post-quantum path coverage.</p>
+<p>The same care applies to offline verifiers. A device can retain a root for years without network access. If that root's algorithm becomes unsuitable, distributing a replacement may require a firmware update whose own authentication relies on the old root. Planning this dependency before an emergency is more useful than simply shortening leaf-certificate lifetimes.</p>
+<h2 id="rfc-9881-identifiers-and-encoding-rules">RFC 9881 identifiers and encoding rules</h2>
+<p>RFC 9881 uses the following NIST object identifiers. AlgorithmIdentifier parameters are absent; they are not encoded as an ASN.1 NULL value. Strict representation matters for interoperability and for avoiding ambiguous algorithm interpretation.</p>
+<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:680px">
+<thead>
+<tr>
+<th>Algorithm</th>
+<th>OID</th>
+<th>Subject public-key bytes</th>
+<th>Signature bytes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ML-DSA-44</td>
+<td>2.16.840.1.101.3.4.3.17</td>
+<td>1,312</td>
+<td>2,420</td>
+</tr>
+<tr>
+<td>ML-DSA-65</td>
+<td>2.16.840.1.101.3.4.3.18</td>
+<td>1,952</td>
+<td>3,309</td>
+</tr>
+<tr>
+<td>ML-DSA-87</td>
+<td>2.16.840.1.101.3.4.3.19</td>
+<td>2,592</td>
+<td>4,627</td>
+</tr>
+</tbody>
+</table></div>
+<p>The profile uses pure ML-DSA, not HashML-DSA, for these certificate and CRL signatures. The signature covers the DER-encoded to-be-signed structure, and the context is the empty string. An application-specific context from Part 8's file-signing lab must not be inserted into certificate signing unless a different protocol explicitly defines it.</p>
+<p>Private-key containers can represent a seed, expanded key, or supported combination under the profile. A seed that regenerates a private key is equally sensitive. When both representations are present, consistency matters: importing contradictory seed and expanded material without checking can lead different implementations to derive different public keys or signatures.</p>
+<p>Do not register a private OID merely to work around a library that lacks the standardized one. Experimental identifiers can be appropriate inside explicitly isolated research, but carrying them into production creates another migration problem. The receiving parser, signer, trust engine, and protocol negotiator all need to agree on the actual algorithm.</p>
+<h2 id="certificate-size-count-the-whole-chain">Certificate size: count the whole chain</h2>
+<p>A leaf containing an ML-DSA-44 public key and signed by an ML-DSA-65 issuer already contains 1,312 + 3,309 = 4,621 bytes of public-key and signature payload. Names, extensions, validity fields, identifiers, and ASN.1 framing add more. This arithmetic is a lower-level component total, not a predicted final certificate length.</p>
+<p>In the executed lab below, that particular leaf certificate occupied 4,912 DER bytes. Different extensions or names change the result. A chain can add one or more similarly sized intermediate certificates. The root is often provisioned separately rather than transmitted, but the exact protocol and server configuration determine the delivered chain.</p>
+<p>Larger chains affect TLS handshake flights, caches, status responses, certificate-management APIs, and embedded parsers. A database column or message queue that assumed small certificates can fail before cryptographic verification begins. Test maximum supported chain sizes and parser limits through the actual delivery path.</p>
+<p>Compression can reduce some certificate overhead where a protocol supports it, but it does not change the raw signature size or eliminate parsing and validation work. Avoid estimating compressibility from repeated example certificates: real cryptographic values have little redundancy, while names and repeated metadata may compress differently.</p>
+<h2 id="ca-migration-by-trust-role">CA migration by trust role</h2>
+<p>Roots typically have long lifetimes and broad distribution. Intermediates can isolate issuance policy and support more frequent rotation. Leaf certificates are replaced most often but must be accepted by the deployed client population. A migration plan should treat these as distinct workstreams with different ownership and rollback constraints.</p>
+<p>One practical sequence is to establish a private test hierarchy, validate issuance and revocation tooling, exercise clients, and only then plan trust-anchor distribution. This does not prescribe a universal public-Web-PKI rollout order. Browser root programs, enterprise policy, regulated environments, and device-update mechanisms impose different requirements.</p>
+<p>Cross-signing can connect an intermediate to multiple trust anchors, but it can also preserve a classical path that clients continue to select. Record the accepted path rather than assuming the presence of a new certificate changes the effective security. Path-building behavior and trust-store contents belong in the interoperability matrix.</p>
+<p>A CA migration also affects enrollment protocols, certificate requests, linting, audit systems, backup ceremonies, key recovery policy, and hardware signing interfaces. Test issuance under load and during failover. A command that signs one certificate successfully does not establish that the production CA can maintain its operational guarantees.</p>
+<h2 id="executed-local-ml-dsa-chain-lab">Executed local ML-DSA chain lab</h2>
+<p>This experiment uses OpenSSL 3.5.8 on macOS ARM64. It creates a disposable ML-DSA-65 root and an ML-DSA-44 leaf, verifies the leaf for localhost, and rejects a wrong hostname. The root is trusted only through the command's explicit CAfile; nothing is installed into the operating system's trust store.</p>
+<pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+OPENSSL=${OPENSSL:-openssl}
+LAB=$(mktemp -d)
+trap 'rm -rf &quot;$LAB&quot;' EXIT
+umask 077
+cd &quot;$LAB&quot;
+&quot;$OPENSSL&quot; version
+&quot;$OPENSSL&quot; req -config /dev/null -x509 -newkey ML-DSA-65 -noenc -keyout root.key -out root.pem -days 2 -subj '/CN=PQC Lab Root' -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' -addext 'keyUsage=critical,keyCertSign,cRLSign'
+&quot;$OPENSSL&quot; req -config /dev/null -new -newkey ML-DSA-44 -noenc -keyout leaf.key -out leaf.csr -subj '/CN=localhost'
+cat &gt; leaf.ext &lt;&lt;'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:localhost
+EOF
+&quot;$OPENSSL&quot; x509 -req -in leaf.csr -CA root.pem -CAkey root.key -set_serial 2 -days 1 -extfile leaf.ext -out leaf.pem
+&quot;$OPENSSL&quot; verify -CAfile root.pem -purpose sslserver -verify_hostname localhost leaf.pem
+if &quot;$OPENSSL&quot; verify -CAfile root.pem -verify_hostname wrong.example leaf.pem &gt; /dev/null 2&gt;&amp;1; then exit 1; fi
+&quot;$OPENSSL&quot; x509 -in leaf.pem -outform DER -out leaf.der
+&quot;$OPENSSL&quot; x509 -in leaf.pem -noout -text &gt; leaf.txt
+python3 - &lt;&lt;'PY'
+from pathlib import Path
+s=Path('leaf.txt').read_text()
+assert 'ML-DSA-65' in s and 'ML-DSA-44' in s
+print('Leaf DER bytes:',Path('leaf.der').stat().st_size)
+print('PASS: ML-DSA issuer/subject algorithms, trusted path, hostname rejection')
+PY
+</code></pre>
+<p>The observed result was leaf.pem: OK, a 4,912-byte leaf DER encoding, and rejection of the wrong hostname. The leaf text contained ML-DSA-44 for its subject public key and ML-DSA-65 for its issuer signature. This is functional evidence for local certificate generation and path verification using that binary.</p>
+<p>It does not establish public browser acceptance, a production CA profile, HSM support, or a standardized TLS CertificateVerify deployment. Those are separate experiments. The fixed serial and short lifetimes are suitable only for this disposable hierarchy; a real CA requires a proper issuance database and serial-number policy.</p>
+<h2 id="revocation-and-status-infrastructure">Revocation and status infrastructure</h2>
+<p>Certificate revocation lists are signed objects too. RFC 9881 explicitly profiles ML-DSA in CRLs, so an issuance migration should include CRL generation, distribution, parsing, and signature verification. A verifier that accepts the new leaf format but cannot process its issuer's status information may fail or silently follow an unintended policy.</p>
+<p>OCSP adds another signed-response path, described by <a href="https://www.rfc-editor.org/rfc/rfc6960.html">RFC 6960</a>. The responder's certificate, signature support, delegated authority, freshness, and client behavior must all be tested under the applicable profile. A certificate-format standard should not be read as proof that every status client already supports the corresponding response signature.</p>
+<p>Revocation semantics also affect availability. Some systems fail open when status cannot be fetched; others fail closed. A larger response or unsupported algorithm can turn a cryptographic migration into a reliability problem or a policy bypass. Preserve the intended status policy and make failures observable during canary testing.</p>
+<p>Short-lived certificates can reduce some reliance on revocation but do not remove every need for emergency distrust or key compromise response. A stolen signing key can remain dangerous during its validity window, and long-lived signed artifacts need separate verification policy. The correct choice depends on the application and its update cadence.</p>
+<h2 id="code-packages-documents-and-artifacts">Code, packages, documents, and artifacts</h2>
+<p>Software signatures often outlive an individual network session. A verifier may need to check an old package, boot image, container provenance statement, or document years after creation. Replacing TLS key establishment does not change those stored signatures. Inventory their formats, signing services, trusted roots, and offline verification paths separately.</p>
+<p>Package and artifact ecosystems define their own signature containers and metadata rules. A library supporting ML-DSA does not automatically make a package manager, document viewer, or secure-boot firmware accept it. The format must identify the algorithm and bind the intended content, version, and signer identity without ambiguity.</p>
+<p>For a release system, sign a canonical manifest that identifies artifact digests, version, target platform, and relevant policy fields. A signature on an unlabelled digest can be replayed in another context if the surrounding format fails to bind its meaning. A post-quantum primitive cannot repair an underspecified release format.</p>
+<p>Document signing may additionally require evidence about signing time, certificate status at that time, and long-term archival policy. Those are protocol and evidence-management questions. Cryptographic validity today does not by itself establish a historical authorization or a legal conclusion about the signature.</p>
+<h2 id="timestamps-and-long-lived-evidence">Timestamps and long-lived evidence</h2>
+<p>A trusted timestamp can bind a digest to an asserted time under a timestamp authority's signature; <a href="https://www.rfc-editor.org/rfc/rfc3161.html">RFC 3161</a> defines a widely used protocol. It can help establish that an object existed before a later key compromise or expiration, subject to the verifier's policy and the trustworthiness of the timestamp infrastructure.</p>
+<p>The timestamp signature itself has an algorithm and a trust chain. If those become forgeable, preserving only the old timestamp token may not preserve the desired evidence. Long-term systems need a strategy for renewing evidence while existing mechanisms are still trustworthy, retaining validation material, and recording policy decisions.</p>
+<p>Re-signing an old artifact with a new algorithm is useful only if the system can still establish that the old artifact was authentic when it was accepted. Once the old authentication mechanism is already forgeable, blindly re-signing everything can bless attacker-created objects. Migration timing therefore matters for signatures as well as confidentiality.</p>
+<p>An archival test should restore an old object, its signatures, relevant certificates, status evidence, and timestamps in an isolated verifier. Confirm which evidence is needed and which external services are assumed available. This exercise often reveals undocumented dependencies that ordinary live verification hides.</p>
+<h2 id="hsms-key-custody-and-rotation">HSMs, key custody, and rotation</h2>
+<p>Hardware security modules and managed key services expose specific algorithms, parameter sets, mechanisms, and firmware versions. Ask whether they support generating keys internally, signing through the intended API, secure backup, replication, audit, and retirement. “PQC roadmap” is not an answer to those operational questions.</p>
+<p>Private-key seed formats can complicate import/export policy. A service that forbids expanded-key export but permits exporting an equivalent seed has not preserved non-exportability. Review every representation and recovery mechanism as part of the key boundary. Test that logs and diagnostic interfaces expose only public information.</p>
+<p>Rotation must update the signer, certificates or public-key distribution, verifier policy, and cached metadata coherently. During overlap, document which old signatures remain acceptable and for how long. Removing a key from the active signing service does not necessarily revoke trust in its historical signatures, and those two actions should not be conflated.</p>
+<p>For an offline root, rehearse the migration ceremony and recovery process before the old algorithm becomes urgent to replace. Ensure enough authorized personnel, compatible tooling, and verifier-update channels exist. These organizational dependencies can dominate the schedule even when the underlying signing operation is fast.</p>
+<h2 id="an-interoperability-matrix-and-review-questions">An interoperability matrix and review questions</h2>
+<p>Build a matrix whose rows are clients or verifiers and whose columns include certificate parsing, path building, hostname checks, constraints, CRLs, OCSP where used, artifact format, and algorithm negotiation. Include old firmware and offline devices, not only current desktop libraries. Mark each cell tested, unsupported, or unknown with a version and date.</p>
+<p>Negative tests should include an unknown issuer, expired leaf, wrong hostname, invalid basic constraints, wrong key usage, altered certificate bytes, and an unsupported algorithm. A migration that preserves only positive verification has not demonstrated that the trust engine still rejects invalid identities and paths.</p>
+<p>Explain why a classical issuer signing an ML-DSA leaf leaves a classical dependency. Explain why a trusted root's self-signature is not the source of its trust. Explain why an RFC defining an OID does not prove browser acceptance. Finally, identify the oldest verifier that must receive a new trust anchor in your environment.</p>
+<p>The next part examines implementation security beneath these interfaces: timing leakage, faults, randomness, memory safety, and the limits of tests and formal assurance. PKI relies on those properties while adding its own policy and lifecycle obligations above them.</p>
+</div><nav class="post-nav" aria-label="Series navigation"><a href="pqc-11-hybrid-tls.html">← Part 11</a><a href="../series-pqc.html">All 18 parts</a></nav>
+    </article>
+  </main>
+  <aside class="toc-panel" aria-label="On this page">
+    <p class="toc-panel-label">// on this page</p>
+    <nav id="toc-nav" aria-label="Table of contents"></nav>
+  </aside>
+</div>
+<script src="../stats.js?v=4"></script>
+<script src="../app.js?v=43"></script>
+<script src="../settings.js?v=17"></script>
+<script src="../reader.js?v=3"></script>
+</body>
+</html>

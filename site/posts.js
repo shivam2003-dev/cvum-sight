@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-12-pki-trust",
+  "title": "PQC in PKI, X.509, Certificates, and Digital Trust",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2549,
+  "excerpt": "Separate certificate keys from issuer signatures, understand RFC 9881 ML-DSA encodings, test a local chain, and plan CA, revocation, artifact-signing, and long-term trust migration.",
+  "series": "pqc",
+  "seriesNum": "12"
+},
+{
   "slug": "pqc-11-hybrid-tls",
   "title": "Hybrid Post-Quantum Cryptography and TLS 1.3",
   "date": "Sep 11, 2026",

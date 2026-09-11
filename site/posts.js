@@ -15,6 +15,24 @@
  */
 
 const POSTS = [
+  /* PQC COURSE START */
+{
+  "slug": "pqc-01-current-landscape",
+  "title": "Post-Quantum Cryptography in the Current Landscape",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 14,
+  "words": 2634,
+  "excerpt": "The quantum threat, the standards that are final, the protocols still changing, and an engineering map for an 18-part PQC course.",
+  "series": "pqc",
+  "seriesNum": "1"
+},
+  /* PQC COURSE END */
   {
     slug: "pgp-1-packet-format",
     title: "OpenPGP on the Wire — Packets, Lengths, and Armor.",

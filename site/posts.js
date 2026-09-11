@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-15-engineering-lab",
+  "title": "Hands-On PQC Lab for Engineers",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2510,
+  "excerpt": "Reproduce the course's native OpenSSL experiments with a checksum-pinned build, disposable keys, automated negative tests, local TLS, a container recipe, and CI.",
+  "series": "pqc",
+  "seriesNum": "15"
+},
+{
   "slug": "pqc-14-performance",
   "title": "PQC Performance Engineering",
   "date": "Sep 11, 2026",

@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-14-performance",
+  "title": "PQC Performance Engineering",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2515,
+  "excerpt": "Measure post-quantum operations and complete handshakes honestly: exact wire sizes, local OpenSSL observations, CPU and memory boundaries, concurrency, and reproducible benchmark design.",
+  "series": "pqc",
+  "seriesNum": "14"
+},
+{
   "slug": "pqc-13-implementation-security",
   "title": "Secure PQC Implementations: Side Channels, Faults, Randomness, and Verification",
   "date": "Sep 11, 2026",

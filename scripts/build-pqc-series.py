@@ -15,7 +15,11 @@ for p in sorted((ROOT/'content/pqc').glob('*.md')):
     assert meta['slug']==manifest[meta['part']-1]['slug']
     body=re.sub(r'^# .+\n','',body.strip(),count=1)
     rendered=markdown.markdown(body,extensions=['tables','fenced_code','toc','sane_lists'])
-    rendered=re.sub(r'<table>(.*?)</table>',r'<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table>\1</table></div>',rendered,flags=re.S)
+    def wrap_table(match):
+        columns=len(re.findall(r"<th>",match[1]))
+        width=max(580,170*columns)
+        return f'<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:{width}px">{match[1]}</table></div>'
+    rendered=re.sub(r'<table>(.*?)</table>',wrap_table,rendered,flags=re.S)
     words=len(re.findall(r"\b[\w’-]+\b",html.unescape(re.sub('<[^>]+>',' ',rendered))))
     meta.update(rendered=rendered,words=words,time=math.ceil(words/200))
     articles.append(meta)

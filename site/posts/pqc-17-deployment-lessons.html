@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Real-World PQC Deployments and Engineering Lessons — cvam.sight</title>
+  <meta name="description" content="Read Chrome, Cloudflare, AWS, Signal, Apple, and OpenSSH deployment accounts critically: exact mechanisms, rollout boundaries, compatibility, ratcheting, and evidence.">
+  <link rel="stylesheet" href="../style.css?v=88">
+  <script src="/theme-init.js?v=9"></script>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="canonical" href="https://shivam2003.com/posts/pqc-17-deployment-lessons">
+<style>
+/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
+.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
+.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
+.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
+.pqc-survey table td{vertical-align:top}
+.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
+.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
+.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.pqc-survey .callout.math{font-size:1em;line-height:1.8}
+.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
+.pqc-survey h2{scroll-margin-top:24px}
+.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+  </aside>
+  <main class="page">
+    <article>
+      <div class="post-header"><p class="meta">Sep 11, 2026 · security · 13 min read · 2,530 words</p><h1>Real-World PQC Deployments and Engineering Lessons</h1><p>Post-Quantum Cryptography · Part 17 of 18 · intermediate</p><div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span></div></div>
+<div class="post-body osc-body pqc-survey">
+<blockquote>
+<p>Public deployment accounts are most useful when they identify a mechanism, a population, and a measured outcome. Read them as engineering evidence with a date and scope, then test whether the same assumptions hold in your environment.</p>
+</blockquote>
+<h2 id="how-to-read-these-case-studies">How to read these case studies</h2>
+<p>This article uses original engineering and security publications, checked on September 11, 2026. It distinguishes a historical rollout announcement, an implementation specification, a current capability statement, and a future roadmap. None is treated as live verification of every user, endpoint, or product operated by the named organization.</p>
+<p>The common questions are concrete: what security property changed, which mechanism was deployed, what had to remain compatible, and what evidence supports the claim? The lessons following each account are engineering interpretations for this course, not claims that the organization implemented every suggested control.</p>
+<p>Earlier parts explained the primitives and TLS/PKI boundaries. Here those distinctions prevent misleading conclusions: a hybrid TLS group does not imply post-quantum certificate authentication, a messaging handshake does not automatically provide continuous post-compromise recovery, and an announced target year is not a completed migration.</p>
+<h2 id="chrome-retire-the-experiment-when-the-standard-arrives">Chrome: retire the experiment when the standard arrives</h2>
+<p>Google's September 2024 <a href="https://security.googleblog.com/2024/09/a-new-path-for-kyber-on-web.html">Chrome engineering announcement</a> described moving from experimental Kyber-based hybrid exchange to ML-KEM in Chrome 131. It identified the change from code point 0x6399 to 0x11EC and explained that the final algorithm was incompatible with the earlier deployment. The client would not offer both large PQ shares simultaneously; servers could temporarily support both during the transition.</p>
+<p>The important lesson is that an experiment needs an exit plan. Retaining a successful draft indefinitely can create dependence on an obsolete encoding. Removing it abruptly without coordination can reduce protection for clients or servers that update at different rates. The transition needs a defined overlap and a final retirement point.</p>
+<p>For your own protocol deployment, record experimental identifiers separately from standardized ones, communicate the compatibility window, and test both upgrade directions. A server-first rollout may provide overlap while clients switch their initial share. Once the window closes, telemetry should confirm that the old identifier is no longer accepted or used.</p>
+<p>The ClientHello size constraint is also instructive. Supporting more algorithms is not free when each initial share is large. Capability advertisement, initial-share prediction, and server selection interact with latency and bandwidth. A migration plan should include those transport consequences instead of assuming that adding another name to a list has negligible cost.</p>
+<h2 id="cloudflare-encryption-progress-and-authentication-debt">Cloudflare: encryption progress and authentication debt</h2>
+<p>Cloudflare's April 2026 <a href="https://blog.cloudflare.com/post-quantum-roadmap/">post-quantum roadmap</a> targets full post-quantum security, including authentication, by 2029. It distinguishes existing key-establishment deployment from remaining authentication work and identifies separate connection directions and product milestones. These are the provider's reported progress and plans; the target is not presented here as achieved.</p>
+<p>The engineering lesson is to split the program by security property and trust boundary. Browser-to-edge, edge-to-origin, administrative access, and device enrollment can depend on different protocols and client populations. A successful edge rollout is meaningful without proving the other paths complete.</p>
+<p>For an organization using a CDN, inspect its own origin connection and certificate policy. Determine which endpoint terminates each TLS session and which party controls the client software on the next hop. The provider can enable support on its side, but the other endpoint must negotiate and verify the intended mechanism.</p>
+<p>Roadmaps also need change management. A milestone may move because a protocol profile, browser capability, or hardware interface is not ready. Preserve the stated date and status in reports, and require fresh evidence before changing a planned item to deployed. This keeps an executive timeline connected to technical reality.</p>
+<h2 id="aws-endpoint-capability-and-client-responsibility">AWS: endpoint capability and client responsibility</h2>
+<p>AWS's April 2025 <a href="https://aws.amazon.com/blogs/security/ml-kem-post-quantum-tls-now-supported-in-aws-kms-acm-and-secrets-manager/">ML-KEM TLS announcement</a> reported support at KMS, ACM, and Secrets Manager non-FIPS endpoints in the aws partition, with client updates needed to offer ML-KEM. It also presented a specific Java SDK/KMS workload comparing connection reuse enabled and disabled. The measurements were tied to a named instance, region, and test setup, not a universal overhead claim.</p>
+<p>This case highlights a two-sided migration boundary. A cloud service accepting a hybrid group does not mean an old SDK requests it. Inventory the TLS stack actually used by the application: language runtime, HTTP transport, native library, proxy, and configuration can all differ from the command-line OpenSSL installation.</p>
+<p>Connection reuse changes how handshake cost is amortized. A workload opening a new connection for every request pays the setup cost repeatedly; a pooled connection spreads it across many requests. This is a system-level performance issue that cannot be inferred from encapsulations per second alone.</p>
+<p>When reproducing such a study, keep the API operation, region, network path, concurrency, retry policy, and connection behavior fixed. Record the negotiated group and certificate verification, then compare request latency and throughput. Do not use a provider's percentage from one setup as a capacity estimate for another application.</p>
+<p>The announcement's endpoint scope matters too. A historical statement about selected services and a partition should not be expanded into “all AWS traffic is post-quantum.” Use current product documentation and your actual connection evidence for a deployment decision. Service support, customer configuration, and observed use remain separate claims.</p>
+<h2 id="signal-initial-agreement-is-not-continuous-recovery">Signal: initial agreement is not continuous recovery</h2>
+<p>Signal's October 2025 <a href="https://signal.org/blog/spqr/">SPQR account</a> explains adding post-quantum ratcheting to the Signal Protocol and combining it with the existing ratchet structure. Its <a href="https://signal.org/docs/specifications/mlkembraid/">ML-KEM Braid specification</a> gives the detailed state machine. A central engineering problem is carrying larger KEM material across asynchronous messages, including loss and out-of-order delivery, without attaching a full exchange to every message.</p>
+<p>The conceptual distinction is between protecting the initial session establishment and introducing fresh secret material later. If an attacker obtains current session state, recovery requires new secret contributions that the attacker does not learn, together with the protocol's assumptions about subsequent compromise and communication. A symmetric hash update alone cannot erase the attacker's knowledge of a copied state.</p>
+<pre><code class="language-text">initial authenticated establishment
+                 ↓
+       ongoing message-key evolution
+                 ↓
+ fresh independent key-establishment contributions
+                 ↓
+       new ratchet epoch and recovery properties
+</code></pre>
+<p>This diagram is conceptual, not Signal's complete protocol. The actual construction specifies when contributions are generated, acknowledged, combined, and used. Those details determine which messages receive which protection and under what compromise model. “Uses ML-KEM” does not describe the whole security claim.</p>
+<p>For engineers, the transferable lesson is to model bandwidth and state transitions together. Chunking a large cryptographic message creates questions about loss, replay, reordering, partial state, and completion. A generic reliable-transfer assumption may not hold in an asynchronous messenger, so the cryptographic protocol and transport behavior need joint analysis.</p>
+<p>Do not implement a new ratchet by adding periodic KEM outputs to an existing application key. Use a reviewed protocol and its formal analysis. The exercise for this course is to trace the published state machine and identify the assumptions, not to produce an unofficial replacement secure messenger.</p>
+<h2 id="apple-pq3-rekeying-across-a-device-ecosystem">Apple PQ3: rekeying across a device ecosystem</h2>
+<p>Apple's February 2024 <a href="https://security.apple.com/blog/imessage-pq3/">PQ3 security publication</a> describes hybrid initial establishment and periodic post-quantum rekeying for iMessage, with message-size amortization and formal analysis. The article uses Kyber terminology from that deployment period and describes rollout to supported conversations. Its own security-level terminology is not NIST's algorithm security-category system.</p>
+<p>Preserve historical names when explaining the design. Rewriting every occurrence of Kyber as final ML-KEM can imply interoperability and implementation details that the original account did not establish. A current evaluation should inspect the latest implementation documentation separately from the historical architectural explanation.</p>
+<p>The ecosystem lesson is that device compatibility and update distribution are part of cryptographic deployment. A conversation can involve multiple devices with different software versions and availability. Key registration, offline delivery, rekeying, and verifier support must work across that population. A primitive benchmark does not exercise those conditions.</p>
+<p>Formal analysis contributes evidence about the modeled protocol, while implementation and rollout testing address different questions. The existence of a proof should prompt a reader to inspect its assumptions and boundaries, not stop the review. Device compromise, identity verification, key storage, and update trust remain relevant to the complete system.</p>
+<p>For a product team, a useful design review separates the initial-contact path, ongoing-session recovery, new-device enrollment, and account recovery. Each may have different secrets and trust anchors. An improvement in one path should be reported accurately without claiming that it resolves every account-security problem.</p>
+<h2 id="openssh-key-exchange-and-host-identity-remain-distinct">OpenSSH: key exchange and host identity remain distinct</h2>
+<p>The <a href="https://www.openssh.com/pq.html">OpenSSH PQC page</a> documents its post-quantum key-exchange work and the distinction from signature authentication. Its deployed hybrid mechanisms demonstrate that PQ migration is not confined to browser TLS. Inspect your installed version and negotiated SSH algorithm rather than assuming that a modern operating system implies the desired exchange.</p>
+<p>The operational lesson mirrors TLS: a hybrid key exchange does not automatically replace host-key or user-authentication signatures. An administrative connection has confidentiality, server identity, and user authorization requirements. These are separate inventory entries with separate upgrade dependencies.</p>
+<p>For a controlled test, use verbose client output against an authorized test server and record the negotiated key exchange and host-key algorithm. Preserve known-host verification. Disabling host-key checking to make a cryptographic experiment connect would remove the identity property the real system needs.</p>
+<p>Older automation, embedded SSH servers, and bastion chains can create compatibility constraints. Test the complete administrative path, including jump hosts and file-transfer clients. A successful connection to one current server does not establish coverage for an entire operational estate.</p>
+<h2 id="compare-the-cases-by-property-not-brand">Compare the cases by property, not brand</h2>
+<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:680px">
+<thead>
+<tr>
+<th>Case</th>
+<th>Main property discussed</th>
+<th>Deployment constraint</th>
+<th>Evidence boundary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chrome</td>
+<td>Hybrid session key establishment</td>
+<td>Draft-to-standard transition and initial-share size</td>
+<td>Historical engineering announcement</td>
+</tr>
+<tr>
+<td>Cloudflare</td>
+<td>Key establishment plus authentication roadmap</td>
+<td>Multiple product and connection boundaries</td>
+<td>Reported progress and future targets</td>
+</tr>
+<tr>
+<td>AWS</td>
+<td>Hybrid TLS to service endpoints</td>
+<td>Client/SDK capability and connection reuse</td>
+<td>Scoped endpoint report and workload study</td>
+</tr>
+<tr>
+<td>Signal</td>
+<td>Ongoing post-quantum ratcheting</td>
+<td>Asynchronous delivery and large KEM material</td>
+<td>Protocol account and detailed specification</td>
+</tr>
+<tr>
+<td>Apple PQ3</td>
+<td>Hybrid establishment and periodic rekeying</td>
+<td>Device ecosystem and message overhead</td>
+<td>Historical design and rollout account</td>
+</tr>
+<tr>
+<td>OpenSSH</td>
+<td>Hybrid administrative key exchange</td>
+<td>Version and endpoint compatibility</td>
+<td>Project capability documentation</td>
+</tr>
+</tbody>
+</table></div>
+<p>The comparison does not rank the products. Their threat models, protocols, identities, and deployment populations differ. A messaging ratchet and a TLS handshake solve related but different problems; copying one product's headline into another architecture can obscure the missing properties.</p>
+<h2 id="repeated-lesson-compatibility-must-have-an-end-state">Repeated lesson: compatibility must have an end state</h2>
+<p>Compatibility allows a rollout to reach an installed population, but indefinite fallback can preserve the original vulnerability. Define which clients may use a temporary classical path, how that use is measured, and when the exception ends. An unsupported legacy device should become a tracked dependency, not an invisible denominator exclusion.</p>
+<p>The same principle applies to experimental identifiers. An early deployment can teach valuable lessons while creating a retirement obligation. Keep versioned telemetry and test old/new combinations before removing support. Once retired, verify rejection so a later configuration change does not restore the obsolete path.</p>
+<p>For signatures, compatibility often requires distributing verification capability before issuing new-format artifacts. That ordering can be slower than changing a server-side KEM preference. Separate those workstreams and retain enough overlap to avoid stranding devices, while preventing the overlap from becoming permanent dual trust without policy.</p>
+<h2 id="repeated-lesson-measure-the-actual-population">Repeated lesson: measure the actual population</h2>
+<p>A provider's adoption percentage describes a particular denominator and date. It may count capable browsers, human traffic, fresh handshakes, or selected endpoints. It does not automatically describe your application, internal network, or device fleet. Ask what was counted before comparing percentages.</p>
+<p>Your own telemetry should include failed attempts and important subpopulations. A rollout can look healthy in aggregate while breaking a small but critical industrial client. Segment by software family, network path, region, and trust configuration as appropriate, while respecting privacy and avoiding collection of secret material.</p>
+<p>Observe both configuration and outcome. A deployment record says what should happen; a negotiated-group sample says what did happen for that connection. A robust program reconciles the two and investigates unexpected fallback, rather than treating either view alone as complete evidence.</p>
+<h2 id="repeated-lesson-performance-is-often-protocol-behavior">Repeated lesson: performance is often protocol behavior</h2>
+<p>The cases show why bandwidth, connection reuse, asynchronous delivery, and retry policy can dominate the integration story. A faster primitive may not improve user experience if it increases round trips or fails on an important middlebox. A larger signature can be acceptable for an infrequent firmware update and costly for a high-frequency message stream.</p>
+<p>Build a workload model before optimizing. Identify operation frequency, payload size, connection lifetime, device memory, and recovery behavior. Then choose measurements that test the model. The local course benchmarks are useful for learning the interfaces, while production decisions need representative systems and distributions.</p>
+<p>Keep performance changes subordinate to the security contract. Do not disable key validation, identity checks, or constant-time behavior to match a favorable benchmark. If an optimization requires a different protocol assumption, document and review that assumption explicitly.</p>
+<h2 id="a-case-study-review-exercise">A case-study review exercise</h2>
+<p>Choose one primary account and write four short statements: the exact mechanism, the population and date, the measured or reported result, and what the source does not establish. Then map its constraints to one system you operate. This prevents a useful public example from becoming an unsupported assurance claim.</p>
+<p>For a TLS service, reproduce a hybrid handshake in a controlled environment and record the certificate algorithm separately. For a messaging study, trace one key-establishment epoch through the official specification, including delayed messages and compromise assumptions. For an SSH environment, inventory both key exchange and host identity across the bastion path.</p>
+<p>Finally identify one change you can make now and one dependency that requires coordination. The current standard landscape supports concrete progress, while not every identity, device, and archival workflow is equally ready. A good deployment plan preserves that nuance and still produces owned, testable work.</p>
+<h2 id="turn-a-public-case-into-an-internal-acceptance-record">Turn a public case into an internal acceptance record</h2>
+<p>Before proposing a rollout, create a one-page record with a named service owner and a specific connection or artifact boundary. State which confidentiality or authenticity property changes, which users and devices are eligible, and how the outcome will be observed. Attach the exact provider announcement or protocol version that informed the proposal. Record the review date so a later reader can distinguish a historical design decision from a current compatibility claim.</p>
+<p>Define success and failure together. Success might require a validated identity, the intended negotiated group, acceptable connection latency, and coverage of a named client population. Failure criteria should include unexpected classical fallback, lost certificate validation, critical client incompatibility, and an increase in retries. Set thresholds from the service's existing objectives and representative measurements; copying another organization's threshold supplies no evidence about your workload.</p>
+<p>Finally rehearse the operational response. Identify who can pause the rollout, what configuration is restored, which security exposure that restoration creates, and when the exception expires. Preserve a sanitized sample of successful and rejected connections. A small, reproducible acceptance record is more useful to an on-call engineer than a broad assertion that the organization has adopted post-quantum cryptography.</p>
+<h2 id="from-examples-to-a-sustained-learning-path">From examples to a sustained learning path</h2>
+<p>The final article turns the course into a continuing roadmap with seven stages, primary standards, books, lectures, papers, tools, communities, and practical projects. Use it to deepen the area most relevant to your role while maintaining the habit established here: distinguish a claim's source, scope, status, and evidence before acting on it.</p>
+</div><nav class="post-nav" aria-label="Series navigation"><a href="pqc-16-migration-agility.html">← Part 16</a><a href="../series-pqc.html">All 18 parts</a></nav>
+    </article>
+  </main>
+  <aside class="toc-panel" aria-label="On this page">
+    <p class="toc-panel-label">// on this page</p>
+    <nav id="toc-nav" aria-label="Table of contents"></nav>
+  </aside>
+</div>
+<script src="../stats.js?v=4"></script>
+<script src="../app.js?v=43"></script>
+<script src="../settings.js?v=17"></script>
+<script src="../reader.js?v=3"></script>
+</body>
+</html>

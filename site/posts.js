@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-17-deployment-lessons",
+  "title": "Real-World PQC Deployments and Engineering Lessons",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2530,
+  "excerpt": "Read Chrome, Cloudflare, AWS, Signal, Apple, and OpenSSH deployment accounts critically: exact mechanisms, rollout boundaries, compatibility, ratcheting, and evidence.",
+  "series": "pqc",
+  "seriesNum": "17"
+},
+{
   "slug": "pqc-16-migration-agility",
   "title": "Migration Engineering and Cryptographic Agility",
   "date": "Sep 11, 2026",

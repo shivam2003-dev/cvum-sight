@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-08-ml-dsa",
+  "title": "ML-DSA / FIPS 204 Deep Dive",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2549,
+  "excerpt": "Understand Fiat–Shamir with aborts, ML-DSA parameter sizes, message contexts, hedged signing, and a reproducible sign-and-verify experiment.",
+  "series": "pqc",
+  "seriesNum": "8"
+},
+{
   "slug": "pqc-07-ml-kem",
   "title": "ML-KEM / FIPS 203 Deep Dive",
   "date": "Sep 11, 2026",

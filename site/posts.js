@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-10-alternatives",
+  "title": "FN-DSA, HQC, and Algorithms Beyond the First Three Standards",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2508,
+  "excerpt": "Evaluate Falcon's compact lattice signatures, HQC's code-based diversity, Classic McEliece, and the additional-signature process without confusing candidates with final standards.",
+  "series": "pqc",
+  "seriesNum": "10"
+},
+{
   "slug": "pqc-09-slh-dsa",
   "title": "SLH-DSA / FIPS 205 and Hash-Based Signatures",
   "date": "Sep 11, 2026",

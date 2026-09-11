@@ -90,7 +90,7 @@ No single countermeasure covers every fault. A fault that bypasses both computat
 
 ## Randomness: entropy, DRBGs, and failure handling
 
-An entropy source supplies unpredictable input; a deterministic random-bit generator expands suitable seed material into a pseudorandom stream. These roles are distinct. NIST's [SP 800-90B](https://csrc.nist.gov/pubs/sp/800/90b/final) addresses entropy sources, while [SP 800-90A Revision 1](https://csrc.nist.gov/pubs/sp/800/90a/r1/final) specifies DRBG mechanisms. A statistical-looking byte sequence alone does not prove adequate entropy.
+An entropy source supplies unpredictable input; a deterministic random-bit generator expands suitable seed material into a pseudorandom stream. These roles are distinct. NIST's [SP 800-90B](https://csrc.nist.gov/pubs/sp/800/90/b/final) addresses entropy sources, while [SP 800-90A Revision 1](https://csrc.nist.gov/pubs/sp/800/90/a/r1/final) specifies DRBG mechanisms. A statistical-looking byte sequence alone does not prove adequate entropy.
 
 Use the maintained library's random-generation interface and check failure returns. Do not replace unavailable randomness with a timestamp, process identifier, fixed seed, or a retry that silently reuses previous output. Cloned virtual machines, early boot, process forks, and device manufacturing can create repeated-state risks that ordinary desktop tests miss.
 

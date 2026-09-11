@@ -36,7 +36,7 @@ for i,a in enumerate(articles):
     if i: nav=f'<a href="{articles[i-1]["slug"]}.html">← Part {i}</a>'+nav
     if i+1<len(articles):nav+=f'<a href="{articles[i+1]["slug"]}.html">Part {i+2} →</a>'
     page=re.sub(r'(<div class="post-body osc-body pqc-survey">).*?(?=\s*</article>)',lambda m:m[1]+'\n'+a['rendered']+'\n</div><nav class="post-nav" aria-label="Series navigation">'+nav+'</nav>',page,flags=re.S)
-    page=page.replace('</style>','.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}\n</style>')
+    page=page.replace('</style>','.pqc-survey table th,.pqc-survey table td{overflow-wrap:normal;word-break:normal}.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}\n</style>')
     (SITE/'posts'/f'{a["slug"]}.html').write_text(page)
 entries=[]
 for a in reversed(articles):

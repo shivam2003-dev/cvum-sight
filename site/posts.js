@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-18-learning-roadmap",
+  "title": "The Complete PQC Learning Roadmap and Resource Compendium",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 22,
+  "words": 4277,
+  "excerpt": "A seven-stage PQC learning path with 30 resource sections, primary standards, books, lectures, papers, tools, projects, and concrete 30-day, 90-day, and six-month plans.",
+  "series": "pqc",
+  "seriesNum": "18"
+},
+{
   "slug": "pqc-17-deployment-lessons",
   "title": "Real-World PQC Deployments and Engineering Lessons",
   "date": "Sep 11, 2026",

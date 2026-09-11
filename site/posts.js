@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-09-slh-dsa",
+  "title": "SLH-DSA / FIPS 205 and Hash-Based Signatures",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2518,
+  "excerpt": "Build intuition from Lamport signatures and Merkle paths to WOTS+, FORS, stateless hypertrees, exact SLH-DSA sizes, and limited-use draft parameters.",
+  "series": "pqc",
+  "seriesNum": "9"
+},
+{
   "slug": "pqc-08-ml-dsa",
   "title": "ML-DSA / FIPS 204 Deep Dive",
   "date": "Sep 11, 2026",

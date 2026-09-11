@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SLH-DSA / FIPS 205 and Hash-Based Signatures — cvam.sight</title>
+  <meta name="description" content="Build intuition from Lamport signatures and Merkle paths to WOTS+, FORS, stateless hypertrees, exact SLH-DSA sizes, and limited-use draft parameters.">
+  <link rel="stylesheet" href="../style.css?v=88">
+  <script src="/theme-init.js?v=9"></script>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="canonical" href="https://shivam2003.com/posts/pqc-09-slh-dsa">
+<style>
+/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
+.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
+.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
+.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
+.pqc-survey table td{vertical-align:top}
+.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
+.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
+.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.pqc-survey .callout.math{font-size:1em;line-height:1.8}
+.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
+.pqc-survey h2{scroll-margin-top:24px}
+.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+  </aside>
+  <main class="page">
+    <article>
+      <div class="post-header"><p class="meta">Sep 11, 2026 · security · 13 min read · 2,518 words</p><h1>SLH-DSA / FIPS 205 and Hash-Based Signatures</h1><p>Post-Quantum Cryptography · Part 9 of 18 · advanced</p><div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span></div></div>
+<div class="post-body osc-body pqc-survey">
+<blockquote>
+<p>Hash-based signatures trade larger signatures and substantial hashing work for a different security foundation. The interesting engineering question is where that trade is useful and which operational assumptions must remain true throughout the key's lifetime.</p>
+</blockquote>
+<h2 id="learning-objectives-and-current-status">Learning objectives and current status</h2>
+<p>This part starts with one-time signatures and builds toward the stateless hash-based signature algorithm in <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf">FIPS 205</a>. You need the hash-function and signature concepts from Part 2, but no lattice algebra. By the end, you should understand the role of hash chains, authentication paths, FORS, and multiple tree layers, and be able to select a benchmark that reflects your actual workload.</p>
+<p>FIPS 205 was finalized on August 13, 2024. Its twelve parameter sets are standardized. As checked on September 11, 2026, <a href="https://csrc.nist.gov/pubs/sp/800/230/ipd">SP 800-230</a>, proposing additional limited-signature-use sets, remains an initial public draft published April 13, 2026. Its closed comment period does not make it final. Keep those two status claims separate.</p>
+<p>SLH-DSA descends from SPHINCS+, whose <a href="https://eprint.iacr.org/2019/1086">research paper</a> explains the design's development. Historical SPHINCS+ parameter names and implementations are useful research context; production interoperability must name the final SLH-DSA parameter set and encoding. “Hash-based” describes a family, not a universal wire format.</p>
+<h2 id="lamport-reveal-one-secret-per-message-bit">Lamport: reveal one secret per message bit</h2>
+<p>A simple one-time signature makes the basic idea visible. For each message bit position, generate two independent secret strings. Publish the hash of each string. To sign a bit, reveal the secret corresponding to its value. A verifier hashes each revealed secret and compares it with the appropriate published hash.</p>
+<p>For a three-bit educational message, the private pairs are (x₀,₀, x₀,₁), (x₁,₀, x₁,₁), and (x₂,₀, x₂,₁). Signing 101 reveals x₀,₁, x₁,₀, and x₂,₁. Verification needs no secret information beyond these disclosed values. The one-way property of the hash prevents a verifier from easily recovering the unrevealed alternatives.</p>
+<p>Now sign 010 with the same key. Every previously unrevealed alternative becomes public. An observer can assemble a signature for any of the eight possible three-bit messages. Reuse is therefore a structural failure, not a minor decrease in confidence. Real schemes hash long messages into fixed-size representations and use much larger secret values, but those changes do not remove the one-time restriction.</p>
+<p>This example also shows why collision resistance alone is an incomplete description. Different parts of a hash-based construction need properties such as preimage resistance, second-preimage resistance, and appropriate pseudorandomness or domain separation. Security analyses account for the exact functions and how many targets an attacker can attack.</p>
+<h2 id="winternitz-chains-compress-the-one-time-signature">Winternitz chains: compress the one-time signature</h2>
+<p>Lamport's representation is large because it exposes one independent secret for every digest bit. A Winternitz scheme groups bits into base-w digits and represents each digit by a position along a hash chain. The public endpoint of a chain is obtained by hashing repeatedly; the signature reveals an intermediate point from which the verifier finishes the chain.</p>
+<p>In a toy base-4 chain x → H(x) → H²(x) → H³(x), digit 1 can be represented by H(x). The verifier hashes twice more to reach the public endpoint. Revealing H(x) also lets an observer move forward to H²(x), which corresponds to another digit. A checksum across the message digits prevents this simple forward-only manipulation from producing a valid signature on an arbitrary new message.</p>
+<p>The checksum is not optional redundancy. It couples the digits so that changing them in the direction available to an attacker forces an unavailable change elsewhere. Real WOTS+ additionally uses carefully defined keyed/addressed hash operations. Replacing those operations with repeated calls to an undifferentiated hash function discards the construction's domain-separation rules.</p>
+<p>The Winternitz parameter controls a tradeoff between the number of chains and work per chain. Fewer, longer chains can reduce transmitted elements while increasing hashing. This illustrates a recurring theme: a compact signature can require more work to produce or verify. Byte count and CPU cost are distinct axes of the design.</p>
+<h2 id="merkle-trees-authenticate-many-one-time-keys">Merkle trees authenticate many one-time keys</h2>
+<p>A verifier cannot efficiently retain a separate trusted public key for every signature. A Merkle tree compresses many leaf commitments into one trusted root. A signature includes the relevant one-time signature and the sibling hashes needed to reconstruct the root from that leaf.</p>
+<pre><code class="language-text">                       trusted root
+                      /            \
+                 H(L0,L1)        H(L2,L3)
+                  /    \          /    \
+                 L0    L1        L2    L3
+
+To authenticate L2, provide L3 and H(L0,L1).
+The verifier preserves left/right ordering at each step.
+</code></pre>
+<p>For a full binary tree of height h, the authentication path contains h sibling nodes. A tree with 2²⁰ leaves needs 20 siblings to authenticate one leaf, rather than transmitting every other leaf. With 32-byte nodes, the path alone occupies 640 bytes. This is arithmetic for the example, not the total signature size of any named scheme.</p>
+<p>The root authenticates membership only when it is already trusted. Fetching both the leaf and its claimed root from an attacker proves nothing about identity. In a signature system, the trusted root is part of an authenticated public key. The tree path then binds a particular one-time or few-time signing component to that key.</p>
+<p>Node position and function type must be encoded consistently. A hash value representing a leaf must not be accidentally interpreted as a pair of internal nodes or reused at another address. Standards define these details because a diagram alone does not express the domain boundaries that the proof requires.</p>
+<h2 id="stateful-signatures-and-the-rollback-problem">Stateful signatures and the rollback problem</h2>
+<p>XMSS, described in <a href="https://www.rfc-editor.org/rfc/rfc8391.html">RFC 8391</a>, combines one-time signatures with Merkle trees and carefully managed state. The signer tracks which leaf index has already been used. NIST's <a href="https://csrc.nist.gov/pubs/sp/800/208/final">SP 800-208</a> profiles stateful hash-based signatures for approved use under specified conditions.</p>
+<p>The challenge is operational atomicity. If a signer issues a signature and crashes before persisting the updated index, restoring the old state can reuse a one-time key. Two cloned virtual machines can independently use the same next index. A backup restored without monotonic state protection can recreate an already consumed signing capability.</p>
+<p>A correct stateful deployment needs stronger guarantees than an application counter in a mutable file. It must account for concurrent requests, failover, recovery, backup restoration, and the cryptographic module's requirements. This may be feasible in a tightly controlled firmware-signing appliance, while being difficult in a horizontally scaled service with ordinary snapshot semantics.</p>
+<p>The XMSS and WOTS+ components inside SLH-DSA are not byte-for-byte the same schemes as the standalone constructions in RFC 8391 or SP 800-208. They share architecture and terminology, but FIPS 205 defines the actual internal functions. Treating the older RFC as a substitute implementation specification would be an interoperability mistake.</p>
+<h2 id="fors-a-forest-for-a-message-digest">FORS: a forest for a message digest</h2>
+<p>SLH-DSA uses FORS, a few-time signature component, to sign a message digest. Think of the digest as selecting one leaf in each of several small trees. The signature reveals the selected secret leaf values and their authentication paths. Reconstructing each tree root and combining those roots yields the FORS public key.</p>
+<p>A tiny forest with three trees of four leaves each would consume three two-bit indices. A digest fragment 01 11 00 selects leaf 1 in the first tree, leaf 3 in the second, and leaf 0 in the third. The verifier reconstructs each root from the supplied path. Real parameter sets use far larger forests and precise hash addressing.</p>
+<p>FORS is few-time rather than unrestricted-use. Security accounts for the probability of repeated selections and how much information multiple signatures expose. This is why the number of signatures under a top-level key and the distribution of selected addresses appear in the analysis. Statelessness does not mean that unlimited use has no effect on security bounds.</p>
+<p>The digest and tree indices are derived from message-dependent hashing that includes public-key-related inputs and a signature randomizer. The randomizer is carried in the signature. Its job is part of the construction's message processing; it is not an application nonce that developers can casually reuse or replace with a request identifier.</p>
+<h2 id="the-hypertree-connects-fors-to-one-public-root">The hypertree connects FORS to one public root</h2>
+<p>A FORS signature authenticates the message at a selected address. A layered tree structure then authenticates that FORS public key all the way to the SLH-DSA public root. At each layer, a WOTS+ signature authenticates the value from below, and an authentication path identifies the appropriate root for the next layer.</p>
+<pre><code class="language-text">message + signature randomizer
+              ↓
+      digest and tree indices
+              ↓
+     FORS signature → FORS public key
+              ↓
+     WOTS+ signature + authentication path
+              ↓
+        next subtree root
+              ↓
+         repeat by layer
+              ↓
+      compare with public root
+</code></pre>
+<p>Layering makes an enormous virtual tree manageable. The signer derives required secret values from seeds and computes the paths it needs instead of materializing every possible leaf. The public key contains a public seed and root; the private representation contains secret seeds plus public components. Small keys therefore coexist with large signatures and substantial hashing work.</p>
+<p>The signature includes the randomizer, FORS material, and all required hypertree authentication material. The verifier reconstructs the chain of commitments and checks the final root. No persistent next-leaf counter must be synchronized across signing requests in the same way as a stateful XMSS deployment.</p>
+<h2 id="exact-fips-205-parameter-tradeoffs">Exact FIPS 205 parameter tradeoffs</h2>
+<p>Each row below applies to both the SHA2 and SHAKE family with the shown suffix. For example, 128s denotes SLH-DSA-SHA2-128s or SLH-DSA-SHAKE-128s. Public keys occupy 2n bytes and the standard private representation 4n bytes.</p>
+<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:850px">
+<thead>
+<tr>
+<th>Suffix</th>
+<th>Category</th>
+<th>Public key</th>
+<th>Private key</th>
+<th>Signature</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>128s</td>
+<td>1</td>
+<td>32 bytes</td>
+<td>64 bytes</td>
+<td>7,856 bytes</td>
+</tr>
+<tr>
+<td>128f</td>
+<td>1</td>
+<td>32 bytes</td>
+<td>64 bytes</td>
+<td>17,088 bytes</td>
+</tr>
+<tr>
+<td>192s</td>
+<td>3</td>
+<td>48 bytes</td>
+<td>96 bytes</td>
+<td>16,224 bytes</td>
+</tr>
+<tr>
+<td>192f</td>
+<td>3</td>
+<td>48 bytes</td>
+<td>96 bytes</td>
+<td>35,664 bytes</td>
+</tr>
+<tr>
+<td>256s</td>
+<td>5</td>
+<td>64 bytes</td>
+<td>128 bytes</td>
+<td>29,792 bytes</td>
+</tr>
+<tr>
+<td>256f</td>
+<td>5</td>
+<td>64 bytes</td>
+<td>128 bytes</td>
+<td>49,856 bytes</td>
+</tr>
+</tbody>
+</table></div>
+<p>The s variants favor smaller signatures, while f variants favor faster signature generation. The label does not promise that every operation is faster on every platform. SHA2 versus SHAKE also depends on available implementations and hardware acceleration. Measure the operation and device that matter rather than selecting a family from its name.</p>
+<p>As a worked size check, 128s uses n = 16, FORS parameters k = 14 and a = 12, seven hypertree layers, WOTS+ length 35, and total tree height 63. The signature formula n[1 + k(a + 1) + d·len + h] gives 16[1 + 14·13 + 7·35 + 63] = 7,856 bytes. Each term corresponds to a visible component of the architecture.</p>
+<p>For a firmware image measured in megabytes, that overhead may be acceptable. For millions of small authenticated messages, it may dominate transport and storage costs. A certificate chain containing several large signatures can amplify handshake size even if each public key is tiny. Evaluate the complete object and delivery path.</p>
+<h2 id="statelessness-and-lifetime-limits">Statelessness and lifetime limits</h2>
+<p>The twelve FIPS 205 sets are designed for their claimed categories with at most 2⁶⁴ signatures per key. That very large bound is still a bound in the security analysis. It should not be generalized into a claim that every stateless hash-based parameter choice supports unlimited signatures.</p>
+<p>The initial public draft SP 800-230 proposes six additional sets for limited-use applications, with a strict 2²⁴ signatures-per-key limit in exchange for improved size or verification characteristics. These are draft proposals, not general-purpose replacements for the final table above. Applications must evaluate whether they can enforce the lifetime limit across every signer and copy of a key.</p>
+<p>A 2²⁴ budget equals 16,777,216 signatures. At an assumed constant 10 signatures per second, that budget lasts about 19.4 days; at one signature per day it lasts vastly longer. These are workload calculations, not recommendations. A fleet-wide key shared by many signers consumes one combined budget, including retries and otherwise unused signatures.</p>
+<p>Tracking a lifetime budget differs from maintaining a unique one-time-key index, but it still requires operational controls. Restoring a backup must not reset the accounting. Test and production use of the same key would share the limit. Separate keys, explicit ownership, and conservative retirement thresholds make that requirement easier to reason about.</p>
+<h2 id="native-openssl-experiment">Native OpenSSL experiment</h2>
+<p>The <a href="https://docs.openssl.org/3.5/man7/EVP_SIGNATURE-SLH-DSA/">OpenSSL SLH-DSA manual</a> documents the native interface. The script below was executed with OpenSSL 3.5.8 on macOS ARM64. It verifies both SHA2 category-1 variants, checks exact signature sizes, and rejects a changed message. It is a functional experiment, not a timing benchmark.</p>
+<pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+OPENSSL=${OPENSSL:-openssl}
+LAB=$(mktemp -d)
+trap 'rm -rf &quot;$LAB&quot;' EXIT
+umask 077
+cd &quot;$LAB&quot;
+&quot;$OPENSSL&quot; version
+printf '%s\n' 'firmware manifest: demonstration only' &gt; message.txt
+for variant in SLH-DSA-SHA2-128s SLH-DSA-SHA2-128f; do
+ &quot;$OPENSSL&quot; genpkey -algorithm &quot;$variant&quot; -out private.pem
+ &quot;$OPENSSL&quot; pkey -in private.pem -pubout -out public.pem
+ &quot;$OPENSSL&quot; pkeyutl -sign -rawin -inkey private.pem -in message.txt -out signature.bin
+ &quot;$OPENSSL&quot; pkeyutl -verify -rawin -pubin -inkey public.pem -in message.txt -sigfile signature.bin
+ python3 - &quot;$variant&quot; &lt;&lt;'PY'
+import sys
+from pathlib import Path
+expected = 7856 if sys.argv[1].endswith('128s') else 17088
+assert Path('signature.bin').stat().st_size == expected
+print(sys.argv[1], 'signature bytes:', expected)
+PY
+ printf 'altered' &gt; changed.txt
+ if &quot;$OPENSSL&quot; pkeyutl -verify -rawin -pubin -inkey public.pem -in changed.txt -sigfile signature.bin &gt; /dev/null 2&gt;&amp;1; then exit 1; fi
+done
+printf '%s\n' 'PASS: both variants verify and reject changed messages'
+</code></pre>
+<p>Both variants passed, producing 7,856 and 17,088 bytes respectively. A command-line timer around this script would include key generation, filesystem work, process startup, signing, and verification. To compare signing performance, isolate that operation with a maintained benchmark interface and report the environment and sample distribution.</p>
+<h2 id="implementation-risks-and-appropriate-uses">Implementation risks and appropriate uses</h2>
+<p>Hash-based foundations do not eliminate implementation attacks. Secret-seed derivation, address handling, memory safety, fault behavior, and randomizer generation all matter. A fault that changes an address or releases unintended secret material can violate assumptions even when the underlying hash function remains strong. Constant-time and physical-attack requirements depend on the threat model and implementation.</p>
+<p>The diversity value is substantial: SLH-DSA does not depend on the same lattice problems as ML-DSA. An organization can consider it for a carefully selected trust role where large signatures and signing cost are acceptable. Diversity should be evaluated across implementation dependencies too; two algorithms sharing one compromised signing service do not provide independent operational protection.</p>
+<p>A useful design exercise is an offline firmware authority. Specify how often it signs, how many devices verify, the smallest verifier's memory budget, update-package overhead, and expected key lifetime. Compare an s variant and an f variant under those constraints. Include recovery, trust-anchor rotation, and emergency revocation rather than optimizing only the signature bytes.</p>
+<p>An acceptance record should include both the selected parameter set and the reason its signing cost, verification cost, signature size, and key-management requirements fit the intended trust role.</p>
+<h2 id="knowledge-checks-and-next-steps">Knowledge checks and next steps</h2>
+<p>Explain how reusing the toy Lamport key reveals enough material to forge. Reconstruct a four-leaf Merkle root from one leaf and its path. Identify which signature-size formula term represents FORS and which represents hypertree authentication. Finally, explain why a stateless signer can still need lifetime usage accounting.</p>
+<p>The next part examines FN-DSA, HQC, and other candidates. Keep this article's distinction between a finalized algorithm and a draft extension: algorithmic diversity is valuable, but readiness for a particular deployment must be established separately for every construction and protocol profile.</p>
+</div><nav class="post-nav" aria-label="Series navigation"><a href="pqc-08-ml-dsa.html">← Part 8</a><a href="../series-pqc.html">All 18 parts</a></nav>
+    </article>
+  </main>
+  <aside class="toc-panel" aria-label="On this page">
+    <p class="toc-panel-label">// on this page</p>
+    <nav id="toc-nav" aria-label="Table of contents"></nav>
+  </aside>
+</div>
+<script src="../stats.js?v=4"></script>
+<script src="../app.js?v=43"></script>
+<script src="../settings.js?v=17"></script>
+<script src="../reader.js?v=3"></script>
+</body>
+</html>

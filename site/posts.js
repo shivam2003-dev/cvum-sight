@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-06-lattices",
+  "title": "Lattice Cryptography: From LWE to Module-LWE",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 14,
+  "words": 2608,
+  "excerpt": "Derive noisy-linear-system encryption, distinguish LWE and Module-SIS, and understand polynomial multiplication and NTT butterflies through checked examples.",
+  "series": "pqc",
+  "seriesNum": "6"
+},
+{
   "slug": "pqc-05-families",
   "title": "The Map of Post-Quantum Cryptographic Families",
   "date": "Sep 11, 2026",

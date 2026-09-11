@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-04-mathematics",
+  "title": "Mathematics Primer for Post-Quantum Cryptography",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 15,
+  "words": 2807,
+  "excerpt": "Small worked examples of modular arithmetic, vectors, noise, polynomial rings, coding theory, and modern cryptographic security games.",
+  "series": "pqc",
+  "seriesNum": "4"
+},
+{
   "slug": "pqc-03-quantum-threat",
   "title": "How Quantum Algorithms Threaten Classical Public-Key Cryptography",
   "date": "Sep 11, 2026",

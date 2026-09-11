@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-07-ml-kem",
+  "title": "ML-KEM / FIPS 203 Deep Dive",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2595,
+  "excerpt": "Follow ML-KEM from noisy polynomial encryption to chosen-ciphertext-secure key establishment, exact parameter sizes, implicit rejection, and a tested OpenSSL lab.",
+  "series": "pqc",
+  "seriesNum": "7"
+},
+{
   "slug": "pqc-06-lattices",
   "title": "Lattice Cryptography: From LWE to Module-LWE",
   "date": "Sep 11, 2026",

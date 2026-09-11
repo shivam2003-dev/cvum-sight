@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Migration Engineering and Cryptographic Agility — cvam.sight</title>
+  <meta name="description" content="Turn PQC migration into an owned program: inventory, data-lifetime risk, dependencies, protocol profiles, canaries, rollback, evidence, and a practical maturity model.">
+  <link rel="stylesheet" href="../style.css?v=88">
+  <script src="/theme-init.js?v=9"></script>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="canonical" href="https://shivam2003.com/posts/pqc-16-migration-agility">
+<style>
+/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
+.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
+.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
+.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
+.pqc-survey table td{vertical-align:top}
+.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
+.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
+.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.pqc-survey .callout.math{font-size:1em;line-height:1.8}
+.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
+.pqc-survey h2{scroll-margin-top:24px}
+.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<div class="layout has-toc">
+  <aside class="sidebar">
+    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
+  </aside>
+  <main class="page">
+    <article>
+      <div class="post-header"><p class="meta">Sep 11, 2026 · security · 13 min read · 2,513 words</p><h1>Migration Engineering and Cryptographic Agility</h1><p>Post-Quantum Cryptography · Part 16 of 18 · intermediate</p><div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span></div></div>
+<div class="post-body osc-body pqc-survey">
+<blockquote>
+<p>Migration succeeds when a service can change its cryptography while preserving its security contract and operational behavior. An algorithm inventory is a starting artifact; ownership, dependencies, testing, and retirement determine whether the change can actually happen.</p>
+</blockquote>
+<h2 id="from-a-working-lab-to-a-migration-program">From a working lab to a migration program</h2>
+<p>Part 15 established a reproducible laboratory. This part asks how an organization applies those capabilities across applications, infrastructure, certificates, devices, suppliers, and archived data. You will build a risk-oriented inventory, identify dependencies, define rollout evidence, and use a maturity model that measures capability rather than counting installed algorithms.</p>
+<p>The guidance checkpoint is September 11, 2026. <a href="https://csrc.nist.gov/pubs/ir/8547/ipd">NIST IR 8547</a> remains an initial public draft in the source checked here. It describes an expected transition approach and proposed timelines; it should not be relabelled as a final universal mandate. <a href="https://csrc.nist.gov/pubs/cswp/39/upd1/considerations-for-achieving-crypto-agility/final">NIST CSWP 39upd1</a>, updated June 29, 2026, is final guidance on achieving cryptographic agility.</p>
+<p>These documents serve different roles. The transition report identifies movement away from quantum-vulnerable mechanisms. The agility paper examines the capability to replace and adapt cryptography while preserving security and operations. A migration plan needs both a destination and a reliable way to reach it.</p>
+<h2 id="why-this-is-an-architecture-problem">Why this is an architecture problem</h2>
+<p>Cryptography appears in TLS termination, service meshes, SSH, VPNs, database connections, key wrapping, certificates, code signing, firmware boot chains, package metadata, and document archives. Different teams own these layers, and different libraries implement them. A change to one public endpoint leaves many other paths untouched.</p>
+<p>Consider a customer request passing through a browser, CDN, load balancer, service mesh, application, and database. Each encrypted link has its own endpoints and negotiation. An edge deployment can be hybrid while the origin and internal links remain classical. The inventory must identify termination boundaries and data exposure, not only the first certificate visible from the Internet.</p>
+<pre><code class="language-text">business data and retention requirements
+                  ↓
+       services and trust boundaries
+                  ↓
+ protocols → libraries → providers → devices / key services
+                  ↓
+     owners, suppliers, update channels
+                  ↓
+        testable migration work packages
+</code></pre>
+<p>The same dependency logic applies to signatures. Updating a release signer is ineffective if installed devices cannot verify the new format. Updating devices may itself require an old signing key. These dependencies create ordering constraints that cannot be solved by selecting a stronger parameter set.</p>
+<h2 id="build-an-inventory-that-supports-decisions">Build an inventory that supports decisions</h2>
+<p>A cryptographic inventory should identify the asset, purpose, algorithm and parameters, implementation version, protocol or file format, key owner, data lifetime, and evidence source. It should distinguish configured capability from observed use. Record uncertainty explicitly when discovery cannot see a path.</p>
+<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:580px">
+<thead>
+<tr>
+<th>Field</th>
+<th>Example value</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Asset and owner</td>
+<td>Billing API / platform team</td>
+<td>Assigns migration responsibility</td>
+</tr>
+<tr>
+<td>Security purpose</td>
+<td>Transit confidentiality and server authentication</td>
+<td>Separates KEM and signature work</td>
+</tr>
+<tr>
+<td>Observed mechanism</td>
+<td>X25519, ECDSA chain</td>
+<td>Establishes current use rather than installed capability</td>
+</tr>
+<tr>
+<td>Implementation</td>
+<td>Runtime, TLS library, provider versions</td>
+<td>Identifies upgrade dependencies</td>
+</tr>
+<tr>
+<td>Data lifetime</td>
+<td>Business-defined confidentiality period</td>
+<td>Supports harvest-now-decrypt-later priority</td>
+</tr>
+<tr>
+<td>Trust and key lifecycle</td>
+<td>CA, rotation, backup retention</td>
+<td>Exposes long-lived dependencies</td>
+</tr>
+<tr>
+<td>Evidence and date</td>
+<td>Handshake sample plus configuration review</td>
+<td>Makes drift and blind spots visible</td>
+</tr>
+<tr>
+<td>Target and blocker</td>
+<td>Standardized hybrid profile / old client</td>
+<td>Converts inventory into work</td>
+</tr>
+</tbody>
+</table></div>
+<p>Do not store private keys or shared secrets in the inventory. Public-key identifiers, certificate fingerprints, ownership, and metadata are usually sufficient. Access controls may still be necessary because the inventory exposes sensitive architecture and security dependencies even without secret material.</p>
+<h2 id="discovery-requires-several-views">Discovery requires several views</h2>
+<p>Static analysis can find cryptographic API calls and dependencies but may miss dynamically loaded providers, generated code, or runtime negotiation. Network observations can identify active protocol choices but miss dormant services, offline signing, and encrypted inner tunnels. Configuration review reveals intent but can differ from deployed behavior.</p>
+<p>Combine these views with package inventories, certificate stores, HSM inventories, infrastructure definitions, and interviews with service owners. Include disaster-recovery systems and maintenance interfaces. A rarely used recovery tunnel can remain a high-impact classical dependency even when daily traffic looks modern.</p>
+<p>A <a href="https://cyclonedx.org/capabilities/cbom/">Cryptography Bill of Materials in CycloneDX</a> can represent cryptographic assets and their relationships to software components. It is a useful interchange model, not a guarantee that discovery found everything. Preserve the tool version, scope, confidence, and timestamps alongside the generated document.</p>
+<p>Normalize names carefully. Prestandard Kyber and final ML-KEM, a cipher suite and a key-exchange group, or a certificate's subject key and issuer signature are different inventory entities. Overaggressive normalization can erase the exact distinction needed to decide whether a system has migrated.</p>
+<h2 id="prioritize-by-exposure-and-time-to-change">Prioritize by exposure and time to change</h2>
+<p>Harvest-now-decrypt-later risk depends on information collected today remaining valuable when an attacker can later break the vulnerable key establishment. Let X be the required confidentiality lifetime, Y the time needed to migrate, and Z a scenario for arrival of a cryptographically relevant quantum capability. The relationship X + Y &gt; Z is a planning warning, not a prediction of a machine's arrival date.</p>
+<p>For a hypothetical service with ten-year confidential records and a three-year migration dependency, even a relatively distant threat scenario can motivate early action. A public static page with no sensitive exchanged data may have different confidentiality urgency, while its software-signing and identity dependencies still need analysis. Avoid assigning priority solely from the word “encrypted.”</p>
+<p>For signatures, consider how long verification must remain meaningful, how widely trust anchors are distributed, and whether old artifacts can be renewed while their authenticity is still established. Firmware and archival signatures may require early planning because verifier replacement takes years.</p>
+<p>Prioritization should combine impact, exposure, lifetime, migration lead time, and readiness of an approved replacement. Document the assumptions and revisit them as standards, vendors, and the estate change. A numerical score can help sorting, but should not hide a critical blocker behind an apparently precise total.</p>
+<h2 id="dependency-mapping-and-supplier-questions">Dependency mapping and supplier questions</h2>
+<p>For every target service, identify the runtime, library, provider, protocol profile, key-management system, certificate authority, client population, and update mechanism. A server library upgrade may be easy while a vendor appliance or embedded verifier sets the actual schedule. Record that dependency explicitly with an owner and evidence.</p>
+<p>Ask suppliers for exact supported algorithms and profiles, release versions, interoperability tests, key-management capabilities, validation scope where needed, and end-of-support dates. A statement that a product is “PQC ready” is too broad to determine whether it can negotiate a specific standardized group or verify a specific certificate chain.</p>
+<p>Procurement requirements should include upgradeability and evidence, not just an algorithm checklist. Can configuration disable obsolete experiments? Can telemetry report actual negotiation? Can keys be rotated and retired? Can a deployed device receive new verification code without replacing hardware? These capabilities affect future agility as much as the first migration.</p>
+<p>Retain an exit strategy for unsupported components. Options may include upgrading, replacing, isolating, changing the protocol boundary, or retiring a service. A gateway can sometimes protect one exposed link, but it does not automatically remove end-to-end signature or internal confidentiality dependencies.</p>
+<h2 id="abstraction-without-erasing-security-semantics">Abstraction without erasing security semantics</h2>
+<p>A crypto abstraction can centralize provider selection, key access, error handling, and policy. However, a single generic encrypt function is not a sufficient model for KEMs, AEAD, signatures, and KDFs. They accept different inputs and establish different properties. Preserve those distinctions in the API.</p>
+<p>Prefer interfaces that express the operation and context: establish key material through a named protocol, verify a signature under a specified scheme and purpose, or encrypt with an AEAD and explicit nonce rules. Algorithm identifiers and versioned formats should be authenticated where the protocol requires it. Agility must not create algorithm-confusion paths.</p>
+<p>A feature flag can control rollout, but it should select a reviewed policy profile rather than arbitrary combinations of primitives. Separate “prefer hybrid when available” from “require hybrid.” Give each setting observable behavior and negative tests so a configuration change cannot silently weaken a required protection.</p>
+<p>Keep deprecated choices out of ordinary defaults. Supporting every historical algorithm forever increases complexity and downgrade surface. Agility includes the ability to retire mechanisms and remove obsolete formats once their compatibility window closes.</p>
+<h2 id="interoperability-before-broad-rollout">Interoperability before broad rollout</h2>
+<p>Build a matrix across important clients, servers, proxies, runtimes, devices, and network paths. Include unsupported clients deliberately so fallback or rejection behavior is tested. Verify negotiated groups, certificate paths, hostname checks, status processing, and application authorization separately.</p>
+<p>Test large messages and constrained buffers. PQ keys, signatures, and certificate chains can exceed assumptions in API gateways, databases, firmware parsers, and inspection devices. Measure handshake retries, failure rates, latency tails, memory, and CPU under representative concurrency. A local success is a capability check, not a production rollout result.</p>
+<p>Use the same negative cases as the lab where applicable: wrong keys, modified messages, wrong contexts, malformed encodings, and incompatible groups. Also test operational failures such as unavailable key services, expired certificates, and partially upgraded replicas. These failures reveal whether the system preserves its security contract during change.</p>
+<p>Keep evidence tied to exact versions. A supplier update can fix one compatibility issue and change another behavior. The migration matrix should be a maintained artifact, with automated checks for stable cases and explicit manual evidence where automation is impractical.</p>
+<h2 id="staged-rollout-and-useful-telemetry">Staged rollout and useful telemetry</h2>
+<p>Begin with a controlled environment, then a small representative canary, followed by measured expansion. The canary should include important client types and paths rather than only the newest developer devices. Define success and pause criteria before increasing traffic.</p>
+<p>For TLS, record configured policy, advertised capability, negotiated group, authentication algorithm, handshake result, retry rate, and fresh-versus-resumed status. For signing, record the selected scheme, verification population, rejected formats, and key version. Do not record secret intermediates or internal KEM validity flags.</p>
+<p>Coverage metrics need denominators. “Ninety percent hybrid” could mean all fresh handshakes, only capable clients, or a small canary group. Report the population and failed attempts so a compatibility regression is not hidden by excluding unsuccessful connections. Measure high-value paths separately from aggregate traffic.</p>
+<p>Track migration outcomes rather than only deployments: which vulnerable paths were removed, which clients remain blocked, which old keys are still trusted, and which exception has an expiry date. An installed package version is useful evidence, but it is not the final security outcome.</p>
+<h2 id="rollback-must-preserve-an-explicit-policy">Rollback must preserve an explicit policy</h2>
+<p>Rollback is a planned response to an identified failure, not an automatic instruction to disable PQC everywhere. If a canary has a buffer-limit problem, the response may be to pause expansion, route a specific client population through a documented compatibility path, or revert a faulty build while retaining the intended security policy.</p>
+<p>If rollback restores classical-only key establishment for sensitive data, that changes exposure. Record the scope, owner, duration, and compensating measures. Do not let a temporary availability exception become an invisible permanent default. Where policy requires hybrid negotiation, incompatible clients should fail according to the documented contract.</p>
+<p>Key and signature migrations can be harder to reverse than configuration changes. Once new artifacts are signed, old verifiers may not accept them. Once an old trust anchor is removed, recovery must use an already trusted path. Rehearse overlap and rollback before changing trust distribution.</p>
+<p>A recovery exercise should include backups and failover sites. Restoring an old configuration can reintroduce deprecated algorithms or keys that the primary environment already retired. Compare recovered state with the current cryptographic policy as part of disaster-recovery validation.</p>
+<h2 id="guidance-timelines-and-jurisdiction">Guidance timelines and jurisdiction</h2>
+<p>The <a href="https://www.ncsc.gov.uk/guidance/pqc-migration-timelines">UK NCSC migration guidance</a> sets indicative milestones: discovery and initial planning by 2028, early high-priority migration and a refined roadmap by 2031, and completion by 2035. Those are the NCSC's stated planning targets for its audience, not evidence that all organizations worldwide have the same legal deadline.</p>
+<p>The European Commission and Member States have published a <a href="https://digital-strategy.ec.europa.eu/en/library/coordinated-implementation-roadmap-transition-post-quantum-cryptography">coordinated implementation roadmap</a>. Use the current official roadmap and relevant sector requirements when planning an EU deployment. Do not substitute a vendor's summary for the applicable policy text.</p>
+<p>NIST's draft transition guidance and final agility guidance support planning in their respective scopes. A compliance team should map actual obligations by jurisdiction, sector, contract, and system classification. The engineering program can then translate those requirements into testable milestones and evidence, while separately prioritizing risks that require earlier action.</p>
+<p>Do not wait for a distant target year to begin inventory and dependency work. Long-lived devices, root distribution, procurement cycles, and archived signatures can consume much of the available lead time. Preparatory work remains useful even when a particular protocol profile is still under standardization.</p>
+<h2 id="a-practical-migration-checklist">A practical migration checklist</h2>
+<p>Before a work package enters implementation, identify its owner, current mechanism, target profile, affected data, dependencies, client population, and acceptance tests. Confirm that the replacement is appropriate for the actual security purpose and that its status is accurately labelled.</p>
+<p>Before rollout, verify functional and negative tests, interoperability, resource budgets, observability, key lifecycle, and rollback behavior. Ensure the operations team can distinguish a capability failure from a certificate or trust-policy failure. Document who can approve an exception and when it expires.</p>
+<p>Before declaring completion, verify actual production use, residual fallback, old-key retirement, updated recovery environments, supplier dependencies, and documentation. Keep monitoring for drift and new assets. A completed migration is a maintained state, not a one-time package installation.</p>
+<h2 id="a-maturity-model-based-on-demonstrated-capability">A maturity model based on demonstrated capability</h2>
+<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:580px">
+<thead>
+<tr>
+<th>Level</th>
+<th>Demonstrated capability</th>
+<th>Evidence to advance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0: Unknown</td>
+<td>Cryptography is largely undocumented</td>
+<td>Named owners and scoped discovery</td>
+</tr>
+<tr>
+<td>1: Visible</td>
+<td>Inventory and exposure are recorded</td>
+<td>Prioritized targets with current evidence</td>
+</tr>
+<tr>
+<td>2: Tested</td>
+<td>Representative replacements work in a lab</td>
+<td>Interoperability and failure tests</td>
+</tr>
+<tr>
+<td>3: Controlled</td>
+<td>Canary rollout and rollback are exercised</td>
+<td>Production negotiation and reliability evidence</td>
+</tr>
+<tr>
+<td>4: Managed</td>
+<td>High-priority paths migrate with tracked exceptions</td>
+<td>Retirement and recovery verification</td>
+</tr>
+<tr>
+<td>5: Adaptable</td>
+<td>Cryptographic change is a repeatable capability</td>
+<td>Rehearsed upgrades, policy enforcement, and drift detection</td>
+</tr>
+</tbody>
+</table></div>
+<p>This is an educational model, not an official certification framework. An organization may be at different levels for public TLS, firmware signing, and internal PKI. Assess those domains separately to avoid allowing one advanced team to mask an unowned legacy dependency.</p>
+<h2 id="budget-for-retirement-as-well-as-deployment">Budget for retirement as well as deployment</h2>
+<p>A migration budget should include removing old algorithms, updating recovery documentation, rotating affected keys, and supporting the remaining client population. Otherwise, the organization can finish the visible deployment while carrying two permanent systems and an expanding compatibility burden.</p>
+<p>Assign an expiry date to every temporary exception and define the evidence needed to close it. An unsupported device may require replacement; an old SDK may require an application release; a retained signing root may require an archival policy decision. These are different work items and should not share a vague “vendor dependency” label indefinitely.</p>
+<p>After retirement, test that the obsolete path is actually rejected and cannot be restored by ordinary configuration drift. Preserve any required historical verification capability in an explicitly controlled archival workflow. Removing active trust and preserving historical evidence are separate decisions, each with an owner and a documented purpose.</p>
+<h2 id="exercise-and-next-steps">Exercise and next steps</h2>
+<p>Choose one service and produce a one-page migration record: data lifetime, trust boundaries, observed algorithms, owners, dependencies, target profile, canary metrics, rollback policy, and completion evidence. Add one deliberately unresolved question and assign an owner to resolve it. That is more actionable than a broad “be quantum ready” objective.</p>
+<p>The next part studies public deployments through primary engineering accounts. Use them as evidence of practical strategies and tradeoffs, while preserving the distinction between another organization's reported rollout and the state of your own systems.</p>
+</div><nav class="post-nav" aria-label="Series navigation"><a href="pqc-15-engineering-lab.html">← Part 15</a><a href="../series-pqc.html">All 18 parts</a></nav>
+    </article>
+  </main>
+  <aside class="toc-panel" aria-label="On this page">
+    <p class="toc-panel-label">// on this page</p>
+    <nav id="toc-nav" aria-label="Table of contents"></nav>
+  </aside>
+</div>
+<script src="../stats.js?v=4"></script>
+<script src="../app.js?v=43"></script>
+<script src="../settings.js?v=17"></script>
+<script src="../reader.js?v=3"></script>
+</body>
+</html>

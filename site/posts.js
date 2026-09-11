@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-16-migration-agility",
+  "title": "Migration Engineering and Cryptographic Agility",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 13,
+  "words": 2513,
+  "excerpt": "Turn PQC migration into an owned program: inventory, data-lifetime risk, dependencies, protocol profiles, canaries, rollback, evidence, and a practical maturity model.",
+  "series": "pqc",
+  "seriesNum": "16"
+},
+{
   "slug": "pqc-15-engineering-lab",
   "title": "Hands-On PQC Lab for Engineers",
   "date": "Sep 11, 2026",

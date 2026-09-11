@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-02-cryptography-foundations",
+  "title": "The Cryptography You Need Before Learning PQC",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 14,
+  "words": 2740,
+  "excerpt": "Build the vocabulary of hashes, MACs, AEAD, key derivation, public keys, signatures, certificates, and TLS—with small reproducible experiments.",
+  "series": "pqc",
+  "seriesNum": "2"
+},
+{
   "slug": "pqc-01-current-landscape",
   "title": "Post-Quantum Cryptography in the Current Landscape",
   "date": "Sep 11, 2026",

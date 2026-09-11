@@ -17,6 +17,22 @@
 const POSTS = [
   /* PQC COURSE START */
 {
+  "slug": "pqc-05-families",
+  "title": "The Map of Post-Quantum Cryptographic Families",
+  "date": "Sep 11, 2026",
+  "cat": "security",
+  "tags": [
+    "security",
+    "post-quantum",
+    "cryptography"
+  ],
+  "time": 14,
+  "words": 2664,
+  "excerpt": "Compare lattices, codes, hash-based signatures, multivariate systems, proof-derived signatures, and isogenies by assumptions and engineering tradeoffs.",
+  "series": "pqc",
+  "seriesNum": "5"
+},
+{
   "slug": "pqc-04-mathematics",
   "title": "Mathematics Primer for Post-Quantum Cryptography",
   "date": "Sep 11, 2026",

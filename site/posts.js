@@ -415,8 +415,8 @@ const POSTS = [
     date: "Sep 13, 2026",
     cat: "ml",
     tags: ["ml", "newsletter", "agents", "self-improvement", "weekly"],
-    time: 13,
-    words: 2580,
+    time: 12,
+    words: 2479,
     excerpt: "September 7–13: GPT-6 Astra reaches general availability in under a week, DeepSeek V4.1 Flash undercuts on price with MIT weights, GPT-Image-2.5 splits into Flare and Sunburst, model fatigue gets a name, and ten new papers on agents that build, audit, and correct their own procedures — including a 100-agent swarm that spontaneously cheated, and was caught, with no human watching.",
     series: "frontier-digest",
     seriesNum: "012"
@@ -427,8 +427,8 @@ const POSTS = [
     date: "Sep 5, 2026",
     cat: "ml",
     tags: ["ml", "newsletter", "agents", "world-models", "security", "weekly"],
-    time: 12,
-    words: 2260,
+    time: 13,
+    words: 2574,
     excerpt: "August 31–September 5, week-to-date: GPT-6 Astra, Claude Fable and Mythos 5.1, Gemini 3.8 Flash, Muse Spark 1.3, Hy4 open weights, Atlas and Solaris previews, cyber defense, and ten new research papers. Sunday is outside this edition’s cutoff.",
     series: "frontier-digest",
     seriesNum: "011"
@@ -439,8 +439,8 @@ const POSTS = [
     date: "Sep 5, 2026",
     cat: "ml",
     tags: ["ml", "newsletter", "agents", "inference", "hardware", "weekly"],
-    time: 11,
-    words: 2007,
+    time: 13,
+    words: 2553,
     excerpt: "August 24–30 retrospective: Jalapeño’s first results, GLM-5.3-Flash, Qwen3.8-Flash-Next, Yutori n2, PhoneLLM, NVIDIA earnings, the Cursor access decision, cyber defense, and all ten papers in DAIR.AI’s weekly selection—with sources beside every entry.",
     series: "frontier-digest",
     seriesNum: "010"

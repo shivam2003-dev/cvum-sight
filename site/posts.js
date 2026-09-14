@@ -410,6 +410,18 @@ const POSTS = [
     excerpt: "A survey of hybrid TLS, RFC 10024, certificate and firmware dependencies, implementation attacks, crypto agility, and a reproducible migration evaluation process."
   },
   {
+    slug: "frontier-digest-012",
+    title: "Frontier Digest #12 — Four launches, and agents checking their own work.",
+    date: "Sep 13, 2026",
+    cat: "ml",
+    tags: ["ml", "newsletter", "agents", "self-improvement", "weekly"],
+    time: 13,
+    words: 2580,
+    excerpt: "September 7–13: GPT-6 Astra reaches general availability in under a week, DeepSeek V4.1 Flash undercuts on price with MIT weights, GPT-Image-2.5 splits into Flare and Sunburst, model fatigue gets a name, and ten new papers on agents that build, audit, and correct their own procedures — including a 100-agent swarm that spontaneously cheated, and was caught, with no human watching.",
+    series: "frontier-digest",
+    seriesNum: "012"
+  },
+  {
     slug: "frontier-digest-011",
     title: "Frontier Digest #11 — A new frontier, uneven access.",
     date: "Sep 5, 2026",

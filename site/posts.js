@@ -2248,6 +2248,16 @@ const POSTS = [
     excerpt: "The complete hands-on pgBackRest guide: S3 repository setup, stanza creation, full/differential/incremental backups and their dependency chains, PITR with pause-verify-promote, delta restore. Plus the hiccups everyone hits (archive_command silently filling pg_wal, stanza identity mismatches, S3 403s from clock skew, incrementals silently becoming fulls), the hidden configs almost nobody enables (block incremental, file bundling, async archiving, archive-push-queue-max), multi-repo 3-2-1 layouts, and the production practices that separate 'we have backups' from 'we can restore.'"
   },
   {
+    slug: "mind-the-gaps-quantum-advantage-paper-juice",
+    title: "Mind the Gaps — Why \"Quantum Advantage\" Keeps Moving When You Reach for It.",
+    date: "Sep 15, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "quantum-computing", "error-correction", "complexity-theory", "hardware"],
+    time: 20,
+    words: 4500,
+    excerpt: "Paper Juice on Eisert & Preskill's 'Mind the gaps: The fraught road to quantum advantage' (arXiv:2510.19928). The four sequential hurdles from NISQ to FASQ, the surface-code overhead formula worked through with real numbers (a modest algorithm needs ~10^6 physical qubits today), why QAOA and DQI mostly aren't the advantage they look like, and why classical tensor networks keep catching up to every quantum simulation claim within weeks."
+  },
+  {
     slug: "pagedattention-paper-juice",
     title: "PagedAttention — What If Your GPU Memory Managed Itself Like an Operating System.",
     date: "Jul 6, 2026",

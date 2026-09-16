@@ -15,6 +15,16 @@
  */
 
 const POSTS = [
+  {
+    slug: "typesafe-jev-system-one-models",
+    title: "System One Models and Jev — TypeSafe AI's Bet That Not Every Decision Needs a Language Model.",
+    date: "Sep 16, 2026",
+    cat: "ml",
+    tags: ["ml", "inference", "reinforcement-learning", "mlops", "structured-output"],
+    time: 20,
+    words: 4029,
+    excerpt: "TypeSafe AI's Jev ditches free-text generation for typed, calibrated, parallel-sampled outputs trained with a new objective called RLCD. A technical read of the architecture, how RLCD differs from RLHF/RLVR, the workflow-evals numbers (Jev beats LLMs on cost/latency but not on accuracy), the open-source adapter that makes the comparison reproducible, and where the '0% hallucination' claim needs an asterisk."
+  },
   /* PQC COURSE START */
 {
   "slug": "pqc-18-learning-roadmap",

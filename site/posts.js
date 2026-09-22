@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "grok-4-7-opus-5-5-gpt-6-sol-technical",
+    title: "Grok 4.7, Opus 5.5, and the GPT-6 Sol Question — a technical reading.",
+    date: "Sep 22, 2026",
+    cat: "ml",
+    tags: ["ml", "frontier-models", "evaluation", "test-time-compute", "agents"],
+    time: 31,
+    words: 6176,
+    excerpt: "Technical-only: Grok 4.7's disclosed training recipe (predecessor-distilled SFT, harness-native RL, Cursor workflow data that puts CursorBench in-distribution) and its deliberate dual-use bio regression; Opus 5.5's always-on thinking and model- and prefix-bound reasoning state; binomial confidence intervals showing most headline agentic gaps are unresolved; a cache-economics crossover where Opus 5.5 input undercuts Grok 4.7; and a sourced status check on the still-unpublished GPT-6 Sol."
+  },
+  {
     slug: "typesafe-jev-system-one-models",
     title: "System One Models and Jev — TypeSafe AI's Bet That Not Every Decision Needs a Language Model.",
     date: "Sep 16, 2026",

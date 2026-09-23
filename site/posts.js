@@ -15,6 +15,20 @@
  */
 
 const POSTS = [
+  /* BHAS26 START (newest first) */
+  {
+    slug: "bhas26-aumasson-quantum-risk-roadmap",
+    title: "Quantum risk without the panic — JP Aumasson's post-quantum roadmap.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "post-quantum", "cryptography", "risk-management"],
+    time: 18,
+    words: 3525,
+    excerpt: "Black Hat Asia 2026, talk 01. JP Aumasson (co-author of SLH-DSA and BLAKE2/3) on what a quantum computer would actually break, from PKI and code signing to MPC wallets, ZK systems and PAKEs; why nobody knows when; what NIST PQC costs (as fast as ECC, 10–40× larger); what's deployable today (Go 1.24 TLS, RHEL 10.1, iOS 26, Android 17, cloud KMS); and a continuous observe-assess-decide-act risk program.",
+    series: "blackhat-asia-2026",
+    seriesNum: "01"
+  },
+  /* BHAS26 END */
   {
     slug: "grok-4-7-opus-5-5-gpt-6-sol-technical",
     title: "Grok 4.7, Opus 5.5, and the GPT-6 Sol Question — a technical reading.",

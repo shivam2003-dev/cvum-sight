@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-airsnitch-client-isolation",
+    title: "AirSnitch — the guest network isn't isolating anyone.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "wifi", "network-security", "mitm"],
+    time: 13,
+    words: 2500,
+    excerpt: "Black Hat Asia 2026, talk 03. Mathy Vanhoef and UC Riverside collaborators show Wi-Fi client isolation — the guest-network defense — is enforced one layer at a time, so an attacker who moves between the Wi-Fi (shared group key), IP (gateway bouncing), and Ethernet (port stealing) layers walks around it and composes full two-way MitM. Every tested router, AP, and university network had at least one flaw, and no AP randomized the group key. Why isolation was never standardized, and how to actually segment clients (VLANs, cross-layer firewalling, randomized group keys).",
+    series: "blackhat-asia-2026",
+    seriesNum: "03"
+  },
+  {
     slug: "bhas26-ghost-bits-cast-attack",
     title: "Ghost Bits — when a Unicode character quietly becomes an ASCII byte.",
     date: "Sep 23, 2026",

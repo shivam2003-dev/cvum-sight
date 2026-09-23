@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-whatsapp-e2ee-client-attacks",
+    title: "Your number is up — how E2EE moved WhatsApp's attack surface onto your phone.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "e2ee", "privacy", "messaging"],
+    time: 10,
+    words: 1955,
+    excerpt: "Black Hat Asia 2026, talk 08. Tal Be'ery (Zengo) shows how WhatsApp's end-to-end encryption, by making the server a content-blind dumb pipe, shifts the attack surface onto ~3 billion clients and strips the server of spam/malware filtering. Using a Baileys-based companion-device research client he demonstrates silent online-status reconnaissance, per-device OS fingerprinting (Android/iOS/Web behave differently because the client terminates messages), and pinpointed per-device sending via the Sesame multi-device protocol — the recon and delivery halves of a targeted 0-click kill-chain. Fixes: Lockdown mode, message requests, and an 'ambassador' single-session Sesame redesign.",
+    series: "blackhat-asia-2026",
+    seriesNum: "08"
+  },
+  {
     slug: "bhas26-auth-reflection-unicode-bypass",
     title: "The gift that keeps on giving — one Windows patch, three ways around it.",
     date: "Sep 23, 2026",

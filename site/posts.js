@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-react2shell-rsc-deserialization",
+    title: "React2Shell — how await turned a React data format into remote code execution.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "web-security", "deserialization", "react"],
+    time: 9,
+    words: 1847,
+    excerpt: "Black Hat Asia 2026, talk 10. Lachlan Davidson's discovery story for React2Shell (CVE-2025-55182), the React Server Components deserialization RCE attacked over a billion times in its first week. Why JavaScript was long thought immune to deserialization bugs (JSON was too limited), how React's rich 'Flight' wire format can reference JS built-ins, and how await's recursive resolution of any 'thenable' becomes the universal trigger that steers React's own internals into constructing and calling a function. Plus why coordinated disclosure limited the damage, and how to defend.",
+    series: "blackhat-asia-2026",
+    seriesNum: "10"
+  },
+  {
     slug: "bhas26-hybrid-boundaries-wac",
     title: "Breaking hybrid boundaries — one management tool, four CVEs, both directions.",
     date: "Sep 23, 2026",

@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-intentguard-iac-semantics",
+    title: "IntentGuard — when the LLM doesn't just write your IaC, it rewrites your intent.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "cloud-security", "iac", "prompt-injection"],
+    time: 10,
+    words: 2000,
+    excerpt: "Black Hat Asia 2026, talk 04. Anna Bacher and Chris Wysopal (Veracode) on IntentGuard: a hidden prompt injection in a public Terraform module, CloudFormation template, or Stack Overflow snippet can make an LLM emit a 'reasonable-looking' insecure cloud config that passes every static scanner, because scanners validate patterns, not operational meaning. IntentGuard encodes infrastructure into description logic, infers the intended constraints (isolation, dataflows, effective privilege), and flags where the generated config violates them — 172 misconfigurations scanners missed across 50 projects.",
+    series: "blackhat-asia-2026",
+    seriesNum: "04"
+  },
+  {
     slug: "bhas26-airsnitch-client-isolation",
     title: "AirSnitch — the guest network isn't isolating anyone.",
     date: "Sep 23, 2026",

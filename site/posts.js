@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-hybrid-boundaries-wac",
+    title: "Breaking hybrid boundaries — one management tool, four CVEs, both directions.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "azure", "hybrid-cloud", "lateral-movement"],
+    time: 8,
+    words: 1683,
+    excerpt: "Black Hat Asia 2026, talk 09. Cymulate's Ilan Kalendarov and Ben Zamir show Windows Admin Center — the hybrid bridge between an Azure tenant and on-prem Windows — as a single pivot for bidirectional compromise. Five flaws: a world-writable ProgramData LPE (on-prem CVE-2025-64669 + cloud twin CVE-2026-23660), a tenant-wide RCE from mixing CheckAccess and proof-of-possession tokens (CVE-2026-20965), improper attestation letting anyone mint a valid cert for any device in any tenant, and a flow-redirection + XSS + insecure-storage web chain (CVE-2026-32196). Chained: Azure to on-prem and back, 'one device to Global Admin.' Detect in identity/token behavior; treat management tools as Tier Zero.",
+    series: "blackhat-asia-2026",
+    seriesNum: "09"
+  },
+  {
     slug: "bhas26-whatsapp-e2ee-client-attacks",
     title: "Your number is up — how E2EE moved WhatsApp's attack surface onto your phone.",
     date: "Sep 23, 2026",

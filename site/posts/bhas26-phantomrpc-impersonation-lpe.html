@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhantomRPC — Rogue RPC Servers and the ETW Way to Find New Potatoes — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Kaspersky's PhantomRPC shows that because the Windows RPC runtime can't verify a server's legitimacy, a low-privileged process holding SeImpersonatePrivilege can stand up a look-alike RPC server, get a privileged client to connect and be impersonated — a 'Potato'-class local privilege escalation. The novel part is a systematic ETW-driven method to discover new impersonation triggers automatically.">
+<link rel="stylesheet" href="../style.css?v=88">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td code{background:rgba(148,138,120,.16);padding:1px 5px;border-radius:3px;font-size:.85em}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10.5px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">PhantomRPC — Discovering New RPC-Impersonation Privilege Escalations</p>
+        <p class="series-banner-meta">Talk 11 · Windows security · analysis from the speaker's published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-react2shell-rsc-deserialization.html">← prev: React2Shell</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 23, 2026 · conferences · 9 min read · 1734 words <span class="difficulty advanced">advanced</span></p>
+        <h1>PhantomRPC — the RPC runtime can't tell if a server is real, so it isn't.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">windows</span>
+          <span class="tag">privilege-escalation</span>
+          <span class="tag">rpc</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Kabibo</strong> (Kaspersky's Industrial Security Services team) revisits the "Potato" family of Windows local privilege escalations, in which a low-privileged process holding <code>SeImpersonatePrivilege</code> tricks a <code>SYSTEM</code> service into authenticating to it and then <em>impersonates</em> that privileged identity. The structural root cause: <strong>the Windows RPC runtime (<code>rpcrt4.dll</code>) has no mechanism to verify that an RPC server is legitimate</strong>, and Windows will happily let you stand up a look-alike server with the same interface UUID and endpoint as a real one. So an attacker registers a <strong>phantom RPC server</strong>, gets a privileged client to connect to it (many benign-looking actions trigger such connections), and impersonates the caller. PhantomRPC's real contribution isn't one exploit, it's a <strong>systematic discovery method</strong>: capture the RPC-unavailable exceptions that privileged clients throw when a server is missing, enrich them with ETW (Event Tracing for Windows) traces, and mine the result for <em>new</em> impersonation triggers. Using it, Kabibo found chains starting from ordinary actions, opening Edge, running <code>ipconfig</code>, <code>gpupdate /force</code>, even a background diagnostics service, each of which coaxes a privileged service into a rogue RPC connection.</p>
+
+        <p>Post 11 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. Analysis-first: the mechanism, the discovery method, and the detection guidance. No exploit code.</p>
+
+        <h2 id="primitives">1. The two primitives: RPC and impersonation</h2>
+        <p><strong>MSRPC</strong> is how Windows processes talk to each other locally (over ALPC) and remotely. A server registers an <em>interface</em> (identified by a UUID) with named functions at an <em>endpoint</em>; a client binds to that UUID/endpoint and calls the functions. It is everywhere, most system DLLs use it under the hood.</p>
+        <p><strong>Impersonation</strong> lets a server temporarily assume a client's identity for access checks. In RPC, a server calls <code>RpcImpersonateClient</code> to act as the caller. How much the server is allowed to do is governed by <strong>Security Quality of Service (SQoS)</strong>, which defines four levels, Anonymous, Identification, <strong>Impersonation</strong>, and Delegation. The two higher levels let the server act <em>as</em> the client. For a server to impersonate at all, it needs <code>SeImpersonatePrivilege</code> in its token, a privilege that service accounts (<code>LOCAL SERVICE</code>, <code>NETWORK SERVICE</code>) hold by default, which is exactly the foothold Potato attacks assume.</p>
+
+        <h2 id="rootcause">2. The root cause: RPC doesn't authenticate the server</h2>
+        <p>Kabibo states the flaw plainly: <strong>the RPC runtime does not verify the legitimacy of RPC servers</strong>, and Windows lets you deploy the exact same RPC server (same interface UUID and endpoint) that a legitimate process exposes. So if the real server isn't running, or you can race/replace it, <strong>a client that intends to call the legitimate <code>SYSTEM</code> service can be made to connect to <em>your</em> server instead</strong>. If that client impersonates at the Impersonation level, your phantom server calls <code>RpcImpersonateClient</code> and now holds a <code>SYSTEM</code> (or service) token, local privilege escalation.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="ink" text-anchor="middle">The phantom RPC server</text>
+            <rect x="20" y="60" width="180" height="70" rx="8" class="boxr"/>
+            <text x="110" y="86" class="lbl" text-anchor="middle">Attacker (low priv)</text>
+            <text x="110" y="104" class="sm" text-anchor="middle">has SeImpersonatePrivilege</text>
+            <text x="110" y="119" class="sm" text-anchor="middle">registers same UUID/endpoint</text>
+            <rect x="260" y="60" width="180" height="70" rx="8" class="boxy"/>
+            <text x="350" y="86" class="lbl" text-anchor="middle">Privileged client</text>
+            <text x="350" y="104" class="sm" text-anchor="middle">SYSTEM / service</text>
+            <text x="350" y="119" class="sm" text-anchor="middle">connects, Impersonation level</text>
+            <rect x="500" y="60" width="160" height="70" rx="8" class="boxg"/>
+            <text x="580" y="86" class="lbl" text-anchor="middle">Impersonate</text>
+            <text x="580" y="104" class="sm" text-anchor="middle">RpcImpersonateClient</text>
+            <text x="580" y="119" class="sm" text-anchor="middle">= SYSTEM token</text>
+            <path d="M260 95 L200 95" class="arr"/>
+            <text x="230" y="86" class="sm" text-anchor="middle">connects to</text>
+            <path d="M200 118 L500 118" class="arr"/>
+            <text x="340" y="150" class="sm" text-anchor="middle">the runtime never checks the server is the real one</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — Because RPC won't authenticate the server, a look-alike endpoint plus a privileged client that connects and impersonates equals SYSTEM. The whole "Potato" family is instances of this.</p>
+        </div>
+        <p>The concrete first case: the <strong>Group Policy Client (GPSVC)</strong>, running as <code>SYSTEM</code>, throws an exception during <code>gpupdate /force</code>. Tracing it revealed a failed ALPC connection to the <strong>Terminal Services (RDP) <code>TermSrvApi</code> endpoint</strong> at Impersonation level. Since RDP is off by default, that endpoint is free for the taking, register a phantom <code>TermSrvApi</code>, run <code>gpupdate /force</code>, and GPSVC (SYSTEM) connects and is impersonated.</p>
+
+        <h2 id="discovery">3. The real contribution: an ETW-driven hunt for new triggers</h2>
+        <p>Rather than hand-find one trigger, Kabibo built a <strong>discovery pipeline</strong>. The insight: a privileged client failing to reach a (missing) server throws a distinctive exception, <code>RPC_S_SERVER_UNAVAILABLE</code> (0x800706BA / 1722). Each such failure is a <em>candidate</em> impersonation trigger. To be useful it must originate from a high-privilege process and use a high impersonation level. The pipeline:</p>
+        <ol>
+          <li><strong>Generate exceptions.</strong> Enable logging, then reboot, run random operations, and, importantly, <strong>turn off each service in turn</strong> and repeat, forcing clients to fail to reach servers that would normally be present.</li>
+          <li><strong>Capture with ETW.</strong> Event Tracing for Windows records RPC bindings, endpoints, interface UUIDs, auth details, call flow, timing, and status codes, deep visibility into client/server behavior without touching the applications. <code>logman</code> drives the trace to an <code>.etl</code> file.</li>
+          <li><strong>Correlate.</strong> Convert ETL→JSON and match <strong>RPC Stop</strong> events (status, image name, PID, endpoint) with <strong>RPC Start</strong> events (UUID, OPNUM, impersonation level), filtering on the unavailable status. Enrich each hit by looking up the interface UUID to attach the module, module path, and procedure count.</li>
+        </ol>
+        <p>The output is an <strong>enriched list of "who tries to call what, at what impersonation level, from what privilege"</strong>, i.e. a catalog of phantom-server opportunities. Kabibo calls the good candidates "Ghost Lovers": privileged clients that will happily embrace a rogue server.</p>
+        <div class="bm-note"><strong>Why the method matters more than the CVEs.</strong> Individual Potato techniques get patched or the specific endpoint gets locked down. A <em>discovery method</em> turns a one-off into a repeatable capability: point it at a new Windows build and it surfaces the current crop of triggers. That's the same "automate the finding, not just the exploit" theme as the Secrux tool in <a href="bhas26-ghost-bits-cast-attack.html">the Ghost Bits talk</a>.</p></div>
+
+        <h2 id="triggers">4. The triggers: benign actions that hand you SYSTEM</h2>
+        <p>The pipeline surfaced several everyday actions that make a privileged service connect to an RPC endpoint an attacker can pre-register:</p>
+        <table class="papers">
+          <thead><tr><th>Trigger</th><th>Privileged client</th><th>Target endpoint</th><th>Note</th></tr></thead>
+          <tbody>
+            <tr><td><code>gpupdate /force</code></td><td>GPSVC (SYSTEM)</td><td>RDP <code>TermSrvApi</code></td><td>RDP off by default → endpoint free</td></tr>
+            <tr><td>Launching Microsoft Edge</td><td>msedge.exe (as admin)</td><td>RDP <code>TermSrvApi</code></td><td>Edge triggers an RPC call to RDP at high impersonation level on start</td></tr>
+            <tr><td>Background diagnostics</td><td>WdiSystemHost (SYSTEM)</td><td>RDP <code>TermSrvApi</code></td><td><strong>No user interaction</strong>, periodic calls</td></tr>
+            <tr><td><code>ipconfig</code></td><td>admin process</td><td>DHCP Client (<code>LOCAL SERVICE</code>)</td><td>DHCP RPC server called by system DLLs at high impersonation</td></tr>
+            <tr><td>Time sync (<code>w32tm</code>)</td><td>W32Time (<code>LOCAL SERVICE</code>)</td><td><code>W32TIME_ALT</code></td><td>Enabled by default; <strong>no need to turn the service off</strong></td></tr>
+          </tbody>
+        </table>
+        <p>The <strong>WdiSystemHost</strong> case is the standout: a background service periodically makes the vulnerable RPC call <em>with no user interaction at all</em>, so an attacker just waits. And the architectural point generalizes, RPC is called indirectly through layers of system DLLs (<code>winsta.dll</code> → <code>rpcrt4.dll</code>), so <strong>applications calling seemingly benign APIs can unintentionally trigger local privilege escalation without anyone realizing an RPC call is even happening.</strong></p>
+
+        <h2 id="msrc">5. Microsoft's response, and why detection is the answer</h2>
+        <p>Microsoft assessed it as <strong>Moderate severity, below the bar for immediate servicing</strong>, on the grounds that the attack requires a process that already holds <code>SeImpersonatePrivilege</code>. That's the same reasoning applied to the whole Potato family: it's a privilege <em>escalation</em> from an already-privileged service account, not a bug that grants that account. The report was shared with the product team for future action.</p>
+        <p>Kabibo's honest conclusion for defenders: <strong>this type of activity cannot really be <em>prevented</em>, and the attack surface is extensive</strong>, so mitigation depends on future Microsoft changes. What you <em>can</em> do is <strong>detect</strong> it, using the same signals the broader Potato-detection community relies on.</p>
+        <div class="bm-fix">
+          <p style="margin:0 0 8px"><strong>Detection &amp; hardening:</strong></p>
+          <ul style="margin:0">
+            <li><strong>Apply "Potato" detection logic.</strong> Watch for a process holding <code>SeImpersonatePrivilege</code> registering an RPC/ALPC endpoint that matches a known system interface, and for token-impersonation events where a service identity is assumed by an unexpected process. ETW RPC providers, the very ones Kabibo used to <em>find</em> the bugs, are also how you <em>detect</em> them.</li>
+            <li><strong>Minimize <code>SeImpersonatePrivilege</code> holders.</strong> The precondition is a foothold in a service account with this privilege; reduce which service accounts and third-party services run with it, and isolate those that must.</li>
+            <li><strong>Reduce enabled RPC surface.</strong> Keep unneeded services (RDP especially) disabled, an off endpoint is a free phantom, but note W32Time is on by default and still exploitable, so this only shrinks the surface, it doesn't close it.</li>
+            <li><strong>Alert on anomalous RPC endpoint ownership</strong>, e.g. a well-known interface UUID suddenly served by a non-standard image/path (the "attach module path" enrichment Kabibo's pipeline produces is exactly the anomaly signal).</li>
+          </ul>
+        </div>
+        <p>PoCs were tested on the latest Windows Server 2022 and 2025 and reported to Microsoft on 2025-09-29; Kaspersky published the <a href="https://github.com/klsecservices/PhantomRPC" target="_blank" rel="noopener">PhantomRPC</a> research repo. Kabibo notes the released PoCs are simple examples and "additional cases are likely to exist", the method will keep producing them.</p>
+
+        <details class="faq"><summary>Is this a new vulnerability or an old technique?</summary><p>The impersonation-via-rogue-RPC-server primitive is the classic "Potato" family. What's new is (a) a systematic ETW-based method to discover fresh triggers automatically, and (b) a set of concrete, benign-looking triggers (Edge launch, ipconfig, gpupdate, a no-interaction background service) on current Windows Server builds.</p></details>
+        <details class="faq"><summary>Why won't Microsoft "fix" it?</summary><p>Because it requires a process that already holds <code>SeImpersonatePrivilege</code>, Microsoft treats it as Moderate, below the immediate-servicing bar. The runtime's lack of server authentication is architectural, so mitigation is expected to come through gradual product changes rather than a single patch.</p></details>
+        <details class="faq"><summary>Does disabling RDP protect me?</summary><p>It removes one free endpoint (<code>TermSrvApi</code>), but W32Time is enabled by default and still exploitable, and other services expose callable interfaces. Disabling unneeded services shrinks the surface; it doesn't eliminate the class. Detection is the durable control.</p></details>
+        <details class="faq"><summary>How do I detect it if I can't prevent it?</summary><p>Use ETW RPC providers to flag: a <code>SeImpersonatePrivilege</code>-holding process registering a known system interface UUID/endpoint, unexpected image paths serving well-known interfaces, and impersonation events where a service token is assumed by an anomalous process. This mirrors established Potato detections.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>The RPC runtime doesn't authenticate servers</strong>, and Windows lets you register a look-alike interface UUID/endpoint, the structural root of the Potato family.</li>
+          <li>A low-priv process with <code>SeImpersonatePrivilege</code> stands up a <strong>phantom RPC server</strong>, gets a privileged client to connect, and <strong>impersonates SYSTEM</strong>.</li>
+          <li>The contribution is a <strong>repeatable ETW-driven discovery pipeline</strong>: capture <code>RPC_S_SERVER_UNAVAILABLE</code> exceptions, enrich with RPC traces, mine for new impersonation triggers.</li>
+          <li>Real triggers found: <strong>gpupdate, Edge launch, ipconfig, w32tm, and a no-interaction diagnostics service</strong>, several on default configurations.</li>
+          <li>Microsoft rates it <strong>Moderate</strong> (needs an existing privileged foothold); it won't be patched quickly.</li>
+          <li><strong>Detect, don't try to prevent</strong>: apply Potato detections via ETW, minimize <code>SeImpersonatePrivilege</code> holders, and alert on anomalous RPC endpoint ownership.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — Briefings schedule</a> <span>— official session listing and slides.</span></li>
+          <li><a href="https://github.com/klsecservices/PhantomRPC" target="_blank" rel="noopener">PhantomRPC (Kaspersky / klsecservices)</a> <span>— the research repo, PoCs, and discovery tooling.</span></li>
+          <li><a href="https://learn.microsoft.com/en-us/windows/win32/rpc/impersonation" target="_blank" rel="noopener">Microsoft — RPC impersonation &amp; SQoS</a> <span>— the impersonation levels and <code>RpcImpersonateClient</code>.</span></li>
+          <li><a href="https://learn.microsoft.com/en-us/windows/win32/etw/about-event-tracing" target="_blank" rel="noopener">Microsoft — Event Tracing for Windows (ETW)</a> <span>— the tracing framework used for discovery and detection.</span></li>
+          <li><a href="https://github.com/antonioCoco/RoguePotato" target="_blank" rel="noopener">The "Potato" family background</a> <span>— prior art on RPC/impersonation privilege escalation this generalizes.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-react2shell-rsc-deserialization.html">← prev: React2Shell</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

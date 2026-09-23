@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-phantomrpc-impersonation-lpe",
+    title: "PhantomRPC — the RPC runtime can't tell if a server is real, so it isn't.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "windows", "privilege-escalation", "rpc"],
+    time: 9,
+    words: 1734,
+    excerpt: "Black Hat Asia 2026, talk 11. Kaspersky's PhantomRPC revisits the Windows 'Potato' privilege-escalation family: because the RPC runtime never authenticates a server, a low-privileged process holding SeImpersonatePrivilege can register a look-alike RPC endpoint, get a SYSTEM/service client to connect, and impersonate it. The real contribution is a systematic ETW-driven discovery pipeline — capture RPC_S_SERVER_UNAVAILABLE exceptions, enrich with RPC traces, mine for new impersonation triggers — which surfaced benign-looking triggers (launching Edge, ipconfig, gpupdate, w32tm, a no-interaction diagnostics service). Microsoft rates it Moderate; detection via ETW is the durable control.",
+    series: "blackhat-asia-2026",
+    seriesNum: "11"
+  },
+  {
     slug: "bhas26-react2shell-rsc-deserialization",
     title: "React2Shell — how await turned a React data format into remote code execution.",
     date: "Sep 23, 2026",

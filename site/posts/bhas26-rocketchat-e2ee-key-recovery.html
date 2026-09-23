@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payload Compromised — Full Key Recovery in Rocket.Chat E2EE — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Hayato Kimura and colleagues fully break Rocket.Chat's end-to-end encryption. A custom, non-cryptographic password generator whose toLowerCase() call collapses 62 characters to 36 makes the E2EE 'root' password brute-forceable; combined with AES-CBC without integrity, no key rotation on password change, and trust-on-first-use keys, a malicious server recovers every key and reads/forges all messages. The methodology: ProVerif + source review + OSINT.">
+<link rel="stylesheet" href="../style.css?v=88">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td code{background:rgba(148,138,120,.16);padding:1px 5px;border-radius:3px;font-size:.85em}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">Payload Compromised: Full Key Recovery in Rocket.Chat E2EE</p>
+        <p class="series-banner-meta">Talk 12 · Applied cryptography &amp; appsec · analysis from the speakers' published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-phantomrpc-impersonation-lpe.html">← prev: PhantomRPC</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 23, 2026 · conferences · 9 min read · 1879 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Payload compromised — how <code>toLowerCase()</code> broke Rocket.Chat's E2EE.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">cryptography</span>
+          <span class="tag">e2ee</span>
+          <span class="tag">appsec</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Hayato Kimura</strong> and colleagues (NICT, Osaka University, NEC) spent 2.5 years fully breaking the end-to-end encryption of <strong>Rocket.Chat</strong>, a popular open-source Slack/Teams alternative used on-prem and as SaaS. The threat model is the one E2EE exists to defeat: a <strong>malicious server</strong> (rogue admin or compromised SaaS) that should <em>not</em> be able to read messages. It can. The keystone is the <strong>E2EE password</strong>, the root of the whole key hierarchy, which Rocket.Chat generated with a <em>custom, non-cryptographic</em> routine. It drew 9 characters from a 62-character set using JavaScript's <code>Math.random()</code> (a Mersenne Twister, not a CSPRNG), then, catastrophically, called <strong><code>toLowerCase()</code> on the result</strong>, collapsing the alphabet from 62 to 36 and introducing heavy bias (letters that had an uppercase form now appear twice as often). That guts the password's entropy enough to recover it, and with it every RSA private key and group key. Stacked on top: <strong>AES-CBC with no integrity</strong> (message forgery via ciphertext malleability), <strong>no key rotation</strong> on password change (a compromised key lives forever), <strong>trust-on-first-use</strong> public keys (server-in-the-middle key replacement), and a downgrade that strips the E2EE flag entirely. The team's method is a model: formal analysis in ProVerif, plus source review, plus OSINT to learn <em>why</em> the design was so fragile. Rocket.Chat has since moved to a CSPRNG, AES-GCM, and proper rotation.</p>
+
+        <p>Post 12 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. This is fully-patched, peer-reviewed crypto research (ACSAC 2025); I keep it analysis-first, the ideas and lessons, not attack code.</p>
+
+        <h2 id="model">1. The threat model E2EE promises to survive</h2>
+        <p>E2EE means the server is a relay that <em>cannot</em> read your messages, even if it's evil. So the primary adversary here is a <strong>malicious server</strong>: a compromised admin or rogue employee at the SaaS, or anyone who owns an on-prem instance, who collects the encrypted RSA key backups and encrypted group keys the server stores. A secondary adversary is a <strong>network attacker</strong> (active MITM), and that's not hypothetical: the team's Shodan scan found roughly <strong>half of in-support Rocket.Chat servers exposed plaintext HTTP</strong>, so outsider attacks are viable on many real deployments, not just insider ones. E2EE is supposed to protect users in <em>all</em> these cases. The paper shows it protects them in none.</p>
+
+        <h2 id="arch">2. The architecture and its three "smells"</h2>
+        <p>Rocket.Chat's E2EE has three components, and the researchers flagged a "smell" (a warning sign) in each before proving each one broken:</p>
+        <table class="papers">
+          <thead><tr><th>Component</th><th>What it does</th><th>The smell</th></tr></thead>
+          <tbody>
+            <tr><td>RSA key backups</td><td>Your RSA private key is encrypted under a key derived from an <em>auto-generated</em> E2EE password and stored on the server</td><td>Password generation is "automatic", but <em>how</em>? (custom generator, low PBKDF2 iterations)</td></tr>
+            <tr><td>Session establishment</td><td>Group session keys are shared using RSA</td><td>Legacy RSA key exchange</td></tr>
+            <tr><td>Message encryption</td><td>Messages encrypted with AES-CBC</td><td>No integrity protection (CBC without a MAC)</td></tr>
+          </tbody>
+        </table>
+        <p>The E2EE spec exists but "lacks detail", no entropy figures, no generation algorithm, so the team read the open-source code to find the truth. The gap between the documented protocol and the actual implementation is exactly where the fatal bugs lived.</p>
+
+        <h2 id="password">3. The keystone bug: a password generator that eats its own entropy</h2>
+        <p>The E2EE password is the <strong>root</strong> of the key hierarchy: password → (PBKDF2) master key → decrypts your RSA private key → decrypts the RSA-wrapped group session keys → decrypts messages. Recover the password and everything below falls. Rocket.Chat's mobile/legacy generator did this:</p>
+        <ol>
+          <li>Pick <strong>9 characters</strong> from a <strong>62-character set</strong> (a–z, A–Z, 0–9) using a custom <code>random()</code>.</li>
+          <li>On mobile, that <code>random()</code> was <strong><code>Math.random()</code>, a Mersenne Twister, not cryptographic</strong>.</li>
+          <li>Then, fatally, call <strong><code>toLowerCase()</code></strong> on the whole password.</li>
+        </ol>
+        <p>Step 3 is the killer, and it's the kind of one-line appsec mistake that a cryptographer wouldn't expect and a developer wouldn't flag. Every uppercase letter is folded to lowercase, so:</p>
+        <ul>
+          <li><strong>The alphabet collapses from 62 to 36</strong> (26 letters + 10 digits), because A–Z and a–z now map to the same 26 outputs.</li>
+          <li><strong>Strong bias appears:</strong> each letter can be produced two ways (it was drawn as lowercase, or as uppercase then folded), so <em>letters occur about twice as often as digits</em>. A biased distribution is far easier to brute-force than a uniform one, because you try the high-probability strings first.</li>
+        </ul>
+        <p>The effective password space drops to roughly \(2^{46.5}\) with a ~32% bias toward letters, small enough to attack, and on mobile the Mersenne-Twister generator is itself predictable, compounding it. (Post-2022 web builds switched to 5 random words from a 1,633-word list, larger but still the same architectural single point of failure.)</p>
+        <div class="bm-warn"><strong>Why this belongs in the "spec ≠ implementation" hall of fame.</strong> Nothing in the E2EE <em>specification</em> says "we fold the password to lowercase." It's an implementation detail buried in a utility function, invisible to anyone reading the protocol docs. The lesson the team stresses: <strong>documented protocol ≠ actual implementation, and undocumented behaviors are where the critical bugs hide.</strong> It's the crypto sibling of the parser-differential theme running through this series, here the "two views" are the spec and the code.</p></div>
+
+        <h2 id="cascade">4. What the recovered password unlocks</h2>
+        <p>Because the password is the root, recovering it is game over for confidentiality:</p>
+        <ul>
+          <li>Decrypt the victim's <strong>RSA private key</strong> from the backup.</li>
+          <li>Use it to decrypt every <strong>RSA-wrapped group session key</strong>.</li>
+          <li>Use those to decrypt every <strong>AES-CBC message</strong>, past, present, and future.</li>
+        </ul>
+        <p>But confidentiality is only half. The other flaws add integrity and persistence failures that make recovery impossible:</p>
+        <table class="papers">
+          <thead><tr><th>Vulnerability</th><th>Consequence</th></tr></thead>
+          <tbody>
+            <tr><td>AES-CBC without a MAC (malleability)</td><td><strong>Message forgery:</strong> with a known plaintext/ciphertext pair (e.g. from a predictable message ID), an attacker forges a one-block ciphertext, no key needed for the forgery itself</td></tr>
+            <tr><td>Trust-on-first-use public keys (no authenticity check)</td><td><strong>MITM key replacement:</strong> the server hands Alice the adversary's public key instead of Bob's; Alice wraps the group key for the adversary, the server unwraps it and re-wraps for Bob, and nobody notices</td></tr>
+            <tr><td>No key rotation on password change</td><td>A password <em>update</em> doesn't regenerate the RSA key pair; a password <em>reset</em> makes a new key pair but <strong>does not rotate the group key</strong>, so the same group key lives <strong>forever</strong>. An attacker with an old password decrypts all past <em>and future</em> messages</td></tr>
+            <tr><td>Downgrade (metadata not integrity-protected)</td><td>Strip the E2EE flag and inject plaintext</td></tr>
+            <tr><td>Replay (key reuse in a room)</td><td>Replay old messages</td></tr>
+          </tbody>
+        </table>
+        <p>The "no rotation" bug is the cruelest, and it was <em>undocumented</em>, found only in the source. It means <strong>the recovery mechanism doesn't recover you</strong>: the standard response to compromise (change your password) leaves the compromised group key in place. Before the attack the malicious server saw only encrypted blobs and metadata; after it, the server sees <strong>every plaintext message, every user's RSA private key, and can forge messages as anyone</strong>, total compromise.</p>
+
+        <h2 id="method">5. The methodology: formal + code + OSINT</h2>
+        <p>The audit approach is worth copying:</p>
+        <ol>
+          <li><strong>Formal analysis (ProVerif).</strong> Model the protocol in symbolic logic (Dolev-Yao attacker) to detect MITM, offline-attack, downgrade, and replay paths systematically rather than by intuition.</li>
+          <li><strong>Manual source review.</strong> Compare the open-source code against the official spec and hunt <em>undocumented</em> behaviors, this is where the CBC malleability, the weak password generator, and the missing key rotation surfaced.</li>
+          <li><strong>Proof of concept.</strong> Build working exploits for every attack on live test instances, proving exploitability end-to-end rather than asserting it.</li>
+          <li><strong>OSINT.</strong> Read GitHub PR threads and historical commits to understand <em>why</em> the fragile design emerged: Rocket.Chat had planned a Signal-protocol implementation (GSoC 2017) but didn't ship it, and chose password-based encryption so "users can use any device." Understanding the <em>why</em> is what lets you recommend the right structural fix rather than just patching symptoms.</li>
+        </ol>
+
+        <h2 id="fixes">6. Fixes and lessons</h2>
+        <p>Disclosed May 2024; fixes rolled out Oct 2024 – Dec 2025:</p>
+        <table class="papers">
+          <thead><tr><th>Was</th><th>Now</th></tr></thead>
+          <tbody>
+            <tr><td><code>Math.random()</code> / custom generator</td><td>CSPRNG (cryptographically secure)</td></tr>
+            <tr><td>AES-CBC (no integrity)</td><td>AES-GCM (authenticated encryption)</td></tr>
+            <tr><td>Broken/absent key rotation</td><td>Proper rotation</td></tr>
+          </tbody>
+        </table>
+        <p>One issue remains by design: <strong>public-key authenticity still uses trust-on-first-use</strong>, so a malicious-server MITM is still possible; Rocket.Chat treats this as an accepted risk. That's an honest disclosure of a residual limitation.</p>
+        <div class="bm-fix">
+          <p style="margin:0 0 8px"><strong>Lessons for developers (straight from the talk):</strong></p>
+          <ol style="margin:0">
+            <li><strong>Don't roll your own crypto protocol.</strong> Use the Signal Protocol or MLS (RFC 9420). Rocket.Chat literally planned to and didn't.</li>
+            <li><strong>Don't roll your own password generator.</strong> Audit entropy and test for exactly this kind of bug, the <code>toLowerCase()</code> collapse would be caught by a distribution test.</li>
+            <li><strong>Key rotation must cover every scenario:</strong> lost device, compromised password, compromised key, all must rotate the actual session keys, not just the wrapping keys.</li>
+            <li><strong>Move off password-based architectures</strong> to modern key management and device-bound keys (e.g. OPAQUE for password auth, device keys for multi-device). A single human-memorable password as the root of E2EE is a single point of failure.</li>
+          </ol>
+        </div>
+
+        <details class="faq"><summary>Is my Rocket.Chat instance still vulnerable?</summary><p>The core issues (weak RNG, AES-CBC, broken rotation) were patched between Oct 2024 and Dec 2025, update to a current version. Two caveats remain: public-key authenticity is still trust-on-first-use (accepted MITM risk), and if your server exposes plaintext HTTP (half did, per the scan) you have a separate, serious exposure regardless of the E2EE fixes.</p></details>
+        <details class="faq"><summary>How did one <code>toLowerCase()</code> matter so much?</summary><p>Because the password is the root of the entire key hierarchy, so its entropy is the entire system's security margin. Folding case collapses 62 symbols to 36 and biases the distribution toward letters, dropping the effective space to about 2^46 and making it brute-forceable. Everything below the password, RSA keys, group keys, messages, then unwraps.</p></details>
+        <details class="faq"><summary>Why is AES-CBC without a MAC dangerous even without the key?</summary><p>CBC is malleable: flipping bits in a ciphertext block predictably flips bits in the decrypted plaintext of the next block. With a known plaintext/ciphertext pair (message IDs made some predictable), an attacker can craft a ciphertext that decrypts to chosen content, forgery without ever recovering the key. AES-GCM (authenticated encryption) prevents this.</p></details>
+        <details class="faq"><summary>What's the single most important takeaway?</summary><p>Use a vetted protocol (Signal/MLS) instead of a bespoke password-rooted design, and remember that the spec is not the implementation, audit the actual code (and its utility functions) with formal tools plus manual review. The fatal bug was invisible at the protocol level.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>The E2EE password is the root of the key hierarchy</strong>, and a custom generator's <code>toLowerCase()</code> collapsed it from 62 to 36 symbols with heavy bias, making it recoverable (~\(2^{46.5}\)).</li>
+          <li>Recovering it yields <strong>every RSA private key and group key</strong>, full decryption of all messages, past and future.</li>
+          <li><strong>AES-CBC without a MAC</strong> enables message forgery; <strong>TOFU keys</strong> enable server MITM; <strong>no key rotation</strong> means a compromise is permanent, undocumented, found only in source.</li>
+          <li><strong>~50% of live servers expose plaintext HTTP</strong>, so network attackers, not just malicious servers, can exploit many deployments.</li>
+          <li>Methodology to emulate: <strong>ProVerif formal analysis + manual code review + end-to-end PoC + OSINT</strong> on why the design emerged.</li>
+          <li>Fixes shipped (CSPRNG, AES-GCM, rotation); the durable lesson is <strong>don't roll your own, use Signal/MLS and device-bound keys.</strong></li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — Briefings schedule</a> <span>— official session listing and slides.</span></li>
+          <li><a href="https://eprint.iacr.org/2025/2300" target="_blank" rel="noopener">Kimura et al. — full paper (IACR ePrint 2025/2300, ACSAC 2025)</a> <span>— the six vulnerabilities, formal analysis, and PoCs.</span></li>
+          <li><a href="https://github.com/gravity-of-the-situation-rc" target="_blank" rel="noopener">PoC repository</a> <span>— working exploits for the demonstrated attacks.</span></li>
+          <li><a href="https://datatracker.ietf.org/doc/rfc9420/" target="_blank" rel="noopener">RFC 9420 — Messaging Layer Security (MLS)</a> <span>· <a href="https://signal.org/docs/" target="_blank" rel="noopener">Signal Protocol</a> — the vetted alternatives recommended.</span></li>
+          <li><a href="../series-pqc.html">cvam.sight — Post-Quantum Cryptography course</a> <span>· <a href="../series-openpgp.html">OpenPGP Internals series</a> — key-management and protocol background.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-phantomrpc-impersonation-lpe.html">← prev: PhantomRPC</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

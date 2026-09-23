@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-rocketchat-e2ee-key-recovery",
+    title: "Payload compromised — how toLowerCase() broke Rocket.Chat's E2EE.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "cryptography", "e2ee", "appsec"],
+    time: 9,
+    words: 1879,
+    excerpt: "Black Hat Asia 2026, talk 12. Hayato Kimura and colleagues (NICT/Osaka/NEC) fully break Rocket.Chat's end-to-end encryption against a malicious server. The E2EE password is the root of the key hierarchy, and a custom generator called Math.random() then toLowerCase() — collapsing 62 characters to 36 with heavy letter bias, dropping the effective space to ~2^46.5 and making it recoverable. Combined with AES-CBC without integrity (message forgery), no key rotation on password change (compromise is permanent), trust-on-first-use keys (server MITM), and a downgrade that strips the E2EE flag, a malicious server reads and forges every message. Methodology: ProVerif + source review + OSINT. Fixed: CSPRNG, AES-GCM, proper rotation.",
+    series: "blackhat-asia-2026",
+    seriesNum: "12"
+  },
+  {
     slug: "bhas26-phantomrpc-impersonation-lpe",
     title: "PhantomRPC — the RPC runtime can't tell if a server is real, so it isn't.",
     date: "Sep 23, 2026",

@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-ghost-bits-cast-attack",
+    title: "Ghost Bits — when a Unicode character quietly becomes an ASCII byte.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "appsec", "java", "waf-bypass"],
+    time: 13,
+    words: 2650,
+    excerpt: "Black Hat Asia 2026, talk 02. Xinyu Bai and Zhihui Chen's 'Cast Attack': Java's 16-bit char cast to an 8-bit byte silently drops the high byte, so a chosen non-ASCII character collapses into a chosen ASCII byte. The result is a parser differential — a WAF sees harmless Unicode while the downstream parser sees the real payload — expressed as WAF bypass, SQLi, deserialization, path traversal, auth bypass, SMTP injection and request smuggling. The sink class, the Secrux auto-discovery angle, and the definitive fix: encode with a real charset, validate after canonicalization.",
+    series: "blackhat-asia-2026",
+    seriesNum: "02"
+  },
+  {
     slug: "bhas26-aumasson-quantum-risk-roadmap",
     title: "Quantum risk without the panic — JP Aumasson's post-quantum roadmap.",
     date: "Sep 23, 2026",

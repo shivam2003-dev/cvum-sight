@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cast Attack — "Ghost Bits" and the char-to-byte Truncation Bug Class in Java — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Xinyu Bai and Zhihui Chen's 'Ghost Bits' — casting Java's 16-bit char to an 8-bit byte silently drops the high byte, so a non-ASCII Unicode character collapses to an attacker-chosen ASCII byte. A WAF sees harmless Unicode; the parser downstream sees the payload. The mechanism, the sink class, why it defeats validators, and how to fix it.">
+<link rel="stylesheet" href="../style.css?v=88">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td code{background:rgba(148,138,120,.16);padding:1px 5px;border-radius:3px;font-size:.85em}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  pre.code{background:#10221f;color:#cfe;border-radius:8px;padding:14px 16px;overflow:auto;font-size:.82rem;line-height:1.5;margin:18px 0}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .mono{font-family:monospace;font-size:12px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10.5px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">Cast Attack — A New Threat Posed by "Ghost Bits" in Java</p>
+        <p class="series-banner-meta">Talk 02 · Application security &amp; parser differentials · analysis from the speakers' published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-aumasson-quantum-risk-roadmap.html">← prev: Quantum-risk roadmap</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 23, 2026 · conferences · 13 min read · 2650 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Ghost Bits — when a Unicode character quietly becomes an ASCII byte.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">appsec</span>
+          <span class="tag">java</span>
+          <span class="tag">waf-bypass</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Xinyu Bai</strong> (iSafeBlue) and <strong>Zhihui Chen</strong> (Alibaba Cloud) named and systematized a bug class they call <strong>"Ghost Bits."</strong> Java's <code>char</code> is 16 bits, but a great deal of code casts characters to 8-bit <code>byte</code>s. That cast (or the equivalent <code>ch &amp; 0xff</code>) <strong>silently discards the high 8 bits</strong>. So a carefully chosen non-ASCII Unicode character, whose low byte equals a target ASCII code, <strong>collapses into that ASCII byte</strong> after the cast. The security consequence is a <strong>parser differential</strong>: a WAF, an allow-list, or a validator sees a harmless-looking Unicode string, while the component downstream, after the truncating cast, sees the real, dangerous ASCII. Bai showed this pattern reappearing across WAF evasion, path traversal, SQL injection, deserialization, SMTP injection, HTTP request smuggling, and CRLF/XSS, and across widely used libraries. The fix is narrow and clear: <strong>encode text to bytes with a real charset, never with a truncating cast.</strong></p>
+
+        <p>Post 02 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. Analysis-first, as ever: this explains the mechanism, the class of vulnerable code, and the defenses. It does not reproduce working payloads. The speakers' slides and the referenced CVE advisories carry the exploit detail.</p>
+
+        <h2 id="mechanism">1. The mechanism: 16 bits in, 8 bits out</h2>
+        <p>In Java, a <code>char</code> is a 16-bit unsigned unit holding a UTF-16 code unit. A <code>byte</code> is 8 bits. Converting a <code>char</code> to a <code>byte</code> is a <em>narrowing</em> conversion, and the language defines it to simply keep the low 8 bits and throw away the high 8. Formally, for a character with code point value \(c\) (in the Basic Multilingual Plane), the cast yields</p>
+        \[ \texttt{(byte)}\,c \;=\; c \bmod 256 \;=\; c \mathbin{\&} \texttt{0xFF}. \]
+        <p>For ASCII input (\(c &lt; 128\)) this is harmless: the high byte is already zero. The problem is the inverse. An attacker who wants the byte <code>0x2E</code> (an ASCII dot <code>.</code>) does not have to send a dot. They can send <em>any</em> Unicode character whose low byte is <code>0x2E</code>, for instance a CJK character at code point <code>U+4E2E</code>, because</p>
+        \[ \texttt{0x4E2E} \mathbin{\&} \texttt{0xFF} = \texttt{0x2E} = \texttt{'.'} . \]
+        <p>The high byte <code>0x4E</code> is the "ghost." It is visible to anything that looks at the character before the cast, and gone for everything after it. Bai's memorable framing: the ghost bits are "everywhere," because the truncating cast is everywhere.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="24" class="ink" text-anchor="middle">One character, two very different views</text>
+            <rect x="40" y="45" width="180" height="70" rx="8" class="boxy"/>
+            <text x="130" y="72" class="ink" text-anchor="middle">Attacker sends</text>
+            <text x="130" y="95" class="mono" text-anchor="middle">U+4E2E  (a CJK char)</text>
+            <rect x="250" y="45" width="180" height="70" rx="8" class="box"/>
+            <text x="340" y="66" class="ink" text-anchor="middle">WAF / validator sees</text>
+            <text x="340" y="88" class="sm" text-anchor="middle">"weird Unicode"</text>
+            <text x="340" y="104" class="sm" text-anchor="middle">no "." → looks safe ✓</text>
+            <rect x="460" y="45" width="180" height="70" rx="8" class="boxr"/>
+            <text x="550" y="66" class="ink" text-anchor="middle">after (byte) cast</text>
+            <text x="550" y="90" class="mono" text-anchor="middle">0x2E = '.'</text>
+            <text x="550" y="106" class="sm" text-anchor="middle">the real payload</text>
+            <path d="M220 80 L250 80" class="arr"/>
+            <path d="M430 80 L460 80" class="arr"/>
+            <rect x="150" y="160" width="380" height="60" rx="8" class="boxg"/>
+            <text x="340" y="185" class="ink" text-anchor="middle">high byte 0x4E is the "ghost bit"</text>
+            <text x="340" y="205" class="sm" text-anchor="middle">visible before the cast · gone after it · that gap is the bug</text>
+            <path d="M130 115 L300 160" class="arr"/>
+            <path d="M550 115 L400 160" class="arr"/>
+          </svg>
+          <p class="diagram-label">Fig. 1 — The Ghost Bits parser differential. Security controls inspect the character; the sink truncates it. They disagree about what the input is.</p>
+        </div>
+
+        <h3 id="discovery">1.1 How it was found</h3>
+        <p>Bai traces the discovery to a Burp Suite encoding oddity: testing a <code>request_uri</code> with Chinese characters, the characters came back as "weird bytes." The root cause was <code>DataOutputStream.writeBytes(String)</code>, whose documentation says plainly that it writes each character by <strong>discarding its high 8 bits</strong>. That method corrupts any non-ASCII string, and the corruption is deterministic and attacker-controllable. From that one method, the research generalized to a whole family of equivalent sinks.</p>
+
+        <h2 id="sinks">2. The sink class: many methods, one mistake</h2>
+        <p>The unifying idea is that a <em>sink</em> is any code that turns characters into bytes (or into a smaller value) by truncation rather than by a proper charset encoder. Bai's team built an auto-discovery tool, <strong>Secrux</strong>, that hunts for exactly these patterns. The list is worth internalizing, because recognizing it is most of the defense:</p>
+        <table class="papers">
+          <thead><tr><th>Pattern</th><th>Why it truncates</th></tr></thead>
+          <tbody>
+            <tr><td><code>(byte) ch</code></td><td>Language-defined narrowing: keeps low 8 bits</td></tr>
+            <tr><td><code>ch &amp; 0xff</code> / <code>0xff &amp; ch</code></td><td>Explicit low-byte mask</td></tr>
+            <tr><td><code>DataOutputStream.writeBytes(String)</code></td><td>Documented to discard high 8 bits per char</td></tr>
+            <tr><td><code>OutputStream.write(int)</code></td><td>Writes only the low 8 bits of the int</td></tr>
+            <tr><td><code>ByteArrayOutputStream.write(ch)</code></td><td>Same, when handed a char</td></tr>
+            <tr><td><code>RandomAccessFile.writeBytes(String)</code></td><td>Same truncation as DataOutputStream</td></tr>
+            <tr><td>Hand-rolled hex/base64/URL decoders</td><td>Often index a table with <code>value &amp; 0xff</code> or cast the result</td></tr>
+          </tbody>
+        </table>
+        <p>A related sibling is the <strong>lenient decoder</strong>. Some hand-written hex and URL decoders don't validate their input range. Bai showed that a decoder using bit tricks to map a hex digit into 0–15 can be fed a <em>non-hex</em> character and still produce a valid digit, because the same high-bit-stripping optimization "collapses" out-of-range characters into the valid range. That means an encoded escape can contain characters a WAF's regex will never match as hex, yet the server decodes them into the intended byte anyway.</p>
+
+        <div class="bm-note"><strong>Why this is a bug class, not a bug (my note).</strong> Every instance shares one shape: a security decision is made on the <em>character</em> representation, and the security-relevant behavior happens on the <em>byte</em> representation, with a lossy step in between. This is the same shape as classic Unicode-normalization and double-decoding bypasses, and as HTTP request smuggling. The lesson generalizes past Java: <strong>any time two components disagree about how to turn input into its canonical form, the gap between them is exploitable.</strong></p></div>
+
+        <h2 id="waf">3. The primary weapon: WAF and validator evasion</h2>
+        <p>The most direct use is defeating pattern-based security controls. A WAF or an allow-list inspects the request as text and looks for dangerous substrings: <code>Runtime</code>, <code>union select</code>, <code>@type</code>, <code>.jsp</code>, <code>../</code>, <code>class</code>. Ghost Bits lets an attacker write those tokens entirely in non-ASCII characters whose low bytes spell the token. The control sees none of its signatures and passes the request. The downstream parser truncates each character and reconstructs the exact malicious token. Bai walked through this shape against several ecosystems (conceptually, not as drop-in payloads):</p>
+        <ul>
+          <li><strong>SQL injection via JSON libraries.</strong> Jackson and Fastjson decode <code>\u</code> escapes and, in the affected paths, index a hex table with a masked value. A WAF sees exotic Unicode in a field; the deserializer resolves it to SQL keywords.</li>
+          <li><strong>Deserialization gadget triggers.</strong> The Fastjson <code>@type</code> marker that selects a class to instantiate can be smuggled through, because the <code>\u</code> and <code>\x</code> escape handlers reconstruct it after the WAF has looked away. The BCEL classloader path (which decodes an embedded class from a crafted string) has an equivalent truncating step.</li>
+          <li><strong>Path traversal.</strong> The <code>../</code> sequence can be expressed with full-width or ghost-bit characters that a filter doesn't recognize but a URL decoder collapses back to dots and slashes.</li>
+          <li><strong>File-upload extension checks.</strong> A multipart filename that a WAF reads as a benign extension can carry a ghost-bit character whose low byte turns it into an executable extension once the server's RFC2231 filename decoder truncates it.</li>
+        </ul>
+        <p>Bai also connected this to named CVEs where a ghost-bit spelling gives a <em>fresh</em> bypass of a patched or WAF-guarded issue: a GeoServer expression-injection flaw (CVE-2024-36401) and Spring4Shell-style binding, among others. The point is not any single CVE; it is that <strong>a signature-based defense that a truncating parser sits behind is, in principle, always bypassable this way.</strong></p>
+
+        <h2 id="auth">4. Beyond WAFs: authentication and traversal logic</h2>
+        <p>Ghost Bits also breaks application logic that isn't a WAF at all. The clearest case in the talk is <strong>Openfire's admin-console auth bypass (CVE-2023-32315)</strong>. Openfire's <code>AuthCheckFilter</code> keeps an exclusion list of paths that skip authentication and, historically, blacklisted the literal <code>..</code> and <code>%2e</code> path-traversal tokens. An older bypass used a UTF-16 <code>%u002e</code> dot that the filter didn't recognize but the underlying Jetty server did. Bai's contribution is that <strong>Jetty's low-level hex-conversion routine itself has ghost-bit behavior</strong>: its <code>convertHexDigit</code> optimization lacks strict range validation and forces non-hex characters into valid hex digits. So an escape built from characters that look like invalid encoding, "noise" to a filter, gets normalized by Jetty into a traversal dot.</p>
+        <p>He worked the arithmetic for why one particular non-hex character maps to the hex digit <code>E</code> under Jetty's routine: the function masks with <code>c &amp; 0x1f</code> and adds a term based on <code>c &gt;&gt; 6</code>, and for that character the high bits are stripped so the result lands on 14 (hex <code>E</code>). The security significance is comparative: the older <code>%u002e</code> spelling is <em>"extremely high"</em> WAF visibility (commonly blocked), while a ghost-bit spelling is <em>"extremely low"</em> visibility (looks like noise), and it works against any server whose hex decoder is "loose." A low-visibility spelling of an already-known bypass is often more dangerous in practice than a novel bug.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg">
+            <rect x="20" y="60" width="130" height="60" rx="8" class="boxy"/>
+            <text x="85" y="86" class="ink" text-anchor="middle">Attacker</text>
+            <text x="85" y="104" class="sm" text-anchor="middle">ghost-bit escape</text>
+            <rect x="185" y="60" width="130" height="60" rx="8" class="box"/>
+            <text x="250" y="82" class="ink" text-anchor="middle">Auth filter</text>
+            <text x="250" y="100" class="sm" text-anchor="middle">no blacklist hit ✓</text>
+            <rect x="350" y="60" width="130" height="60" rx="8" class="box"/>
+            <text x="415" y="82" class="ink" text-anchor="middle">Jetty decode</text>
+            <text x="415" y="100" class="sm" text-anchor="middle">collapses to ../</text>
+            <rect x="515" y="60" width="145" height="60" rx="8" class="boxr"/>
+            <text x="587" y="82" class="ink" text-anchor="middle">Admin resource</text>
+            <text x="587" y="100" class="sm" text-anchor="middle">served, unauth</text>
+            <path d="M150 90 L185 90" class="arr"/>
+            <path d="M315 90 L350 90" class="arr"/>
+            <path d="M480 90 L515 90" class="arr"/>
+          </svg>
+          <p class="diagram-label">Fig. 2 — The Openfire-style chain: the control and the decoder disagree, and the disagreement is the whole exploit.</p>
+        </div>
+
+        <h2 id="injection">5. The nastier variant: injecting control bytes (CRLF)</h2>
+        <p>The evasion cases smuggle <em>printable</em> tokens. The more serious variant smuggles <strong>control bytes</strong>, above all carriage-return and line-feed (<code>\r\n</code>). Many text protocols, SMTP, HTTP headers, Redis, use CRLF as a structural delimiter. If an attacker can inject a real <code>\r\n</code> into a field that a validator thought contained no line breaks, they can end one command or header and start another. Ghost Bits provides exactly that: Unicode characters whose low bytes are <code>0x0D</code> and <code>0x0A</code> pass any check that scans for literal CR/LF in the <em>character</em> string, then become genuine line breaks after a truncating write. Bai demonstrated the shape (conceptually) in several places:</p>
+        <ul>
+          <li><strong>SMTP injection (CVE-2025-7962, Angus Mail).</strong> A method assumed its input was pure ASCII and force-cast it. A ghost-bit <code>\r\n</code> in an email-address field lets an attacker terminate the current SMTP command and inject their own headers and body. Because Angus Mail is a foundational library, this cascaded into real products.</li>
+          <li><strong>Email-identity and domain-restriction bypass.</strong> Two case studies (Jira, CVE-2025-57733; and a Confluence-style registration flow) show the impact. In one, a registration or notification email is sent <em>from the product's real, authenticated address</em>, so it passes SPF, DKIM, and DMARC, but its body and recipient are attacker-controlled: a phishing email with perfect provenance. In the other, an app that only allows <code>@company.com</code> registrations is tricked because the validator checks the character string's suffix while the SMTP layer, after truncation, routes the confirmation to the attacker's mailbox.</li>
+          <li><strong>HTTP request smuggling &amp; CRLF/XSS.</strong> Older Apache HttpClient versions cast header character arrays to bytes when building requests, so a ghost-bit token in a request header could split one front-end request into two back-end requests. And a JDK <code>HttpServer</code> issue (CVE-2026-21933) that reflects unvalidated input into a response header enables header injection and reflected XSS by the same route.</li>
+        </ul>
+        <div class="bm-warn"><strong>Why the email cases are the scariest.</strong> The whole value of SPF/DKIM/DMARC is that a receiver can trust <em>where</em> a mail came from. A ghost-bit SMTP injection doesn't forge those signatures, it makes the <em>legitimate</em> server send attacker content, so the signatures are real. That turns any product which emails user-supplied addresses into a potential authenticated-phishing launcher. The affected field is often something as innocuous as a signup email address.</p></div>
+
+        <h2 id="library-sweep">6. The library sweep: Secrux and the long tail</h2>
+        <p>The talk closes by using Secrux to sweep real libraries for the sink patterns, and the hit list shows how broad the class is:</p>
+        <table class="papers">
+          <thead><tr><th>Library / component</th><th>Ghost-bit surface</th></tr></thead>
+          <tbody>
+            <tr><td>ActiveJ (HTTP)</td><td>Cookie/header write path, enabling CRLF</td></tr>
+            <tr><td>Lettuce (Redis client)</td><td><code>writeString</code> casts each char to a byte, enabling RESP protocol injection into commands</td></tr>
+            <tr><td>An XML writer</td><td>Tag/key names truncated, so a ghost-bit tag becomes a different, valid tag the parser accepts</td></tr>
+            <tr><td>Jodd (path handling)</td><td>A file URL with ghost-bit characters collapses to a sensitive path</td></tr>
+            <tr><td>JDK internal Base64 decoders</td><td><code>sun.misc.BASE64Decoder</code> and internal SAAJ/XML-security Base64 index their table with <code>&amp; 0xff</code>, so exotic Unicode decodes to attacker bytes</td></tr>
+          </tbody>
+        </table>
+        <p>Bai frames Ghost Bits as <strong>polymorphic</strong>: the same primitive expresses itself as XSS, SMTP injection, path traversal, WAF bypass, auth bypass, and request smuggling depending only on which sink and which downstream protocol it reaches. And he calls it an <strong>unknown attack surface</strong> with unexplored exploitation paths, that is, the talk is a starting point, not a catalog.</p>
+
+        <h2 id="defense">7. Defenses that actually work</h2>
+        <p>The good news is that, unlike many bug classes, this one has a crisp and cheap root-cause fix.</p>
+        <div class="bm-fix">
+          <p style="margin:0 0 8px"><strong>For developers, in order of leverage:</strong></p>
+          <ol style="margin:0">
+            <li><strong>Never turn text into bytes with a cast or a low-byte mask.</strong> Use an explicit charset encoder: <code>s.getBytes(StandardCharsets.UTF_8)</code>, a <code>Writer</code> wrapping an <code>OutputStreamWriter</code> with a named charset, or a real Base64/URL codec. Treat <code>(byte) ch</code>, <code>ch &amp; 0xff</code>, and <code>DataOutputStream.writeBytes(String)</code> as code smells in any code touching untrusted input.</li>
+            <li><strong>Validate after canonicalization, not before.</strong> Decode input to its final byte form <em>first</em>, then apply allow-lists and checks to that form. Validating the character string and acting on the byte string is the exact gap being exploited.</li>
+            <li><strong>Reject, don't coerce, out-of-range input.</strong> A hex or URL decoder that receives a non-hex character should error, not "collapse" it into a valid digit. Strict range validation closes the lenient-decoder variant.</li>
+            <li><strong>Constrain charsets at the boundary.</strong> If a field is defined as ASCII (an email local part, a header token), reject any code unit above <code>0x7F</code> outright rather than casting it.</li>
+          </ol>
+        </div>
+        <div class="bm-note">
+          <p style="margin:0 0 8px"><strong>For defenders and security vendors:</strong></p>
+          <ul style="margin:0">
+            <li><strong>Don't rely on a WAF as the only control</strong> for any input that reaches a Java parser with these sinks. Signature matching on the pre-truncation string is structurally defeatable. WAF vendors (Alibaba Cloud's WAF among them, per the talk) have shipped specific rules, but rule-based coverage is a mitigation, not a fix.</li>
+            <li><strong>Normalize before inspection.</strong> A control that decodes and canonicalizes input the same way the backend will, then inspects the result, removes the differential. This is the same lesson as HTTP request-smuggling defense: front and back must agree on parsing.</li>
+            <li><strong>Hunt the sink patterns in your own code and dependencies</strong> with a tool like Secrux or a targeted static-analysis rule. The auto-discovery angle matters because the vulnerable methods are so common that manual review misses them.</li>
+          </ul>
+        </div>
+
+        <details class="faq"><summary>Is this a Java language bug?</summary><p>No. The narrowing cast behaves exactly as specified; keeping the low 8 bits is the defined semantics. The bug is using that cast as if it were a charset encoder. The same class appears in any language where a wide character type is truncated to a byte without a real encoding step.</p></details>
+        <details class="faq"><summary>Does using UTF-8 everywhere prevent it?</summary><p>Encoding with a real UTF-8 encoder does, because a UTF-8 encoder turns <code>U+4E2E</code> into three bytes, not into <code>0x2E</code>. The vulnerability is specifically the <em>absence</em> of an encoder: a raw cast. So "use a charset" is the fix; "assume UTF-8" without actually encoding is not.</p></details>
+        <details class="faq"><summary>Why do WAFs struggle here specifically?</summary><p>Because a WAF inspects the request as characters and can't know which downstream sink will truncate which field. It would have to model every parser's canonicalization to see the real payload. Ghost Bits is one more case of the general rule that inspection and execution must share a canonical form.</p></details>
+        <details class="faq"><summary>How do I find these in a large codebase?</summary><p>Grep for the sink patterns in §2 as a start (<code>(byte)</code> near <code>char</code>, <code>&amp; 0xff</code>, <code>writeBytes(String)</code>, <code>OutputStream.write(</code> with a char), then triage which ones sit on an untrusted-input path. The talk's Secrux tool automates exactly this taint-to-sink search.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Ghost Bits = truncating a 16-bit <code>char</code> to an 8-bit <code>byte</code></strong>, so a chosen Unicode character becomes a chosen ASCII byte.</li>
+          <li>The security impact is a <strong>parser differential</strong>: the control sees safe Unicode, the sink sees the real payload.</li>
+          <li>It is a <strong>bug class with one shape</strong> and many faces: WAF bypass, SQLi, deserialization, traversal, auth bypass, SMTP injection, request smuggling, XSS.</li>
+          <li>The <strong>SMTP/email cases are the highest impact</strong>, because the legitimate server sends the attacker's content, so SPF/DKIM/DMARC all pass.</li>
+          <li>The <strong>fix is cheap and definitive</strong>: encode text to bytes with a real charset, validate after canonicalization, and reject out-of-range input instead of coercing it.</li>
+          <li>The sink methods are common enough that <strong>automated discovery (Secrux) matters more than manual review.</strong></li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — Briefings schedule</a> <span>— official session listing and slides.</span></li>
+          <li><a href="https://docs.oracle.com/javase/8/docs/api/java/io/DataOutputStream.html#writeBytes-java.lang.String-" target="_blank" rel="noopener">JDK docs — DataOutputStream.writeBytes</a> <span>— "each character ... is written out ... by discarding its high eight bits."</span></li>
+          <li><a href="https://nvd.nist.gov/vuln/detail/CVE-2023-32315" target="_blank" rel="noopener">CVE-2023-32315 — Openfire admin-console path-traversal auth bypass</a> <span>— the auth-filter/decoder differential.</span></li>
+          <li><a href="https://nvd.nist.gov/vuln/detail/CVE-2024-36401" target="_blank" rel="noopener">CVE-2024-36401 — GeoServer expression injection</a> <span>— a WAF-guarded RCE re-bypassed via ghost-bit spelling.</span></li>
+          <li><a href="https://nvd.nist.gov/vuln/detail/CVE-2025-41242" target="_blank" rel="noopener">CVE-2025-41242 — Spring path handling</a> <span>— the arbitrary-file-read case discussed in the talk.</span></li>
+          <li><a href="https://nvd.nist.gov/vuln/detail/CVE-2025-7962" target="_blank" rel="noopener">CVE-2025-7962 — Angus Mail SMTP injection</a> <span>— the foundational-library SMTP case.</span></li>
+          <li><a href="https://owasp.org/www-community/attacks/Unicode_Encoding" target="_blank" rel="noopener">OWASP — Unicode/encoding-based attacks</a> <span>— background on canonicalization differentials.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-aumasson-quantum-risk-roadmap.html">← prev: Quantum-risk roadmap</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

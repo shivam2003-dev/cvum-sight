@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Breaking the Illusion of Key Zeroization — How Your AES Keys Stay Alive — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Toyofumi Sawa and Kuniyasu Suzaki use FPGA-based live physical-memory scanning to show that AES keys are routinely NOT wiped after use — they survive abnormal process termination, get duplicated into kernel memory by vector-register context switches and core dumps, and persist across reboots on many systems. Why zeroization is a whole-stack problem, and who has to fix what.">
+<link rel="stylesheet" href="../style.css?v=88">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.92rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:9px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td.c{text-align:center;font-weight:700}
+  .yes{color:#6a8f5f}.no{color:#c96442}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10.5px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">Breaking the Illusion of Key Zeroization: How OS, Libraries, and Hardware Keep Your AES Keys Alive</p>
+        <p class="series-banner-meta">Talk 06 · Cryptography &amp; systems security · analysis from the speakers' published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-dfir-agent-prompt-injection.html">← prev: DFIR Agent Injection</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 23, 2026 · conferences · 10 min read · 1900 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Breaking the illusion of key zeroization — your AES keys don't disappear.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">cryptography</span>
+          <span class="tag">memory-forensics</span>
+          <span class="tag">systems</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Toyofumi Sawa</strong> and Professor <strong>Kuniyasu Suzaki</strong> (IISEC) attack a comfortable assumption: that once your software is done with a cryptographic key, the key is gone. "Zeroization", overwriting keys in memory after use, is required for defense-in-depth, forward secrecy, and certifications like FIPS 140-3. Using an <strong>FPGA that continuously scans physical DRAM</strong> (so it sees memory the OS can't hide), they show the assumption is often false. AES keys from OpenSSH, OpenSSL, Firefox, Chromium, Edge, and 7-Zip <strong>survive abnormal process termination</strong> (SIGKILL, SIGABRT), get <strong>silently duplicated into kernel memory</strong> by vector-register context switches and by crash-reporting core dumps, and on many systems <strong>persist across a reboot</strong>. Normal exit usually clears the key; almost nothing else does. The uncomfortable conclusion: zeroization is a whole-stack property, spanning application, library, OS, and hardware, and it cannot be verified from user space at all.</p>
+
+        <p>Post 06 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. Analysis-first: the research method, the findings, and the layered fixes. This is defensive systems research; there are no attack recipes to omit.</p>
+
+        <h2 id="why">1. Why zeroization matters, and the illusion around it</h2>
+        <p>The talk sets up with the familiar "encrypt everything" story: data <em>at rest</em> (BitLocker, FileVault, LUKS), data <em>in transit</em> (TLS, SSH, Signal), and increasingly data <em>in use</em> (confidential computing, SGX, SEV). All of it depends on keys, and a key that lingers in memory after use quietly undoes the encryption it was protecting. The team frames zeroization as required from three angles:</p>
+        <table class="papers">
+          <thead><tr><th>Perspective</th><th>Why residual keys hurt</th></tr></thead>
+          <tbody>
+            <tr><td>Defense in depth</td><td>Residual keys expand the attack surface; reliable zeroization reduces the chance a compromise turns into a decryption</td></tr>
+            <tr><td>Forward secrecy</td><td>If a key's lifetime is unknown, a later system compromise can expose <em>past</em> communications</td></tr>
+            <tr><td>Certification</td><td>Standards (FIPS 140-3) require zeroization of Sensitive Security Parameters</td></tr>
+          </tbody>
+        </table>
+        <p>Their pointed example: <em>"Ransomware without zeroization is not a threat."</em> If the ransomware encrypts your files but leaves the key in memory, you recover the key and the files. Zeroization is what makes the encryption stick, for attacker and defender alike.</p>
+        <p>The "illusion" is the set of things engineers assume handle zeroization automatically: <code>free()</code> clears memory, process exit removes secrets, reboot erases everything, "the OS takes care of it." The talk's thesis is that <strong>every one of those beliefs is unreliable</strong>, and you can only tell by looking at physical memory from outside the OS.</p>
+
+        <h2 id="method">2. The method: watching DRAM from an FPGA</h2>
+        <p>The measurement approach is what makes the results trustworthy. Zeroization <em>cannot be examined from user space</em>, because the OS holds copies of a process's state (in kernel buffers, saved register contexts, page caches) that user code can't inspect. So the team observes memory from <em>below</em> the OS:</p>
+        <ul>
+          <li>An <strong>SoC FPGA</strong> (a Xilinx KR260) with a custom core, <strong>Periodic-AESKeyFinder</strong>, continuously scans physical DRAM over the memory bus, roughly one full pass of 8 GB every ~2 seconds.</li>
+          <li>It reuses the well-known <strong>AESKeyFinder</strong> forensic technique (famous from the cold-boot-attack research), which locates AES keys by recognizing the structure of an expanded AES <em>key schedule</em> in memory. The team's tweak is <strong>partial key-schedule matching</strong>, so it can spot keys even when only part of the schedule is present.</li>
+          <li>They also test PCIe and Thunderbolt DMA setups against Intel desktops and laptops, so the results span architectures (x86-64 and AArch64) and platforms.</li>
+        </ul>
+        <p>Because the scanner lives on hardware with direct memory access, it sees keys "beyond OS control", exactly the copies the illusion assumes don't exist.</p>
+
+        <h2 id="questions">3. Four questions, four uncomfortable answers</h2>
+        <table class="papers">
+          <thead><tr><th>RQ</th><th>Question</th><th>Finding</th></tr></thead>
+          <tbody>
+            <tr><td>RQ1</td><td>On <em>normal</em> process termination, are user-space keys zeroized?</td><td>Usually yes (the ✓ column) — the one case that mostly works</td></tr>
+            <tr><td>RQ2</td><td>On <em>abnormal</em> termination (SIGKILL, SIGABRT, SIGTERM, core), are they zeroized?</td><td>Almost never — keys remain</td></tr>
+            <tr><td>RQ3</td><td>Are keys duplicated into memory the process can't read/write?</td><td>Yes — via context switches and core dumps</td></tr>
+            <tr><td>RQ4</td><td>Do residual keys persist after a reboot?</td><td>Often yes, depending on OS/platform</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="rq2">3.1 Abnormal termination leaves keys behind (RQ1/RQ2)</h3>
+        <p>Across a matrix of applications, libraries, OSes, and architectures, the pattern is stark. On <strong>normal exit</strong>, keys are cleared for almost everything tested (OpenSSH/OpenSSL, Firefox/NSS, Chromium/BoringSSL, Edge/Schannel). On <strong>SIGKILL and other forced terminations</strong>, keys are left in user space in essentially every case. The reason is simple and general: normal exit runs the library's cleanup paths (destructors, <code>atexit</code> handlers, explicit wipes), while a forced kill runs none of them, the process just stops, and whatever was in its memory stays there until those physical pages are reused. A telling detail: <strong>7-Zip left keys in memory even on normal exit</strong>, so "clean shutdown clears keys" isn't even universally true.</p>
+        <div class="bm-warn"><strong>Why this is the practically important finding.</strong> Attackers and crash conditions don't send SIGTERM and wait politely. A process that is OOM-killed, force-quit, or crashed is exactly the state an incident responder or an attacker finds it in, and that is precisely the state where zeroization fails. The one case that works (graceful exit) is the one an adversary won't give you.</p></div>
+
+        <h3 id="rq3">3.2 Keys duplicate into places the process can't touch (RQ3)</h3>
+        <p>This is the most subtle result, and the one with the clearest "not the app's fault" character. Even a perfectly-behaved application that wipes its own key buffer can have the key copied elsewhere by the system:</p>
+        <ul>
+          <li><strong>Vector-register context switches.</strong> AES implementations keep round keys in the CPU's wide vector registers (AES-NI / NEON). When the OS preempts the thread, it <em>saves those registers into kernel memory</em> and loads the next thread's. The team directly observed keys duplicated into kernel space this way. The application never asked for that copy, can't see it, and can't wipe it, it lives in the kernel's saved-context area.</li>
+          <li><strong>Core dumps.</strong> When a process crashes, crash-reporting tools duplicate its memory, including keys, into a dump file, which may then be transmitted externally (the "crash report leakage" scenario).</li>
+        </ul>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 180" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="22" class="ink" text-anchor="middle">Key duplication via vector-register context switch</text>
+            <rect x="20" y="55" width="170" height="70" rx="8" class="boxy"/>
+            <text x="105" y="80" class="lbl" text-anchor="middle">Running thread</text>
+            <text x="105" y="100" class="sm" text-anchor="middle">round keys in vregs</text>
+            <rect x="255" y="55" width="170" height="70" rx="8" class="boxr"/>
+            <text x="340" y="80" class="lbl" text-anchor="middle">Kernel (on interrupt)</text>
+            <text x="340" y="98" class="sm" text-anchor="middle">saves vregs → kernel mem</text>
+            <text x="340" y="113" class="sm" text-anchor="middle">= a copy of the key</text>
+            <rect x="490" y="55" width="170" height="70" rx="8" class="box"/>
+            <text x="575" y="80" class="lbl" text-anchor="middle">Next thread</text>
+            <text x="575" y="100" class="sm" text-anchor="middle">its vregs loaded</text>
+            <path d="M190 90 L255 90" class="arr"/>
+            <path d="M425 90 L490 90" class="arr"/>
+            <text x="340" y="150" class="sm" text-anchor="middle">the app wiped its own buffer — but the kernel's saved copy remains, unreachable from user space</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — The application can zeroize its own memory and still leak the key, because the OS copied it out of the registers during a context switch.</p>
+        </div>
+
+        <h3 id="rq4">3.3 Some keys survive a reboot (RQ4)</h3>
+        <p>The last result breaks the "reboot erases everything" belief. Whether keys survive depends heavily on OS build and platform:</p>
+        <table class="papers">
+          <thead><tr><th>Environment</th><th>Warm boot</th><th>After kernel crash</th><th>Reset switch</th></tr></thead>
+          <tbody>
+            <tr><td>Linux (Xilinx Zynq SoC)</td><td class="c no">✘</td><td class="c no">✘</td><td class="c no">✘</td></tr>
+            <tr><td>Linux 5.15 FIPS (Intel)</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+            <tr><td>Linux 6.8 generic (Intel)</td><td class="c no">✘</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+            <tr><td>Linux 6.8 generic (AMD)</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+            <tr><td>Windows 11 FIPS (Intel)</td><td class="c no">✘</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+            <tr><td>Windows 11 (Intel)</td><td class="c no">✘</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+          </tbody>
+        </table>
+        <p>(✓ = keys cleared / not found after the event; ✘ = keys still present.) The takeaways the team draws:</p>
+        <ul>
+          <li><strong>FIPS-compliant Linux zeroizes on reboot</strong>, generic builds often don't, on a warm boot the memory controller may not clear DRAM, so the previous contents survive into the next boot.</li>
+          <li>PCs generally <strong>do</strong> clear memory after a kernel crash or a hardware reset, but a plain warm reboot is the weak case.</li>
+          <li>The <strong>SoC keeps keys even after a reset</strong>, embedded platforms are the worst offenders, which matters for the growing pile of ARM-based edge and IoT devices doing crypto.</li>
+        </ul>
+
+        <h2 id="responsibility">4. Whose job is it? Every layer's</h2>
+        <p>The paper's organizing insight is that <strong>key lifetime is an emergent property of interactions across layers</strong>, so no single owner can guarantee it. The failures map cleanly onto the stack:</p>
+        <table class="papers">
+          <thead><tr><th>Layer</th><th>Failure mode</th></tr></thead>
+          <tbody>
+            <tr><td>Application</td><td>Missing signal handlers (no wipe on abnormal exit); core dumps include key pages</td></tr>
+            <tr><td>Crypto library</td><td>Round keys left in registers / temporary buffers after operations</td></tr>
+            <tr><td>Operating system</td><td>Lazy page zeroization; key duplication via saved register contexts; no wipe on SIGKILL</td></tr>
+            <tr><td>Hardware / platform</td><td>No memory zeroization on warm reboot (esp. SoCs)</td></tr>
+          </tbody>
+        </table>
+        <p>Because the copy that leaks (the kernel's saved vector-register context) is created by a layer <em>below</em> the one that owns the key (the application), a perfectly-written app cannot close it. That is the core argument for why this must be tackled as a system, not patched app by app.</p>
+
+        <h2 id="mitigations">5. Recommendations, by role</h2>
+        <div class="bm-fix">
+          <p style="margin:0 0 8px"><strong>Application developers:</strong> implement signal-handler zeroization so keys are wiped on abnormal termination too, and exclude sensitive pages from core dumps (e.g. <code>madvise(MADV_DONTDUMP)</code> on the key region).</p>
+          <p style="margin:0 0 8px"><strong>Library developers:</strong> zeroize temporary key material left in registers and scratch buffers immediately after each cryptographic operation, not just the long-lived key object.</p>
+          <p style="margin:0 0 8px"><strong>OS developers:</strong> zeroize the kernel memory that stores saved register contexts when a process exits, and implement zeroization for SIGKILL (the case nothing currently handles).</p>
+          <p style="margin:0 0 8px"><strong>System managers:</strong> disable core dumps for services holding keys, and configure crash-reporting tools not to transmit dumps externally.</p>
+          <p style="margin:0 0 8px"><strong>Hardware/platform vendors:</strong> document memory-zeroization behavior on reboot clearly, so integrators know whether a warm boot clears DRAM.</p>
+          <p style="margin:0"><strong>Certification testers:</strong> understand these cross-layer issues and require vendors to document how their platforms actually behave, rather than assuming a library-level wipe is sufficient.</p>
+        </div>
+
+        <details class="faq"><summary>Doesn't calling a secure-wipe function (memset_s, OPENSSL_cleanse) solve this?</summary><p>It solves the application-buffer case on the paths where it runs. It does nothing for (a) abnormal termination that never reaches the wipe, (b) copies the OS made in saved register contexts, or (c) core dumps taken before the wipe. Those are exactly the cases the FPGA caught. The wipe is necessary but not sufficient.</p></details>
+        <details class="faq"><summary>Is confidential computing (SGX/SEV) affected?</summary><p>The talk frames "data in use" encryption as the motivation, and the same discipline applies: even inside an enclave, keys can be duplicated by the mechanisms studied unless the platform guarantees otherwise. The general lesson, verify zeroization by observing memory, not by trusting the API, holds regardless of the confidential-computing marketing.</p></details>
+        <details class="faq"><summary>Why does a warm reboot leave keys but a hardware reset clears them?</summary><p>On a warm reboot the DRAM is often not re-initialized by the memory controller, so its contents survive into the next boot. A hardware reset or power cycle is more likely to trigger memory training/clearing. This is platform-dependent, which is exactly why the team asks vendors to document it.</p></details>
+        <details class="faq"><summary>How would I check my own system?</summary><p>You need out-of-band memory access (DMA over PCIe/Thunderbolt, or an FPGA on the bus) plus an AES-key-schedule scanner. The team's Periodic-AESKeyFinder is open source. From inside the OS you fundamentally cannot see the kernel-side copies, which is the whole point.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Zeroization mostly works on graceful exit and mostly fails everywhere else</strong>, abnormal termination leaves keys in user space almost universally.</li>
+          <li><strong>Keys duplicate into kernel memory</strong> via vector-register context switches and into core dumps, places the owning application cannot wipe.</li>
+          <li><strong>Keys can survive a warm reboot</strong>, especially on non-FIPS builds and embedded SoCs; hardware reset and kernel crash more reliably clear DRAM.</li>
+          <li><strong>It's a whole-stack property.</strong> A perfect application can't fix a copy the kernel made. App, library, OS, and hardware each own part of the fix.</li>
+          <li><strong>You can only verify it by observing physical memory</strong> from below the OS, an FPGA/DMA scanner, not a user-space check.</li>
+          <li>Concrete fixes exist per layer: signal-handler wipes, no-dump key pages, register/scratch wiping, kernel context zeroization, SIGKILL handling, and documented reboot behavior.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — Briefings schedule</a> <span>— official session listing and slides.</span></li>
+          <li><a href="https://github.com/Tyojan/Periodic-AESKeyFinder" target="_blank" rel="noopener">Periodic-AESKeyFinder (GitHub)</a> <span>— the FPGA-based live memory scanner from the talk.</span></li>
+          <li><a href="https://citp.princeton.edu/our-work/memory/" target="_blank" rel="noopener">Cold Boot Attacks / lest-we-remember</a> <span>— the original AESKeyFinder and DRAM-remanence research this builds on.</span></li>
+          <li><a href="https://csrc.nist.gov/pubs/fips/140-3/final" target="_blank" rel="noopener">FIPS 140-3</a> <span>— the standard requiring zeroization of Sensitive Security Parameters.</span></li>
+          <li><a href="../series-pqc.html">cvam.sight — Post-Quantum Cryptography course</a> <span>— key management and implementation-security background.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-dfir-agent-prompt-injection.html">← prev: DFIR Agent Injection</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

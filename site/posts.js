@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-key-zeroization-illusion",
+    title: "Breaking the illusion of key zeroization — your AES keys don't disappear.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "cryptography", "memory-forensics", "systems"],
+    time: 10,
+    words: 1900,
+    excerpt: "Black Hat Asia 2026, talk 06. Toyofumi Sawa and Kuniyasu Suzaki (IISEC) use an FPGA that continuously scans physical DRAM to show AES keys are routinely NOT wiped after use: they survive abnormal process termination (SIGKILL/SIGABRT), get silently duplicated into kernel memory by vector-register context switches and crash-report core dumps, and persist across warm reboots on many systems. Zeroization is a whole-stack property that can't be verified from user space — with concrete fixes for app, library, OS, and hardware developers.",
+    series: "blackhat-asia-2026",
+    seriesNum: "06"
+  },
+  {
     slug: "bhas26-dfir-agent-prompt-injection",
     title: "The dark side of autonomy — when the evidence attacks the investigator.",
     date: "Sep 23, 2026",

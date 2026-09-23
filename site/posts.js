@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-auth-reflection-unicode-bypass",
+    title: "The gift that keeps on giving — one Windows patch, three ways around it.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "active-directory", "ntlm-kerberos", "windows"],
+    time: 11,
+    words: 2233,
+    excerpt: "Black Hat Asia 2026, talk 07. Guillaume André (Synacktiv) applies a generic patch-bypass methodology to Microsoft's CVE-2025-33073 authentication-reflection fix and turns it into a chain of new SYSTEM-shell CVEs. The standout: a Unicode homoglyph makes a DNS record and a service principal name collide under Active Directory's case-insensitive sort keys while staying distinct under the DNS client's loopback check — a normalization differential that rebuilds a Kerberos coercion primitive. Why SMB signing on loopback is the real fix, and why killing NTLM doesn't kill relay.",
+    series: "blackhat-asia-2026",
+    seriesNum: "07"
+  },
+  {
     slug: "bhas26-key-zeroization-illusion",
     title: "Breaking the illusion of key zeroization — your AES keys don't disappear.",
     date: "Sep 23, 2026",

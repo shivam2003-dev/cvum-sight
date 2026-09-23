@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Gift That Keeps On Giving — Bypassing Windows Authentication-Reflection Mitigations — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Guillaume André (Synacktiv) walks a generic patch-bypass methodology that turned one Windows authentication-reflection fix (CVE-2025-33073) into a chain of new SYSTEM-shell CVEs. The clever core: a Unicode homoglyph makes a DNS record and an SPN collide under Windows' case-insensitive sort keys, rebuilding a Kerberos coercion primitive. Why SMB signing on loopback is the real fix.">
+<link rel="stylesheet" href="../style.css?v=88">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  table.papers td code{background:rgba(148,138,120,.16);padding:1px 5px;border-radius:3px;font-size:.85em}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:#2a2620}
+  svg .mono{font-family:monospace;font-size:12px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10.5px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">The Gift That Keeps on Giving: Bypassing Authentication Reflection Mitigations for SYSTEM Shells</p>
+        <p class="series-banner-meta">Talk 07 · Windows &amp; Active Directory security · analysis from the speaker's published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-key-zeroization-illusion.html">← prev: Key Zeroization</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 23, 2026 · conferences · 11 min read · 2233 words <span class="difficulty expert">expert</span></p>
+        <h1>The gift that keeps on giving — one Windows patch, three ways around it.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">active-directory</span>
+          <span class="tag">ntlm-kerberos</span>
+          <span class="tag">windows</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Guillaume André</strong> (Synacktiv) tells a patch-bypass story that is really a lesson in how to read a fix. Microsoft patched <strong>CVE-2025-33073</strong>, an authentication-reflection bug giving authenticated remote-code-execution as <code>NT AUTHORITY\SYSTEM</code>. André applies a simple, repeatable methodology, <em>understand exactly what the patch blocks, then find an attack path the patch's assumption doesn't cover</em>, and turns the single fix into a chain of new SYSTEM-shell vulnerabilities. The standout technique: a <strong>Unicode homoglyph</strong> that makes a DNS record and a service principal name (SPN) <em>collide</em> under Windows' case-insensitive sort-key comparison, while remaining <em>distinct</em> under the exact comparison the DNS client uses to avoid resolving its own name. That single mismatch rebuilds a Kerberos coercion primitive from scratch. The saga ends with Microsoft <strong>enforcing SMB signing on loopback connections</strong>, the real structural fix, but the underlying Unicode coercion primitive survives against other services (SCCM, MSSQL).</p>
+
+        <p>Post 07 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. This is a dense Active-Directory topic; I've kept it analysis-first, explaining the primitives and the reasoning rather than reproducing attack commands. The speaker's slides carry the operational detail.</p>
+
+        <h2 id="reflection">1. Authentication reflection, in one picture</h2>
+        <p><strong>Authentication reflection</strong> is a family of Windows attacks with a simple shape:</p>
+        <ol>
+          <li><strong>Coerce</strong> a privileged service on a machine into authenticating (via NTLM or Kerberos) to a server the attacker controls.</li>
+          <li><strong>Relay</strong> that authentication <em>back to a service on the same machine</em>, so the attacker is now authenticated <em>as the privileged client</em>, typically <code>SYSTEM</code>.</li>
+        </ol>
+        <p>If you can reflect a <code>SYSTEM</code> service's authentication back onto SMB, you get a privileged SMB session and, from there, code execution. Historically this was hard: NTLM reflection has had mitigations for years, and Kerberos reflection is awkward because Kerberos ties authentication to <em>domain names</em>, not arbitrary IPs, so you can't just point a victim at your box.</p>
+
+        <h2 id="cve33073">2. CVE-2025-33073 and the trick behind it</h2>
+        <p>CVE-2025-33073 (reported by several researchers, Synacktiv among them) was a "trivial logical vulnerability" giving authenticated RCE, and it used one trick to achieve <em>both</em> NTLM and Kerberos reflection. The trick, building on James Forshaw's research, is the <strong>CREDENTIAL_TARGET_INFORMATION (CMTI) marshalling</strong>: a marshalled target-info structure can be appended to an SPN, and LSASS discards it when building the authentication blob, but only <em>after</em> the TCP connection is made. So a target like <code>CIFS/srv1&lt;marshalled-blob&gt;</code> yields an authentication blob for <code>CIFS/srv1</code>, while the ugly full string is a <em>valid DNS record</em> the attacker can register and point at their own server.</p>
+        <p>Net effect: the machine <em>thinks</em> it is authenticating locally (to <code>srv1</code>), but the connection goes to the attacker, who relays it back to <code>srv1</code>'s SMB service and runs commands as <code>SYSTEM</code>. It works because when the target is the machine's own hostname/FQDN/localhost/local-IP, Windows uses a <em>local-authentication</em> variant (NTLM copies the client token into the server context; Kerberos matches a subkey stored in both the AP-REQ and LSASS).</p>
+
+        <h3 id="patch1">2.1 The patch, and why it was insufficient</h3>
+        <p>Microsoft's fix added a check in the SMB client (<code>mrxsmb!SmbCeCreateSrvCall</code>): if the target name contains marshalled target information, abort. That kills the <em>CMTI trick in the SMB client</em>, and nothing more. André's whole talk is about the words "and nothing more."</p>
+
+        <h2 id="methodology">3. A generic patch-bypass methodology</h2>
+        <p>The reusable method is disarmingly simple, and worth internalizing as a defender because it is exactly how a patch gets defeated:</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 160" xmlns="http://www.w3.org/2000/svg">
+            <rect x="15" y="55" width="150" height="55" rx="8" class="boxg"/>
+            <text x="90" y="78" class="lbl" text-anchor="middle">1. Understand</text>
+            <text x="90" y="95" class="sm" text-anchor="middle">exactly what it blocks</text>
+            <rect x="190" y="55" width="150" height="55" rx="8" class="boxy"/>
+            <text x="265" y="78" class="lbl" text-anchor="middle">2. Enumerate</text>
+            <text x="265" y="95" class="sm" text-anchor="middle">ideas it doesn't cover</text>
+            <rect x="365" y="55" width="150" height="55" rx="8" class="box"/>
+            <text x="440" y="78" class="lbl" text-anchor="middle">3. Assess</text>
+            <text x="440" y="95" class="sm" text-anchor="middle">feasible? default-config?</text>
+            <rect x="540" y="55" width="130" height="55" rx="8" class="boxr"/>
+            <text x="605" y="78" class="lbl" text-anchor="middle">4. Build</text>
+            <text x="605" y="95" class="sm" text-anchor="middle">the selected path</text>
+            <path d="M165 82 L190 82" class="arr"/>
+            <path d="M340 82 L365 82" class="arr"/>
+            <path d="M515 82 L540 82" class="arr"/>
+          </svg>
+          <p class="diagram-label">Fig. 1 — The bypass loop. The critical realization for CVE-2025-33073: the patch only addresses the CMTI trick in the <em>SMB client</em>. Everything else, other client protocols, other coercion targets, other coercion primitives, is untouched.</p>
+        </div>
+        <p>André maps the option space: use other client protocols (RPC/DCOM needs integrity, HTTP's WebClient isn't installed by default), or play with the coercion target (coerce to localhost for local privilege escalation; find a way to change the target port; or <strong>find a new Kerberos coercion primitive</strong>). Two branches paid off.</p>
+
+        <h2 id="local">4. Bypass #1 — local reflection via SMB custom port + multiplexing (CVE-2026-24294)</h2>
+        <p>For a <em>local privilege escalation</em>, the idea is to force a privileged service to authenticate over SMB to <code>localhost</code> on a custom port the attacker controls, because a localhost target triggers NTLM local authentication. Two Windows features combine to make it work:</p>
+        <ul>
+          <li><strong>SMB client custom ports.</strong> Since Windows 11 24H2 / Server 2025, the SMB client can connect to a user-defined port (<code>net use \\localhost\share /tcpport:...</code>), available to a low-privileged user by default.</li>
+          <li><strong>SMB session multiplexing.</strong> Per MS-SMB2, multiple authenticated <em>sessions</em> can be multiplexed over one TCP <em>connection</em>, and the Windows client reuses connections. This sidesteps the constraint that a coercion doesn't let you choose the target port and that <code>net use</code> only affects your own logon session: the privileged service's coerced authentication rides the attacker's already-established connection to the custom-port listener.</li>
+        </ul>
+        <p>The result is a low-privileged user reflecting a <code>SYSTEM</code> service's SMB authentication back to the local SMB service, fixed as <strong>CVE-2026-24294</strong>, and working by default on Server 2025 (which doesn't enforce SMB signing).</p>
+
+        <h2 id="unicode">5. Bypass #2 — the Unicode SPN collision (CVE-2025-58726)</h2>
+        <p>This is the clever core of the talk. The goal is a <em>new Kerberos coercion primitive</em>: a target name that is (a) <em>different</em> from the machine's own name, so the DNS client actually resolves it (and the attacker can point it at their server), yet (b) <em>maps to one of the machine's SPNs</em>, so the domain controller issues a service ticket for the real machine. That's an alternative to the now-blocked CMTI trick.</p>
+
+        <h3 id="sortkeys">5.1 Why a homoglyph collides</h3>
+        <p>Active Directory stores everything in the <code>ntds.dit</code> database (ESE / B-trees). Because Windows is largely case-insensitive, searches use <strong>sort keys</strong> generated by <code>LCMapStringEx</code> with the <code>LCMAP_SORTKEY</code> flag. When AD builds a search key for an SPN, it passes flags <code>0x31403</code>, which include <code>NORM_IGNORECASE</code>, <code>NORM_IGNOREWIDTH</code>, <code>NORM_IGNORENONSPACE</code>, <code>NORM_IGNOREKANATYPE</code>. Under those normalization flags, an ordinary letter and a chosen Unicode look-alike (a homoglyph, e.g. a circled or styled variant of "R") <strong>produce the identical sort key</strong>. So <code>SRV1</code> and its homoglyph twin map to the same account, and a Kerberos TGS request for the twinned SPN returns a service ticket for the real <code>SRV1</code> machine.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 170" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="ink" text-anchor="middle">Same sort key, different string — the whole bug in one line</text>
+            <rect x="60" y="45" width="240" height="45" rx="8" class="boxy"/>
+            <text x="180" y="72" class="mono" text-anchor="middle">homoglyph SⓇV1</text>
+            <rect x="380" y="45" width="240" height="45" rx="8" class="box"/>
+            <text x="500" y="72" class="mono" text-anchor="middle">real SRV1</text>
+            <rect x="180" y="115" width="320" height="40" rx="8" class="boxr"/>
+            <text x="340" y="140" class="sm" text-anchor="middle">LCMapStringEx(…, 0x31403) → identical sort key</text>
+            <path d="M180 90 C 250 110, 300 112, 330 115" class="arr"/>
+            <path d="M500 90 C 430 110, 380 112, 350 115" class="arr"/>
+          </svg>
+          <p class="diagram-label">Fig. 2 — AD's normalization flags make the homoglyph and the real name search-equal, so the DC issues a ticket for the real machine. But other comparisons in the stack normalize <em>differently</em> — and that inconsistency is the exploit.</p>
+        </div>
+
+        <h3 id="inconsistency">5.2 The exploit is a normalization inconsistency</h3>
+        <p>Here is the elegant part, and the reason this belongs in the same family as the other "two components disagree" talks in this series. Several Windows components compare strings, but with <em>different</em> normalization:</p>
+        <table class="papers">
+          <thead><tr><th>Component</th><th>Comparison used</th><th>Consequence</th></tr></thead>
+          <tbody>
+            <tr><td>AD SPN search (<code>ntds.dit</code>)</td><td>sort key with full normalization (<code>0x31403</code>)</td><td>homoglyph SPN = real SPN → DC issues a ticket for the machine</td></tr>
+            <tr><td>DNS record uniqueness</td><td>same sort-key search</td><td>a plain homoglyph collides with the existing record → can't register it as-is</td></tr>
+            <tr><td>DNS client loopback check (<code>dnsapi!Query_MatchAndGetLocalMachine</code>)</td><td><code>CompareStringW</code> with only <code>NORM_IGNORECASE</code></td><td>homoglyph ≠ machine name → the client <em>does</em> resolve it (doesn't treat it as "self")</td></tr>
+          </tbody>
+        </table>
+        <p>So the attacker needs a name that is simultaneously: search-equal to a machine SPN (so the DC cooperates), <em>not</em> search-equal to the existing DNS record (so it can be registered), and <em>not</em> loopback-equal to the machine name under the weaker DNS-client comparison (so it gets resolved to the attacker's server). Because the different components normalize differently, such a name <em>exists</em>. André finds candidates using homoglyphs plus Unicode variants of the dots in the FQDN, threading all three constraints. Registering that record and coercing against it rebuilds Kerberos reflection, RCE as <code>SYSTEM</code> once again. It was fixed as <strong>CVE-2025-58726</strong>.</p>
+
+        <div class="bm-note"><strong>The pattern, again.</strong> This is the Active-Directory instance of the theme running through <a href="bhas26-ghost-bits-cast-attack.html">Ghost Bits</a>, <a href="bhas26-intentguard-iac-semantics.html">IntentGuard</a>, and <a href="bhas26-dfir-agent-prompt-injection.html">the DFIR-agent talk</a>: a security decision assumes one canonical form of an identifier, and different parts of the system canonicalize it inconsistently. Unicode is a rich source of these because "equal" has many definitions (case, width, combining marks, homoglyphs) and different code paths pick different ones. Orange Tsai's prior work on Windows charset conversion is cited as kindred research.</p></div>
+
+        <h2 id="loopback">6. Bypass #3 — Kerberos loopback via relay forwarding (CVE-2026-26128)</h2>
+        <p>After the October patch, the SMB service (<code>srv2.sys</code>) started rejecting <em>local</em> authentication that arrives from a <em>remote</em> IP. André's next move (with a bigger prerequisite: a "ghost" SPN or the ability to add an SPN to the machine account) is to make the authentication genuinely originate from a local IP by having the attacker <em>forward</em> the relayed AP-REQ so it re-enters the machine locally, defeating the "must come from a local IP" check while the Kerberos loopback subkey still matches. Fixed as <strong>CVE-2026-26128</strong>; works by default on non-Windows-11 versions (Windows 11 enforces SMB signing, which blocks it).</p>
+
+        <h2 id="realfix">7. The real fix: sign loopback SMB</h2>
+        <p>Both of the later vulnerabilities were ultimately closed with the same structural change: a check in <code>srv2!Smb2ExecuteNegotiateReal</code> that <strong>requires signing on loopback SMB connections</strong>. Relaying breaks when the session must be signed, because the attacker can't forge the signature. Two caveats the talk stresses:</p>
+        <ul>
+          <li>The behavior is gated by a registry value (<code>RequireSecuritySignatureForLoopback</code>, default 1). <strong>Set it to 0 and the vulnerabilities come back.</strong></li>
+          <li>This fixes <em>the SMB service</em> in its default configuration. <strong>The Kerberos coercion primitive itself, the Unicode homoglyph, still works</strong> against other services that don't enforce channel binding or signing.</li>
+        </ul>
+        <div class="bm-warn"><strong>The bonus that matters most operationally.</strong> André shows the surviving Kerberos coercion primitive applied to <strong>SCCM's AdminService</strong>: since SCCM 2509 rejects NTLM, defenders may assume relay is dead there, but a standard user can compromise an SCCM install by default via <em>Kerberos</em> reflection/relay through the AdminService. The same likely applies to MSSQL. The lesson: killing NTLM does not kill relay if Kerberos coercion is still possible and the target doesn't enforce channel binding.</p></div>
+
+        <h2 id="defense">8. Defensive takeaways</h2>
+        <div class="bm-fix">
+          <ul style="margin:0">
+            <li><strong>Enforce SMB signing everywhere, and never set <code>RequireSecuritySignatureForLoopback</code> to 0.</strong> Windows 11's default-on signing is why it resisted several of these; bring the rest of your estate to that bar.</li>
+            <li><strong>Enforce channel binding (EPA) on HTTP/LDAP/MSSQL services</strong> that can be relay targets. For SCCM's AdminService, where channel binding can't yet be enforced, <strong>filter inbound traffic to the AdminService and outbound traffic from the primary site server</strong>.</li>
+            <li><strong>Don't treat "NTLM disabled" as "relay-proof."</strong> Kerberos coercion primitives exist; a service that only rejects NTLM is still exposed if it doesn't bind the channel.</li>
+            <li><strong>Restrict DNS record creation.</strong> Authenticated users can add DNS records by default, which is a precondition for these coercion tricks. Constrain who can create records where feasible.</li>
+            <li><strong>Patch promptly and completely.</strong> This whole chain exists because the first fix was scoped narrowly. Assume adversaries read patches the way André does.</li>
+          </ul>
+        </div>
+
+        <details class="faq"><summary>Is this exploitable by a normal domain user?</summary><p>Several links in the chain work by default for a standard authenticated user (registering a DNS record is allowed by default; SMB custom ports are low-priv). Some later variants need a bigger prerequisite (a ghost SPN or the ability to add an SPN). The SCCM bonus is explicitly "any SCCM installation compromised by default with a standard user account."</p></details>
+        <details class="faq"><summary>Why does a Unicode look-alike defeat the check?</summary><p>Because AD's SPN search and the DNS client's loopback check normalize strings with <em>different</em> flags. Under AD's full normalization the homoglyph equals the real name (so the DC issues a ticket for the machine); under the DNS client's weaker case-only comparison it does <em>not</em> equal the machine name (so it gets resolved to the attacker). The gap between the two normalizations is the bug.</p></details>
+        <details class="faq"><summary>Does enforcing SMB signing fully solve it?</summary><p>It solves reflection <em>to the SMB service</em> in the default configuration, which is the highest-impact target. It does not remove the Kerberos coercion primitive, which still threatens other services (SCCM, likely MSSQL) that don't enforce channel binding. Defense has to cover those separately.</p></details>
+        <details class="faq"><summary>What's the single most important control?</summary><p>SMB signing enforced (including on loopback), plus channel binding on your web/DB relay targets. Together they remove the "relay the authentication somewhere useful" step that every variant depends on.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Authentication reflection = coerce a privileged service to authenticate, relay it back locally as <code>SYSTEM</code>.</strong> The 2025 fix blocked only one narrow trick.</li>
+          <li>A <strong>generic bypass methodology</strong>, understand the patch, enumerate what it doesn't cover, build the uncovered path, turned one CVE into three.</li>
+          <li>The <strong>Unicode SPN collision</strong> is the clever core: a homoglyph is search-equal to a machine SPN under AD's normalization but not loopback-equal under the DNS client's, rebuilding Kerberos coercion.</li>
+          <li>It's another <strong>normalization/parser differential</strong>: different Windows components canonicalize the same identifier differently.</li>
+          <li>The real fix is <strong>SMB signing enforced on loopback</strong>, gated by a registry key you must not disable.</li>
+          <li><strong>Killing NTLM isn't enough</strong>, the Kerberos coercion primitive still compromises SCCM's AdminService (and likely MSSQL) by default without channel binding.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — Briefings schedule</a> <span>— official session listing and slides.</span></li>
+          <li><a href="https://msrc.microsoft.com/update-guide/vulnerability/CVE-2025-33073" target="_blank" rel="noopener">MSRC — CVE-2025-33073</a> <span>— the original SMB authentication-reflection fix this work bypasses.</span></li>
+          <li><a href="https://www.synacktiv.com/en/publications" target="_blank" rel="noopener">Synacktiv publications</a> <span>— the team's write-ups on this and related AD research.</span></li>
+          <li><a href="https://www.tiraniddo.dev/" target="_blank" rel="noopener">James Forshaw — Windows internals research</a> <span>— origin of the CMTI marshalling trick and SMB custom-port behavior.</span></li>
+          <li><a href="https://blog.orange.tw/" target="_blank" rel="noopener">Orange Tsai — Windows charset-conversion research</a> <span>— prior art on Unicode-driven Windows bugs cited in the talk.</span></li>
+          <li><a href="https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-signing-overview" target="_blank" rel="noopener">Microsoft — SMB signing overview</a> <span>— the control that structurally defeats relay.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-key-zeroization-illusion.html">← prev: Key Zeroization</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

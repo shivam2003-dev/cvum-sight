@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-dfir-agent-prompt-injection",
+    title: "The dark side of autonomy — when the evidence attacks the investigator.",
+    date: "Sep 23, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "dfir", "prompt-injection", "mcp"],
+    time: 10,
+    words: 2050,
+    excerpt: "Black Hat Asia 2026, talk 05. Yusuke Nakajima (NTT DATA-CERT) shows an autonomous DFIR agent — an LLM wired to Velociraptor over MCP — can be turned against its own investigation by instructions planted in the artifacts it collects. His 'boundary perturbation of structured data' breaks the assumption that JSON resists injection, enabling Hide (suppress evidence), Mislead (frame benign artifacts), and Exploit (abuse the agent's forensic privileges). Strict structured output drops the reporting attacks to ~0%; least privilege blocks Exploit; human review is the backstop.",
+    series: "blackhat-asia-2026",
+    seriesNum: "05"
+  },
+  {
     slug: "bhas26-intentguard-iac-semantics",
     title: "IntentGuard — when the LLM doesn't just write your IaC, it rewrites your intent.",
     date: "Sep 23, 2026",

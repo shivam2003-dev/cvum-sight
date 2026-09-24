@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-cloaq-quantum-circuit-obfuscation",
+    title: "CLOAQ \u2014 hide a quantum circuit's secrets, unlock them with plain classical logic.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "quantum-computing", "cryptography", "intellectual-property"],
+    time: 10,
+    words: 2037,
+    excerpt: "Black Hat Asia 2026, talk 31. SIT's Amal Raj and Vivek Balachandran obfuscate proprietary quantum circuits sent to untrusted compilers by inserting extra gates, then decrypt the corrupted measurement output using only classical bit-flip logic. Tested across five algorithms with median TVD above 0.5 and negative DFC throughout.",
+    series: "blackhat-asia-2026",
+    seriesNum: "31"
+  },
+  {
     slug: "bhas26-algobuster-uds-security-access-brute-force",
     title: "AlgoBuster \u2014 fingerprint the algorithm, then brute-force the small space.",
     date: "Sep 24, 2026",

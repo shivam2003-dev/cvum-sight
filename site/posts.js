@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-graph-aware-llm-windows-logons",
+    title: "Graph-aware LLM for Windows logons \u2014 compress first, then let the agent think.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "dfir", "detection", "active-directory", "llm"],
+    time: 10,
+    words: 1979,
+    excerpt: "Black Hat Asia 2026, talk 18. JPCERT/CC's Shusei Tomonaga turns noisy Windows Event Logs into an authentication graph, ranks suspects with PageRank plus a Hidden Markov Model, and runs a guarded closed-loop LLM agent with template-only queries. Precision 0.90, recall 0.931; a real Ivanti-origin intrusion (821k events) analysed in 195 seconds.",
+    series: "blackhat-asia-2026",
+    seriesNum: "18"
+  },
+  {
     slug: "bhas26-package-registry-supply-chain",
     title: "Hack the source, of the source — when the registry itself is the supply chain.",
     date: "Sep 24, 2026",

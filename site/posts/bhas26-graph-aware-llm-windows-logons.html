@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Graph-Aware LLM for Windows Logons — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: JPCERT/CC&#x27;s Shusei Tomonaga compresses Windows Event Logs into an authentication graph, ranks suspicious accounts with PageRank and a Hidden Markov Model, and lets a guarded closed-loop LLM agent investigate lateral movement and credential abuse.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">Graph-Aware LLM for Windows Logons</p>
+        <p class="series-banner-meta">Talk 18 · Blue team &amp; detection · analysis from the speaker's published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-package-registry-supply-chain.html">← prev: Package Registry Supply Chain</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 24, 2026 · conferences · 10 min read · 1979 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Graph-aware LLM for Windows logons — compress first, then let the agent think.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">dfir</span>
+          <span class="tag">detection</span>
+          <span class="tag">active-directory</span>
+          <span class="tag">llm</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+        <div class="yt-embed">
+          <div class="yt-embed-frame"><iframe src="https://www.youtube-nocookie.com/embed/7QVcpQA_j_I" title="Black Hat Asia 2026 talk recording" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+          <p class="yt-embed-cap">Official recording, Black Hat YouTube channel · <a href="https://www.youtube.com/watch?v=7QVcpQA_j_I" target="_blank" rel="noopener">open on YouTube ↗</a></p>
+        </div>
+
+        <p class="bm-tldr"><strong>Shusei Tomonaga (JPCERT/CC)</strong> tackles a problem every Windows blue team knows: attackers who abuse <em>legitimate</em> authentication leave almost no malware to signature, and the evidence hides inside millions of noisy logon events. His answer is a <strong>graph-first, LLM-second</strong> pipeline. Collapse raw Event Log lines into a small user↔host graph, rank suspicious nodes with <strong>PageRank plus a Hidden Markov Model</strong>, then let a <strong>guarded, closed-loop LLM agent</strong> investigate with allow-listed Cypher queries. On a public 12.8&nbsp;GB dataset it scored <strong>precision 0.90 and recall 0.931</strong>, and on a real Ivanti-initiated intrusion it analysed 821,272 events in <strong>195 seconds</strong>. This is a defensive talk, so I can go deep on the design.</p>
+
+<p>Post 18 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. The core lesson: do not feed an LLM your logs. Feed it a <em>structure</em> computed from your logs, and box it in with guardrails.</p>
+
+<h2 id="problem">1. The problem: logs are abundant, insight is rare</h2>
+<p>Windows Event Logs were built for auditing and troubleshooting, not intrusion detection. A mid-size Active Directory domain emits millions of authentication events a day. Modern intrusions are mostly <strong>living off the land</strong>: the attacker steals a credential or ticket and then logs in like anyone else. There is no malicious binary to hash. Every single event looks legitimate; only the <em>pattern</em> is wrong.</p>
+<p>Signature and rule-based detection (Sigma and friends) covers known patterns well but is brittle against variation. Anomaly detection on raw features drowns in noise. Tomonaga's goal is narrower and more honest: find <strong>compromised accounts and high-risk logon patterns</strong> after the initial foothold, focusing on lateral movement and credential abuse, and hand analysts a short, evidenced list.</p>
+
+<h2 id="why-not-raw">2. Why "just give the logs to an LLM" fails</h2>
+<p>The deck does the arithmetic, and it is sobering. A 600&nbsp;MB Security log with about 1.23&nbsp;million events costs roughly 469 tokens per event once serialised. That is about <strong>577 million input tokens</strong>. At a typical frontier-model input price of around $1.75 per million tokens, one analysis run costs about <strong>$1,000</strong> in input alone. With a 400k-token context window you would also need over a thousand chunked requests, and the model would never see the whole picture at once, which is exactly what lateral-movement detection needs.</p>
+<table class="papers">
+<thead><tr><th>Approach</th><th>Cost driver</th><th>Weakness</th></tr></thead>
+<tbody>
+<tr><td>LLM over raw events</td><td>Scales with every event</td><td>Cost, context limits, no global view, hallucination risk</td></tr>
+<tr><td>Signature/Sigma only</td><td>Rule authoring</td><td>Misses novel or low-and-slow variants</td></tr>
+<tr><td><strong>Graph + features + guarded LLM</strong></td><td>Scales with nodes and edges</td><td>Needs good graph design; evasion still possible</td></tr>
+</tbody></table>
+
+<h2 id="architecture">3. Architecture: four stages</h2>
+<div class="diagram-container">
+<svg viewBox="0 0 680 150" xmlns="http://www.w3.org/2000/svg">
+<rect x="10" y="40" width="130" height="64" rx="8" class="boxy"/><text x="75" y="68" class="ink" text-anchor="middle">Event Log</text><text x="75" y="86" class="sm" text-anchor="middle">6 logon Event IDs</text>
+<rect x="180" y="40" width="130" height="64" rx="8" class="box"/><text x="245" y="68" class="ink" text-anchor="middle">Graph layer</text><text x="245" y="86" class="sm" text-anchor="middle">user↔host edges</text>
+<rect x="350" y="40" width="130" height="64" rx="8" class="boxg"/><text x="415" y="68" class="ink" text-anchor="middle">Features</text><text x="415" y="86" class="sm" text-anchor="middle">PageRank + HMM</text>
+<rect x="520" y="40" width="150" height="64" rx="8" class="boxr"/><text x="595" y="68" class="ink" text-anchor="middle">Guarded LLM agent</text><text x="595" y="86" class="sm" text-anchor="middle">Plan→Query→Decide</text>
+<path d="M140 72H178M310 72H348M480 72H518" class="arr"/>
+<text x="340" y="20" class="lbl" text-anchor="middle">Millions of events → a compact graph → a ranked shortlist → evidenced findings</text>
+</svg>
+<p class="diagram-label">Fig. 1 — The compression happens <em>before</em> the LLM ever runs.</p></div>
+
+<h2 id="events">4. Which events matter</h2>
+<p>Windows has around 18 logon-related Event IDs. Tomonaga narrows to <strong>six</strong> with the strongest authentication signal: <code>4624</code> (successful logon), <code>4625</code> (failed logon), <code>4768</code> (Kerberos TGT request), <code>4769</code> (Kerberos service-ticket request), <code>4776</code> (NTLM credential validation) and <code>4672</code> (special privileges assigned). Others such as logoff and ticket renewal add volume but little detection value. The fields kept per event are the ones that describe <em>who authenticated to what, how</em>: account, host or IP, logon type, authentication package, service name, ticket encryption type and status.</p>
+<div class="bm-note"><strong>Why the encryption type matters.</strong> A service-ticket request (4769) using legacy RC4 encryption where the environment normally uses AES is a classic marker of ticket-cracking exposure. Carrying <code>TicketEncryptionType</code> into the graph lets the agent notice it without reading raw XML.</div>
+
+<h2 id="graph">5. The graph layer</h2>
+<p>Accounts and hosts become <strong>nodes</strong>; each logon event becomes an <strong>edge</strong> labelled with its Event ID and attributes. Then comes the key compression step: raw events are collapsed into <em>unique (user, host) edges per time window</em> with counts and timing statistics. In the deck's example, 50&nbsp;MB of raw events becomes about 1&nbsp;MB of graph. Token cost now scales with the number of nodes and edges, not the number of events.</p>
+<p>Graphs also make the attack shape visible. Lateral movement is <strong>fan-out</strong>: one account suddenly touching many hosts. A single log line cannot show that; a node's degree does. The graph is stored in Neo4j (the implementation builds on JPCERT's own LogonTracer), and each subgraph can be serialised to JSON so the LLM gets structure plus attributes together: graphs reveal structure, LLMs understand language.</p>
+
+<h2 id="features">6. Ranking with PageRank and an HMM</h2>
+<h3>PageRank for fan-out</h3>
+<p>PageRank was invented to rank web pages: important pages are linked to by many pages, especially by other important ones. Applied to a logon graph, an account that reaches many hosts, or a host reached by many privileged accounts, scores high. That turns "looks like lateral movement" into a single scalable number, used to <strong>limit the scope</strong> the LLM must analyse.</p>
+<h3>HMM for missing transitions</h3>
+<p>A Hidden Markov Model models hidden states that emit observable events. Here the hidden states are the logon stages: <em>not logged on</em>, <em>logon attempt</em>, <em>logged on</em>. Normal Kerberos behaviour follows a recognisable rhythm: a TGT request, then service tickets, then the logon. A <strong>pass-the-ticket</strong> sequence tends to <em>skip</em> the attempt stage because the attacker replays a ticket obtained elsewhere. The HMM flags those missing transitions, and the score is folded into the PageRank ranking. Together they produce a prioritised list of suspicious users and hosts using structure and sequence, not signatures.</p>
+
+<h2 id="agent">7. The closed-loop guarded agent</h2>
+<p>The LLM is not asked "is this malicious?" once. It runs a bounded investigation loop: <strong>Plan → Generate → Execute → Analyze → Decide</strong>.</p>
+<ol>
+<li><strong>Plan:</strong> given the ranked list, known Windows attack patterns and risk weights, pick a hypothesis, such as privilege escalation or Kerberos weak-crypto exposure.</li>
+<li><strong>Generate:</strong> write a Cypher query from vetted, parameterised templates.</li>
+<li><strong>Execute:</strong> run it with hard row limits and time windows; only compact rows come back.</li>
+<li><strong>Analyze and Decide:</strong> label the finding, give a risk level, cite evidence, and either continue with a new focus or stop. The loop is capped at ten iterations.</li>
+<li><strong>Report:</strong> summary, risk level, threat types, and recommendations.</li>
+</ol>
+<div class="bm-fix"><strong>The guardrails are the real contribution.</strong>
+<ul style="margin:8px 0 0">
+<li><strong>Query safety:</strong> allow-listed templates, parameterised queries, mandatory limits and time windows, so the model cannot run arbitrary database commands.</li>
+<li><strong>Loop control:</strong> max iterations, token budget, row caps, strict stop conditions.</li>
+<li><strong>Evidence requirement:</strong> every claim must reference event IDs, timestamps, hosts and statuses.</li>
+<li><strong>Structured output:</strong> bounded JSON with label, confidence, evidence and recommended actions.</li>
+<li><strong>Abstain policy:</strong> if evidence is insufficient the agent must say so and request more data.</li>
+<li><strong>Audit trail:</strong> every plan, query, result summary and decision is logged.</li>
+</ul></div>
+<p>This is the same defensive pattern seen in the <a href="bhas26-dfir-agent-prompt-injection.html">DFIR-agent prompt-injection talk</a>: constrain what the model can do and demand a typed, checkable output. Note the difference in threat model, though. Here the LLM queries a database of pre-aggregated logs, but attacker-controlled strings (usernames, hostnames) still flow into its context, so the strict output schema and template allow-list matter.</p>
+
+<h2 id="eval">8. Evaluation</h2>
+<table class="papers">
+<thead><tr><th>Test</th><th>Setup</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Detection accuracy</td><td>Unified Host and Network Dataset (12.8&nbsp;GB JSON); Sigma-identified compromised accounts as ground truth; n=32 runs</td><td>Precision <strong>0.90</strong>, recall <strong>0.931</strong></td></tr>
+<tr><td>Reproducibility</td><td>Jaccard overlap of accounts detected across repeated runs</td><td>Average Jaccard <strong>0.806</strong></td></tr>
+<tr><td>Technique coverage</td><td>Pass-the-ticket, Kerberoast, NTLM relay, DCSync, DCShadow, AS-REP roasting</td><td>Several detected, some partial (NTLM relay only via logon pattern)</td></tr>
+<tr><td>Real incident</td><td>Ivanti Connect Secure initial access, LOTL activity, 2,720 hosts, 2,806 accounts</td><td>821,272 events (869&nbsp;MB) in <strong>195 s</strong>, 2 threats found</td></tr>
+</tbody></table>
+<p>Jaccard index is simply overlap divided by union: if run one flags accounts A, B, C and run two flags A, B, D, the score is 2/4 = 0.5. A mean of 0.806 means the agent mostly names the same accounts each time, a meaningful result given LLM non-determinism, though not perfect. Using Sigma as ground truth also means the benchmark measures agreement with rules, not with an independent adjudicator; the author is explicit that this is a baseline comparison.</p>
+
+<h2 id="incident">9. The real incident</h2>
+<p>The case involved exploitation of an Ivanti Connect Secure appliance followed by predominantly living-off-the-land activity, consistent with a known espionage cluster. Using Domain Controller Security logs only, the agent worked through about ten steps: a privilege-escalation scan, a Kerberos weak-encryption check, a multi-host logon check, then a re-check and summary. It surfaced two findings: a <strong>Kerberoasting exposure</strong> (a service ticket requested with RC4 for an application server) and <strong>multiple privileged accounts making network logons to many hosts</strong>, a lateral-movement hotspot. Real accounts were anonymised in the slides. The value to responders was speed: a triaged, evidenced starting point in minutes rather than a day of manual pivoting.</p>
+
+<h2 id="sigma">10. From findings to Sigma rules</h2>
+<p>Detection should lead to prevention. A second agent turns confirmed evidence into <strong>Sigma rules</strong> so the lesson becomes durable detection. The system prompt (under 1,500 tokens) is a good example of prompt discipline: evidence-first (never invent fields or values), a strict field whitelist per Event ID, normalisation tables for ticket encryption types, a fixed logsource, and a final self-check that the YAML parses and uses only evidenced fields. Again the pattern is <em>constrain the model with a schema, then verify</em>.</p>
+
+<h2 id="limits">11. Failure cases and evasion</h2>
+<ul>
+<li><strong>Low-and-slow movement</strong> may not stand out structurally in a graph.</li>
+<li><strong>Shared admin accounts and jump hosts</strong> legitimately inflate centrality and cause false positives.</li>
+<li><strong>Incomplete telemetry</strong>: if the right Event IDs are not audited or logs are cleared, confidence drops.</li>
+<li><strong>Evasion</strong>: account hopping and blending into maintenance windows can defeat centrality signals.</li>
+</ul>
+<div class="bm-warn"><strong>Do not treat the output as a verdict.</strong> The agent produces hypotheses with evidence. A human still confirms, especially for privileged accounts where a wrong containment decision has real cost.</div>
+
+<h2 id="build">12. What to copy in your own SOC</h2>
+<ol>
+<li><strong>Enable the six events</strong> on domain controllers and key servers, including advanced Kerberos auditing, and forward them centrally.</li>
+<li><strong>Aggregate before you reason.</strong> Build (user, host, window) edges with counts. Whether you use Neo4j or a dataframe, shrink the data first.</li>
+<li><strong>Score structure cheaply</strong> with degree, PageRank or similar, and sequence checks for missing Kerberos steps.</li>
+<li><strong>Put an LLM last</strong> and give it templates, limits, an abstain path, and a schema.</li>
+<li><strong>Log the agent's own reasoning</strong> so you can audit and improve it.</li>
+<li><strong>Pair it with hygiene:</strong> disable RC4 where possible, tier admin accounts, and restrict where privileged accounts may log on. The graph will then show far fewer legitimate fan-outs.</li>
+</ol>
+
+<details class="faq"><summary>Why not just use Sigma rules?</summary><p>Sigma is excellent for known patterns and is used here as the baseline. The graph approach adds relational context (one account across many hosts) that single-event rules cannot express, and the agent can then emit new Sigma rules from what it finds.</p></details>
+<details class="faq"><summary>Can the LLM hallucinate findings?</summary><p>The design limits it: queries return real rows, every claim must cite event IDs and hosts, and the agent must abstain when evidence is thin. Residual risk remains, which is why the reproducibility score and human review matter.</p></details>
+<details class="faq"><summary>Is a graph database required?</summary><p>No. The principle is aggregation plus structure. Neo4j and LogonTracer make the Cypher-based workflow convenient, but the same idea works with any store that can answer "which hosts did this account touch?".</p></details>
+<details class="faq"><summary>What does it cost to run?</summary><p>The real-incident run used a small, inexpensive model and finished in 195 seconds, against roughly a thousand dollars of input tokens for the naive raw-log approach on a comparable-size log.</p></details>
+
+<h2 id="takeaways">Takeaways</h2>
+<ul>
+<li>Raw-log LLM analysis is too expensive and too context-limited; <strong>compress to a graph first</strong>.</li>
+<li>Fan-out and skipped Kerberos stages are visible to <strong>PageRank and an HMM</strong> where single events are not.</li>
+<li>A <strong>closed-loop agent</strong> with template-only queries, iteration caps, evidence requirements and an abstain policy keeps the LLM honest.</li>
+<li>Reported results: <strong>precision 0.90, recall 0.931, Jaccard 0.806</strong>; a real 821k-event incident triaged in <strong>195 s</strong>.</li>
+<li>Known limits: low-and-slow movement, shared admin accounts, telemetry gaps. Keep a human in the loop.</li>
+</ul>
+
+<h2 id="refs">References &amp; further reading</h2>
+<ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/#graph-aware-llm-for-windows-logon-with-a-closed-loop-guarded-detection-agent-50039" target="_blank" rel="noopener">Black Hat Asia 2026 — this talk's official page</a> <span>— abstract, speaker bio, and slides/video when posted.</span></li>
+          <li><a href="https://www.youtube.com/watch?v=7QVcpQA_j_I" target="_blank" rel="noopener">Official talk recording on YouTube</a> <span>— Black Hat channel.</span></li>
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — full Briefings schedule</a> <span>— every talk in the conference.</span></li>
+<li><a href="https://github.com/JPCERTCC/LogonTracer" target="_blank" rel="noopener">JPCERT/CC LogonTracer</a> <span>— the open-source tool the pipeline builds on.</span></li>
+<li><a href="https://github.com/SigmaHQ/sigma" target="_blank" rel="noopener">SigmaHQ</a> <span>— the rule baseline used for ground truth.</span></li>
+<li><a href="https://blogs.jpcert.or.jp/en/" target="_blank" rel="noopener">JPCERT/CC blog</a> <span>— the author's team publications.</span></li>
+<li><a href="https://neo4j.com/" target="_blank" rel="noopener">Neo4j</a> <span>— graph store and Cypher query language.</span></li>
+</ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-package-registry-supply-chain.html">← prev: Package Registry Supply Chain</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

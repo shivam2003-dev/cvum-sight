@@ -566,11 +566,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "tls"
   ],
-  "time": 13,
-  "words": 2530,
-  "excerpt": "Trace standardized ML-KEM hybrid groups through TLS 1.3, exact share ordering, negotiation, retry behavior, transport costs, and a verified local OpenSSL exchange.",
+  "time": 14,
+  "words": 2745,
+  "excerpt": "RFC 10024's three ML-KEM hybrid groups have different component orderings (ML-KEM first vs. ECDHE first), a hybrid group protects key establishment only, and a reproducible local OpenSSL lab confirms real negotiation plus a verified incompatible-group rejection.",
   "series": "pqc",
   "seriesNum": "11"
 },

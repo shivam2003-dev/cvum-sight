@@ -1,160 +1,197 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Hybrid Post-Quantum Cryptography and TLS 1.3 — cvam.sight</title>
-  <meta name="description" content="Trace standardized ML-KEM hybrid groups through TLS 1.3, exact share ordering, negotiation, retry behavior, transport costs, and a verified local OpenSSL exchange.">
-  <link rel="stylesheet" href="../style.css?v=89">
-  <script src="/theme-init.js?v=9"></script>
-  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hybrid Post-Quantum Cryptography and TLS 1.3 — cvam.sight</title>
+<meta name="description" content="Part 11 of an 18-part PQC engineering course: RFC 10024's three ML-KEM hybrid groups, exact wire costs and component ordering, the TLS key schedule, HelloRetryRequest, and a reproducible local OpenSSL TLS lab with a verified incompatible-group rejection test.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
 <link rel="canonical" href="https://shivam2003.com/posts/pqc-11-hybrid-tls">
 <style>
-/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
-.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
-.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
-.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
-.pqc-survey table td{vertical-align:top}
-.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
-.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
-.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
-.pqc-survey .callout.math{font-size:1em;line-height:1.8}
-.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
-.pqc-survey h2{scroll-margin-top:24px}
-.pqc-survey table th,.pqc-survey table td{overflow-wrap:normal;word-break:normal}.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  .post-body pre{background:#2a2620;color:#ebe3cf;padding:16px;border-radius:6px;overflow-x:auto;font-size:.85rem;line-height:1.6}
+  .post-body pre code{font-family:var(--font-mono);color:inherit}
 </style>
 </head>
 <body>
-<div class="progress-bar"></div>
-<div class="layout has-toc">
-  <aside class="sidebar">
-    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
-    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
-    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
-  </aside>
-  <main class="page">
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
     <article>
-      <div class="post-header"><p class="meta">Sep 11, 2026 · security · 13 min read · 2,530 words</p><h1>Hybrid Post-Quantum Cryptography and TLS 1.3</h1><p>Post-Quantum Cryptography · Part 11 of 18 · advanced</p><div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span></div></div>
-<div class="post-body osc-body pqc-survey">
-<blockquote>
-<p>Enabling a hybrid group is a configuration change. Establishing that clients actually negotiate it, authenticate the intended server, and tolerate its transport costs is an engineering exercise with several separate measurements.</p>
-</blockquote>
-<h2 id="standards-checkpoint-and-learning-goals">Standards checkpoint and learning goals</h2>
-<p>This article uses <a href="https://www.rfc-editor.org/rfc/rfc10024.html">RFC 10024</a>, published in August 2026 on the Standards Track, for three ML-KEM hybrid groups. <a href="https://www.rfc-editor.org/info/rfc9954">RFC 9954</a> provides the Informational hybrid-construction framework. The current TLS 1.3 specification is <a href="https://www.rfc-editor.org/info/rfc9846">RFC 9846</a>, which obsoletes RFC 8446 while retaining the TLS 1.3 version number. These statuses were checked on September 11, 2026.</p>
-<p>You should already understand ECDHE, KEMs, transcript authentication, HKDF, and authenticated encryption from Parts 2 and 7. The goal here is to connect those concepts to bytes and observable protocol behavior. We will distinguish group negotiation from certificate signatures, calculate share overhead, examine HelloRetryRequest, and run an authenticated local exchange using native OpenSSL 3.5.8.</p>
-<p>A document becoming an RFC does not prove that every deployed library implements every revised requirement. Version-specific tests and conformance work remain necessary. The local experiment demonstrates the named hybrid exchange and certificate verification; it is not a complete RFC 9846 conformance assessment.</p>
-<h2 id="why-combine-classical-and-post-quantum-mechanisms">Why combine classical and post-quantum mechanisms?</h2>
-<p>A hybrid exchange combines independently generated contributions from a traditional mechanism and a post-quantum mechanism through a specified construction. The intended security property is preservation of shared-secret security when at least one component remains secure, subject to the construction's assumptions and correct implementation. This reduces dependence on either component alone during migration.</p>
-<p>The claim has boundaries. If an attacker steals both ephemeral private states from an endpoint, the combiner cannot restore secrecy. If a shared random generator is compromised, both contributions may be affected. If the protocol fails to authenticate its negotiation, an attacker may change what the peers think they selected. Hybrid cryptography does not remove the endpoint and composition parts of the threat model.</p>
-<p>A standardized hybrid group packages the component encodings and shared-secret combination into one negotiated identifier. It does not negotiate two unrelated groups and hope the application combines them correctly. The exact order, lengths, validation rules, and TLS key-schedule integration are defined by the profile.</p>
-<h2 id="three-groups-and-their-wire-costs">Three groups and their wire costs</h2>
-<p>The following sizes describe the key_exchange payload inside a KeyShareEntry. They exclude the group identifier, length fields, extension framing, other ClientHello fields, TLS records, and transport headers.</p>
-<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:850px">
-<thead>
-<tr>
-<th>Group</th>
-<th>Code point</th>
-<th>Client share</th>
-<th>Server share</th>
-<th>Combined secret</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>X25519MLKEM768</td>
-<td>4588 / 0x11EC</td>
-<td>1,216 bytes</td>
-<td>1,120 bytes</td>
-<td>64 bytes</td>
-</tr>
-<tr>
-<td>SecP256r1MLKEM768</td>
-<td>4587 / 0x11EB</td>
-<td>1,249 bytes</td>
-<td>1,153 bytes</td>
-<td>64 bytes</td>
-</tr>
-<tr>
-<td>SecP384r1MLKEM1024</td>
-<td>4589 / 0x11ED</td>
-<td>1,665 bytes</td>
-<td>1,665 bytes</td>
-<td>80 bytes</td>
-</tr>
-</tbody>
-</table></div>
-<p>For X25519MLKEM768, the client sends the 1,184-byte ML-KEM-768 encapsulation key followed by a 32-byte X25519 share. The server returns the 1,088-byte ML-KEM ciphertext followed by its 32-byte X25519 share. The combined secret places the 32-byte ML-KEM output first, followed by the 32-byte X25519 secret.</p>
-<p>The P-256 and P-384 groups use the opposite component order: ECDHE first, then ML-KEM, for shares and shared secrets. Their uncompressed curve points occupy 65 and 97 bytes. P-384's ECDHE shared secret is 48 bytes, so its combined secret totals 48 + 32 = 80 bytes. The group name alone is not a safe encoding specification.</p>
-<p>This ordering detail is a useful review test. A generic helper that blindly concatenates components in alphabetical order would be incorrect. Supported library APIs should handle the wire format; applications should configure and observe the group instead of rebuilding the combiner.</p>
-<h2 id="registry-recommendation-and-obsolete-experiments">Registry recommendation and obsolete experiments</h2>
-<p>The <a href="https://www.iana.org/assignments/tls-parameters">IANA TLS registry</a> marks X25519MLKEM768 Recommended Y and the two NIST-curve hybrids Recommended N at this checkpoint. All three are standardized by RFC 10024. A registry recommendation flag is distinct from whether a mechanism has a standard, whether it is appropriate under a particular policy, or whether its cryptography is broken.</p>
-<p>RFC 10024 also addresses obsolete experimental groups, including X25519Kyber768Draft00 at 0x6399 and SecP256r1Kyber768Draft00 at 0x639A. Those names refer to earlier Kyber-based experiments. They should not be presented as alternate spellings for the final ML-KEM groups or retained as an undocumented fallback after migration.</p>
-<p>Inventory systems should record both the human-readable group and numeric identifier. This helps distinguish old telemetry labels, draft experiments, and standardized deployments. A dashboard that normalizes every name containing “Kyber” or “MLKEM” into one green PQC status can conceal a real interoperability or policy gap.</p>
-<h2 id="where-the-secret-enters-the-tls-key-schedule">Where the secret enters the TLS key schedule</h2>
-<p>TLS 1.3 separates the cipher suite from key establishment and signature algorithms. A suite such as TLS_AES_256_GCM_SHA384 identifies record protection and the associated hash; it does not tell you whether the handshake used X25519 or a hybrid group. Group and signature telemetry are separate fields.</p>
-<p>Conceptually, HKDF-Extract combines the negotiated key-establishment secret with a derived value from the early stage of the schedule. Transcript-bound HKDF expansions derive client and server handshake traffic secrets. Later stages derive application traffic secrets and other purpose-specific outputs. The combined hybrid secret occupies the key-establishment input defined by the protocol; it is not used directly as an AES key.</p>
-<pre><code class="language-text">ECDHE secret ─┐
-              ├─ specified concatenation ─→ HKDF schedule
-ML-KEM secret ┘                               ↑
-                                 PSK/early-stage derivation
-                                             ↓
-                              transcript-bound traffic secrets
-                                             ↓
-                            Finished checks and application keys
-</code></pre>
-<p>The transcript binds negotiation and handshake messages to authentication. CertificateVerify proves possession of the server's signing key over the required context and transcript, while Finished authenticates the transcript under a derived handshake secret. They serve different purposes, and both need the surrounding certificate and identity checks to be meaningful.</p>
-<p>The hybrid group protects key establishment. A server may still authenticate with a classical ECDSA certificate. That deployment can improve resistance to passive harvest-now-decrypt-later attacks without providing post-quantum signature authentication against a future active attacker. Report these properties separately rather than calling the entire connection “fully quantum safe.”</p>
-<h2 id="normal-handshake-and-helloretryrequest">Normal handshake and HelloRetryRequest</h2>
-<pre><code class="language-text">Client                                           Server
+      <div class="series-banner">
+        <p class="series-banner-label">Post-Quantum Cryptography — an engineering course</p>
+        <p class="series-banner-title">Part 11: Hybrid Post-Quantum Cryptography and TLS 1.3</p>
+        <p class="series-banner-meta">Part 11 of 18 · advanced</p>
+        <div class="series-banner-nav">
+          <a href="pqc-10-alternatives.html">← Part 10</a>
+          <a href="pqc-12-pki-trust.html">next: Part 12 →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 11, 2026 · security · 14 min read · 2745 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Hybrid post-quantum cryptography and TLS 1.3.</h1>
+        <div class="tag-row">
+          <span class="tag fill">security</span>
+          <span class="tag">post-quantum</span>
+          <span class="tag">cryptography</span>
+          <span class="tag">tls</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Enabling a hybrid group is a configuration change. Establishing that clients actually negotiate it, authenticate the intended server, and tolerate its transport costs is an engineering exercise with several separate measurements — and "PQC enabled" is not one of them. This chapter uses RFC 10024's three standardized ML-KEM hybrid groups to work through exact wire costs and component ordering, where the combined secret enters the TLS key schedule, HelloRetryRequest's cost, and closes with a reproducible local OpenSSL lab whose real handshake output — including an incompatible-group rejection test — is reported below.</p>
+
+        <h2 id="checkpoint">1. Standards checkpoint and learning goals</h2>
+        <p>This chapter uses <strong>RFC 10024</strong>, published August 2026 on the Standards Track, for three ML-KEM hybrid groups. RFC 9954 provides the Informational hybrid-construction framework. The current TLS 1.3 specification is RFC 9846, which obsoletes RFC 8446 while retaining the "TLS 1.3" version number. These statuses were checked as of this writing.</p>
+        <p>You should already understand ECDHE, KEMs, transcript authentication, HKDF, and authenticated encryption from Parts 2 and 7. The goal here is to connect those concepts to actual bytes and observable protocol behavior. We distinguish group negotiation from certificate signatures, calculate share overhead exactly, examine HelloRetryRequest, and run an authenticated local exchange using native OpenSSL 3.5.8.</p>
+        <div class="bm-note">A document becoming an RFC does not prove every deployed library implements every revised requirement. Version-specific tests and conformance work remain necessary. The local experiment in §9 demonstrates the named hybrid exchange and certificate verification — it is <strong>not</strong> a complete RFC 9846 conformance assessment.</div>
+
+        <h2 id="why-combine">2. Why combine classical and post-quantum mechanisms?</h2>
+        <p>A hybrid exchange combines independently generated contributions from a traditional mechanism and a post-quantum mechanism through a specified construction. The intended security property is preservation of shared-secret security when <em>at least one</em> component remains secure, subject to the construction's assumptions and a correct implementation. This reduces dependence on either component alone during migration (Part 5 §10).</p>
+        <p>The claim has real boundaries. If an attacker steals both ephemeral private states from an endpoint, the combiner cannot restore secrecy. If a shared random generator is compromised, both contributions may be affected simultaneously. If the protocol fails to authenticate its negotiation, an attacker may change what the peers <em>think</em> they selected. Hybrid cryptography does not remove the endpoint-security and composition parts of the threat model — it addresses one specific failure mode, not every failure mode.</p>
+        <p>A standardized hybrid group packages the component encodings and shared-secret combination into <em>one</em> negotiated identifier. It does not negotiate two unrelated groups and hope the application combines them correctly on its own. The exact order, lengths, validation rules, and TLS key-schedule integration are all defined by the profile — this is exactly the "combiner needs its own security argument" point from Part 5 §10, made concrete.</p>
+
+        <h2 id="wire-costs">3. Three groups and their wire costs</h2>
+        <p>The following sizes describe the <code>key_exchange</code> payload inside a <code>KeyShareEntry</code>. They exclude the group identifier, length fields, extension framing, other ClientHello fields, TLS records, and transport headers.</p>
+        <table class="papers">
+          <tr><th>Group</th><th>Code point</th><th>Client share</th><th>Server share</th><th>Combined secret</th></tr>
+          <tr><td>X25519MLKEM768</td><td>4588 / 0x11EC</td><td>1,216 bytes</td><td>1,120 bytes</td><td>64 bytes</td></tr>
+          <tr><td>SecP256r1MLKEM768</td><td>4587 / 0x11EB</td><td>1,249 bytes</td><td>1,153 bytes</td><td>64 bytes</td></tr>
+          <tr><td>SecP384r1MLKEM1024</td><td>4589 / 0x11ED</td><td>1,665 bytes</td><td>1,665 bytes</td><td>80 bytes</td></tr>
+        </table>
+        <p>For <strong>X25519MLKEM768</strong>, the client sends the 1,184-byte ML-KEM-768 encapsulation key followed by a 32-byte X25519 share. The server returns the 1,088-byte ML-KEM ciphertext followed by its 32-byte X25519 share. The combined secret places the 32-byte ML-KEM output <em>first</em>, followed by the 32-byte X25519 secret.</p>
+        <div class="bm-warn"><strong>The P-256 and P-384 groups use the opposite component order:</strong> ECDHE first, then ML-KEM, for both shares and shared secrets. Their uncompressed curve points occupy 65 and 97 bytes. P-384's ECDHE shared secret is 48 bytes, so its combined secret totals \(48+32=80\) bytes. The group <em>name alone</em> is not a safe encoding specification — a generic helper that blindly concatenates components in alphabetical order would be incorrect for two of these three groups. Supported library APIs should handle the wire format; applications should configure and observe the group, not rebuild the combiner themselves.</div>
+
+        <h2 id="registry">4. Registry recommendation and obsolete experiments</h2>
+        <p>The IANA TLS registry marks X25519MLKEM768 Recommended-Y and the two NIST-curve hybrids Recommended-N at this checkpoint. All three are standardized by RFC 10024. A registry recommendation flag is distinct from whether a mechanism <em>has</em> a standard, whether it's appropriate under a particular policy, or whether its cryptography is broken — these are three separate facts often conflated into one green checkmark.</p>
+        <p>RFC 10024 also addresses obsolete experimental groups, including <code>X25519Kyber768Draft00</code> at 0x6399 and <code>SecP256r1Kyber768Draft00</code> at 0x639A. Those names refer to earlier, pre-standard Kyber-based experiments (Part 1 §7). They should not be presented as alternate spellings for the final ML-KEM groups, or retained as an undocumented fallback after migration completes.</p>
+        <p>Inventory systems should record both the human-readable group name <em>and</em> numeric code point. This helps distinguish old telemetry labels, draft experiments, and standardized deployments from each other. A dashboard that normalizes every name containing "Kyber" or "MLKEM" into one green "PQC" status can conceal a real interoperability or policy gap sitting right underneath it. See the <a href="https://www.iana.org/assignments/tls-parameters" target="_blank" rel="noopener">IANA TLS registry</a>.</p>
+
+        <h2 id="key-schedule">5. Where the secret enters the TLS key schedule</h2>
+        <p>TLS 1.3 separates the cipher suite from key establishment and signature algorithms entirely. A suite such as <code>TLS_AES_256_GCM_SHA384</code> identifies record protection and the associated hash — it does not tell you whether the handshake used X25519 or a hybrid group at all. Group and signature telemetry are two separate fields, and conflating them in logging misreports the connection's actual PQC status.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 620 190" xmlns="http://www.w3.org/2000/svg">
+            <text x="310" y="20" class="ink" text-anchor="middle">Where the hybrid secret enters the key schedule</text>
+            <rect x="20" y="45" width="140" height="34" rx="5" class="boxy"/><text x="90" y="66" class="lbl" text-anchor="middle">ECDHE secret</text>
+            <rect x="20" y="90" width="140" height="34" rx="5" class="boxg"/><text x="90" y="111" class="lbl" text-anchor="middle">ML-KEM secret</text>
+            <text x="185" y="80" class="sm">specified</text><text x="185" y="93" class="sm">concat →</text>
+            <rect x="250" y="65" width="150" height="34" rx="5" class="boxr"/><text x="325" y="86" class="lbl" text-anchor="middle">HKDF schedule</text>
+            <rect x="250" y="115" width="150" height="30" rx="5" class="box"/><text x="325" y="135" class="sm" text-anchor="middle">transcript-bound traffic secrets</text>
+            <rect x="430" y="115" width="160" height="30" rx="5" class="box"/><text x="510" y="135" class="sm" text-anchor="middle">Finished + application keys</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — The combined hybrid secret occupies the key-establishment input to HKDF-Extract. It is not used directly as an AES key, and it does not, by itself, authenticate anyone (§6).</p>
+        </div>
+        <p>Conceptually, HKDF-Extract combines the negotiated key-establishment secret with a derived value from the early stage of the schedule (Part 2 §7). Transcript-bound HKDF expansions derive client and server handshake traffic secrets. Later stages derive application traffic secrets and other purpose-specific outputs. The combined hybrid secret occupies the key-establishment input defined by the protocol — it is never used directly as an AES key.</p>
+
+        <h2 id="authentication">6. The hybrid group protects key establishment, not authentication</h2>
+        <p>The transcript binds negotiation and handshake messages to authentication. <code>CertificateVerify</code> proves possession of the server's signing key over the required context and transcript, while <code>Finished</code> authenticates the transcript under a derived handshake secret. They serve genuinely different purposes, and both need the surrounding certificate and identity checks to be meaningful at all (Part 2 §11).</p>
+        <p>The hybrid group protects key establishment specifically. A server may still authenticate with a classical ECDSA certificate. That deployment can improve resistance to passive harvest-now-decrypt-later attacks (Part 1 §5) without providing any post-quantum signature authentication against a future <em>active</em> attacker. Report these two properties separately — never call the entire connection "fully quantum safe" when only key establishment is upgraded.</p>
+
+        <h2 id="handshake">7. Normal handshake and HelloRetryRequest</h2>
+        <pre><code>Client                                           Server
 ClientHello:
   supported_groups includes hybrid
-  key_share contains hybrid share --------------&gt;
+  key_share contains hybrid share ---------------->
                                       validate encapsulation key
                                       compute ECDHE + encapsulate
-                         &lt;-------------- ServerHello hybrid share
-                         &lt;-------------- encrypted authentication
+                         <-------------- ServerHello hybrid share
+                         <-------------- encrypted authentication
 validate certificate and hostname
 compute ECDHE + decapsulate
 verify transcript authentication
-Finished --------------------------------------&gt;
-application data &lt;-----------------------------&gt; application data
-</code></pre>
-<p>A client can advertise support for a group without sending its share in the first ClientHello. Sending every possible share increases initial bytes and computation. If the server selects a supported group for which the client has not supplied a share, it can use HelloRetryRequest to ask for the needed group, within the protocol's constraints.</p>
-<p>The retry adds another client flight and usually another round trip. That may be inexpensive on a local network and significant on a mobile or satellite path. The best initial-share strategy therefore depends on server selection behavior and client population. Measure retry frequency instead of assuming that advertising support eliminates handshake cost.</p>
-<p>HelloRetryRequest is part of the authenticated transcript handling; it is not an unauthenticated instruction to disable security checks. Implementations must follow its state-machine and transcript rules. Applications should use a maintained TLS stack rather than interpreting retry messages themselves.</p>
-<h2 id="validation-implicit-rejection-and-downgrade-policy">Validation, implicit rejection, and downgrade policy</h2>
-<p>The server validates the ML-KEM encapsulation key as required by FIPS 203 and the TLS profile. Both sides validate the classical contribution, including X25519's all-zero-secret check where applicable. The client checks ML-KEM ciphertext length and handles decapsulation errors through the specified TLS behavior. Every component's checks remain necessary in a hybrid exchange.</p>
-<p>ML-KEM implicit rejection still applies. A same-length corrupted ciphertext may yield fallback secret material, causing subsequent handshake authentication to fail. That differs from a malformed ciphertext length or an API failure. The TLS implementation must map errors correctly without exposing internal validity information through ad hoc diagnostics.</p>
-<p>A supported-groups list is not necessarily a minimum-security policy. If a service permits classical fallback for compatibility, successful connections may still be classical. Conversely, requiring a hybrid group can reject clients that lack support. Define the intended behavior for each audience, measure it, and make fallback visible.</p>
-<p>An attacker who tampers with a correctly authenticated handshake cannot simply edit the negotiated group without detection. However, application retry logic can create a separate downgrade path if a failed connection silently triggers a new attempt with weaker settings. The security review must include that outer retry policy, load balancers, proxies, and client wrappers.</p>
-<h2 id="larger-handshakes-and-the-transport-path">Larger handshakes and the transport path</h2>
-<p>Compared with a 32-byte X25519 share, the hybrid client's 1,216-byte share adds 1,184 bytes before framing. That is not the same as adding exactly one network packet. ClientHello already includes extensions, names, signature algorithms, and other data; TCP segmentation and path MTU determine packetization.</p>
-<p>TLS records, TCP segments, IP fragmentation, and QUIC packets are different boundaries. A large TLS handshake message can span records and segments without requiring IP fragmentation. QUIC carries TLS handshake data in its own framing and has different amplification and retransmission considerations. Do not transfer a packet-count claim from one transport to another without measuring.</p>
-<p>Middleboxes may mishandle unfamiliar groups, large ClientHello messages, or unusual segmentation despite valid protocol behavior. Test enterprise inspection paths, older proxies, VPNs, mobile networks, and origin connections where relevant. An edge endpoint's success does not establish that an internal service mesh or outbound SDK negotiates the same protection.</p>
-<p>The observable outcome should include handshake success, selected group, retry rate, bytes, latency distribution, and failure classification. Segment results by client capability and network path. A small global failure percentage can hide a severe regression for one important device family.</p>
-<h2 id="executed-local-tls-lab">Executed local TLS lab</h2>
-<p>This script uses <a href="https://docs.openssl.org/3.5/man1/openssl-s_server/">OpenSSL s_server</a> and <a href="https://docs.openssl.org/3.5/man1/openssl-s_client/">s_client</a>. It binds only to loopback, generates a disposable ECDSA certificate, explicitly trusts that certificate for this experiment, and verifies the localhost identity. It also checks that a classical-only client cannot negotiate with the hybrid-only server.</p>
-<p>The port is selected from an available ephemeral port before server startup; another process could claim it in the small interval, in which case rerun the lab. The readiness probe is bounded and cleanup terminates only the server process started by this script. No system trust store is changed.</p>
-<pre><code class="language-bash">#!/usr/bin/env bash
+Finished --------------------------------------->
+application data <-----------------------------> application data</code></pre>
+        <p>A client can advertise support for a group without sending its share in the first ClientHello. Sending every possible share increases initial bytes and computation for every connection. If the server selects a supported group for which the client hasn't supplied a share, it can use <strong>HelloRetryRequest</strong> to ask for the needed group, within the protocol's constraints.</p>
+        <p>The retry adds another client flight and usually another full round trip. That may be inexpensive on a local network and significant on a mobile or satellite path. The best initial-share strategy therefore depends on server selection behavior and client population — measure actual retry frequency instead of assuming that advertising support eliminates handshake cost.</p>
+        <div class="bm-note">HelloRetryRequest is part of the <em>authenticated</em> transcript handling — it is not an unauthenticated instruction to disable security checks. Implementations must follow its state-machine and transcript rules exactly. Applications should use a maintained TLS stack rather than interpreting retry messages themselves at the application layer.</div>
+
+        <h2 id="validation">8. Validation, implicit rejection, and downgrade policy</h2>
+        <p>The server validates the ML-KEM encapsulation key as required by FIPS 203 and the TLS profile together. Both sides validate the classical contribution, including X25519's all-zero-secret check where applicable. The client checks ML-KEM ciphertext length and handles decapsulation errors through the specified TLS behavior. Every component's checks remain necessary in a hybrid exchange — a hybrid group doesn't relax any single component's validation requirements.</p>
+        <p>ML-KEM implicit rejection still applies exactly as in Part 7 §7: a same-length corrupted ciphertext may yield fallback secret material, causing subsequent handshake authentication to fail downstream rather than an immediate visible error. That differs from a malformed ciphertext length or a direct API failure. The TLS implementation must map errors correctly without exposing internal validity information through ad hoc diagnostics.</p>
+        <p>A supported-groups list is not necessarily a minimum-security policy. If a service permits classical fallback for compatibility, successful connections may still end up classical. Conversely, requiring a hybrid group can reject clients that lack support entirely. Define the intended behavior for each audience explicitly, measure it, and make fallback visible in telemetry rather than hidden inside an aggregate success rate.</p>
+        <p>An attacker who tampers with a correctly authenticated handshake cannot simply edit the negotiated group without detection. However, application <em>retry logic</em> can create a separate downgrade path if a failed connection silently triggers a new attempt with weaker settings. The security review must include that outer retry policy, load balancers, proxies, and client wrappers — not just the TLS library itself.</p>
+
+        <h2 id="larger-handshakes">9. Larger handshakes and the transport path</h2>
+        <p>Compared with a 32-byte X25519 share, the hybrid client's 1,216-byte share adds 1,184 bytes before framing. That is not the same as adding exactly one network packet. ClientHello already includes extensions, names, signature algorithms, and other data; TCP segmentation and path MTU determine actual packetization, not the payload size alone.</p>
+        <p>TLS records, TCP segments, IP fragmentation, and QUIC packets are all different boundaries. A large TLS handshake message can span multiple records and segments without requiring IP fragmentation at all. QUIC carries TLS handshake data in its own framing and has different amplification and retransmission considerations entirely. Never transfer a packet-count claim from one transport to another without actually measuring it on that transport.</p>
+        <p>Middleboxes may mishandle unfamiliar groups, large ClientHello messages, or unusual segmentation despite fully valid protocol behavior. Test enterprise inspection paths, older proxies, VPNs, mobile networks, and origin connections where relevant. An edge endpoint's success does not establish that an internal service mesh or outbound SDK negotiates the same protection — check each hop independently.</p>
+
+        <h2 id="lab">10. Executed local TLS lab</h2>
+        <p>This script uses OpenSSL <code>s_server</code> and <code>s_client</code>. It binds only to loopback, generates a disposable ECDSA certificate, explicitly trusts that certificate for this experiment, and verifies the localhost identity. It also checks that a classical-only client <strong>cannot</strong> negotiate with the hybrid-only server — the negative test matters as much as the positive one.</p>
+        <pre><code>#!/usr/bin/env bash
 set -euo pipefail
 OPENSSL=${OPENSSL:-openssl}
 LAB=$(mktemp -d)
 SERVER_PID=''
-cleanup() { if [ -n &quot;$SERVER_PID&quot; ]; then kill &quot;$SERVER_PID&quot; 2&gt;/dev/null || true; wait &quot;$SERVER_PID&quot; 2&gt;/dev/null || true; fi; rm -rf &quot;$LAB&quot;; }
+cleanup() { if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true; fi; rm -rf "$LAB"; }
 trap cleanup EXIT
 umask 077
-cd &quot;$LAB&quot;
-&quot;$OPENSSL&quot; version
-PORT=$(python3 - &lt;&lt;'PY'
+cd "$LAB"
+"$OPENSSL" version
+PORT=$(python3 - <<'PY'
 import socket
 with socket.socket() as s:
  s.bind(('127.0.0.1',0)); print(s.getsockname()[1])
 PY
 )
-&quot;$OPENSSL&quot; req -config /dev/null -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -noenc -keyout key.pem -out cert.pem -days 1 -subj /CN=localhost -addext subjectAltName=DNS:localhost &gt; /dev/null 2&gt;&amp;1
-&quot;$OPENSSL&quot; s_server -accept &quot;127.0.0.1:$PORT&quot; -cert cert.pem -key key.pem -tls1_3 -groups X25519MLKEM768 -www &gt; server.log 2&gt;&amp;1 &amp;
+"$OPENSSL" req -config /dev/null -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -noenc -keyout key.pem -out cert.pem -days 1 -subj /CN=localhost -addext subjectAltName=DNS:localhost > /dev/null 2>&1
+"$OPENSSL" s_server -accept "127.0.0.1:$PORT" -cert cert.pem -key key.pem -tls1_3 -groups X25519MLKEM768 -www > server.log 2>&1 &
 SERVER_PID=$!
-python3 - &quot;$PORT&quot; &lt;&lt;'PY'
+python3 - "$PORT" <<'PY'
 import socket,sys,time
 for _ in range(50):
  try:
@@ -162,8 +199,8 @@ for _ in range(50):
  except OSError: time.sleep(.1)
 else: raise SystemExit('server did not become ready')
 PY
-printf 'GET / HTTP/1.0\r\n\r\n' | &quot;$OPENSSL&quot; s_client -connect &quot;127.0.0.1:$PORT&quot; -servername localhost -verify_hostname localhost -verify_return_error -CAfile cert.pem -tls1_3 -groups X25519MLKEM768 &gt; client.log 2&gt;&amp;1
-python3 - &lt;&lt;'PY'
+printf 'GET / HTTP/1.0\r\n\r\n' | "$OPENSSL" s_client -connect "127.0.0.1:$PORT" -servername localhost -verify_hostname localhost -verify_return_error -CAfile cert.pem -tls1_3 -groups X25519MLKEM768 > client.log 2>&1
+python3 - <<'PY'
 from pathlib import Path
 s=Path('client.log').read_text()
 assert 'X25519MLKEM768' in s
@@ -171,37 +208,68 @@ assert 'Verify return code: 0 (ok)' in s
 for line in s.splitlines():
  if any(x in line for x in ('Negotiated TLS1.3 group','Server Temp Key','Verify return code','SSL handshake has read')): print(line)
 PY
-if printf '' | &quot;$OPENSSL&quot; s_client -connect &quot;127.0.0.1:$PORT&quot; -servername localhost -CAfile cert.pem -tls1_3 -groups X25519 &gt; negative.log 2&gt;&amp;1; then
- echo 'Unexpected classical-only negotiation' &gt;&amp;2; exit 1
+if printf '' | "$OPENSSL" s_client -connect "127.0.0.1:$PORT" -servername localhost -CAfile cert.pem -tls1_3 -groups X25519 > negative.log 2>&1; then
+ echo 'Unexpected classical-only negotiation' >&2; exit 1
 fi
-printf '%s\n' 'PASS: authenticated local hybrid TLS and incompatible-group rejection'
-</code></pre>
-<p>On the tested macOS ARM64 host with OpenSSL 3.5.8, the output identified X25519MLKEM768 and certificate verification returned 0 (ok). The run reported 1,816 handshake bytes read and 1,491 written. These are that command's counters for this generated certificate and handshake, not universal TLS sizes or a packet capture. The incompatible-group negative test also passed.</p>
-<p>The certificate is classical by design, so this lab demonstrates hybrid key establishment with classical authentication. Part 12 examines signature and certificate migration separately. Using a self-signed certificate here is acceptable because the client explicitly provisions that exact trust anchor for a local experiment and still checks the hostname.</p>
-<h2 id="extending-the-experiment-responsibly">Extending the experiment responsibly</h2>
-<p>Repeat the exchange with the P-256 and P-384 hybrid groups if your exact binary supports them. Record the negotiated identifier and verification result rather than accepting process exit alone as proof. Then use a server configuration with multiple groups to observe the effect of client ordering and initial-share choices documented by that library version.</p>
-<p>For packet analysis, capture only your own loopback lab traffic and identify the supported_groups and key_share extensions. Packet analyzers may need current dissectors to display new names; a numeric code point can still establish the group. A display filter that recognizes only an obsolete experimental identifier can produce a false “no PQC” conclusion.</p>
-<p>Do not publish TLS key-log files or reuse lab keys in production. Key logs permit decryption of the captured session and belong only in controlled debugging workflows. Many useful measurements, including cleartext ClientHello/ServerHello share sizes, do not require collecting traffic secrets.</p>
-<p>For service rollout, compare classical and hybrid handshakes under equal certificate chains, resumption settings, network conditions, and concurrency. Separate fresh handshakes from resumed sessions and 0-RTT behavior. A resumed connection does not necessarily perform the same fresh key exchange as the initial one, so counting all requests as new hybrid handshakes overstates coverage.</p>
-<h2 id="a-rollout-metric-that-does-not-overstate-coverage">A rollout metric that does not overstate coverage</h2>
-<p>Define hybrid coverage as the fraction of eligible fresh handshakes that actually negotiate an approved hybrid group. State the denominator: all connections, capable clients, or a selected canary population produce different percentages. Record failed attempts separately, since excluding them can make a problematic rollout look more successful.</p>
-<p>Track edge and origin connections independently. A browser may use hybrid key establishment to a CDN while the CDN uses classical TLS to the origin. Both links may have valid encryption and authentication, but the harvest-now-decrypt-later exposure differs. A diagram of termination points makes the residual path visible.</p>
-<p>A useful rollback threshold combines availability with security policy. For example, a canary may pause expansion when a particular client family experiences an unexplained increase in failures. The response should preserve logs of negotiated identifiers and public error categories, compare against the baseline, and identify whether the issue is capability, framing, or certificate processing. Silently removing the hybrid requirement everywhere loses that evidence and changes the protection level.</p>
-<p>These metrics are operational design examples, not measured results from this local lab. Production thresholds should come from the service's actual reliability objectives and data-lifetime requirements.</p>
-<h2 id="knowledge-checks">Knowledge checks</h2>
-<p>Why does the cipher-suite name fail to identify the KEM? Why is ML-KEM first in the X25519 hybrid encoding but second in the P-256 encoding? What does HelloRetryRequest add to the critical path? Which property does a classical server certificate leave dependent on classical public-key security?</p>
-<p>A useful completion artifact is a table containing configured groups, advertised groups, negotiated group, certificate signature type, verification result, and measured handshake counters for each test. That table turns “PQC enabled” into a set of testable claims and prepares the ground for a separate PKI migration plan.</p>
-</div><nav class="post-nav" aria-label="Series navigation"><a href="pqc-10-alternatives.html">← Part 10</a><a href="../series-pqc.html">All 18 parts</a><a href="pqc-12-pki-trust.html">Part 12 →</a></nav>
+printf '%s\n' 'PASS: authenticated local hybrid TLS and incompatible-group rejection'</code></pre>
+        <div class="bm-fix">On the tested macOS ARM64 host with OpenSSL 3.5.8, the output identified <code>X25519MLKEM768</code> and certificate verification returned "0 (ok)." The run reported 1,816 handshake bytes read and 1,491 written. These are <strong>that command's counters for this generated certificate and handshake</strong> — not universal TLS sizes or a packet capture. The incompatible-group negative test also passed, confirming a classical-only client cannot negotiate with the hybrid-only server.</div>
+        <p>The certificate is classical by design here, so this lab demonstrates hybrid key establishment with classical authentication — exactly the intermediate architecture flagged in §6. Part 12 examines signature and certificate migration separately. Using a self-signed certificate here is acceptable because the client explicitly provisions that exact trust anchor for a local experiment and still checks the hostname (never skip that check even in a lab).</p>
+
+        <h2 id="extending">11. Extending the experiment responsibly</h2>
+        <p>Repeat the exchange with the P-256 and P-384 hybrid groups if your exact binary supports them. Record the negotiated identifier and verification result rather than accepting process exit alone as proof. Then use a server configuration with multiple groups to observe the effect of client ordering and initial-share choices documented by that library version.</p>
+        <p>For packet analysis, capture only your own loopback lab traffic and identify the <code>supported_groups</code> and <code>key_share</code> extensions. Packet analyzers may need current dissectors to display new names; a numeric code point can still establish the group even without one. A display filter that recognizes only an obsolete experimental identifier can produce a false "no PQC" conclusion on a perfectly correct connection.</p>
+        <p>Do not publish TLS key-log files or reuse lab keys in production. Key logs permit decryption of the captured session and belong only in controlled debugging workflows. Many useful measurements — including cleartext ClientHello/ServerHello share sizes — do not require collecting traffic secrets at all.</p>
+
+        <h2 id="rollout-metric">12. A rollout metric that does not overstate coverage</h2>
+        <p>Define <strong>hybrid coverage</strong> as the fraction of eligible <em>fresh</em> handshakes that actually negotiate an approved hybrid group. State the denominator explicitly: all connections, capable clients, or a selected canary population produce very different percentages from the same numerator. Record failed attempts separately, since excluding them can make a problematic rollout look artificially more successful.</p>
+        <p>Track edge and origin connections independently. A browser may use hybrid key establishment to a CDN while the CDN uses classical TLS to the origin server behind it. Both links may have valid encryption and authentication, but the harvest-now-decrypt-later exposure differs between them — a diagram of termination points makes the residual classical path visible instead of hidden inside "TLS enabled everywhere."</p>
+        <p>A useful rollback threshold combines availability with security policy. For example, a canary may pause expansion when a particular client family experiences an unexplained increase in failures. The response should preserve logs of negotiated identifiers and public error categories, compare against the baseline, and identify whether the issue is capability, framing, or certificate processing — silently removing the hybrid requirement everywhere loses that evidence and changes the protection level for everyone, not just the affected cohort.</p>
+
+        <details class="faq"><summary>Does a hybrid TLS group make a connection "fully post-quantum"?</summary><p>No (§6). It protects key establishment against harvest-now-decrypt-later. If the server still authenticates with a classical certificate, the connection's authentication remains dependent on classical public-key security against a future active attacker — report the two properties separately.</p></details>
+        <details class="faq"><summary>Can I safely concatenate ECDHE and ML-KEM shares in alphabetical order?</summary><p>No (§3). X25519MLKEM768 puts ML-KEM first; the two NIST-curve hybrids put ECDHE first. The group name alone is not a safe encoding spec — use a maintained library's implementation rather than rebuilding the combiner.</p></details>
+        <details class="faq"><summary>Does advertising hybrid-group support eliminate the extra round trip from HelloRetryRequest?</summary><p>Not necessarily (§7). If the client doesn't send its share in the first ClientHello and the server needs it, a retry still happens. The best initial-share strategy depends on server behavior and client population — measure actual retry frequency rather than assuming support alone is enough.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>The three RFC 10024 hybrid groups have different component orderings.</strong> X25519MLKEM768 puts ML-KEM first; the P-256/P-384 groups put ECDHE first — never assume a uniform concatenation rule.</li>
+          <li><strong>A hybrid group protects key establishment only</strong> — a classical certificate still leaves authentication dependent on classical assumptions against a future active attacker (Part 12 covers PKI migration).</li>
+          <li><strong>Cipher suite ≠ key-establishment group.</strong> Log and measure them as separate fields, or "PQC enabled" telemetry silently misreports the connection.</li>
+          <li><strong>Obsolete Kyber-draft code points are not alternate spellings for the final ML-KEM groups</strong> — record both human-readable name and numeric code point to catch these in inventory.</li>
+          <li><strong>ML-KEM implicit rejection (Part 7 §7) still applies inside TLS</strong> — a corrupted-but-same-length ciphertext fails downstream at Finished, not immediately, and shouldn't be conflated with a malformed-input error.</li>
+          <li><strong>The reproducible lab confirmed real behavior on real hardware:</strong> successful X25519MLKEM768 negotiation with hostname-verified certificate, plus a verified rejection of a classical-only client against the hybrid-only server.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://www.rfc-editor.org/rfc/rfc10024.html" target="_blank" rel="noopener">RFC 10024</a> <span>— the primary standard: three ML-KEM hybrid groups, §3–5.</span></li>
+          <li><a href="https://www.rfc-editor.org/info/rfc9954" target="_blank" rel="noopener">RFC 9954</a> <span>— hybrid-construction framework, §2.</span></li>
+          <li><a href="https://www.rfc-editor.org/info/rfc9846" target="_blank" rel="noopener">RFC 9846</a> <span>— current TLS 1.3 base specification.</span></li>
+          <li><a href="https://www.iana.org/assignments/tls-parameters" target="_blank" rel="noopener">IANA TLS registry</a> <span>— §4, code points and recommendation flags.</span></li>
+          <li><a href="https://docs.openssl.org/3.5/man1/openssl-s_server/" target="_blank" rel="noopener">OpenSSL s_server</a> · <a href="https://docs.openssl.org/3.5/man1/openssl-s_client/" target="_blank" rel="noopener">s_client</a> <span>— §10, the lab commands.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="pqc-10-alternatives.html">← Part 10</a>
+        <a href="pqc-12-pki-trust.html">next: Part 12 →</a>
+      </div>
     </article>
-  </main>
-  <aside class="toc-panel" aria-label="On this page">
-    <p class="toc-panel-label">// on this page</p>
-    <nav id="toc-nav" aria-label="Table of contents"></nav>
-  </aside>
-</div>
-<script src="../stats.js?v=4"></script>
-<script src="../app.js?v=43"></script>
-<script src="../settings.js?v=17"></script>
-<script src="../reader.js?v=3"></script>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
 </body>
 </html>

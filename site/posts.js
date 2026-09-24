@@ -470,11 +470,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "case-studies"
   ],
-  "time": 13,
-  "words": 2530,
-  "excerpt": "Read Chrome, Cloudflare, AWS, Signal, Apple, and OpenSSH deployment accounts critically: exact mechanisms, rollout boundaries, compatibility, ratcheting, and evidence.",
+  "time": 14,
+  "words": 2772,
+  "excerpt": "Chrome's experimental-identifier retirement, why Signal's initial key agreement isn't continuous post-compromise recovery, why AWS endpoint support isn't your SDK's behavior, and five more real deployment accounts read as scoped evidence, not adoption headlines.",
   "series": "pqc",
   "seriesNum": "17"
 },

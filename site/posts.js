@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-serial-to-ip-critical-infrastructure",
+    title: "We'll eat your serial for breakfast — the boxes bridging your grid to the internet.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "ics-ot", "critical-infrastructure", "embedded"],
+    time: 12,
+    words: 2318,
+    excerpt: "Black Hat Asia 2026, talk 14. Forescout's Stanislav Dashevskyi and Francesco La Spina audit serial-to-IP converters, the boxes bridging decades-old RS-232/Modbus/DNP3 industrial equipment onto IP networks in power grids, water treatment, rail, and healthcare. Nearly 20,000 are internet-exposed, and attackers already target them (Sandworm's 2015 Moxa firmware corruption, Industroyer, the 2025 attack on Poland's power grid via default credentials). Firmware analysis across six vendors found ~212 known vulnerabilities per image and weak binary hardening on average, plus 23 new vulnerabilities (5 critical) across two vendors enabling full device takeover, not just denial of service — turning a compromised converter into an active man-in-the-middle between SCADA and field devices.",
+    series: "blackhat-asia-2026",
+    seriesNum: "14"
+  },
+  {
     slug: "bhas26-qualcomm-bootrom-trust-chain",
     title: "Qualcomm BootROM — a trust chain is only as strong as its weakest layer.",
     date: "Sep 24, 2026",

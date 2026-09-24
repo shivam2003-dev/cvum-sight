@@ -662,11 +662,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "lattices"
   ],
-  "time": 14,
-  "words": 2664,
-  "excerpt": "Compare lattices, codes, hash-based signatures, multivariate systems, proof-derived signatures, and isogenies by assumptions and engineering tradeoffs.",
+  "time": 17,
+  "words": 3403,
+  "excerpt": "Lattices, codes, hash-based, multivariate, MPC-in-the-head, and isogenies compared by assumption and object size, plus why the SIDH/SIKE break isn't a theorem about isogenies in general, and why two ML-KEM libraries aren't mathematical diversity.",
   "series": "pqc",
   "seriesNum": "5"
 },

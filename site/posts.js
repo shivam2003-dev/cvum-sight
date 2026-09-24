@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-practical-attacks-smartphone-boot-roms",
+    title: "Practical attacks against smartphone boot ROMs \u2014 following one bug class to the root of trust.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "boot-security", "android", "usb", "hardware"],
+    time: 10,
+    words: 2085,
+    excerpt: "Black Hat Asia 2026, talk 27. Christopher Wade fuzzes USB Control Transfers through every layer of the Android boot process, finding buffer bugs from the OS down to the immutable Boot ROM on Google Tensor and Samsung Exynos chips, and demonstrating a secure-boot bypass with a multi-year disclosure timeline.",
+    series: "blackhat-asia-2026",
+    seriesNum: "27"
+  },
+  {
     slug: "bhas26-overkill-wifi7-chip-privilege-escalation",
     title: "Overkill \u2014 escalating to SYSTEM from inside a Wi-Fi chip's firmware.",
     date: "Sep 24, 2026",

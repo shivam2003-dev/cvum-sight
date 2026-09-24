@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Practical Attacks Against Smartphone Boot ROMs — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Christopher Wade fuzzes USB Control Transfers down through the entire Android boot chain, reaching and dumping the immutable Boot ROM on Google Tensor and Samsung Exynos chips, and bypassing secure boot.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">Practical Attacks Against Smartphone Boot ROMs</p>
+        <p class="series-banner-meta">Talk 27 · Hardware &amp; boot security · analysis from the speaker's published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-overkill-wifi7-chip-privilege-escalation.html">← prev: Overkill (Wi-Fi 7 → SYSTEM)</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 24, 2026 · conferences · 10 min read · 2085 words <span class="difficulty expert">expert</span></p>
+        <h1>Practical attacks against smartphone boot ROMs — following one bug class to the root of trust.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">boot-security</span>
+          <span class="tag">android</span>
+          <span class="tag">usb</span>
+          <span class="tag">hardware</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+        <div class="yt-embed">
+          <div class="yt-embed-frame"><iframe src="https://www.youtube-nocookie.com/embed/0hItwQVp8a4" title="Black Hat Asia 2026 talk recording" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+          <p class="yt-embed-cap">Official recording, Black Hat YouTube channel · <a href="https://www.youtube.com/watch?v=0hItwQVp8a4" target="_blank" rel="noopener">open on YouTube ↗</a></p>
+        </div>
+
+        <p class="bm-tldr"><strong>Christopher Wade</strong> spent a research project moving down through the Android boot stack, layer by layer, testing how each layer handles malformed USB traffic. He started at the ordinary Android OS level, moved down through bootloader modes, and eventually reached the <strong>Boot ROM</strong>: the very first, immutable code that runs when a phone powers on, and the root of the entire secure-boot chain. Along the way he found bugs at nearly every layer on both Google Tensor (Pixel) and Samsung Exynos devices, several assigned CVEs, one of which let an unmodified secure-boot chain be bypassed. This is vendor-acknowledged hardware research with a long, deliberate disclosure timeline; I describe the research approach and its significance, not a working exploit.</p>
+
+<p>Post 27 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. Boot ROM research is about as sensitive as this series gets: the deck includes exact memory offsets, patch locations and working bypass sequences. I'm deliberately not reproducing those; I focus on the research methodology, what a Boot ROM compromise means, and how the disclosure was handled.</p>
+
+<h2 id="why-usb">1. Why USB is the thread that connects every layer</h2>
+<p>USB is not just a cable protocol for charging and file transfer. On Android devices, USB, specifically the low-level <strong>Control Transfer</strong> mechanism used for device configuration, is present as a communication path at nearly every stage of the boot process: the running OS, bootloader modes used by technicians and manufacturers, and even the very earliest recovery modes some chips expose. That makes it an unusually good thread to pull on if you want to compare how consistently different layers of a system defend themselves against malformed input.</p>
+<p>Control Transfers carry a handful of structured parameters and a data buffer. Because the format is standardised across the entire USB ecosystem, it's easy to assume every implementation parses it correctly and consistently. Wade's research method was simply to test that assumption directly, and to remove artificial safety limits that normally prevent a fuzzer from sending transfers outside the values a spec-compliant host would ever produce, both in the userspace library used to talk to USB devices and in the operating system kernel's own filtering.</p>
+<div class="bm-note"><strong>Why remove the limits at all?</strong> Standard tooling deliberately restricts what a "well-behaved" USB host can send, which is sensible for compatibility but also means a huge portion of the protocol's actual attack surface, the malformed and out-of-spec inputs, never gets exercised by normal fuzzing. Once those artificial ceilings were lifted, previously silent code paths started crashing almost immediately.</p></div>
+
+<h2 id="layers">2. Working down the stack</h2>
+<p>The research moved through progressively lower, progressively more privileged, and progressively less publicly documented layers:</p>
+<table class="papers">
+<thead><tr><th>Layer</th><th>What it is</th><th>Outcome</th></tr></thead>
+<tbody>
+<tr><td>Android OS (HLOS)</td><td>The normal, running operating system</td><td>Manufacturer-specific kernel driver bugs found; one led to a CVE on a specific vendor's devices, after an earlier researcher had already found a related issue affecting all Android devices</td></tr>
+<tr><td>ABL (Android Bootloader)</td><td>A pre-boot mode used for flashing and diagnostics</td><td>A buffer-handling bug in a specific USB request type exposed adjacent memory, including internal pointers used by the USB stack itself</td></tr>
+<tr><td>Exynos "Download Mode"</td><td>A manufacturer secondary-bootloader recovery mode</td><td>New buffer-handling bugs led to code execution, and could bypass bootloader-locking restrictions on newer devices</td></tr>
+<tr><td><strong>Boot ROM</strong></td><td>Immutable first-stage code baked into the chip itself</td><td>Full extraction and analysis of the ROM, and a way to bypass secure-boot signature verification</td></tr>
+</tbody></table>
+<p>Two things are worth noticing about this progression. First, each layer's bugs were of the <em>same general kind</em>, buffer over-reads and over-writes triggered by malformed Control Transfer parameters, discovered using the same technique each time. Second, the deeper the layer, the more consequential the outcome: a bug in the running OS might crash an app or leak some memory; a bug in the immutable Boot ROM undermines the security guarantee that everything built on top of it depends on.</p>
+
+<h2 id="bootrom">3. Why the Boot ROM is special</h2>
+<p>The Boot ROM is the first code the chip executes, and it cannot be patched: it's physically fixed at manufacturing time. Its job is to start the <strong>secure boot chain</strong>, verifying the cryptographic signature of the next boot stage before running it, which in turn verifies the next, and so on. If the Boot ROM's own logic can be subverted, every guarantee built on top of it, including protections most people rely on without ever thinking about them, is only as strong as whatever the attacker chooses to leave standing.</p>
+<p>Public security research into smartphone Boot ROMs is comparatively rare, partly because reaching this code at all is difficult (on the chip family studied here, dedicated recovery interfaces typically require either physical disassembly of the device or an undocumented trigger sequence) and partly because, even once reached, the code itself is completely undocumented and has to be recovered and understood from scratch with no source, symbols or public reference.</p>
+
+<h2 id="method">4. The general research approach, without the specifics</h2>
+<p>Having found a way to reach an early, minimally documented recovery interface, Wade's team faced a familiar constraint in this kind of work: the target code cannot be read in advance, so any attempt to influence it has to be tested experimentally and its effect inferred from observed behaviour, rather than reasoned about from source. Several categories of technique were used to make that practical:</p>
+<ul>
+<li><strong>Systematic Control Transfer fuzzing</strong> to find any buffer boundary issue in the interface itself, exactly the same technique used at every earlier layer.</li>
+<li><strong>Passive memory inspection</strong>: once an over-read exists, simply reading nearby memory over many attempts reveals structural clues (repeating patterns, plausible pointer-like values, predictable counters) about how the surrounding code and data are laid out, without needing to understand the code that produced them.</li>
+<li><strong>Hardware-assisted automation</strong>: because each experimental attempt could crash or hang the target, the researcher built a small hardware rig to automatically power-cycle the device between attempts, allowing large numbers of blind trials to run unattended.</li>
+<li><strong>Iterative, outcome-driven refinement</strong>: rather than aiming for a specific known effect, the process favoured any outcome that was distinguishable from "nothing happened", an unusual crash, continued booting, or unexpected data transmitted, and used those signals to narrow down what was actually being affected.</li>
+</ul>
+<p>This combination, of a discovered flaw, blind experimentation, and automated iteration, is a recognisable pattern in low-level hardware security research generally: when you cannot read the target's source, you characterise its behaviour empirically and let observed effects guide the next step.</p>
+
+<h2 id="impact">5. What full Boot ROM access actually enabled</h2>
+<p>Once the Boot ROM's own code could be examined, its role in the wider boot sequence became clear enough to identify where the chain's signature-verification logic lived, and, separately, to demonstrate that it could be routed around under the researcher's control rather than the manufacturer's. The consequences the talk highlights are notable for being a mix of genuinely useful and genuinely risky:</p>
+<ul>
+<li><strong>Device recovery:</strong> the affected devices had no built-in way to recover from a corrupted boot image at home. Bypassing the boot-chain's verification made it possible to load a known-good image and recover an otherwise "bricked" device, arguably a legitimate repair capability that the platform doesn't otherwise expose to users.</li>
+<li><strong>Deep reverse-engineering access:</strong> with the full chain loadable and inspectable, every privilege level's boot-time state becomes visible, which helps future defensive and compatibility research (and, the deck notes, some memory is deliberately zeroed by the vendor beforehand specifically to limit exposure of sensitive user data through this path).</li>
+<li><strong>Bypassing engineering-only restrictions</strong> that are normally locked to manufacturer test builds.</li>
+<li><strong>Persistence risk:</strong> some boot stages support persistent configuration changes that survive a factory reset, though the talk notes other platform mitigations limit how effectively this particular weakness could be abused for that purpose.</li>
+</ul>
+<div class="bm-warn"><strong>What it did <em>not</em> break.</strong> The researcher is explicit that this compromises the main application processor's boot chain, not the phone's separate, dedicated security chip that handles lock-screen PIN and password verification on the devices studied. A full application-processor boot compromise is serious, but it is not automatically a lock-screen bypass on hardware designed with that separation in mind.</p></div>
+
+<h2 id="disclosure">6. Disclosure, and why it took so long</h2>
+<p>The core Boot ROM finding was reported in <strong>November 2023</strong>. Because the impact affected the root of the secure-boot chain across a device family, and because fixing it meaningfully required more than a simple software patch, the vendor requested, and was given, an unusually long disclosure timeline. Remediation work included rotating cryptographic security keys where necessary across affected models. Public disclosure was only completed in <strong>February 2026</strong>, over two years after the initial report, and the finding was assigned a CVE at that point. A second line of research on a related chip family (Exynos-based Samsung devices, studied separately after the Tensor findings) followed a similar arc: reaching an early boot interface, finding comparable buffer-handling weaknesses, and again demonstrating that image-loading and decryption logic in early boot stages could be subverted, with its own complications around partially self-decrypting boot images that briefly leave decrypted code unprotected in memory during execution.</p>
+<div class="bm-note"><strong>Why the long timeline is the right call here.</strong> A patchable software bug can ship a fix in days. A Boot ROM cannot be patched at all once a chip is manufactured; the only real remedies are mitigating controls in later boot stages, key rotation, and fixes in future chip revisions. That asymmetry, between how fast an OS bug can be fixed and how slow a hardware root-of-trust bug is to remediate, is exactly why responsible disclosure timelines for this class of finding are measured in years, not weeks.</p></div>
+
+<h2 id="lessons">7. What this means for the industry</h2>
+<ul>
+<li><strong>Control Transfer parsing deserves the same scrutiny at every boot layer</strong>, not just in the running OS. The same bug class recurred from the application OS all the way down to immutable ROM code, because nobody had tested the deepest layers as thoroughly as the outer ones.</li>
+<li><strong>Undocumented recovery interfaces are still attack surface.</strong> "It's not publicly documented" is not a security boundary; it only raises the cost of discovery, not the difficulty of exploitation once found.</li>
+<li><strong>Root-of-trust bugs need remediation plans, not just patches.</strong> Because Boot ROM code can't be updated, vendors need pre-existing plans for key rotation and layered mitigation in later stages, precisely so a ROM-level finding doesn't leave them with no options.</li>
+<li><strong>Legitimate repair and security are in tension here.</strong> The same bypass that helps a user recover a bricked phone is, in different hands, a way around the platform's core integrity guarantee, an uncomfortable but recurring theme in root-of-trust research.</li>
+</ul>
+
+<details class="faq"><summary>Is this exploit still usable today?</summary><p>The core finding was disclosed to the vendor in 2023, remediated across affected models, and only made public in 2026 after fixes and key rotation were completed. It should not be treated as a current, unpatched attack against up-to-date devices.</p></details>
+<details class="faq"><summary>Does this let someone unlock a stolen phone?</summary><p>No. The research explicitly separates application-processor boot compromise from lock-screen authentication, which on the devices studied is handled by a separate, dedicated security chip untouched by this research.</p></details>
+<details class="faq"><summary>Why does a Boot ROM bug take over two years to disclose?</summary><p>Because Boot ROM code is physically immutable once a chip ships, fixing the underlying issue for future hardware and mitigating it for already-shipped devices (including rotating cryptographic keys) is a much bigger undertaking than shipping a software patch, and the vendor requested time proportional to that complexity.</p></details>
+<details class="faq"><summary>Did this require special equipment?</summary><p>Reaching some of the early boot interfaces required physical access to the device and, in places, opening it up; automating the research also involved a simple custom hardware rig to repeatedly power-cycle the target. None of it required equipment beyond what a determined hardware researcher could assemble.</p></details>
+
+<h2 id="takeaways">Takeaways</h2>
+<ul>
+<li><strong>USB Control Transfers are a consistent, cross-layer attack surface</strong> on Android devices, from the running OS down to immutable Boot ROM code.</li>
+<li>Standard fuzzing tools <strong>artificially limit what they'll send</strong>; removing those limits exposed bugs invisible to conventional testing.</li>
+<li>A full <strong>Boot ROM compromise</strong> was achieved on two different chip families (Google Tensor and Samsung Exynos), enabling a secure-boot bypass.</li>
+<li>Boot ROM bugs are <strong>unpatchable by design</strong>; the only remedies are later-stage mitigations, key rotation, and fixes in future silicon, hence the multi-year disclosure timeline.</li>
+<li>The compromise reached the <strong>application processor's boot chain only</strong>, not the separate security chip guarding lock-screen authentication.</li>
+</ul>
+
+<h2 id="refs">References &amp; further reading</h2>
+<ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/#practical-attacks-against-smartphone-boot-roms-50532" target="_blank" rel="noopener">Black Hat Asia 2026 — this talk's official page</a> <span>— abstract, speaker bio, and slides/video when posted.</span></li>
+          <li><a href="https://www.youtube.com/watch?v=0hItwQVp8a4" target="_blank" rel="noopener">Official talk recording on YouTube</a> <span>— Black Hat channel.</span></li>
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — full Briefings schedule</a> <span>— every talk in the conference.</span></li>
+<li><a href="https://nvd.nist.gov/vuln/detail/CVE-2026-0124" target="_blank" rel="noopener">CVE-2026-0124</a> <span>— the core Boot ROM finding referenced in the talk.</span></li>
+<li><a href="https://nvd.nist.gov/vuln/detail/CVE-2024-22012" target="_blank" rel="noopener">CVE-2024-22012</a> <span>— the earlier ABL-layer finding on Pixel 6A.</span></li>
+<li><a href="https://source.android.com/docs/security/features/verifiedboot" target="_blank" rel="noopener">Android Verified Boot documentation</a> <span>— background on the secure boot chain this research examines.</span></li>
+</ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-overkill-wifi7-chip-privilege-escalation.html">← prev: Overkill (Wi-Fi 7 → SYSTEM)</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

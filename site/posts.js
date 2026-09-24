@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-beyond-golden-image-self-healing",
+    title: "Beyond the golden image \u2014 a supply chain that rebuilds itself.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "supply-chain", "devsecops", "containers", "sbom"],
+    time: 7,
+    words: 1347,
+    excerpt: "Black Hat Asia 2026, talk 21. Adobe's Neelu Tripathy and Lovlesh Malik present a self-healing golden-image pipeline: declarative builds, automated updates, hardening, custom builds and signed, attested, immutable artefacts. Immutability is the only patch that never fails.",
+    series: "blackhat-asia-2026",
+    seriesNum: "21"
+  },
+  {
     slug: "bhas26-capture-the-narrative-disinformation-wargame",
     title: "Capture the narrative \u2014 108 teams, 11.8 million posts, one simulated election.",
     date: "Sep 24, 2026",

@@ -678,11 +678,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "mathematics"
   ],
-  "time": 15,
-  "words": 2807,
-  "excerpt": "Small worked examples of modular arithmetic, vectors, noise, polynomial rings, coding theory, and modern cryptographic security games.",
+  "time": 18,
+  "words": 3564,
+  "excerpt": "Modular arithmetic, LWE's t=As+e in one worked example, norms, negacyclic polynomial rings, coding theory, negligible probability, and IND-CPA/IND-CCA/EUF-CMA explained as three different attacker powers—with reproducible Python checks for every example.",
   "series": "pqc",
   "seriesNum": "4"
 },

@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-torchlight-tor-exit-iot-attacks",
+    title: "TORCHLIGHT \u2014 what 26 TB of Tor exit traffic reveals about IoT attacks.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "iot", "tor", "threat-intelligence", "llm"],
+    time: 7,
+    words: 1488,
+    excerpt: "Black Hat Asia 2026, talk 24. Southeast University's TORCHLIGHT runs cheap Tor exit relays and an LLM-based analyzer to study attacks on cloudless IoT: 26.5 TB captured, 45 vulnerabilities (29 zero-day) affecting ~12.71M devices, plus disclosure impact and honeypot spin-offs.",
+    series: "blackhat-asia-2026",
+    seriesNum: "24"
+  },
+  {
     slug: "bhas26-macos-pid-domain-llm-discovery",
     title: "AI in the loop \u2014 how entitlements hide a macOS sandbox-escape surface.",
     date: "Sep 24, 2026",

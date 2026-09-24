@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-jvm-memory-shell-auto-search",
+    title: "More JVM memory shells \u2014 systematically finding fileless Java backdoors.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "java", "jvm", "sast", "ai-security"],
+    time: 11,
+    words: 2170,
+    excerpt: "Black Hat Asia 2026, talk 32. Alibaba's Wan Litong and independent researcher Yu Fanghai break a two-year research stall on JVM fileless memory shells with a four-stage pipeline combining SAST, Java Agent runtime proof, automated JVM memory-graph search, and constrained AI-assisted PoC generation. Result: 7 new verified Spring memory-shell families, up from 2 known previously.",
+    series: "blackhat-asia-2026",
+    seriesNum: "32"
+  },
+  {
     slug: "bhas26-cloaq-quantum-circuit-obfuscation",
     title: "CLOAQ \u2014 hide a quantum circuit's secrets, unlock them with plain classical logic.",
     date: "Sep 24, 2026",

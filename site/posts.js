@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-rebirthday-dns-cache-poisoning-ecs",
+    title: "REBIRTHDAY \u2014 how a helpful DNS feature undid a 20-year-old fix.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "dns", "cache-poisoning", "internet-infrastructure"],
+    time: 9,
+    words: 1849,
+    excerpt: "Black Hat Asia 2026, talk 28. Nankai University's Yuqi Qiu and Xiang Li show that EDNS Client Subnet bypasses the query-aggregation defence that killed the DNS Birthday Attack in 2002. 18 of 22 DNS software packages vulnerable, 100% poisoning success on three, and 365,000+ open resolvers at risk. 35 CVEs assigned.",
+    series: "blackhat-asia-2026",
+    seriesNum: "28"
+  },
+  {
     slug: "bhas26-practical-attacks-smartphone-boot-roms",
     title: "Practical attacks against smartphone boot ROMs \u2014 following one bug class to the root of trust.",
     date: "Sep 24, 2026",

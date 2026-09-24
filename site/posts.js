@@ -630,11 +630,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "ml-kem"
   ],
-  "time": 13,
-  "words": 2595,
-  "excerpt": "Follow ML-KEM from noisy polynomial encryption to chosen-ciphertext-secure key establishment, exact parameter sizes, implicit rejection, and a tested OpenSSL lab.",
+  "time": 14,
+  "words": 2870,
+  "excerpt": "K-PKE internals, the Fujisaki-Okamoto-style transform that makes it chosen-ciphertext-secure, why implicit rejection means 'decapsulation returned output' isn't 'the exchange succeeded,' and a reproducible OpenSSL lab whose actual pass/fail results are reported.",
   "series": "pqc",
   "seriesNum": "7"
 },

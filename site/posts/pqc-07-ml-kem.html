@@ -1,115 +1,147 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ML-KEM / FIPS 203 Deep Dive — cvam.sight</title>
-  <meta name="description" content="Follow ML-KEM from noisy polynomial encryption to chosen-ciphertext-secure key establishment, exact parameter sizes, implicit rejection, and a tested OpenSSL lab.">
-  <link rel="stylesheet" href="../style.css?v=89">
-  <script src="/theme-init.js?v=9"></script>
-  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ML-KEM / FIPS 203 Deep Dive — cvam.sight</title>
+<meta name="description" content="Part 7 of an 18-part PQC engineering course: ML-KEM's exact interface, K-PKE internals, the Fujisaki-Okamoto-style transform, implicit rejection, and a reproducible native OpenSSL lab that verifies agreement, corruption rejection, and truncation rejection.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
 <link rel="canonical" href="https://shivam2003.com/posts/pqc-07-ml-kem">
 <style>
-/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
-.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
-.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
-.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
-.pqc-survey table td{vertical-align:top}
-.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
-.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
-.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
-.pqc-survey .callout.math{font-size:1em;line-height:1.8}
-.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
-.pqc-survey h2{scroll-margin-top:24px}
-.pqc-survey table th,.pqc-survey table td{overflow-wrap:normal;word-break:normal}.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  .post-body pre{background:#2a2620;color:#ebe3cf;padding:16px;border-radius:6px;overflow-x:auto;font-size:.85rem;line-height:1.6}
+  .post-body pre code{font-family:var(--font-mono);color:inherit}
 </style>
 </head>
 <body>
-<div class="progress-bar"></div>
-<div class="layout has-toc">
-  <aside class="sidebar">
-    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
-    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
-    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
-  </aside>
-  <main class="page">
-    <article>
-      <div class="post-header"><p class="meta">Sep 11, 2026 · security · 13 min read · 2,595 words</p><h1>ML-KEM / FIPS 203 Deep Dive</h1><p>Post-Quantum Cryptography · Part 7 of 18 · advanced</p><div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span></div></div>
-<div class="post-body osc-body pqc-survey">
-<blockquote>
-<p>A KEM establishes secret material. The surrounding protocol decides whose key was used, what the secret means, and whether the peer actually possesses it. Understanding that boundary is as important as understanding the lattice arithmetic.</p>
-</blockquote>
-<h2 id="what-you-will-learn">What you will learn</h2>
-<p>Parts 2 and 6 supplied the prerequisites: authenticated encryption, KDFs, noisy linear systems, polynomial rings, and Module-LWE. This article connects those pieces to ML-KEM's public interface and internal construction. You will be able to trace key generation, encapsulation, decapsulation, and failure handling; distinguish raw algorithm sizes from encoded files; and reproduce both successful and unsuccessful exchanges.</p>
-<p>The reference is <a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf">FIPS 203</a>, finalized on August 13, 2024. Its <a href="https://csrc.nist.gov/pubs/fips/203/final">publication page</a> currently links potential errata. As checked on September 11, 2026, those clarify the NTT constants array and a decryption comment referring to the wrong polynomial. They are potential corrections, not a replacement algorithm or a reason to silently invent a variant.</p>
-<h2 id="the-interface-create-a-key-encapsulate-recover">The interface: create a key, encapsulate, recover</h2>
-<p>A key-encapsulation mechanism has three operations. KeyGen produces an encapsulation key ek and a secret decapsulation key dk. Encaps takes ek and fresh randomness, returning a ciphertext c and a shared secret K. Decaps takes dk and c, returning a shared secret. Correctly generated inputs produce matching secrets except with the construction's extremely small failure probability.</p>
-<p>The names prevent a common misunderstanding. Encapsulation does not accept an arbitrary application message to encrypt. It creates fresh secret material. To protect a file, a protocol derives encryption keys from that material and applies an authenticated-encryption scheme. The KEM ciphertext transports what is needed for recovery; it is not the file ciphertext.</p>
-<pre><code class="language-text">Recipient                                      Sender
-KeyGen → ek, dk
-             authenticated ek ------------------&gt;
-                                         Encaps(ek) → K, c
-             &lt;------------------------------- c
-Decaps(dk, c) → K
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
 
-       K + protocol context → KDF → traffic keys
-       traffic keys + nonces → authenticated encryption
-</code></pre>
-<p>The authenticated arrow is a protocol requirement. An attacker who substitutes their own encapsulation key can establish their own secret with the sender. ML-KEM's mathematical security does not authenticate a public key obtained from an untrusted directory. Certificates, an authenticated handshake, or a separately provisioned trust relationship must provide that binding.</p>
-<p>Key confirmation is another layer. A recovered byte string alone does not establish that the peer derived the same value. A protocol normally demonstrates possession through a transcript authenticator or authenticated data. NIST's final <a href="https://csrc.nist.gov/pubs/sp/800/227/final">SP 800-227</a> describes KEM usage considerations; implementing the primitive is only one component of using it securely.</p>
-<h2 id="three-parameter-sets-exact-byte-counts">Three parameter sets, exact byte counts</h2>
-<p>These are the raw encodings specified by FIPS 203, not the size of an ASN.1 container or a PEM file. All three return 32-byte shared secrets.</p>
-<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:850px">
-<thead>
-<tr>
-<th>Parameter set</th>
-<th>NIST category</th>
-<th>Encapsulation key</th>
-<th>Decapsulation key</th>
-<th>Ciphertext</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>ML-KEM-512</td>
-<td>1</td>
-<td>800 bytes</td>
-<td>1,632 bytes</td>
-<td>768 bytes</td>
-</tr>
-<tr>
-<td>ML-KEM-768</td>
-<td>3</td>
-<td>1,184 bytes</td>
-<td>2,400 bytes</td>
-<td>1,088 bytes</td>
-</tr>
-<tr>
-<td>ML-KEM-1024</td>
-<td>5</td>
-<td>1,568 bytes</td>
-<td>3,168 bytes</td>
-<td>1,568 bytes</td>
-</tr>
-</tbody>
-</table></div>
-<p>The suffix is a parameter-set identifier; it is not the length of the shared secret or a claim of 512, 768, or 1,024 security bits. Categories compare attack costs with reference primitives under NIST's framework. They are not exact universal quantum work factors. A system selects parameters according to its protocol profile, policy, performance budget, and implementation support.</p>
-<p>The degree n is 256 and modulus q is 3,329 for every set. The module rank k grows from 2 to 3 to 4. Increasing k changes the number of polynomial components and the attack landscape. Compression parameters and noise choices also differ; changing only the rank in homemade code does not reproduce another standardized set.</p>
-<p>For example, the encapsulation key contains k encoded polynomials plus a 32-byte matrix seed. At 12 bits per coefficient, one 256-coefficient polynomial occupies 384 bytes. Thus ML-KEM-768 uses 3 × 384 + 32 = 1,184 bytes. This calculation explains a table entry without confusing mathematical storage with an implementation's expanded in-memory representation.</p>
-<h2 id="inside-the-key-a-compact-public-matrix-and-noisy-secret">Inside the key: a compact public matrix and noisy secret</h2>
-<p>The internal K-PKE key-generation procedure expands a seed into a public matrix A and samples short secret and error vectors s and e. Conceptually it forms t = A s + e in the polynomial module. Public material includes t and the seed needed to regenerate A. Secret material retains s. The actual algorithm specifies transform representation, domain-separated hash expansion, byte encoding, and the exact sampling routines.</p>
-<p>A public seed is not a weak secret. Its role is reproducibly generating public coefficients without shipping the whole matrix. Conversely, secret noise must follow the specified distribution and randomness requirements. Replacing that sampler with convenient small integers changes the scheme and its security argument.</p>
-<p>Part 6's small example showed why decryption can cancel a large shared algebraic term while leaving a small residual. Here coefficients are modulo 3,329 in the ring modulo X²⁵⁶ + 1, and vectors contain several polynomials. Module-LWE supplies the noisy-equation hardness intuition. It does not excuse ignoring the exact hash functions, rejection sampling, validation, or encodings that define ML-KEM.</p>
-<p>The NTT accelerates polynomial products. ML-KEM's modulus lacks the primitive 512th root needed for a simple full negacyclic scalar transform of this length. Its transform ends in degree-two components. A scalar pointwise-multiplication toy from a different modulus is useful for intuition, but copying that toy directly would produce incorrect ML-KEM arithmetic.</p>
-<h2 id="k-pke-the-internal-encryption-engine">K-PKE: the internal encryption engine</h2>
-<p>K-PKE encrypts a 32-byte internal message using specified coins. In a schematic coefficient-domain description, it samples an ephemeral short vector r and errors e₁ and e₂, then forms u from Aᵀr + e₁ and v from tᵀr + e₂ plus the encoded message. Compression reduces the transmitted coefficient widths and adds bounded rounding error.</p>
-<p>The receiver computes a value corresponding to v − sᵀu. Substituting t = As + e cancels the main product and leaves the message embedding plus accumulated noise. Decompression and message decoding recover the bits when that noise remains within the allowed margin. This explanation intentionally omits implementation details such as transform-domain storage; the standard's algorithms remain authoritative.</p>
-<p>A tiny rounding example makes compression concrete. Suppose an educational modulus is 17 and we represent a coefficient using four levels. A coefficient near 8 maps to a level near the halfway point; decompression returns the representative for that level, not necessarily the original coefficient. Encryption correctness must tolerate this extra error along with sampled noise. Real ML-KEM uses precisely specified integer rounding, widths, and modular conventions.</p>
-<p>K-PKE is an internal component, not a standalone public-key encryption API approved for arbitrary application use. Its basic confidentiality property is insufficient for attackers who can submit related ciphertexts and observe decryption behavior. ML-KEM wraps it with hashing, deterministic reencryption, and implicit rejection to achieve the stronger KEM construction.</p>
-<h2 id="from-encryption-to-a-chosen-ciphertext-secure-kem">From encryption to a chosen-ciphertext-secure KEM</h2>
-<p>The construction follows the broad Fujisaki–Okamoto transformation idea: derive encryption randomness from a candidate message, then verify recovery by reconstructing its ciphertext. This binds a recovered message to the exact encapsulation procedure. The specific transformation matters; this conceptual description is not a recipe for wrapping an arbitrary encryption scheme.</p>
-<p>The following pseudocode summarizes FIPS 203's internal flow. H, G, and J denote the distinct hash/XOF roles defined there. Concatenation is written ||. Public wrappers perform required input checks and obtain approved randomness.</p>
-<pre><code class="language-text">KeyGen_internal(d, z):
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Post-Quantum Cryptography — an engineering course</p>
+        <p class="series-banner-title">Part 7: ML-KEM / FIPS 203 Deep Dive</p>
+        <p class="series-banner-meta">Part 7 of 18 · intermediate</p>
+        <div class="series-banner-nav">
+          <a href="pqc-06-lattices.html">← Part 6</a>
+          <a href="pqc-08-ml-dsa.html">next: Part 8 →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 11, 2026 · security · 14 min read · 2870 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>ML-KEM / FIPS 203 deep dive.</h1>
+        <div class="tag-row">
+          <span class="tag fill">security</span>
+          <span class="tag">post-quantum</span>
+          <span class="tag">cryptography</span>
+          <span class="tag">ml-kem</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">A KEM establishes secret material — nothing more. The surrounding protocol decides whose key was used, what the secret means, and whether the peer actually possesses it. Understanding that boundary is exactly as important as understanding the lattice arithmetic underneath. This chapter traces ML-KEM's exact interface, the internal K-PKE encryption engine, the Fujisaki-Okamoto-style transform that turns it into a chosen-ciphertext-secure KEM, implicit rejection's precise meaning, and a reproducible native OpenSSL lab whose exact results are reported below — not invented.</p>
+
+        <h2 id="objectives">1. What you will learn</h2>
+        <p>Parts 2 and 6 supplied the prerequisites: authenticated encryption, KDFs, noisy linear systems, polynomial rings, and Module-LWE. This chapter connects those pieces to ML-KEM's public interface and internal construction. You'll be able to trace key generation, encapsulation, decapsulation, and failure handling; distinguish raw algorithm sizes from encoded file sizes; and reproduce both successful and unsuccessful exchanges yourself.</p>
+        <p>The reference is <strong>FIPS 203</strong>, finalized August 13, 2024. Its publication page currently links potential errata — as checked for this chapter, those clarify the NTT constants array and a decryption comment referring to the wrong polynomial. These are potential corrections to documentation, not a replacement algorithm and not a license to silently invent a variant.</p>
+
+        <h2 id="interface">2. The interface: create a key, encapsulate, recover</h2>
+        <p>A KEM has three operations. <strong>KeyGen</strong> produces an encapsulation key \(ek\) and a secret decapsulation key \(dk\). <strong>Encaps</strong> takes \(ek\) and fresh randomness, returning a ciphertext \(c\) and a shared secret \(K\). <strong>Decaps</strong> takes \(dk\) and \(c\), returning a shared secret. Correctly generated inputs produce matching secrets except with the construction's extremely small failure probability.</p>
+        <p>The names prevent a common misunderstanding: encapsulation does <strong>not</strong> accept an arbitrary application message to encrypt — it creates fresh secret material. To protect a file, a protocol derives encryption keys from that material and applies a separate authenticated-encryption scheme (Part 2 §6). The KEM ciphertext transports what's needed for recovery; it is never the file ciphertext itself.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="320" y="20" class="ink" text-anchor="middle">ML-KEM exchange, with the authentication gap marked</text>
+            <rect x="30" y="45" width="180" height="40" rx="6" class="boxy"/><text x="120" y="70" class="lbl" text-anchor="middle">Recipient: KeyGen → ek, dk</text>
+            <path d="M215 65 L 425 65" class="arr"/><text x="320" y="55" class="sm" text-anchor="middle">authenticated ek (protocol's job, not ML-KEM's)</text>
+            <rect x="430" y="45" width="180" height="40" rx="6" class="boxg"/><text x="520" y="70" class="lbl" text-anchor="middle">Sender: Encaps(ek)→K,c</text>
+            <path d="M430 130 L 215 130" class="arr"/><text x="320" y="120" class="sm" text-anchor="middle">c</text>
+            <rect x="30" y="150" width="180" height="40" rx="6" class="boxr"/><text x="120" y="175" class="lbl" text-anchor="middle">Decaps(dk,c) → K</text>
+            <text x="320" y="205" class="sm" text-anchor="middle">K + context → KDF → traffic keys → AEAD protects the actual record</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — The "authenticated" arrow is a protocol requirement, not something ML-KEM's math provides. An attacker who substitutes their own ek establishes their own secret with the sender — certificates or a separately provisioned trust relationship must supply that binding (Part 2 §11).</p>
+        </div>
+        <p>Key confirmation is another layer entirely. A recovered byte string alone does not establish that the peer derived the <em>same</em> value — a protocol normally demonstrates possession through a transcript authenticator or authenticated data. NIST's final SP 800-227 describes KEM usage considerations in depth; implementing the primitive correctly is only one component of using it securely.</p>
+
+        <h2 id="parameter-sets">3. Three parameter sets, exact byte counts</h2>
+        <p>These are the raw encodings specified by FIPS 203 — not the size of an ASN.1 container or a PEM file. All three parameter sets return 32-byte shared secrets.</p>
+        <table class="papers">
+          <tr><th>Parameter set</th><th>NIST category</th><th>Encapsulation key</th><th>Decapsulation key</th><th>Ciphertext</th></tr>
+          <tr><td>ML-KEM-512</td><td>1</td><td>800 bytes</td><td>1,632 bytes</td><td>768 bytes</td></tr>
+          <tr><td>ML-KEM-768</td><td>3</td><td>1,184 bytes</td><td>2,400 bytes</td><td>1,088 bytes</td></tr>
+          <tr><td>ML-KEM-1024</td><td>5</td><td>1,568 bytes</td><td>3,168 bytes</td><td>1,568 bytes</td></tr>
+        </table>
+        <p>The numeric suffix is a parameter-set identifier — it is <strong>not</strong> the length of the shared secret, nor a claim of 512, 768, or 1,024 "security bits." NIST's categories compare attack costs against reference primitives under a specific framework; they are not exact universal quantum work factors. A system selects a parameter set according to its protocol profile, policy, performance budget, and implementation support — not by picking the biggest number available.</p>
+        <p>The degree \(n\) is 256 and modulus \(q\) is 3,329 for every one of the three sets (Part 6 §8). The module rank \(k\) grows from 2 to 3 to 4. Increasing \(k\) changes the number of polynomial components and the resulting attack landscape. Compression parameters and noise choices also differ between sets — changing only the rank in homemade code does not reproduce another standardized set.</p>
+        <p>For example: the encapsulation key contains \(k\) encoded polynomials plus a 32-byte matrix seed. At 12 bits per coefficient, one 256-coefficient polynomial occupies 384 bytes. Thus ML-KEM-768 uses \(3 \times 384 + 32 = 1{,}184\) bytes — this calculation explains a table entry without confusing mathematical storage with an implementation's expanded in-memory representation.</p>
+
+        <h2 id="inside-the-key">4. Inside the key: a compact public matrix and noisy secret</h2>
+        <p>The internal <strong>K-PKE</strong> key-generation procedure expands a seed into a public matrix \(A\) and samples short secret and error vectors \(s\) and \(e\). Conceptually it forms \(t = As+e\) in the polynomial module (exactly Part 6 §5–6's cancellation mechanism, now over polynomials). Public material includes \(t\) and the seed needed to regenerate \(A\); secret material retains \(s\). The actual algorithm specifies transform representation, domain-separated hash expansion, byte encoding, and exact sampling routines that this sketch omits.</p>
+        <p>A public seed is not a weak secret — its role is reproducibly generating public coefficients without ever shipping the whole matrix. Conversely, secret noise must follow the exact specified distribution and randomness requirements; replacing that sampler with convenient small integers changes the scheme and invalidates its security argument entirely.</p>
+        <p>The NTT accelerates polynomial products (Part 6 §11). ML-KEM's modulus lacks the primitive 512th root needed for a simple, fully-split negacyclic scalar transform of this length — its transform instead ends in degree-two components. A scalar pointwise-multiplication toy from a different modulus (like Part 6's) is useful for intuition, but copying that toy directly would produce incorrect ML-KEM arithmetic.</p>
+
+        <h2 id="k-pke">5. K-PKE: the internal encryption engine</h2>
+        <p>K-PKE encrypts a 32-byte internal message using specified coins. In a schematic coefficient-domain description, it samples an ephemeral short vector \(r\) and errors \(e_1\), \(e_2\), then forms \(u\) from \(A^T r + e_1\) and \(v\) from \(t^T r + e_2\) plus the encoded message. Compression reduces the transmitted coefficient widths and adds a bounded rounding error on top.</p>
+        <p>The receiver computes a value corresponding to \(v - s^T u\). Substituting \(t=As+e\) cancels the main product and leaves the message embedding plus accumulated noise — decompression and message decoding recover the bits when that noise stays within the allowed margin. This explanation intentionally omits implementation details like transform-domain storage; the standard's algorithms remain authoritative for those.</p>
+        <div class="bm-note"><strong>K-PKE is an internal component, not a standalone public-key encryption API</strong> approved for arbitrary application use. Its basic confidentiality property is insufficient against attackers who can submit related ciphertexts and observe decryption behavior. ML-KEM wraps it with hashing, deterministic re-encryption, and implicit rejection (§7) to achieve the much stronger chosen-ciphertext-secure KEM construction below.</div>
+
+        <h2 id="fo-transform">6. From encryption to a chosen-ciphertext-secure KEM</h2>
+        <p>The construction follows the broad <strong>Fujisaki–Okamoto</strong> transformation idea: derive encryption randomness from a candidate message, then verify recovery by <em>reconstructing</em> its ciphertext. This binds a recovered message to the exact encapsulation procedure. The specific transformation matters a great deal here; this conceptual description is not a generic recipe for wrapping an arbitrary encryption scheme.</p>
+        <p>The following pseudocode summarizes FIPS 203's internal flow. \(H\), \(G\), and \(J\) denote distinct hash/XOF roles defined in the standard. Concatenation is written \(||\). Public wrappers perform required input checks and obtain approved randomness before calling these internal functions.</p>
+        <pre><code>KeyGen_internal(d, z):
     ekPKE, dkPKE = K-PKE.KeyGen(d)
     ek = ekPKE
     dk = dkPKE || ek || H(ek) || z
@@ -127,32 +159,33 @@ Decaps_internal(dk, c):
     K_fallback = J(z || c)
     c_reconstructed = K-PKE.Encrypt(ek, m_recovered, r)
     return constant_time_select(c == c_reconstructed,
-                                K_candidate, K_fallback)
-</code></pre>
-<p>Key generation uses independently generated 32-byte inputs d and z; encapsulation generates a fresh 32-byte m. These are cryptographic random inputs, not passwords, timestamps, or application identifiers. Decapsulation itself does not request fresh randomness. Its fallback secret derives from a secret value retained in the decapsulation key and the received ciphertext.</p>
-<p>Notice that the decapsulation key includes the encapsulation key and its hash, not just the lattice secret. That explains much of its larger serialized size and enables reencryption without asking the application to supply another public key. Applications should treat the complete decapsulation-key encoding as secret material, including any seed representation supported by their library.</p>
-<h2 id="implicit-rejection-and-the-meaning-of-success">Implicit rejection and the meaning of success</h2>
-<p>For a correctly sized but invalid ciphertext, decapsulation returns a pseudorandom fallback secret rather than exposing an explicit validity flag. An attacker must not learn whether the internal reencryption comparison succeeded. Secret-dependent timing, error messages, or follow-on behavior can undermine this protection even if the code returns a 32-byte buffer every time.</p>
-<p>This does not mean all malformed inputs are accepted. External validation still checks ciphertext lengths, encapsulation-key encoding and modulus requirements, and decapsulation-key structure and hash consistency as specified. A truncated ciphertext can produce an ordinary input error. The protected distinction is the internal validity decision for an otherwise admissible ciphertext.</p>
-<p>A successful command exit after decapsulating a corrupted same-length ciphertext therefore does not prove a successful peer exchange. It means the operation returned its specified output. The two endpoints will normally have different secret material, and the protocol's authentication or key-confirmation step fails. Logging “KEM succeeded” as “peer authenticated” collapses two distinct security events.</p>
-<p>Operational code must check API return values, output lengths, and protocol authentication. It must also avoid recording the candidate secret, fallback secret, recovered internal message, or comparison flag in debug logs. Failure telemetry can count public input errors and handshake failures without retaining information that turns diagnostics into a decryption oracle.</p>
-<h2 id="a-reproducible-native-openssl-experiment">A reproducible native OpenSSL experiment</h2>
-<p>This lab was executed on macOS ARM64 using an isolated OpenSSL 3.5.8 build. It uses the native implementation documented in <a href="https://docs.openssl.org/3.5/man7/EVP_KEM-ML-KEM/">OpenSSL's ML-KEM manual</a> and <a href="https://docs.openssl.org/3.5/man1/openssl-pkeyutl/">pkeyutl reference</a>. Set OPENSSL to the executable you intend to test; inspect its version before assuming the system command supports these algorithms.</p>
-<p>The following script creates disposable keys, confirms agreement, flips one ciphertext bit, and separately truncates a ciphertext. It prints no secret bytes. The temporary-directory permissions reduce accidental exposure, while deletion is ordinary cleanup rather than a guarantee of forensic erasure on every filesystem.</p>
-<pre><code class="language-bash">#!/usr/bin/env bash
+                                K_candidate, K_fallback)</code></pre>
+        <p>Key generation uses independently generated 32-byte inputs \(d\) and \(z\); encapsulation generates a fresh 32-byte \(m\). These are cryptographic random inputs, never passwords, timestamps, or application identifiers. Decapsulation itself does not request fresh randomness — its fallback secret derives entirely from a secret value retained in the decapsulation key plus the received ciphertext.</p>
+        <p>Notice that the decapsulation key includes the encapsulation key and its hash, not just the lattice secret — that explains much of its larger serialized size (§3) and enables re-encryption without asking the application to supply another public key. Applications should treat the <em>complete</em> decapsulation-key encoding as secret material, including any seed representation their library supports.</p>
+
+        <h2 id="implicit-rejection">7. Implicit rejection and the meaning of "success"</h2>
+        <p>For a correctly sized but invalid ciphertext, decapsulation returns a <strong>pseudorandom fallback secret</strong> rather than exposing an explicit validity flag. An attacker must not learn whether the internal re-encryption comparison succeeded — secret-dependent timing, error messages, or follow-on behavior can undermine this protection even when the code returns a 32-byte buffer every single time.</p>
+        <p>This does not mean <em>all</em> malformed inputs are quietly accepted. External validation still checks ciphertext lengths, encapsulation-key encoding and modulus requirements, and decapsulation-key structure and hash consistency exactly as specified — a truncated ciphertext still produces an ordinary input error. The protected distinction is specifically the internal validity decision for an otherwise <em>admissible</em> ciphertext.</p>
+        <div class="bm-warn">A successful command exit after decapsulating a corrupted, same-length ciphertext therefore does <strong>not</strong> prove a successful peer exchange. It only means the operation returned its specified output — the two endpoints will normally have different secret material, and the protocol's authentication or key-confirmation step should then fail. Logging "KEM succeeded" as "peer authenticated" collapses two distinct security events into one, a real and recurring integration bug.</div>
+        <p>Operational code must check API return values, output lengths, and protocol authentication separately. It must also avoid recording the candidate secret, fallback secret, recovered internal message, or comparison flag in debug logs — failure telemetry can count public input errors and handshake failures without retaining information that turns diagnostics into a decryption oracle.</p>
+
+        <h2 id="lab">8. A reproducible native OpenSSL experiment</h2>
+        <p>This lab was executed on macOS ARM64 using an isolated OpenSSL 3.5.8 build, using the native implementation documented in OpenSSL's ML-KEM manual and pkeyutl reference. Set <code>OPENSSL</code> to the exact executable you intend to test, and inspect its version before assuming a system command supports these algorithms at all.</p>
+        <p>The following script creates disposable keys, confirms agreement, flips one ciphertext bit, and separately truncates a ciphertext. It prints no secret bytes. Temporary-directory permissions reduce accidental exposure, while deletion afterward is ordinary cleanup, not a guarantee of forensic erasure on every filesystem.</p>
+        <pre><code>#!/usr/bin/env bash
 set -euo pipefail
 OPENSSL=${OPENSSL:-openssl}
 LAB=$(mktemp -d)
-trap 'rm -rf &quot;$LAB&quot;' EXIT
+trap 'rm -rf "$LAB"' EXIT
 umask 077
-cd &quot;$LAB&quot;
-&quot;$OPENSSL&quot; version
-&quot;$OPENSSL&quot; genpkey -algorithm ML-KEM-768 -out private.pem
-&quot;$OPENSSL&quot; pkey -in private.pem -pubout -out public.pem
-&quot;$OPENSSL&quot; pkeyutl -encap -pubin -inkey public.pem -out ciphertext.bin -secret sender.bin
-&quot;$OPENSSL&quot; pkeyutl -decap -inkey private.pem -in ciphertext.bin -secret recipient.bin
+cd "$LAB"
+"$OPENSSL" version
+"$OPENSSL" genpkey -algorithm ML-KEM-768 -out private.pem
+"$OPENSSL" pkey -in private.pem -pubout -out public.pem
+"$OPENSSL" pkeyutl -encap -pubin -inkey public.pem -out ciphertext.bin -secret sender.bin
+"$OPENSSL" pkeyutl -decap -inkey private.pem -in ciphertext.bin -secret recipient.bin
 cmp sender.bin recipient.bin
-python3 - &lt;&lt;'PY'
+python3 - <<'PY'
 from pathlib import Path
 c = bytearray(Path('ciphertext.bin').read_bytes())
 assert len(c) == 1088
@@ -161,43 +194,79 @@ c[0] ^= 1
 Path('corrupted.bin').write_bytes(c)
 Path('truncated.bin').write_bytes(c[:-1])
 PY
-&quot;$OPENSSL&quot; pkeyutl -decap -inkey private.pem -in corrupted.bin -secret rejected.bin
+"$OPENSSL" pkeyutl -decap -inkey private.pem -in corrupted.bin -secret rejected.bin
 if cmp -s sender.bin rejected.bin; then
-  echo 'Unexpected matching secret after corruption' &gt;&amp;2; exit 1
+  echo 'Unexpected matching secret after corruption' >&2; exit 1
 fi
-if &quot;$OPENSSL&quot; pkeyutl -decap -inkey private.pem -in truncated.bin -secret unused.bin 2&gt;error.log; then
-  echo 'Unexpected acceptance of truncated ciphertext' &gt;&amp;2; exit 1
+if "$OPENSSL" pkeyutl -decap -inkey private.pem -in truncated.bin -secret unused.bin 2>error.log; then
+  echo 'Unexpected acceptance of truncated ciphertext' >&2; exit 1
 fi
-printf '%s\n' 'PASS: agreement, 1088-byte ciphertext, 32-byte secret, implicit rejection, length rejection'
-</code></pre>
-<p>The observed run passed all five checks: matching secrets for the original ciphertext, the expected 1,088-byte ciphertext, 32-byte secret output, different recovered secret after same-length corruption, and explicit failure after truncation. This is functional evidence for that binary and these inputs. It is not a conformance certificate, side-channel audit, or proof that every invalid ciphertext behaves safely.</p>
-<p>Repeat the experiment using the other parameter names and their expected ciphertext lengths. Keep raw standard sizes separate from PEM byte counts. A PEM object includes encoding and headers; an implementation may store a seed or expanded private material in its own supported container. File size alone cannot validate the standardized raw-key representation.</p>
-<h2 id="cpu-memory-and-integration-costs">CPU, memory, and integration costs</h2>
-<p>Polynomial multiplication, sampling, hashing, and encoding all consume time. Optimized vector instructions can accelerate arithmetic, but performance depends on architecture, compiler, provider, and whether keys or expanded matrices are cached. A command-line measurement also includes process startup and file parsing, which may dominate a short cryptographic operation.</p>
-<p>Memory planning must include more than the serialized private key. Expanded matrices, intermediate polynomial vectors, transform buffers, thread-local state, and temporary hash contexts affect stack and heap usage. A high-concurrency service multiplies some of these costs by the number of simultaneous operations. An embedded device may care more about peak stack than average CPU time.</p>
-<p>Decapsulation requires particular care because attackers influence its input while it processes long-lived secret material. Constant-time comparisons and selections, fixed arithmetic paths where required, compiler review, and architecture-specific testing are part of the implementation obligation. The <a href="https://eprint.iacr.org/2024/1049">KyberSlash research</a> illustrates how seemingly routine integer operations can create exploitable timing leakage in implementations of this algorithm family.</p>
-<p>Protocol integration adds another cost dimension: an encapsulation key and ciphertext must fit the handshake framing and transport behavior. TLS hybrid groups specify exactly how classical and ML-KEM contributions are encoded and combined. Concatenating secrets in an application and choosing a KDF informally is not equivalent to following that protocol construction. Part 11 examines the standardized TLS profiles.</p>
-<h2 id="key-lifetime-and-forward-secrecy">Key lifetime and forward secrecy</h2>
-<p>A static recipient decapsulation key is convenient for asynchronous delivery, but its later compromise can expose earlier ciphertexts that an adversary recorded. ML-KEM alone does not make those historical exchanges forward secret. Ephemeral key establishment, deletion of ephemeral secrets, or a ratcheting protocol can change that exposure, provided the complete protocol establishes the claimed property.</p>
-<p>Consider an archival upload service. If every upload encapsulates to one permanent server key, protecting that key today is essential but does not eliminate future compromise risk. If the service rotates keys daily and retains every old private key indefinitely for recovery, the effective compromise window still covers those retained keys. Rotation schedules and actual deletion policies must agree.</p>
-<p>A threat model should therefore name the lifetime of decapsulation keys, shared secrets, derived traffic keys, backups, and diagnostic artifacts separately. Testing a fresh exchange after rotation does not demonstrate that historical material was retired. This distinction becomes especially important when comparing a one-shot KEM exchange with the recurring key updates of a messaging protocol.</p>
-<h2 id="review-questions-and-engineering-decisions">Review questions and engineering decisions</h2>
-<p>Before approving an integration, answer four concrete questions. Where does the authenticated encapsulation key come from? Which protocol-defined KDF consumes the shared secret? What demonstrates that the peer derived the same keys? What happens when input parsing, decapsulation, or the later authentication step fails? Each answer should point to an implemented mechanism and a test.</p>
-<p>Explain why an invalid ciphertext may return a secret without an error, and why this behavior does not make it valid. Explain why replacing randomness with a fixed seed for reproducibility is acceptable only inside an explicitly controlled test. Explain why the 768 suffix does not describe a 768-bit output. These distinctions prevent more integration mistakes than memorizing the table alone.</p>
-<p>For a small project, extend the lab into a test harness that records only algorithm name, binary version, input lengths, and pass/fail outcomes. Add wrong-key decapsulation, multiple independent exchanges, and malformed-key tests through supported library interfaces. Do not expose the internal validity decision to make testing easier; test public behavior and final key confirmation instead.</p>
-<h2 id="where-this-leads">Where this leads</h2>
-<p>ML-KEM provides a standardized mechanism for establishing secret material under a Module-LWE-based construction. Its security depends on the complete algorithm, correct implementation, sound randomness, and a protocol that supplies authentication and context. The next part studies ML-DSA, where related polynomial arithmetic supports public verification of signed messages instead of shared-secret recovery.</p>
-</div><nav class="post-nav" aria-label="Series navigation"><a href="pqc-06-lattices.html">← Part 6</a><a href="../series-pqc.html">All 18 parts</a><a href="pqc-08-ml-dsa.html">Part 8 →</a></nav>
+printf '%s\n' 'PASS: agreement, 1088-byte ciphertext, 32-byte secret, implicit rejection, length rejection'</code></pre>
+        <div class="bm-fix"><strong>The observed run passed all five checks:</strong> matching secrets for the original ciphertext, the expected 1,088-byte ciphertext, 32-byte secret output, a <em>different</em> recovered secret after same-length corruption (implicit rejection working as specified), and explicit failure after truncation. This is functional evidence for that specific binary and these specific inputs — it is not a conformance certificate, a side-channel audit, or proof that every invalid ciphertext behaves safely under every input.</div>
+        <p>Repeat the experiment using the other parameter names and their expected ciphertext lengths from §3. Keep raw standard sizes separate from PEM byte counts — a PEM object includes encoding and headers; an implementation may store a seed or expanded private material in its own supported container. File size alone cannot validate a standardized raw-key representation.</p>
+
+        <h2 id="cpu-memory">9. CPU, memory, and integration costs</h2>
+        <p>Polynomial multiplication, sampling, hashing, and encoding all consume time. Optimized vector instructions can accelerate arithmetic, but performance depends on architecture, compiler, provider, and whether keys or expanded matrices are cached. A command-line measurement also includes process startup and file parsing, which may dominate a genuinely short cryptographic operation — Part 14 covers fair benchmark methodology in full.</p>
+        <p>Memory planning must include more than the serialized private key. Expanded matrices, intermediate polynomial vectors, transform buffers, thread-local state, and temporary hash contexts all affect stack and heap usage. A high-concurrency service multiplies some of these costs by the number of simultaneous operations; an embedded device may care more about peak stack usage than average CPU time.</p>
+        <p>Decapsulation requires particular care because attackers influence its input while it processes long-lived secret material. Constant-time comparisons and selections, fixed arithmetic paths where required, compiler review, and architecture-specific testing are all part of the implementation obligation here. The <a href="https://eprint.iacr.org/2024/1049" target="_blank" rel="noopener">KyberSlash research</a> illustrates how seemingly routine integer operations can create exploitable timing leakage in implementations of this exact algorithm family — Part 13 covers this class of bug in depth.</p>
+        <p>Protocol integration adds another cost dimension: an encapsulation key and ciphertext must fit the handshake framing and transport behavior. TLS hybrid groups (Part 11) specify exactly how classical and ML-KEM contributions are encoded and combined together. Concatenating secrets in an application and choosing a KDF informally is not equivalent to following that protocol construction.</p>
+
+        <h2 id="key-lifetime">10. Key lifetime and forward secrecy</h2>
+        <p>A static recipient decapsulation key is convenient for asynchronous delivery, but its later compromise can expose earlier ciphertexts an adversary recorded (harvest-now-decrypt-later, Part 1 §5). ML-KEM alone does not make those historical exchanges forward secret — ephemeral key establishment, deletion of ephemeral secrets, or a ratcheting protocol can change that exposure, provided the <em>complete</em> protocol actually establishes the claimed property.</p>
+        <p>Consider an archival upload service. If every upload encapsulates to one permanent server key, protecting that key today is essential but does not eliminate future compromise risk. If the service instead rotates keys daily but retains every old private key indefinitely for recovery purposes, the effective compromise window still covers all those retained keys — rotation schedules and actual deletion policies must agree with each other, or rotation is theater.</p>
+        <p>A threat model should therefore name the lifetime of decapsulation keys, shared secrets, derived traffic keys, backups, and diagnostic artifacts <em>separately</em>. Testing a fresh exchange after rotation does not demonstrate that historical material was actually retired. This distinction becomes especially important comparing a one-shot KEM exchange against the recurring key updates of a messaging protocol like Signal's.</p>
+
+        <h2 id="review-questions">11. Review questions and engineering decisions</h2>
+        <p>Before approving an integration, answer four concrete questions: <strong>Where does the authenticated encapsulation key come from?</strong> <strong>Which protocol-defined KDF consumes the shared secret?</strong> <strong>What demonstrates the peer derived the same keys?</strong> <strong>What happens when input parsing, decapsulation, or the later authentication step fails?</strong> Each answer should point to an <em>implemented</em> mechanism and a test, not a plan.</p>
+        <p>Also be able to explain why an invalid ciphertext may return a secret without an error, and why this doesn't make it valid (§7); why replacing randomness with a fixed seed for reproducibility is acceptable only inside an explicitly controlled test (§6); and why the "768" suffix does not describe a 768-bit output (§3). These distinctions prevent more real integration mistakes than memorizing the size table alone.</p>
+        <p>For a small project, extend §8's lab into a test harness that records only algorithm name, binary version, input lengths, and pass/fail outcomes. Add wrong-key decapsulation, multiple independent exchanges, and malformed-key tests through supported library interfaces. Don't expose the internal validity decision to make testing easier — test public behavior and final key confirmation instead, exactly as a real attacker would be limited to.</p>
+
+        <details class="faq"><summary>Does ML-KEM authenticate the peer's public key?</summary><p>No (§2). Certificates, an authenticated handshake, or a separately provisioned trust relationship must supply that binding — ML-KEM's math establishes a shared secret between whoever holds each key pair, with no opinion on who that should be.</p></details>
+        <details class="faq"><summary>If decapsulation "succeeds" on a corrupted ciphertext, was the exchange compromised?</summary><p>No (§7). Implicit rejection returns a pseudorandom fallback secret specifically so an attacker can't distinguish valid from invalid ciphertexts by timing or behavior. The two endpoints simply end up with different secrets, and the protocol's own authentication step should then fail downstream.</p></details>
+        <details class="faq"><summary>Does a bigger ML-KEM parameter set (1024 vs 512) always mean more security bits?</summary><p>The numeric suffix is a parameter-set identifier tied to a NIST security category, not a literal bit count (§3). Larger parameter sets do target higher NIST categories, but the number itself isn't the quantum work factor.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>A KEM establishes secret material only — it doesn't authenticate anyone.</strong> The protocol wrapping ML-KEM has to supply key authentication and key confirmation separately.</li>
+          <li><strong>ML-KEM = K-PKE (§5) + a Fujisaki-Okamoto-style transform (§6) + implicit rejection (§7).</strong> K-PKE alone is not a secure standalone API — the wrapping is what achieves chosen-ciphertext security.</li>
+          <li><strong>Implicit rejection means "decapsulation returned output" ≠ "the exchange succeeded."</strong> A pseudorandom fallback secret on invalid input is the specified, correct behavior, not a bug.</li>
+          <li><strong>The reproducible lab (§8) passed all five checks on real hardware</strong> — agreement, correct sizes, corruption detection via mismatched secrets, and explicit truncation rejection — functional evidence, not a conformance certificate.</li>
+          <li><strong>KyberSlash-class timing bugs live in "seemingly routine" integer operations</strong> in decapsulation specifically, because that's where attacker-influenced input meets long-lived secret material.</li>
+          <li><strong>Key rotation without an actual deletion policy doesn't reduce the compromise window</strong> — the threat model has to name key/secret/backup lifetimes separately and verify old material is actually gone.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf" target="_blank" rel="noopener">FIPS 203 (ML-KEM)</a> · <a href="https://csrc.nist.gov/pubs/fips/203/final" target="_blank" rel="noopener">publication page (errata)</a> <span>— the primary standard for this entire chapter.</span></li>
+          <li><a href="https://csrc.nist.gov/pubs/sp/800/227/final" target="_blank" rel="noopener">NIST SP 800-227</a> <span>— §2, KEM usage considerations beyond the primitive.</span></li>
+          <li><a href="https://docs.openssl.org/3.5/man7/EVP_KEM-ML-KEM/" target="_blank" rel="noopener">OpenSSL ML-KEM manual</a> · <a href="https://docs.openssl.org/3.5/man1/openssl-pkeyutl/" target="_blank" rel="noopener">pkeyutl reference</a> <span>— §8, the lab commands.</span></li>
+          <li><a href="https://eprint.iacr.org/2024/1049" target="_blank" rel="noopener">KyberSlash research</a> <span>— §9, real timing-leak case study.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="pqc-06-lattices.html">← Part 6</a>
+        <a href="pqc-08-ml-dsa.html">next: Part 8 →</a>
+      </div>
     </article>
-  </main>
-  <aside class="toc-panel" aria-label="On this page">
-    <p class="toc-panel-label">// on this page</p>
-    <nav id="toc-nav" aria-label="Table of contents"></nav>
-  </aside>
-</div>
-<script src="../stats.js?v=4"></script>
-<script src="../app.js?v=43"></script>
-<script src="../settings.js?v=17"></script>
-<script src="../reader.js?v=3"></script>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
 </body>
 </html>

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hidden Telemetry: TraceLogging ETW Providers — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Elastic&#x27;s Asuka Nakajima maps roughly 2,600 undocumented TraceLogging ETW providers on Windows with a static-analysis tool, and shows which ones can power new detections.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">Hidden Telemetry: TraceLogging ETW Providers</p>
+        <p class="series-banner-meta">Talk 19 · Windows telemetry &amp; detection · analysis from the speaker's published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-graph-aware-llm-windows-logons.html">← prev: Graph-Aware Logon Detection</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 24, 2026 · conferences · 8 min read · 1633 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Hidden telemetry — the 2,600 Windows ETW providers nobody is reading.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">etw</span>
+          <span class="tag">windows</span>
+          <span class="tag">edr</span>
+          <span class="tag">detection</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+        <div class="yt-embed">
+          <div class="yt-embed-frame"><iframe src="https://www.youtube-nocookie.com/embed/ubFcs1M62P4" title="Black Hat Asia 2026 talk recording" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+          <p class="yt-embed-cap">Official recording, Black Hat YouTube channel · <a href="https://www.youtube.com/watch?v=ubFcs1M62P4" target="_blank" rel="noopener">open on YouTube ↗</a></p>
+        </div>
+
+        <p class="bm-tldr"><strong>Asuka Nakajima (Elastic)</strong> asks a simple question with a big answer: Windows ships roughly <strong>920 manifest-based ETW providers</strong> that every EDR and researcher knows, but also <strong>about 2,600 TraceLogging providers</strong> that almost nobody has catalogued. TraceLogging events are self-describing, unregistered and undiscoverable with standard tools, which is why they stayed hidden. Nakajima built <strong>TLGMapper</strong>, an IDA Python script that statically maps every event to its owning provider, surveyed Windows 11 and Windows Server 2025, and found <strong>about 2,670 providers and 73,000 unique events</strong>. Several look genuinely useful for detection: kernel attack-surface monitoring, UEFI variable access, and ShellExecute. This is defensive research, and the tool and data are public.</p>
+
+<p>Post 19 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. If the <a href="bhas26-graph-aware-llm-windows-logons.html">previous post</a> was about doing more with the telemetry you already have, this one is about telemetry Windows already emits that nobody is reading.</p>
+
+<h2 id="etw">1. ETW in five minutes</h2>
+<p><strong>Event Tracing for Windows (ETW)</strong> is the built-in, high-performance tracing framework. Four roles matter:</p>
+<ul>
+<li><strong>Providers</strong> are applications, DLLs or drivers that emit events.</li>
+<li><strong>Controllers</strong> start and stop trace sessions and decide which providers are enabled and at what level and keyword mask.</li>
+<li><strong>Sessions</strong> receive events from enabled providers into buffers, optionally writing <code>.etl</code> files.</li>
+<li><strong>Consumers</strong> read events, in real time or from files.</li>
+</ul>
+<p>Modern EDR products lean on ETW heavily because it gives cheap, in-kernel-fed visibility into DNS, logon, API and process activity without hooking. If a provider is emitting something interesting, an EDR can subscribe to it.</p>
+<div class="diagram-container">
+<svg viewBox="0 0 680 150" xmlns="http://www.w3.org/2000/svg">
+<rect x="10" y="45" width="140" height="60" rx="8" class="boxy"/><text x="80" y="72" class="ink" text-anchor="middle">Providers</text><text x="80" y="90" class="sm" text-anchor="middle">emit events</text>
+<rect x="200" y="45" width="140" height="60" rx="8" class="box"/><text x="270" y="72" class="ink" text-anchor="middle">Session</text><text x="270" y="90" class="sm" text-anchor="middle">buffers events</text>
+<rect x="390" y="45" width="140" height="60" rx="8" class="boxg"/><text x="460" y="72" class="ink" text-anchor="middle">Consumer</text><text x="460" y="90" class="sm" text-anchor="middle">EDR / analyst</text>
+<rect x="560" y="45" width="110" height="60" rx="8" class="boxr"/><text x="615" y="72" class="ink" text-anchor="middle">Controller</text><text x="615" y="90" class="sm" text-anchor="middle">enable/disable</text>
+<path d="M150 75H198M340 75H388M560 75H342" class="arr"/>
+</svg>
+<p class="diagram-label">Fig. 1 — The ETW pipeline. The controller decides which providers a session listens to.</p></div>
+
+<h2 id="types">2. Manifest-based vs TraceLogging</h2>
+<table class="papers">
+<thead><tr><th>Property</th><th>Manifest-based</th><th>TraceLogging</th></tr></thead>
+<tbody>
+<tr><td>Provider naming</td><td>Hyphens, e.g. <code>Microsoft-Windows-Firewall</code></td><td>Dots, e.g. <code>Microsoft.Windows.Firewall</code></td></tr>
+<tr><td>Event identity</td><td>Stable numeric event IDs</td><td>Event <em>name</em>, no stable ID</td></tr>
+<tr><td>Metadata</td><td>XML manifest, embedded in resources</td><td>Self-describing, embedded in the binary's read-only data</td></tr>
+<tr><td>Registration</td><td>Registry entry at install; enumerable with standard tools</td><td>No registry entry; no standard tool lists providers or events</td></tr>
+<tr><td>Public research</td><td>Extensive</td><td>Sparse</td></tr>
+</tbody></table>
+<p>The consequence is an <em>information asymmetry</em>. Defenders can list every manifest provider with a built-in command. For TraceLogging there is nothing to list, so you would need to know the provider's GUID in advance. Nakajima's survey counted the gap: on Windows 11 25H2, about 920 manifest providers against more than 2,600 TraceLogging ones. The unexplored population is nearly three times larger than the well-known one. The most notable earlier work is Matt Graeber's REcon 2019 talk and metadata parser, which showed how to read the format but stopped short of a full event-to-provider map.</p>
+
+<h2 id="format">3. How TraceLogging metadata is laid out</h2>
+<p>A TraceLogging provider is defined in code with a name and a GUID, then events are written by name with typed fields. The compiler embeds compact metadata blobs in the binary: a header with a recognisable signature, then a sequence of <strong>event blobs</strong> (level, keyword, opcode, event name, field names and types) and a <strong>provider blob</strong> (GUID and provider name), terminated by an end marker. A parser can find these blobs by scanning for the signature and decode names and field types.</p>
+<p>That gets you events and providers, but not which belongs to which. The blob stream has <strong>no ownership markers</strong>. Event A could belong to provider 1 or 2, and if a binary holds several providers you cannot tell from the metadata alone. This "missing link" is the real research problem.</p>
+
+<h2 id="mapper">4. TLGMapper: static event-to-provider resolution</h2>
+<p>There are two ways to establish ownership:</p>
+<ol>
+<li><strong>Runtime capture:</strong> start a trace session, run the program, and see which events appear. Easy, but events that do not fire during your run stay invisible.</li>
+<li><strong>Static binary analysis:</strong> examine the code that references event data and provider structures. No execution needed and theoretically complete, but traditionally slow and manual.</li>
+</ol>
+<p>TLGMapper automates option two inside IDA. Stage A extracts metadata: scan for headers, parse blobs to collect event data addresses and provider info, and locate each provider's runtime structure. Stage B resolves relationships: sweep every function for references to event data and provider structures, including call references, then assign each event an owner using a <strong>priority chain, first match wins</strong>:</p>
+<table class="papers">
+<thead><tr><th>#</th><th>Rule</th><th>Confidence idea</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Single-provider binary</td><td>Only one possible owner</td></tr>
+<tr><td>2</td><td>Provider referenced just before the event in the same function</td><td>Strong locality signal</td></tr>
+<tr><td>3</td><td>Nearest provider reference by address in the same function</td><td>Good heuristic</td></tr>
+<tr><td>4</td><td>Call-graph search through callees, depth up to 3</td><td>Weaker, follows wrappers</td></tr>
+<tr><td>5</td><td>Unknown</td><td>No owner resolved</td></tr>
+</tbody></table>
+<p>Being explicit about the heuristic level is good practice: anyone building detections on top of this data can weight events resolved by rule 1 or 2 above those from rule 4.</p>
+
+<h2 id="survey">5. The survey</h2>
+<p>Targets were Windows 11 25H2 and Windows Server 2025, scanning 64-bit <code>.exe</code>, <code>.dll</code> and <code>.sys</code> files under the Windows and Program Files directories (excluding the side-by-side store), about 2,564 files on Windows 11 and 2,342 on Server 2025. A few binaries were skipped for permission reasons.</p>
+<table class="papers">
+<thead><tr><th></th><th>Windows 11</th><th>Windows Server 2025</th></tr></thead>
+<tbody>
+<tr><td>Providers</td><td>~2,672</td><td>~2,469</td></tr>
+<tr><td>Unique events</td><td>~73,000</td><td>~64,000</td></tr>
+<tr><td>Shared providers</td><td colspan="2" style="text-align:center">~2,453</td></tr>
+<tr><td>Only on that OS</td><td>219</td><td>16</td></tr>
+</tbody></table>
+<p>The Windows 11 extras are largely consumer-facing features (family safety, Xbox, web threat defence, biometrics), while both include newer security features such as App Isolation. The author notes a caveat worth repeating: these providers are aimed at Microsoft developers, so <strong>event contents can change between builds</strong>. A detection that depends on a TraceLogging field is more fragile than one on a documented manifest event.</p>
+
+<h2 id="examples">6. Providers that look useful for security</h2>
+<h3>Attack-surface monitoring in the kernel</h3>
+<p>A provider in the kernel image reports device creation, device security-descriptor changes, and <strong>IOCTL calls</strong> (including the device object, the control code and a hash of the device name tail). That is exactly the telemetry needed to spot <em>vulnerable-driver abuse</em>: a process loads a legitimate but flawed signed driver and then talks to it through IOCTLs. Because it observes the IOCTL path, it also helps catch abuse of legitimate drivers, not just known-bad ones. Elastic already ships a behaviour rule that flags a process sending a specific suspend-process control code to a debugging-related driver from an untrusted caller, showing how such fields feed real detections.</p>
+<h3>UEFI variable access</h3>
+<p>A kernel system-environment provider logs <code>GetVariable</code> and <code>SetVariable</code> events with variable name, vendor GUID, attributes and status. Uses: notice reconnaissance reads of Secure Boot state, and watch for anomalous writes to UEFI variables that could accompany <strong>bootkit or Secure Boot tampering</strong>. Firmware-level attacks are notoriously hard to see, so any host-side signal is valuable.</p>
+<h3>ShellExecute</h3>
+<p>The provider inside the shell library records <code>ShellExecuteExW</code> calls with verb, file, parameters, directory, mask and window flags. The author observed a consistent mask value when a command is launched through the Run dialog, which suggests a way to spot <strong>ClickFix-style</strong> social engineering, where users are tricked into pasting a command into Run. He presents this as an idea to validate, not a finished detection.</p>
+<div class="bm-note"><strong>Also on the "not explored yet" list:</strong> providers for Kerberos, certificates, code integrity, token broker, firewall, kernel registry and security, DNS and WFP networking, COM, and Entra ID runtime. Each is a candidate for the next round of detection research.</div>
+
+<h2 id="caveats">7. Caveats before you build on this</h2>
+<ul>
+<li><strong>Unstable schema.</strong> Names and fields are developer-facing and may change between Windows builds. Pin to build numbers and re-test after updates.</li>
+<li><strong>Volume.</strong> Enabling many providers is noisy and costs CPU. Enable narrowly and filter early.</li>
+<li><strong>Static mapping is heuristic.</strong> Events resolved via call-graph search deserve less trust.</li>
+<li><strong>Visibility is a two-way street.</strong> Attackers can also learn what is logged. ETW tampering is an active evasion area, so pair collection with integrity monitoring of the sessions themselves.</li>
+</ul>
+
+<h2 id="use">8. How a defender can use this today</h2>
+<ol>
+<li>Clone the public repository and run the per-provider event catalog to see what exists on your OS build.</li>
+<li>Pick <strong>one</strong> provider that matches a gap in your detection coverage (for example driver abuse or Run-dialog launches).</li>
+<li>Capture events in a lab: create a trace session, enable the provider by GUID with all keywords, perform the behaviour, and convert the trace to a readable event log.</li>
+<li>Establish a benign baseline, then design a rule with allow-listing for signed, expected callers.</li>
+<li>Track the provider across Windows updates and retire the rule if the schema changes.</li>
+</ol>
+
+<details class="faq"><summary>Why isn't TraceLogging discoverable?</summary><p>By design it is lightweight and self-describing: no manifest, no registry entry. A developer just defines a provider name and GUID in code. That is convenient for developers but leaves defenders without a built-in enumeration API.</p></details>
+<details class="faq"><summary>Can I capture events without knowing the GUID?</summary><p>Not with standard tools. That is exactly the gap TLGMapper's catalog fills: it pairs provider names and GUIDs with their events so you can choose what to enable.</p></details>
+<details class="faq"><summary>Does this help attackers too?</summary><p>The data describes what Windows itself can log, and the work is published for defenders. Knowing which telemetry exists is useful to both sides, which is why integrity protection of ETW sessions matters.</p></details>
+<details class="faq"><summary>Does it need IDA Pro?</summary><p>The released script targets IDA 8.x and later. The per-provider catalog and raw CSV output can be used without running the tool.</p></details>
+
+<h2 id="takeaways">Takeaways</h2>
+<ul>
+<li>TraceLogging is an <strong>unexplored telemetry reservoir</strong>: ~2,600 providers versus ~920 manifest ones on Windows 11.</li>
+<li>The hard part was <strong>event-to-provider ownership</strong>; TLGMapper solves it statically with a prioritised heuristic chain.</li>
+<li>The survey found about <strong>73,000 events</strong> on Windows 11 and 64,000 on Server 2025.</li>
+<li>Promising detections: <strong>IOCTL and device monitoring</strong> for driver abuse, <strong>UEFI variable access</strong>, and <strong>ShellExecute</strong> for ClickFix-style launches.</li>
+<li>Treat these as <strong>experimental</strong>: schemas can change, so version-pin and re-test.</li>
+</ul>
+
+<h2 id="refs">References &amp; further reading</h2>
+<ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/#hidden-telemetry-uncovering-tracelogging-etw-providers-youre-not-using-yet-51991" target="_blank" rel="noopener">Black Hat Asia 2026 — this talk's official page</a> <span>— abstract, speaker bio, and slides/video when posted.</span></li>
+          <li><a href="https://www.youtube.com/watch?v=ubFcs1M62P4" target="_blank" rel="noopener">Official talk recording on YouTube</a> <span>— Black Hat channel.</span></li>
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — full Briefings schedule</a> <span>— every talk in the conference.</span></li>
+<li><a href="https://github.com/AsuNa-jp/TLGMapper" target="_blank" rel="noopener">TLGMapper</a> <span>— IDA script, per-provider event catalog and raw CSVs.</span></li>
+<li><a href="https://learn.microsoft.com/en-us/windows/win32/etw/about-event-tracing" target="_blank" rel="noopener">Microsoft: About Event Tracing</a> <span>— ETW concepts and provider types.</span></li>
+<li><a href="https://gist.github.com/mattifestation/edbac1614694886c8ef4583149f53658" target="_blank" rel="noopener">TLGMetadataParser.psm1</a> <span>— Matt Graeber's earlier metadata parser.</span></li>
+<li><a href="https://github.com/elastic/protections-artifacts" target="_blank" rel="noopener">Elastic protections-artifacts</a> <span>— public behaviour rules, including ones using kernel API telemetry.</span></li>
+</ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-graph-aware-llm-windows-logons.html">← prev: Graph-Aware Logon Detection</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

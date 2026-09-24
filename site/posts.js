@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-hidden-telemetry-tracelogging-etw",
+    title: "Hidden telemetry \u2014 the 2,600 Windows ETW providers nobody is reading.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "etw", "windows", "edr", "detection"],
+    time: 8,
+    words: 1633,
+    excerpt: "Black Hat Asia 2026, talk 19. Elastic's Asuka Nakajima builds TLGMapper to statically map ~73,000 events across ~2,670 undiscoverable TraceLogging ETW providers on Windows 11 and Server 2025, and shows kernel IOCTL, UEFI variable and ShellExecute telemetry that defenders can use.",
+    series: "blackhat-asia-2026",
+    seriesNum: "19"
+  },
+  {
     slug: "bhas26-graph-aware-llm-windows-logons",
     title: "Graph-aware LLM for Windows logons \u2014 compress first, then let the agent think.",
     date: "Sep 24, 2026",

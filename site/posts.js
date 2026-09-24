@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-faster-detection-nday-chromium",
+    title: "No time to patch \u2014 mitigating Chromium N-days before the exploit lands.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "chromium", "browser-security", "devsecops", "vulnerability-management"],
+    time: 12,
+    words: 2387,
+    excerpt: "Black Hat Asia 2026, talk 34. Wenxiang Qian, Zhixin Tu and Bin Li build an automated pipeline that reads a fresh Chromium CVE's patch, uses unsupervised codebase clustering (commit co-change + TF-IDF + Siamese network) to find matching runtime feature flags among ~3,000 candidates, ranks them by measured performance cost, and deploys a temporary per-site mitigation within hours of disclosure.",
+    series: "blackhat-asia-2026",
+    seriesNum: "34"
+  },
+  {
     slug: "bhas26-vsyncbreaker-android-tapjacking",
     title: "VsyncBreaker \u2014 when what's drawn and what's touchable quietly disagree.",
     date: "Sep 24, 2026",

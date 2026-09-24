@@ -726,11 +726,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "nist"
   ],
-  "time": 14,
-  "words": 2634,
-  "excerpt": "The quantum threat, the standards that are final, the protocols still changing, and an engineering map for an 18-part PQC course.",
+  "time": 19,
+  "words": 3797,
+  "excerpt": "Why PQC migration urgency doesn't require a working quantum computer yet (harvest-now-decrypt-later), what NIST has actually finalized (FIPS 203/204/205) vs. what's still draft, and the four separate questions hiding inside 'is this quantum-safe.'",
   "series": "pqc",
   "seriesNum": "1"
 },

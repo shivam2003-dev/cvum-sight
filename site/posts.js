@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-whisperpair-google-fast-pair",
+    title: "WhisperPair \u2014 one tap to pair, zero clicks to hijack.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "bluetooth", "fast-pair", "iot", "privacy"],
+    time: 7,
+    words: 1470,
+    excerpt: "Black Hat Asia 2026, talk 22. KU Leuven researchers show many Google Fast Pair accessories never enforce the pairing-mode predicate: 68% of 25 devices were hijackable zero-click in ~10 s, with audio/mic control and Find Hub stalking. They propose IntentPair to fail closed.",
+    series: "blackhat-asia-2026",
+    seriesNum: "22"
+  },
+  {
     slug: "bhas26-beyond-golden-image-self-healing",
     title: "Beyond the golden image \u2014 a supply chain that rebuilds itself.",
     date: "Sep 24, 2026",

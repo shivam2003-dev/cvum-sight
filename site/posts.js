@@ -486,11 +486,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "migration"
   ],
-  "time": 13,
-  "words": 2513,
-  "excerpt": "Turn PQC migration into an owned program: inventory, data-lifetime risk, dependencies, protocol profiles, canaries, rollback, evidence, and a practical maturity model.",
+  "time": 15,
+  "words": 2960,
+  "excerpt": "Why 'observed mechanism' must be a separate inventory field from 'installed capability,' the X+Y>Z prioritization math, why coverage percentages need an explicit denominator, and a five-level maturity model assessed per domain, not per organization.",
   "series": "pqc",
   "seriesNum": "16"
 },

@@ -80,7 +80,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Sep 16, 2026 · ml · 20 min read · 4029 words <span class="difficulty intermediate">intermediate</span></p>
+        <p class="meta">Sep 16, 2026 (updated Sep 24) · ml · 26 min read · 5107 words <span class="difficulty intermediate">intermediate</span></p>
         <h1>System One Models and Jev — TypeSafe AI's Bet That Not Every Decision Needs a Language Model.</h1>
         <div class="tag-row">
           <span class="tag fill">ml</span>
@@ -93,7 +93,7 @@
 
       <div class="post-body">
 
-        <p class="bm-tldr">On September 15, 2026, <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" target="_blank" rel="noopener">TypeSafe AI announced a new model category</a> it calls <strong>System One Models</strong>, and shipped the first one, <strong>Jev</strong>, in early access. The pitch: most of the AI calls buried inside production software aren't "write me an essay" — they're small, structured judgments (is this angry? which of these twelve categories? how confident are you?) that a full frontier LLM is wildly over-provisioned to answer, at 3–330 seconds and $0.20–$10 per million tokens, when 70–500 milliseconds and four cents would do. Jev trades away free-text generation entirely — no reasoning traces, no explanations, no chat — for typed, calibrated, parallel-sampled outputs trained with a new objective TypeSafe calls <strong>RLCD (Reinforcement Learning for Calibrated Decisions)</strong>. This piece works through the architecture, the training objective and how it differs from RLHF and RLVR, the workflow-evals benchmark methodology and its actual numbers, the open-source LLM adapter that makes the comparison reproducible, and — because a vendor's own launch post is not a neutral source — where the claims currently outrun the evidence.</p>
+        <p class="bm-tldr">On September 15, 2026, <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" target="_blank" rel="noopener">TypeSafe AI announced a new model category</a> it calls <strong>System One Models</strong>, and shipped the first one, <strong>Jev</strong>, in early access. The pitch: most of the AI calls buried inside production software aren't "write me an essay" — they're small, structured judgments (is this angry? which of these twelve categories? how confident are you?) that a full frontier LLM is wildly over-provisioned to answer, at 3–330 seconds and $0.20–$10 per million tokens, when 70–500 milliseconds and four cents would do. Jev trades away free-text generation entirely — no reasoning traces, no explanations, no chat — for typed, calibrated, parallel-sampled outputs trained with a new objective TypeSafe calls <strong>RLCD (Reinforcement Learning for Calibrated Decisions)</strong>. This piece works through the architecture, the training objective and how it differs from RLHF and RLVR, the workflow-evals benchmark methodology and its actual numbers, the open-source LLM adapter that makes the comparison reproducible, and — because a vendor's own launch post is not a neutral source — where the claims currently outrun the evidence. <strong>Update, Sep 24, 2026:</strong> §12 covers what's changed since launch — GA docs, a public vendor-authored failure-mode list, and the first independent usage numbers from a third-party marketplace.</p>
 
         <h2 id="the-idea">1. The idea: not every AI call needs a language model</h2>
         <p>TypeSafe frames the split using Daniel Kahneman's <em>Thinking, Fast and Slow</em> distinction between <strong>System 1</strong> cognition — fast, intuitive, pattern-matching, running below conscious deliberation — and <strong>System 2</strong> — slow, effortful, step-by-step reasoning. It's a slightly loaded borrowing, since Kahneman's System 1 is also where human cognitive biases live, but the software analogy TypeSafe wants you to draw is narrower and more defensible than the human one: a lot of what production AI systems actually do at scale is not open-ended reasoning, it's <strong>classification, routing, scoring, extraction, and branching</strong> — the kind of decision a rules engine used to make with a hand-written heuristic, now made better by a learned model, but still fundamentally a small, structured, repeated judgment rather than a conversation.</p>
@@ -252,6 +252,51 @@ response = client.system_one(
         <details class="faq"><summary>Does "0% hallucination" mean the answers are always correct?</summary><p>No. It means the output is guaranteed to be schema-valid (a properly typed field, not malformed JSON or off-schema text) by construction. The workflow-evals accuracy numbers (~67.8% average, below Opus 5's 73.1% workflow-decomposed figure) show semantic correctness is a separate, much lower number — see §7.</p></details>
         <details class="faq"><summary>Can I reproduce TypeSafe's comparison myself?</summary><p>Partially. The open-source <code>system-one-adapter-python</code> package lets you run the same question-asking interface against any LLM provider, and the eval harness details are published at evals.typesafe.ai. What you can't reproduce is Jev's own side of the comparison unless you have early access, and you can't inspect the RLCD training method or model architecture at all — both remain proprietary.</p></details>
 
+        <h2 id="update">12. Update, Sep 24: GA docs, an official failure-mode list, and real usage numbers</h2>
+        <p>Since launch, TypeSafe has published a public docs site (<code>docs.typesafe.ai</code>) and Jev has started showing up in third-party model marketplaces. Some of this fills gaps flagged in §10; some of §10's gaps are still open.</p>
+        <h3 id="update-ga">12.1 The model is now versioned, priced, and documented like a product</h3>
+        <p>Jev shipped as <code>jev-1.13.0</code>, reachable through two aliases: <code>jev-latest</code> (the newest official stable release — the docs' own default) and <code>jev-preview</code> (currently identical to <code>jev-latest</code>; moves ahead of it when a preview build exists). The published API pricing — <strong>$42 per billion input tokens ($0.042/MTok), output free</strong> — matches the figure this article already cited from the launch post, now backed by a stable API reference rather than a blog claim. New, previously undocumented specifics:</p>
+        <ul>
+          <li><strong>Context budget:</strong> 64k tokens total per request (state plus every question combined), with a 32k sub-limit for state plus the single longest question.</li>
+          <li><strong>Rate limits:</strong> 250,000 tokens/second and 1,200 requests/minute, explicitly called out as adjusting dynamically while TypeSafe scales GPU capacity — not yet a stable SLA.</li>
+          <li><strong>No per-customer fine-tuning or LoRA.</strong> One set of weights serves every account; TypeSafe's documented answer to "how do I customize it" is entirely prompt-side — put proprietary content in the <code>state</code> field, encode domain rules in each question's instructions and criteria, and decompose broad judgments into atomic questions combined in code. This resolves an open question from §4: there is no fine-tuning surface at all.</li>
+          <li><strong>Zero data retention available;</strong> Jev is documented as not trained on customer requests or responses, with a formal DPA for enterprise accounts.</li>
+          <li><strong>Language support is explicitly English-first.</strong> The docs state other languages, including CJK scripts, are "handled but not equally well," and recommend testing non-English workloads directly rather than assuming parity.</li>
+        </ul>
+        <h3 id="update-jaggedness">12.2 TypeSafe now publishes its own failure-mode list — and it's more specific than this article's original skepticism</h3>
+        <p>A docs page titled <a href="https://docs.typesafe.ai/jaggedness" target="_blank" rel="noopener">"Jev 1.13 jaggedness"</a> (dated Sep 17, 2026) is a vendor-authored list of known weak points, not a marketing page. It states plainly: <em>"jev-1.13 is fast, calibrated, and good at common-sense judgment but it is not perfect."</em> Nine failure modes are documented, each with a concrete fix:</p>
+        <table class="papers">
+          <tr><th>Failure mode</th><th>What TypeSafe says goes wrong</th><th>Documented fix</th></tr>
+          <tr><td>Literal reading</td><td>Jev answers the words you wrote, not the intent behind them; negations and scoping words are read at face value</td><td>State the exact condition and every boundary case explicitly in the instructions and criteria</td></tr>
+          <tr><td>Math and numbers</td><td>Not a calculator; counting characters, list items, or occurrences degrades as the count grows, because it recognizes the shape of an answer rather than tallying</td><td>Keep arithmetic in code; ask one atomic question per item and sum in code (worked example below)</td></tr>
+          <tr><td>Numeric representations</td><td>Semantic labels ("red") outperform numeric encodings (hex/RGB) for the same underlying judgment; score outputs shouldn't be used to interpolate an exact magnitude</td><td>Convert to a named bucket or do the computation in code; keep the model for genuinely semantic judgment</td></tr>
+          <tr><td>Date and time comparison</td><td>Dates are read as text, not ordered quantities; ordering, duration, and window checks are unreliable, worse with mixed formats</td><td>Extract components (month/day/year) as bounded Choice questions with an explicit "not stated" option; assemble and compare in code</td></tr>
+          <tr><td>Indirection</td><td>Multi-hop reasoning and double negatives cost accuracy</td><td>Write instructions directly; name the relevant state fields explicitly</td></tr>
+          <tr><td>Large, mostly-irrelevant state</td><td>Accuracy falls as unrelated content in the state grows; unrelated detail acts as a distractor</td><td>Filter and retrieve before sending; send only the fields the question needs</td></tr>
+          <tr><td>Adversarial content, contradictory criteria, structural invariants, generation</td><td>Each named as a distinct, separately-documented weak point</td><td>Precise prompts and edge-case testing; aligned criteria; enforce cross-answer identities in code rather than trusting the model to keep them consistent; use a generative model when the task actually requires generated text</td></tr>
+        </table>
+        <p>The counting failure mode is worth dwelling on because TypeSafe's own worked fix illustrates §9's "decompose into atomic questions, combine in code" pattern concretely:</p>
+        <pre><code>from typesafe_sdk import Noul, TypeSafeClient
+
+client = TypeSafeClient(model="jev-1.13")
+YES = 0.5  # threshold, tune per use case
+
+items = ["typesafe", "apple", "california", "banana", "likes", "calibration", "orange", "vertex"]
+
+result = client.system_one(
+    {"items": items},
+    {
+        f"item_{i}": Noul(instructions=f"Is `items[{i}]` the name of a fruit?")
+        for i in range(len(items))
+    },
+)
+
+count = sum(result.nouls[f"item_{i}"].noul > YES for i in range(len(items)))</code></pre>
+        <p>This is the same architectural point §5 and §9 make about Jev's design — it is not one model answering "how many fruits are in this list," it is <em>N</em> independent, parallel-sampled yes/no judgments that your own code tallies. TypeSafe publishing this pattern as the documented fix for a stated weakness is a stronger form of transparency than the launch post's own framing offered, and it directly corroborates §10's skepticism about numeric and counting tasks rather than contradicting it.</p>
+        <h3 id="update-usage">12.3 The first independent, non-vendor-reported usage numbers</h3>
+        <p>Jev is now listed on <a href="https://openrouter.ai/typesafe" target="_blank" rel="noopener">OpenRouter</a> as two models (<code>Jev Latest</code>, <code>Jev 1.13</code>), both at 32K context and the same $0.042/M-input, $0/M-output pricing documented above — an independent third party confirming TypeSafe's own published price rather than relaying it uncritically. More significant is OpenRouter's own token-volume chart for the TypeSafe integration: daily tokens processed through this one marketplace rose from roughly 95 billion on Sep 17 to roughly 380 billion by Sep 23, a 4× increase in six days, cumulating past 1.46 trillion tokens on that single channel. This is the first usage evidence in this piece that didn't originate from TypeSafe itself. It says real integration volume exists and is growing quickly through at least one distribution channel; it says nothing about accuracy, and it is not evidence for or against any of the workflow-evals numbers in §6.</p>
+        <div class="bm-note"><strong>What §10's gaps still look like after this update.</strong> Public MMLU-style benchmark numbers: still not published. Training data provenance and the exact RLCD loss: still undisclosed. Independent (non-TypeSafe, non-OpenRouter) accuracy audits of jev-1.13 on a held-out task set: none found as of this writing. The GA docs and jaggedness page close the "how does this actually behave in production" gap considerably; they do not close the "is the accuracy number trustworthy" gap from §7 and §10 at all.</div>
+
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li><strong>The structural argument is sound independent of whether Jev specifically delivers:</strong> most AI calls buried in production workflows are narrow, structured, high-volume decisions, and routing them through a frontier LLM's sequential-token, unbounded-output architecture is genuine overkill on both latency and cost.</li>
@@ -260,11 +305,16 @@ response = client.system_one(
           <li><strong>Workflow decomposition (narrow questions + code, instead of one big prompt) is a legitimate, transferable finding on its own</strong> — it improved Claude Opus 5's accuracy from 64.8% to 73.1% while lowering cost, before Jev enters the comparison at all.</li>
           <li><strong>The open-source adapter is the most credible part of this launch</strong> — it makes the LLM side of every comparison independently reproducible, which most vendor benchmark posts don't offer.</li>
           <li><strong>The highest-multiplier numbers (193.6×, 444.6×) are self-reported on a single production workload class, evaluated with in-house-authored tasks and reference labels drawn from two RLHF-trained chat models</strong> — directionally informative, not independently verified, and the launch post itself withholds the architecture and training details needed to fully evaluate them.</li>
+          <li><strong>Update, Sep 24:</strong> Jev shipped GA as <code>jev-1.13.0</code> with public pricing, rate limits, and zero data retention, and TypeSafe now publishes its own nine-item failure-mode list (literal reading, counting, dates, indirection, large irrelevant state) with worked fixes — a stronger transparency signal than the launch post. OpenRouter shows real, fast-growing third-party usage (1.46T tokens through Sep 23). None of this adds an independent accuracy benchmark; §7 and §10's core evidence gap is unchanged.</li>
         </ul>
 
         <h2 id="refs">References &amp; further reading</h2>
         <ul class="reflist">
           <li><a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" target="_blank" rel="noopener">TypeSafe AI — Introducing System One Models and Jev</a> <span>— the primary source for every claim and figure in this article.</span></li>
+          <li><a href="https://docs.typesafe.ai/models" target="_blank" rel="noopener">TypeSafe AI Docs — Models</a> <span>— primary source for §12.1: GA versioning, pricing, context length, rate limits, data handling.</span></li>
+          <li><a href="https://docs.typesafe.ai/jaggedness" target="_blank" rel="noopener">TypeSafe AI Docs — Jev 1.13 jaggedness</a> <span>— primary source for §12.2: the vendor's own nine-item failure-mode list with worked fixes.</span></li>
+          <li><a href="https://openrouter.ai/typesafe" target="_blank" rel="noopener">OpenRouter — Typesafe models</a> <span>— primary source for §12.3: independent pricing confirmation and third-party token-volume data.</span></li>
+          <li><a href="https://github.com/AbdelStark/awesome-typesafe" target="_blank" rel="noopener">GitHub — awesome-typesafe</a> <span>— community-maintained field guide: SDKs, demos, and agent-tooling built on Jev.</span></li>
           <li><a href="https://evals.typesafe.ai/" target="_blank" rel="noopener">TypeSafe AI — Workflow Evals</a> <span>— the full methodology, per-model accuracy/cost/latency breakdowns across four workflows.</span></li>
           <li><a href="https://github.com/typesafe-ai/system-one-adapter-python" target="_blank" rel="noopener">system-one-adapter-python on GitHub</a> <span>— the open-source LLM-backed adapter used to reproduce the comparison against any provider.</span></li>
           <li><a href="https://console.typesafe.ai/playground" target="_blank" rel="noopener">TypeSafe AI — Playground</a> <span>— interactive demo for early-access users.</span></li>

@@ -550,11 +550,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "pki"
   ],
-  "time": 13,
-  "words": 2549,
-  "excerpt": "Separate certificate keys from issuer signatures, understand RFC 9881 ML-DSA encodings, test a local chain, and plan CA, revocation, artifact-signing, and long-term trust migration.",
+  "time": 15,
+  "words": 2941,
+  "excerpt": "Subject-key and issuer-signature algorithms migrate independently per certificate, RFC 9881's exact OIDs and byte counts, why a valid ML-DSA signature on the wrong hostname still fails auth, and a reproducible local ML-DSA CA lab with verified hostname rejection.",
   "series": "pqc",
   "seriesNum": "12"
 },

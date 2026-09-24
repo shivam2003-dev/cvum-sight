@@ -694,11 +694,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "quantum-computing"
   ],
-  "time": 15,
-  "words": 2808,
-  "excerpt": "Understand Shor, Grover, resource estimates, and harvest-now-decrypt-later without confusing mathematical algorithms with machines that already exist.",
+  "time": 20,
+  "words": 4011,
+  "excerpt": "Shor changes factoring's difficulty class; Grover only halves symmetric exponents. Resource-estimate papers, the algorithm/implementation/adversary distinction, and a worked S+M>Q migration scenario, without confusing math that exists with a machine that doesn't yet.",
   "series": "pqc",
   "seriesNum": "3"
 },

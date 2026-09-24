@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-rentable-iot-meltdown-idscope",
+    title: "The rentable IoT meltdown \u2014 when a short ID turns one bug into a whole fleet.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "iot", "hardware", "ev-charging", "api-security"],
+    time: 7,
+    words: 1371,
+    excerpt: "Black Hat Asia 2026, talk 25. Tsinghua's Hetian Shi studies shared e-scooters, e-bikes and EV chargers: unencrypted protocols, hard-coded keys and IDOR-style APIs combine with short sequential IDs (IDScope) into fleet-scale abuse. 57 vulnerabilities across 17 devices and 92 apps.",
+    series: "blackhat-asia-2026",
+    seriesNum: "25"
+  },
+  {
     slug: "bhas26-torchlight-tor-exit-iot-attacks",
     title: "TORCHLIGHT \u2014 what 26 TB of Tor exit traffic reveals about IoT attacks.",
     date: "Sep 24, 2026",

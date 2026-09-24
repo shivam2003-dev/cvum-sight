@@ -502,11 +502,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "openssl"
   ],
-  "time": 13,
-  "words": 2510,
-  "excerpt": "Reproduce the course's native OpenSSL experiments with a checksum-pinned build, disposable keys, automated negative tests, local TLS, a container recipe, and CI.",
+  "time": 14,
+  "words": 2855,
+  "excerpt": "A checksum-pinned OpenSSL 3.5.8 build, a real disposable-key functional suite (ML-KEM, ML-DSA, SLH-DSA, hybrid TLS, ML-DSA certificates) with paired positive and negative checks for every algorithm, a container recipe, and CI failure triage by layer.",
   "series": "pqc",
   "seriesNum": "15"
 },

@@ -1,51 +1,107 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Hands-On PQC Lab for Engineers — cvam.sight</title>
-  <meta name="description" content="Reproduce the course&#x27;s native OpenSSL experiments with a checksum-pinned build, disposable keys, automated negative tests, local TLS, a container recipe, and CI.">
-  <link rel="stylesheet" href="../style.css?v=89">
-  <script src="/theme-init.js?v=9"></script>
-  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hands-On PQC Lab for Engineers — cvam.sight</title>
+<meta name="description" content="Part 15 of an 18-part PQC engineering course: a checksum-pinned OpenSSL build, a complete disposable-key functional suite covering ML-KEM, ML-DSA, SLH-DSA, hybrid TLS, and ML-DSA certificates, a container recipe, and CI triage — with real executed results.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
 <link rel="canonical" href="https://shivam2003.com/posts/pqc-15-engineering-lab">
 <style>
-/* Keep the existing reader shell and palette; scope table access and body typography to these surveys. */
-.pqc-survey table,.pqc-survey table th,.pqc-survey table td,.pqc-survey table caption,.pqc-survey blockquote,.pqc-survey blockquote p{font-family:var(--font-body)}
-.pqc-survey table{font-size:1em;line-height:1.6;min-width:580px;margin:0}
-.pqc-survey table th{font-size:.9em;text-transform:none;letter-spacing:normal;vertical-align:top}
-.pqc-survey table td{vertical-align:top}
-.pqc-survey table caption{text-align:left;font-size:.94em;line-height:1.6;padding:12px 0;color:var(--ink-soft)}
-.pqc-survey .pqc-table-wrap{max-width:100%;overflow-x:auto;margin:24px 0;overscroll-behavior-x:contain}
-.pqc-survey .pqc-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
-.pqc-survey .callout.math{font-size:1em;line-height:1.8}
-.pqc-survey .pqc-references li{margin-bottom:14px;overflow-wrap:anywhere}
-.pqc-survey h2{scroll-margin-top:24px}
-.pqc-survey table th,.pqc-survey table td{overflow-wrap:normal;word-break:normal}.pqc-survey p,.pqc-survey li{overflow-wrap:break-word}.pqc-survey pre{max-width:100%;overflow-x:auto}.pqc-survey blockquote code{font-family:var(--font-mono)}
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  .post-body pre{background:#2a2620;color:#ebe3cf;padding:16px;border-radius:6px;overflow-x:auto;font-size:.85rem;line-height:1.6}
+  .post-body pre code{font-family:var(--font-mono);color:inherit}
 </style>
 </head>
 <body>
-<div class="progress-bar"></div>
-<div class="layout has-toc">
-  <aside class="sidebar">
-    <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
-    <p class="sidebar-sub">blog from a devops + ml apprentice</p>
-    <nav><a href="../index.html">Home</a><a href="../series.html">Series</a><a href="../ai-native.html">AI Native</a><a href="../archive.html">Archive</a><a href="../paperjuice.html">Paper Juice</a><a href="../discover.html">Discover</a><a href="../about.html">About</a></nav>
-  </aside>
-  <main class="page">
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
     <article>
-      <div class="post-header"><p class="meta">Sep 11, 2026 · security · 13 min read · 2,510 words</p><h1>Hands-On PQC Lab for Engineers</h1><p>Post-Quantum Cryptography · Part 15 of 18 · intermediate</p><div class="tag-row"><span class="tag fill">security</span><span class="tag">post-quantum</span><span class="tag">cryptography</span></div></div>
-<div class="post-body osc-body pqc-survey">
-<blockquote>
-<p>A useful laboratory leaves evidence: the exact executable, commands, successful checks, expected failures, and limits of the experiment. A screenshot of an algorithm name is only the beginning.</p>
-</blockquote>
-<h2 id="what-this-lab-establishes">What this lab establishes</h2>
-<p>This lab combines the executed experiments from Parts 2–12 into one repeatable suite. It uses native OpenSSL for ML-KEM, ML-DSA, SLH-DSA, certificates, and standardized hybrid TLS. Toy Python exercises are clearly separated from real cryptographic operations. All generated keys are disposable, and the TLS server binds to loopback.</p>
-<p>The checkpoint is September 11, 2026. <a href="https://openssl-library.org/source/">OpenSSL's release page</a> lists 3.5.8 in the supported 3.5 LTS branch, alongside newer release branches. We pin 3.5.8 for reproducibility, not because it is the numerically newest release. Revisit the pin and security advisories before using a later copy of this lab.</p>
-<p>Successful completion establishes functional behavior for the tested binary and environment. It does not establish FIPS module validation, physical side-channel resistance, public browser compatibility, or production capacity. The earlier articles explain those separate evidence requirements. Here the emphasis is on producing a clean, inspectable experiment that can be repeated after an upgrade.</p>
-<h2 id="repository-layout-and-prerequisites">Repository layout and prerequisites</h2>
-<p>The runnable files are in the <a href="https://github.com/shivam2003-dev/cvum-sight/tree/main/labs/pqc">course laboratory directory</a>. Clone the repository and record the commit before running it. The native path needs Bash, Python 3, a C compiler, make, Perl, curl, and suitable build tools. The container path needs a working Docker engine.</p>
-<pre><code class="language-text">labs/pqc/
+      <div class="series-banner">
+        <p class="series-banner-label">Post-Quantum Cryptography — an engineering course</p>
+        <p class="series-banner-title">Part 15: Hands-On PQC Lab for Engineers</p>
+        <p class="series-banner-meta">Part 15 of 18 · advanced</p>
+        <div class="series-banner-nav">
+          <a href="pqc-14-performance.html">← Part 14</a>
+          <a href="pqc-16-migration-agility.html">next: Part 16 →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 11, 2026 · security · 14 min read · 2855 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Hands-on PQC lab for engineers.</h1>
+        <div class="tag-row">
+          <span class="tag fill">security</span>
+          <span class="tag">post-quantum</span>
+          <span class="tag">cryptography</span>
+          <span class="tag">openssl</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">A useful laboratory leaves evidence: the exact executable, commands, successful checks, expected failures, and limits of the experiment. A screenshot of an algorithm name is only the beginning. This chapter combines the individual experiments from Parts 2–12 into one repeatable suite — a checksum-pinned OpenSSL 3.5.8 build, disposable-key functional tests for ML-KEM, ML-DSA, SLH-DSA, hybrid TLS, and a local ML-DSA certificate chain, a container recipe, and CI triage guidance. Everything below is a real, runnable lab in this site's own repository, not a schematic — the exact file layout and executed results are reported as they actually ran.</p>
+
+        <h2 id="what-establishes">1. What this lab establishes</h2>
+        <p>This lab combines the executed experiments from Parts 2–12 into one repeatable suite. It uses native OpenSSL for ML-KEM, ML-DSA, SLH-DSA, certificates, and standardized hybrid TLS. Toy Python exercises are clearly separated from real cryptographic operations. All generated keys are disposable, and the TLS server binds to loopback only.</p>
+        <div class="bm-warn">OpenSSL's release page lists 3.5.8 in the supported 3.5 LTS branch, alongside newer release branches. We pin 3.5.8 for reproducibility, not because it's the numerically newest release. Revisit the pin and security advisories before using a later copy of this lab. <strong>Successful completion establishes functional behavior for the tested binary and environment only</strong> — it does not establish FIPS module validation, physical side-channel resistance (Part 13), public browser compatibility, or production capacity (Part 14). Here the emphasis is on producing a clean, inspectable experiment that can be repeated after an upgrade.</div>
+
+        <h2 id="layout">2. Repository layout and prerequisites</h2>
+        <p>The runnable files are in the course laboratory directory. Clone the repository and record the commit before running it. The native path needs Bash, Python 3, a C compiler, make, Perl, curl, and suitable build tools. The container path needs a working Docker engine.</p>
+        <pre><code>labs/pqc/
   build-openssl.sh       checksum-pinned isolated source build
   run-all.sh             complete functional suite
   02-foundations.sh      classical signature baseline
@@ -58,146 +114,170 @@
   11-hybrid-tls.sh       authenticated loopback TLS
   12-pki.sh              local ML-DSA certificate chain
   Dockerfile            isolated Linux runner
-  results/              retained exploratory benchmark output
-</code></pre>
-<p>The Python toys are not substitutes for production algorithms. Their small moduli and deterministic values intentionally expose mathematical relationships. The shell experiments call maintained library interfaces and never implement a KEM, signature scheme, or TLS combiner themselves.</p>
-<p>Use a dedicated working directory. Do not point the lab at production keys, copy secrets into its source tree, or add generated private files to Git. The scripts use temporary directories and cleanup traps. Ordinary deletion is housekeeping rather than a promise of secure erasure on every storage medium.</p>
-<h2 id="build-the-pinned-executable-without-replacing-system-openssl">Build the pinned executable without replacing system OpenSSL</h2>
-<p>The build script downloads the official 3.5.8 release archive, checks a fixed SHA-256 digest, and installs under an explicit prefix. The digest was checked against the release's official checksum for this course. A mismatch stops the build. The script does not replace the operating system's libraries or alter a global command symlink.</p>
-<pre><code class="language-bash">bash labs/pqc/build-openssl.sh &quot;$PWD/.pqc-runtime&quot;
-export OPENSSL=&quot;$PWD/.pqc-runtime/bin/openssl&quot;
-&quot;$OPENSSL&quot; version -a
-</code></pre>
-<p>The installation path must be absolute. The build uses a temporary source directory and a configurable BUILD_JOBS value, defaulting to two concurrent compilation jobs. Increasing it can shorten the build on a suitable machine, but does not change the algorithmic test. Keep the resulting binary version and compiler details with your report.</p>
-<pre><code class="language-bash">#!/usr/bin/env bash
+  results/              retained exploratory benchmark output</code></pre>
+        <p>The Python toys are not substitutes for production algorithms. Their small moduli and deterministic values intentionally expose mathematical relationships (Parts 3–4, 6). The shell experiments call maintained library interfaces and never implement a KEM, signature scheme, or TLS combiner themselves — exactly the discipline Part 2's lab already established.</p>
+        <p>Use a dedicated working directory. Do not point the lab at production keys, copy secrets into its source tree, or add generated private files to Git. The scripts use temporary directories and cleanup traps. Ordinary deletion is housekeeping, not a promise of secure erasure on every storage medium.</p>
+
+        <h2 id="build">3. Build the pinned executable without replacing system OpenSSL</h2>
+        <p>The build script downloads the official 3.5.8 release archive, checks a fixed SHA-256 digest, and installs under an explicit prefix. The digest was checked against the release's official checksum for this course. A mismatch stops the build. The script does not replace the operating system's libraries or alter a global command symlink.</p>
+        <pre><code>bash labs/pqc/build-openssl.sh "$PWD/.pqc-runtime"
+export OPENSSL="$PWD/.pqc-runtime/bin/openssl"
+"$OPENSSL" version -a</code></pre>
+        <p>The installation path must be absolute. The build uses a temporary source directory and a configurable <code>BUILD_JOBS</code> value, defaulting to two concurrent compilation jobs. Increasing it can shorten the build on a suitable machine, but does not change the algorithmic test. Keep the resulting binary version and compiler details with your report.</p>
+        <pre><code>#!/usr/bin/env bash
 set -euo pipefail
 PREFIX=${1:?Usage: build-openssl.sh ABSOLUTE_INSTALL_PREFIX}
-case &quot;$PREFIX&quot; in /*) ;; *) echo 'Use an absolute prefix' &gt;&amp;2; exit 1;; esac
+case "$PREFIX" in /*) ;; *) echo 'Use an absolute prefix' >&2; exit 1;; esac
 VERSION=3.5.8
 SHA256=a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2
 BUILD=$(mktemp -d)
-trap 'rm -rf &quot;$BUILD&quot;' EXIT
-cd &quot;$BUILD&quot;
-curl --fail --location --retry 3 &quot;https://github.com/openssl/openssl/releases/download/openssl-$VERSION/openssl-$VERSION.tar.gz&quot; -o openssl.tar.gz
-python3 - &quot;$SHA256&quot; &lt;&lt;'PY'
+trap 'rm -rf "$BUILD"' EXIT
+cd "$BUILD"
+curl --fail --location --retry 3 "https://github.com/openssl/openssl/releases/download/openssl-$VERSION/openssl-$VERSION.tar.gz" -o openssl.tar.gz
+python3 - "$SHA256" <<'PY'
 import hashlib,sys
 assert hashlib.sha256(open('openssl.tar.gz','rb').read()).hexdigest() == sys.argv[1], 'checksum mismatch'
 PY
 tar -xzf openssl.tar.gz
-cd &quot;openssl-$VERSION&quot;
-./Configure --prefix=&quot;$PREFIX&quot; no-shared
-make -j &quot;${BUILD_JOBS:-2}&quot;
+cd "openssl-$VERSION"
+./Configure --prefix="$PREFIX" no-shared
+make -j "${BUILD_JOBS:-2}"
 make install_sw
-&quot;$PREFIX/bin/openssl&quot; version
-</code></pre>
-<p>A checksum pin makes the selected source artifact repeatable; it does not independently solve every supply-chain trust question. The compiler, base environment, and initial source-authenticity decision remain dependencies. For stronger provenance, verify the upstream release signature through a trusted key and record a reproducible toolchain or image digest.</p>
-<h2 id="inspect-capabilities-before-running-operations">Inspect capabilities before running operations</h2>
-<p>Use the <a href="https://docs.openssl.org/3.5/man1/openssl-list/">OpenSSL list command</a> to inspect the actual providers and algorithms. A library installation can differ from the command found first on PATH. An application can also load a different provider configuration from the interactive shell.</p>
-<pre><code class="language-bash">&quot;$OPENSSL&quot; version -a
-&quot;$OPENSSL&quot; list -providers
-&quot;$OPENSSL&quot; list -kem-algorithms
-&quot;$OPENSSL&quot; list -signature-algorithms
-</code></pre>
-<p>Look for ML-KEM-512/768/1024, ML-DSA-44/65/87, and the SLH-DSA families. Record the provider associated with the implementation. Listing an algorithm establishes availability, while successful generation and verification establish additional behavior. Neither output is a cryptographic module validation certificate.</p>
-<p>If an operation is unavailable, first inspect the exact executable, version, provider loading, and property query. Do not respond by installing an experimental provider into a production environment or renaming a prestandard algorithm. The native supported path is the baseline for this lab.</p>
-<h2 id="run-the-complete-suite">Run the complete suite</h2>
-<pre><code class="language-bash">OPENSSL=&quot;$PWD/.pqc-runtime/bin/openssl&quot; \
-  bash labs/pqc/run-all.sh &gt; pqc-functional.log 2&gt;&amp;1
-</code></pre>
-<p>The runner stops when a required check fails. It executes the arithmetic toys, then classical and PQ signature tests, KEM tests, TLS negotiation, certificate validation, and a one-iteration OpenSSL speed smoke test. The final PASS line is emitted only after all preceding commands succeed.</p>
-<div class="pqc-table-wrap" role="region" aria-label="Scrollable comparison table" tabindex="0"><table style="min-width:580px">
-<thead>
-<tr>
-<th>Exercise</th>
-<th>Positive evidence</th>
-<th>Negative evidence</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>ML-KEM-768</td>
-<td>Matching 32-byte secrets; 1,088-byte ciphertext</td>
-<td>Corrupted same-length ciphertext yields a different secret; truncation errors</td>
-</tr>
-<tr>
-<td>ML-DSA-65</td>
-<td>Valid 3,309-byte signature; deterministic repetition</td>
-<td>Modified message and wrong context reject</td>
-</tr>
-<tr>
-<td>SLH-DSA SHA2 128s/128f</td>
-<td>Valid 7,856/17,088-byte signatures</td>
-<td>Modified messages reject</td>
-</tr>
-<tr>
-<td>Hybrid TLS</td>
-<td>X25519MLKEM768 negotiated; certificate and hostname verify</td>
-<td>Classical-only group cannot connect to hybrid-only server</td>
-</tr>
-<tr>
-<td>ML-DSA PKI</td>
-<td>Local issuer/leaf path verifies</td>
-<td>Wrong hostname rejects</td>
-</tr>
-</tbody>
-</table></div>
-<p>The native suite was executed on macOS ARM64 with OpenSSL 3.5.8. It passed these checks. The signature and KEM scripts print sizes and outcomes, not shared secrets or private key material. The TLS script prints the negotiated group and verification result so that configuration is not mistaken for negotiation evidence.</p>
-<h2 id="kem-exercise-distinguish-agreement-from-api-completion">KEM exercise: distinguish agreement from API completion</h2>
-<p>Part 7's script creates an ML-KEM-768 key pair and exports the public key through OpenSSL's supported format. Encapsulation writes a ciphertext and sender secret. Decapsulation writes a recipient secret. The comparison verifies that the original exchange agreed, and byte-count checks confirm the selected parameter set's expected outputs.</p>
-<p>The same-length corruption case demonstrates implicit rejection. A successful decapsulation command can return alternate secret material, so its exit code alone does not establish a valid peer exchange. The separate truncation case exercises a public input-length error. Keep both tests because they address different parts of the interface.</p>
-<p>Extend the experiment to wrong-key decapsulation and repeated independent exchanges. Assert the protocol-relevant outcomes without exposing internal validity flags. If you add a KDF and authenticated encryption exercise, follow an established protocol construction; do not turn the lab into an improvised production envelope format.</p>
-<h2 id="signature-exercise-exact-bytes-and-context">Signature exercise: exact bytes and context</h2>
-<p>Part 8 signs a small release-like message using an application context. It verifies the signature, changes the message, changes the context, and checks deterministic repetition under the documented option. The verifier must use the same byte sequence and context as the signer. A visually equivalent text file with a different newline can be a different signed message.</p>
-<p>Part 9 repeats sign/verify with two SLH-DSA variants and checks their exact signature lengths. It is useful to inspect the difference between those raw signatures and PEM key-file lengths. The latter include container encoding and should not be used to infer the standardized private-key size directly.</p>
-<p>Add a wrong-public-key and corrupted-signature test if you extend the suite. Keep functional checks separate from timing measurements. A deliberate invalid signature is a useful regression input; repeatedly measuring it under controlled classes is a different experiment with a different interpretation.</p>
-<h2 id="certificate-exercise-local-trust-is-explicit">Certificate exercise: local trust is explicit</h2>
-<p>Part 12 creates an ML-DSA-65 root and an ML-DSA-44 leaf. This deliberately separates issuer-signature and subject-key algorithms. The verifier receives the root through CAfile and checks localhost as the intended identity. The root is not imported into the system trust store.</p>
-<p>The observed leaf DER size was 4,912 bytes for this exact template. That result includes names, extensions, identifiers, and framing in addition to the public key and signature. It is an example object size, not a universal ML-DSA certificate size.</p>
-<p>Extend the hierarchy with an intermediate and test path-length constraints, expiry, and key usage. Use disposable keys throughout. A complete CA requires a serial database, issuance policy, revocation infrastructure, audit controls, and key custody; the small lab certificate command is not a production CA implementation.</p>
-<h2 id="tls-exercise-measure-what-was-negotiated">TLS exercise: measure what was negotiated</h2>
-<p>Part 11 starts a loopback-only server using X25519MLKEM768, connects with an explicitly trusted local certificate, and verifies the hostname. The expected evidence is the negotiated group and a successful verification result. The incompatible classical-only client must fail because the server is configured to require the hybrid group.</p>
-<p>The generated server certificate uses ECDSA, so the exercise demonstrates hybrid key establishment with classical authentication. That is intentional: the standardized hybrid group and PQ certificate-signature migration are separate subjects. A green handshake result should be labelled with both properties.</p>
-<p>To compare classical and hybrid handshake counters, run the same server/client template with X25519 in both places, preserving the certificate, extensions, TLS version, and other settings. Record the generated certificate and command boundaries. For a rigorous comparison, avoid regenerating different certificates between trials and repeat under controlled conditions.</p>
-<h2 id="optional-packet-capture-and-interpretation">Optional packet capture and interpretation</h2>
-<p>A packet capture can show the supported_groups and key_share extensions on your own test connection. Choose the actual loopback interface for your platform, capture only the selected local port, and use a current Wireshark dissector. An older dissector may display a numeric group rather than the standardized name.</p>
-<p>Do not assume a TLS handshake message equals one TCP packet. Inspect reassembly, record boundaries, retransmissions, and whether HelloRetryRequest occurred. These observations explain transport behavior that the primitive benchmark cannot show. No packet-capture result is claimed for the automated suite here; this is an optional extension.</p>
-<p>Traffic-secret logs allow deeper decryption but are sensitive. They are unnecessary for identifying the cleartext client and server key shares in this exercise. If you collect them for controlled debugging, keep them out of shared artifacts and delete them according to your test-data policy after analysis.</p>
-<h2 id="benchmark-operations-without-confusing-the-smoke-test">Benchmark operations without confusing the smoke test</h2>
-<p>The runner uses speed -testmode to exercise one iteration of selected operations and fail if an operation fails. It is not a benchmark. Part 14's speed -elapsed -seconds 1 experiment collected three exploratory runs and retained the raw outputs with the host description.</p>
-<p>For a longer benchmark, isolate key generation, encapsulation, decapsulation, signing, and verification through the documented speed interface. State the implementation, operation boundary, repetitions, and environment. Record peak memory separately if it matters; operations per second do not reveal stack feasibility on a small device.</p>
-<p>Use controlled comparisons before making capacity claims. A workstation running a browser and background tools is suitable for a functional laboratory and preliminary observations, but not for declaring stable performance regressions of a few percent. The report should say which conditions were controlled and which were not.</p>
-<h2 id="containerized-reproduction">Containerized reproduction</h2>
-<p>The <a href="https://github.com/shivam2003-dev/cvum-sight/blob/main/labs/pqc/Dockerfile">Dockerfile</a> builds the checksum-pinned OpenSSL source in one stage and copies the installed executable and scripts into a smaller runtime stage. It runs as an unprivileged numeric user. The Ubuntu release tag is fixed, while distribution package revisions can change; this is source-level reproducibility, not a claim of bit-for-bit identical images.</p>
-<pre><code class="language-bash">docker build -f labs/pqc/Dockerfile -t pqc-course-lab .
+"$PREFIX/bin/openssl" version</code></pre>
+        <p>A checksum pin makes the selected source artifact repeatable — it does not independently solve every supply-chain trust question on its own. The compiler, base environment, and initial source-authenticity decision remain real dependencies. For stronger provenance, verify the upstream release signature through a trusted key and record a reproducible toolchain or image digest.</p>
+
+        <h2 id="inspect">4. Inspect capabilities before running operations</h2>
+        <p>Use the OpenSSL <code>list</code> command to inspect the actual providers and algorithms. A library installation can differ from the command found first on PATH. An application can also load a different provider configuration from the interactive shell you're testing in.</p>
+        <pre><code>"$OPENSSL" version -a
+"$OPENSSL" list -providers
+"$OPENSSL" list -kem-algorithms
+"$OPENSSL" list -signature-algorithms</code></pre>
+        <p>Look for ML-KEM-512/768/1024, ML-DSA-44/65/87, and the SLH-DSA families. Record the provider associated with the implementation. Listing an algorithm establishes availability, while successful generation and verification establish additional behavior. Neither output is a cryptographic module validation certificate (Part 13 §12).</p>
+        <p>If an operation is unavailable, first inspect the exact executable, version, provider loading, and property query. Do not respond by installing an experimental provider into a production environment or renaming a prestandard algorithm (Part 1 §7). The native supported path is the baseline for this lab.</p>
+
+        <h2 id="run-suite">5. Run the complete suite</h2>
+        <pre><code>OPENSSL="$PWD/.pqc-runtime/bin/openssl" \
+  bash labs/pqc/run-all.sh > pqc-functional.log 2>&1</code></pre>
+        <p>The runner stops when a required check fails. It executes the arithmetic toys, then classical and PQ signature tests, KEM tests, TLS negotiation, certificate validation, and a one-iteration OpenSSL speed smoke test. The final PASS line is emitted only after <em>all</em> preceding commands succeed.</p>
+        <table class="papers">
+          <tr><th>Exercise</th><th>Positive evidence</th><th>Negative evidence</th></tr>
+          <tr><td>ML-KEM-768</td><td>Matching 32-byte secrets; 1,088-byte ciphertext</td><td>Corrupted same-length ciphertext yields a different secret; truncation errors</td></tr>
+          <tr><td>ML-DSA-65</td><td>Valid 3,309-byte signature; deterministic repetition</td><td>Modified message and wrong context reject</td></tr>
+          <tr><td>SLH-DSA SHA2 128s/128f</td><td>Valid 7,856/17,088-byte signatures</td><td>Modified messages reject</td></tr>
+          <tr><td>Hybrid TLS</td><td>X25519MLKEM768 negotiated; certificate and hostname verify</td><td>Classical-only group cannot connect to hybrid-only server</td></tr>
+          <tr><td>ML-DSA PKI</td><td>Local issuer/leaf path verifies</td><td>Wrong hostname rejects</td></tr>
+        </table>
+        <div class="bm-fix">The native suite was executed on macOS ARM64 with OpenSSL 3.5.8. It <strong>passed these checks</strong>. The signature and KEM scripts print sizes and outcomes, not shared secrets or private key material. The TLS script prints the negotiated group and verification result so that configuration is never mistaken for negotiation evidence — exactly the distinction Part 11 §6 insists on.</div>
+
+        <h2 id="kem-exercise">6. KEM exercise: distinguish agreement from API completion</h2>
+        <p>Part 7's script creates an ML-KEM-768 key pair and exports the public key through OpenSSL's supported format. Encapsulation writes a ciphertext and sender secret. Decapsulation writes a recipient secret. The comparison verifies that the original exchange agreed, and byte-count checks confirm the selected parameter set's expected outputs.</p>
+        <p>The same-length corruption case demonstrates implicit rejection (Part 7 §7). A successful decapsulation command can return alternate secret material, so its exit code alone does not establish a valid peer exchange. The separate truncation case exercises a public input-length error. Keep both tests — they address genuinely different parts of the interface.</p>
+        <p>Extend the experiment to wrong-key decapsulation and repeated independent exchanges. Assert the protocol-relevant outcomes without exposing internal validity flags (Part 13 §5). If you add a KDF and authenticated encryption exercise, follow an established protocol construction — don't turn the lab into an improvised production envelope format.</p>
+
+        <h2 id="signature-exercise">7. Signature exercise: exact bytes and context</h2>
+        <p>Part 8 signs a small release-like message using an application context. It verifies the signature, changes the message, changes the context, and checks deterministic repetition under the documented option. The verifier must use the same byte sequence and context as the signer — a visually equivalent text file with a different newline can be a genuinely different signed message.</p>
+        <p>Part 9 repeats sign/verify with two SLH-DSA variants and checks their exact signature lengths. It's useful to inspect the difference between those raw signatures and PEM key-file lengths — the latter include container encoding and should never be used to infer the standardized private-key size directly (Part 9 §8).</p>
+        <p>Add a wrong-public-key and corrupted-signature test if you extend the suite. Keep functional checks separate from timing measurements. A deliberate invalid signature is a useful regression input; repeatedly measuring it under controlled classes is a completely different experiment with a different interpretation (Part 14 §10).</p>
+
+        <h2 id="cert-exercise">8. Certificate exercise: local trust is explicit</h2>
+        <p>Part 12 creates an ML-DSA-65 root and an ML-DSA-44 leaf. This deliberately separates issuer-signature and subject-key algorithms (Part 12 §2). The verifier receives the root through <code>CAfile</code> and checks localhost as the intended identity. The root is <strong>not</strong> imported into the system trust store.</p>
+        <p>The observed leaf DER size was 4,912 bytes for this exact template. That result includes names, extensions, identifiers, and framing in addition to the public key and signature — it's an example object size, not a universal ML-DSA certificate size (Part 12 §5).</p>
+        <p>Extend the hierarchy with an intermediate and test path-length constraints, expiry, and key usage. Use disposable keys throughout. A complete CA requires a serial database, issuance policy, revocation infrastructure, audit controls, and key custody — the small lab certificate command is not a production CA implementation.</p>
+
+        <h2 id="tls-exercise">9. TLS exercise: measure what was negotiated</h2>
+        <p>Part 11 starts a loopback-only server using X25519MLKEM768, connects with an explicitly trusted local certificate, and verifies the hostname. The expected evidence is the negotiated group and a successful verification result. The incompatible classical-only client must fail because the server is configured to require the hybrid group.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 560 140" xmlns="http://www.w3.org/2000/svg">
+            <text x="280" y="20" class="ink" text-anchor="middle">What this exercise proves vs. what it doesn't</text>
+            <rect x="30" y="40" width="240" height="80" rx="6" class="boxg"/>
+            <text x="150" y="63" class="lbl" text-anchor="middle">Proven here</text>
+            <text x="150" y="85" class="sm" text-anchor="middle">hybrid key establishment</text>
+            <text x="150" y="100" class="sm" text-anchor="middle">works, verified, negotiated</text>
+            <rect x="290" y="40" width="240" height="80" rx="6" class="boxr"/>
+            <text x="410" y="63" class="lbl" text-anchor="middle">NOT proven here</text>
+            <text x="410" y="85" class="sm" text-anchor="middle">certificate is ECDSA —</text>
+            <text x="410" y="100" class="sm" text-anchor="middle">PQ authentication untested</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — The generated server certificate uses ECDSA, so this exercise demonstrates hybrid key establishment with classical authentication. That's intentional: the hybrid group (Part 11) and PQ certificate-signature migration (Part 12) are separate subjects. Label a green handshake result with both properties, not one.</p>
+        </div>
+        <p>To compare classical and hybrid handshake counters, run the same server/client template with X25519 in both places, preserving the certificate, extensions, TLS version, and other settings. Record the generated certificate and command boundaries. For a rigorous comparison, avoid regenerating different certificates between trials and repeat under controlled conditions (Part 14 §10).</p>
+
+        <h2 id="packet-capture">10. Optional packet capture and interpretation</h2>
+        <p>A packet capture can show the <code>supported_groups</code> and <code>key_share</code> extensions on your own test connection. Choose the actual loopback interface for your platform, capture only the selected local port, and use a current Wireshark dissector — an older dissector may display a numeric group rather than the standardized name (Part 11 §11).</p>
+        <p>Do not assume a TLS handshake message equals one TCP packet. Inspect reassembly, record boundaries, retransmissions, and whether HelloRetryRequest occurred. These observations explain transport behavior that the primitive benchmark cannot show. No packet-capture result is claimed for the automated suite here — this is an optional extension, not part of the executed evidence above.</p>
+        <p>Traffic-secret logs allow deeper decryption but are sensitive. They are unnecessary for identifying the cleartext client and server key shares in this exercise. If you collect them for controlled debugging, keep them out of shared artifacts and delete them according to your test-data policy after analysis.</p>
+
+        <h2 id="benchmark-smoke-test">11. Benchmark operations without confusing the smoke test</h2>
+        <p>The runner uses <code>speed -testmode</code> to exercise one iteration of selected operations and fail if an operation fails. <strong>It is not a benchmark.</strong> Part 14's <code>speed -elapsed -seconds 1</code> experiment collected three exploratory runs and retained the raw outputs with the host description.</p>
+        <p>For a longer benchmark, isolate key generation, encapsulation, decapsulation, signing, and verification through the documented speed interface. State the implementation, operation boundary, repetitions, and environment. Record peak memory separately if it matters — operations per second do not reveal stack feasibility on a small device (Part 14 §8).</p>
+        <p>Use controlled comparisons before making capacity claims. A workstation running a browser and background tools is suitable for a functional laboratory and preliminary observations, but not for declaring stable performance regressions of a few percent. The report should say which conditions were controlled and which were not.</p>
+
+        <h2 id="container">12. Containerized reproduction</h2>
+        <p>The Dockerfile builds the checksum-pinned OpenSSL source in one stage and copies the installed executable and scripts into a smaller runtime stage. It runs as an unprivileged numeric user. The Ubuntu release tag is fixed, while distribution package revisions can change — this is source-level reproducibility, not a claim of bit-for-bit identical images.</p>
+        <pre><code>docker build -f labs/pqc/Dockerfile -t pqc-course-lab .
 docker run --rm --network none --read-only \
-  --tmpfs /tmp:rw,nosuid,nodev,size=128m pqc-course-lab
-</code></pre>
-<p>The build needs network access to fetch packages and the release archive. The test container runs without external networking; its loopback interface still supports the local TLS exercise. The read-only root filesystem and temporary writable directory make generated keys ephemeral and keep the source tree untouched.</p>
-<p>If Docker cannot connect to its daemon, that is an environment failure before the cryptographic suite runs. Either start the intended local engine or use the native path. Do not report a container test as passed merely because the Dockerfile was written. The repository's CI separately builds and executes this container recipe.</p>
-<h2 id="ci-and-failure-triage">CI and failure triage</h2>
-<p>The <a href="https://github.com/shivam2003-dev/cvum-sight/blob/main/.github/workflows/pqc-lab.yml">PQC course workflow</a> runs on changes to the laboratory and supports manual dispatch. It has read-only repository permissions, builds the image, and executes the isolated suite. It does not upload generated keys or treat timing results from shared runners as performance gates.</p>
-<p>Triage failures by layer. A download or checksum failure concerns artifact retrieval. A compilation failure concerns the toolchain or source. An unsupported-algorithm error concerns capabilities or provider selection. A failed expected-rejection check concerns behavior and needs investigation before accepting the build. Preserve that distinction in the run report.</p>
-<p>For dependency upgrades, change the version and verified checksum together, rebuild, and run all functional and negative tests. Then inspect relevant standard or API changes and repeat affected interoperability tests. A successful upgrade should produce a new evidence record rather than overwriting the meaning of the old one.</p>
-<h2 id="keep-a-compact-lab-report">Keep a compact lab report</h2>
-<p>For each run, record the date, repository commit, host architecture, OpenSSL version, provider list, and the final suite outcome. Keep expected failures visible in the test description even when their noisy command output is suppressed. A report that says only “all commands exited zero” can accidentally count a missing negative test as success.</p>
-<p>Separate optional activities from executed ones. The native primitive and loopback tests, container execution, packet capture, and sustained benchmarking are different milestones. Mark an unexecuted capture as unexecuted rather than copying an expected packet diagram into the results section. This makes the report useful to another engineer who needs to reproduce a specific observation.</p>
-<p>Retain public fixtures and scripts, but avoid saving temporary private keys or session secrets. When a failure requires preserving an artifact, determine whether it contains sensitive material before attaching it to an issue. Most functional failures can be described using versions, public input lengths, error categories, and a minimal disposable reproducer.</p>
-<p>A second engineer should be able to follow the report and distinguish a build problem from a cryptographic behavior change without access to your shell history. That is the practical test of reproducibility.</p>
-<h2 id="when-experimental-tooling-is-useful">When experimental tooling is useful</h2>
-<p><a href="https://openquantumsafe.org/liboqs/">Open Quantum Safe liboqs</a> supports research and prototyping across many algorithms. It is useful for exploring candidates and comparing implementations, but it should not replace current native standardized support merely because an old tutorial used it. Label prototype configurations and their exact algorithm versions.</p>
-<p>For implementation study, inspect maintained <a href="https://github.com/pq-code-package">PQ Code Package projects</a>, including their proof scope, tests, and architecture backends. Building a research implementation is a learning exercise; integrating it into a production protocol requires a separate review of security, maintenance, and interoperability.</p>
-<p>Your completion artifact should contain the repository commit, executable version, platform, commands, pass/fail log, and any unexecuted optional exercises. The next part uses those concrete capabilities to plan an organizational migration rather than treating the laboratory as the end of the transition.</p>
-</div><nav class="post-nav" aria-label="Series navigation"><a href="pqc-14-performance.html">← Part 14</a><a href="../series-pqc.html">All 18 parts</a><a href="pqc-16-migration-agility.html">Part 16 →</a></nav>
+  --tmpfs /tmp:rw,nosuid,nodev,size=128m pqc-course-lab</code></pre>
+        <p>The build needs network access to fetch packages and the release archive. The test container runs without external networking; its loopback interface still supports the local TLS exercise. The read-only root filesystem and temporary writable directory make generated keys ephemeral and keep the source tree untouched.</p>
+        <p>If Docker cannot connect to its daemon, that is an environment failure before the cryptographic suite runs. Either start the intended local engine or use the native path. Do not report a container test as passed merely because the Dockerfile was written — the repository's CI separately builds and executes this container recipe (§13).</p>
+
+        <h2 id="ci-triage">13. CI and failure triage</h2>
+        <p>The PQC course workflow runs on changes to the laboratory and supports manual dispatch. It has read-only repository permissions, builds the image, and executes the isolated suite. It does not upload generated keys or treat timing results from shared runners as performance gates.</p>
+        <p>Triage failures by layer. A download or checksum failure concerns artifact retrieval. A compilation failure concerns the toolchain or source. An unsupported-algorithm error concerns capabilities or provider selection. A failed expected-rejection check concerns behavior and needs investigation before accepting the build. Preserve that distinction in the run report — collapsing all four into "CI failed" loses the information that would let someone fix it quickly.</p>
+        <p>For dependency upgrades, change the version and verified checksum together, rebuild, and run all functional and negative tests. Then inspect relevant standard or API changes and repeat affected interoperability tests. A successful upgrade should produce a <em>new</em> evidence record rather than overwriting the meaning of the old one.</p>
+
+        <h2 id="lab-report">14. Keep a compact lab report</h2>
+        <p>For each run, record the date, repository commit, host architecture, OpenSSL version, provider list, and the final suite outcome. Keep expected failures visible in the test description even when their noisy command output is suppressed. A report that says only "all commands exited zero" can accidentally count a missing negative test as success.</p>
+        <p>Separate optional activities from executed ones. The native primitive and loopback tests, container execution, packet capture, and sustained benchmarking are different milestones. Mark an unexecuted capture as unexecuted rather than copying an expected packet diagram into the results section. This makes the report useful to another engineer who needs to reproduce a specific observation.</p>
+        <p>Retain public fixtures and scripts, but avoid saving temporary private keys or session secrets. When a failure requires preserving an artifact, determine whether it contains sensitive material before attaching it to an issue. Most functional failures can be described using versions, public input lengths, error categories, and a minimal disposable reproducer.</p>
+        <p>A second engineer should be able to follow the report and distinguish a build problem from a cryptographic behavior change without access to your shell history. That is the practical test of reproducibility.</p>
+
+        <h2 id="experimental-tooling">15. When experimental tooling is useful</h2>
+        <p>Open Quantum Safe liboqs supports research and prototyping across many algorithms (Part 1 §10). It's useful for exploring candidates and comparing implementations, but it should not replace current native standardized support merely because an old tutorial used it. Label prototype configurations and their exact algorithm versions explicitly.</p>
+        <p>For implementation study, inspect maintained PQ Code Package projects, including their proof scope, tests, and architecture backends (Part 13 §11). Building a research implementation is a learning exercise; integrating it into a production protocol requires a separate review of security, maintenance, and interoperability.</p>
+
+        <details class="faq"><summary>Does passing all the lab's checks mean the algorithm is production-ready?</summary><p>No (§1). It establishes functional behavior for that specific binary and environment — not FIPS module validation, physical side-channel resistance, public browser compatibility, or production capacity, each covered in earlier parts.</p></details>
+        <details class="faq"><summary>Why does the hybrid TLS exercise use a classical ECDSA certificate?</summary><p>Intentionally (§9). The hybrid TLS group (Part 11) and PQ certificate-signature migration (Part 12) are separate subjects with separate timelines. This exercise proves hybrid key establishment specifically, not full-chain PQ authentication.</p></details>
+        <details class="faq"><summary>Is the checksum-pinned OpenSSL build a complete supply-chain guarantee?</summary><p>No (§3). It makes the selected source artifact repeatable, but the compiler, base environment, and initial source-authenticity decision remain real dependencies. Verify the upstream release signature for stronger provenance.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>A complete lab report needs commit, executable version, provider list, and pass/fail log</strong> — not just "all commands exited zero," which can silently hide a missing negative test.</li>
+          <li><strong>Toy Python exercises and real OpenSSL operations are kept strictly separate</strong> throughout this lab's file layout — never confuse the two, and never let a toy example stand in for a production algorithm.</li>
+          <li><strong>Every algorithm exercise pairs a positive check with a negative one</strong> — corruption rejection, wrong context, wrong hostname — because a migration that only demonstrates success hasn't demonstrated the trust engine still rejects invalid input.</li>
+          <li><strong>The hybrid TLS exercise proves key establishment only</strong> — its ECDSA certificate is a deliberate, labeled scope boundary, not an oversight.</li>
+          <li><strong>A checksum pin and a container build each solve one specific reproducibility problem</strong> — neither is a complete supply-chain or deployment-readiness guarantee on its own.</li>
+          <li><strong>Failures should be triaged by layer</strong> (download, compilation, capability, behavior) — collapsing them into one "CI failed" signal loses exactly the information needed to fix it quickly.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://github.com/shivam2003-dev/cvum-sight/tree/main/labs/pqc" target="_blank" rel="noopener">labs/pqc/ in this site's repository</a> <span>— every script and command in this chapter, runnable as-is.</span></li>
+          <li><a href="https://github.com/open-quantum-safe/liboqs" target="_blank" rel="noopener">Open Quantum Safe liboqs</a> <span>— §15, research/prototyping across many algorithms.</span></li>
+          <li><a href="https://github.com/pq-code-package" target="_blank" rel="noopener">PQ Code Package</a> <span>— §15, maintained implementations for study.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="pqc-14-performance.html">← Part 14</a>
+        <a href="pqc-16-migration-agility.html">next: Part 16 →</a>
+      </div>
     </article>
-  </main>
-  <aside class="toc-panel" aria-label="On this page">
-    <p class="toc-panel-label">// on this page</p>
-    <nav id="toc-nav" aria-label="Table of contents"></nav>
-  </aside>
-</div>
-<script src="../stats.js?v=4"></script>
-<script src="../app.js?v=43"></script>
-<script src="../settings.js?v=17"></script>
-<script src="../reader.js?v=3"></script>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
 </body>
 </html>

@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-capture-the-narrative-disinformation-wargame",
+    title: "Capture the narrative \u2014 108 teams, 11.8 million posts, one simulated election.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "disinformation", "ai", "cyberliteracy"],
+    time: 7,
+    words: 1314,
+    excerpt: "Black Hat Asia 2026, talk 20. UNSW's Hammond Pearce runs Capture the Narrative, a wargame where student AI bots try to sway a simulated election on a fake social network. 108 teams produced ~11.8M posts on tiny budgets and shifted the outcome by 1.78%.",
+    series: "blackhat-asia-2026",
+    seriesNum: "20"
+  },
+  {
     slug: "bhas26-hidden-telemetry-tracelogging-etw",
     title: "Hidden telemetry \u2014 the 2,600 Windows ETW providers nobody is reading.",
     date: "Sep 24, 2026",

@@ -454,11 +454,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "learning"
   ],
-  "time": 22,
-  "words": 4277,
-  "excerpt": "A seven-stage PQC learning path with 30 resource sections, primary standards, books, lectures, papers, tools, projects, and concrete 30-day, 90-day, and six-month plans.",
+  "time": 17,
+  "words": 3301,
+  "excerpt": "Seven stages with exit criteria (not checkboxes), 30 curated resource sections labeled current/foundational/archival, and concrete 30-day, 90-day, and six-month study plans with hands-on projects — the course's closing chapter, on how to keep learning after it.",
   "series": "pqc",
   "seriesNum": "18"
 },

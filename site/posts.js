@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-algobuster-uds-security-access-brute-force",
+    title: "AlgoBuster \u2014 fingerprint the algorithm, then brute-force the small space.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "automotive", "uds", "embedded", "cryptography"],
+    time: 9,
+    words: 1722,
+    excerpt: "Black Hat Asia 2026, talk 30. A team of automotive researchers builds AlgoBuster, which fingerprints an ECU's UDS Security Access algorithm by response-time behaviour and brute-forces only that weak family's small key space. 2 of 12 real production ECUs broken, one in 38 minutes; a properly strong AES-128 ECU resisted.",
+    series: "blackhat-asia-2026",
+    seriesNum: "30"
+  },
+  {
     slug: "bhas26-bad-vibes-pwning-coding-agents",
     title: "Bad vibes \u2014 the same three bugs, in nearly every AI coding agent.",
     date: "Sep 24, 2026",

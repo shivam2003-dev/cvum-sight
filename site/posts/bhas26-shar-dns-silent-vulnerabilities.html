@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>One Char to Rule Them All — The SHAR Attack on DNS Silent Vulnerabilities — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Fasheng Miao's SHAR attack exploits a 40-year-old gap in DNS — two RFCs disagree about which characters a domain name may contain, and many real implementations respond to disallowed characters by silently dropping the query instead of returning an error. That silence creates a timing window that revives brute-force cache poisoning thought dead since 2008, disrupts load balancing, and causes persistent denial of service — affecting all 31 tested DNS software stacks, every tested Wi-Fi router, 43 public DNS services, and over 12 million real domains.">
+<link rel="stylesheet" href="../style.css?v=88">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">One Char to Rule Them All: Systematically Exploring and Exploiting DNS Silent Vulnerabilities in Domain Name Resolution</p>
+        <p class="series-banner-meta">Talk 16 · DNS &amp; internet infrastructure · analysis from the speaker's published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-ethereum-llm-differential-testing.html">← prev: Ethereum Differential Testing</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 24, 2026 · conferences · 11 min read · 2136 words <span class="difficulty advanced">advanced</span></p>
+        <h1>One char to rule them all — the DNS silence that revived a dead attack.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">dns</span>
+          <span class="tag">internet-infrastructure</span>
+          <span class="tag">cache-poisoning</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Fasheng Miao</strong> (Tsinghua University) asked a question nobody had systematically answered in DNS's 40-year history: <em>what actually happens when you put a character in a domain name that isn't a letter, digit, or hyphen?</em> The answer traces to a genuine, decades-old contradiction: <strong>RFC 1035 says a domain label may only contain letters, digits, and hyphens; RFC 2181 says implementations must impose no restriction on label content at all.</strong> Faced with that contradiction, many real DNS components pick a third, undocumented option: they <strong>silently drop the query</strong> and send no response at all, rather than either accepting the character or returning a clean error. Miao calls this a <strong>silent vulnerability</strong>, and built the <strong>SHAR (Special Characters) attack</strong> around it: force a nameserver into silence with one crafted character, and that silence opens a timing window an off-path attacker can exploit. The impact, measured empirically rather than claimed: <strong>all 31 tested mainstream DNS software stacks</strong> are vulnerable, <strong>all 21 tested Wi-Fi routers and all 6 router OSes</strong>, <strong>all 43 tested public DNS services</strong>, over <strong>531,000 open resolvers</strong>, <strong>522 top-level domains</strong>, and <strong>12.5 million individual domain names</strong>. One of the four attack variants revives brute-force DNS cache-poisoning, a technique considered dead since 2008.</p>
+
+        <p>Post 16 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. This is disclosed, measurement-driven academic security research; I cover the mechanism and findings in depth, at the level of published papers rather than a working exploit recipe.</p>
+
+        <h2 id="gap">1. A 40-year-old contradiction nobody measured</h2>
+        <p>Domain names are built from <strong>labels</strong> (the parts between dots), and labels are built from characters. Two foundational DNS RFCs disagree, in plain language, about what a valid character even is:</p>
+        <table class="papers">
+          <thead><tr><th>Document</th><th>What it says about label characters</th></tr></thead>
+          <tbody>
+            <tr><td>RFC 1035 (1987)</td><td>A domain label "may only contain letters, digits, and hyphens"</td></tr>
+            <tr><td>RFC 2181 (1997)</td><td>Implementations "must not place any restrictions on label content"</td></tr>
+          </tbody>
+        </table>
+        <p>These are not subtly different positions, they are opposites. One says "restrict"; the other says "don't restrict, at all." Every DNS implementation ever written has had to pick a side, or invent its own middle ground, without a single authoritative answer to defer to. Compounding this, DNS is not one program, it's an ecosystem of independently-implemented roles, <strong>stub resolvers</strong> (on end-user devices), <strong>forwarders</strong> (routers, local caching proxies), <strong>recursive resolvers</strong> (ISP and public DNS), and <strong>authoritative nameservers</strong> (serving the actual zone data), each potentially handling this ambiguity differently. Despite characters being the most fundamental unit of a domain name, <strong>no one had systematically measured, across the real DNS ecosystem, what actually happens when an unusual character shows up.</strong></p>
+
+        <h2 id="method">2. Measuring the entire ASCII space, empirically</h2>
+        <p>Miao's team built a methodology to answer this directly rather than by inference: <strong>source-code review and GDB debugging for open-source DNS software, empirical black-box testing for closed-source systems</strong>, and a controlled measurement setup, send queries of the form <code>{char}.{nonce}.attacker.com</code> to a nameserver they controlled, for every character in the queried label, and capture every DNS packet that resulted (or didn't). They swept the <strong>entire ASCII range (0x00–0x7F)</strong>, treating anything outside a–z, A–Z, 0–9 as a "special character" to be tested.</p>
+        <p>The result: <strong>character support varies significantly and inconsistently across implementations.</strong> Some components reject a special character cleanly (a formatted error response). Some accept it and pass it through. And critically, a meaningful subset do neither, they <strong>drop the query on the floor and never respond</strong>, the "silent vulnerability" that gives the attack its name.</p>
+
+        <h2 id="core">3. The core insight: silence is a timing primitive</h2>
+        <p>Why does silence matter more than an error response? Because <strong>DNS cache poisoning is fundamentally a race</strong>: an off-path attacker tries to inject a forged, malicious DNS response before the legitimate nameserver's real response arrives back at the querying resolver. The attacker's forged packet must guess a 16-bit transaction ID and, with source-port randomization, a 16-bit source port, together a <strong>32-bit space</strong>, and must land within the narrow window (typically <strong>80–100ms</strong>) before the real answer shows up. That narrow window is exactly why brute-forcing the 32-bit space was considered <strong>practically infeasible since 2008</strong> (the Kaminsky-attack era): you simply don't get enough forged guesses in before the legitimate response closes the window.</p>
+        <p><strong>SHAR's insight: make the legitimate nameserver never answer at all.</strong> If a crafted query containing the right special character causes the authoritative nameserver, or an intermediate resolver, to silently drop it instead of responding, the resolver falls back to its own <strong>retry/timeout logic</strong>, often several seconds, rather than the usual sub-100ms round trip. That timeout, not the normal response latency, becomes the attacker's real window. A window measured in seconds instead of milliseconds is a fundamentally different brute-force problem.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="ink" text-anchor="middle">Why silence beats a fast, honest error</text>
+            <rect x="20" y="45" width="280" height="55" rx="8" class="box"/>
+            <text x="160" y="68" class="lbl" text-anchor="middle">Normal query/response</text>
+            <text x="160" y="86" class="sm" text-anchor="middle">~80-100ms window to race a forged answer</text>
+            <rect x="380" y="45" width="280" height="55" rx="8" class="boxr"/>
+            <text x="520" y="68" class="lbl" text-anchor="middle">SHAR: query silently dropped</text>
+            <text x="520" y="86" class="sm" text-anchor="middle">resolver waits full timeout (~seconds)</text>
+            <rect x="150" y="130" width="380" height="45" rx="8" class="boxy"/>
+            <text x="340" y="157" class="sm" text-anchor="middle">a window 10-100x longer turns "infeasible since 2008" into "20/20 successful trials"</text>
+            <path d="M300 72 L380 72" class="arr"/>
+          </svg>
+          <p class="diagram-label">Fig. 1 — SHAR doesn't break DNS's cryptographic randomness. It removes the time pressure that made brute-forcing it impractical.</p>
+        </div>
+
+        <h2 id="attacks">4. Four attack variants, one root cause</h2>
+        <p>The team turned this single mechanism into four distinct attack variants, targeting different DNS roles:</p>
+        <table class="papers">
+          <thead><tr><th>Variant</th><th>Effect</th><th>Target role(s)</th></tr></thead>
+          <tbody>
+            <tr><td><strong>V<sub>EN</sub></strong> — Enhance</td><td>Strengthens 10 of 13 classic off-path DNS cache-poisoning attacks by forcing the legitimate nameserver silent during the race, giving the attacker's forged packets more time to land</td><td>Stub resolver, forwarder, recursive resolver</td></tr>
+            <tr><td><strong>V<sub>BF</sub></strong> — Brute-Force</td><td>Revives direct 32-bit TxID/port brute-force cache poisoning, thought infeasible since 2008, by widening the spoofing window from ~100ms to several seconds. All 20 test trials succeeded</td><td>Stub resolver, forwarder, recursive resolver</td></tr>
+            <tr><td><strong>V<sub>LB</sub></strong> — Load-Balancing disruption</td><td>Recursive resolvers deprioritize nameservers that don't respond; silencing one nameserver in a pool concentrates all traffic onto the remaining ones, causing overload and reduced resilience</td><td>Recursive resolver, nameserver</td></tr>
+            <tr><td><strong>V<sub>SF</sub></strong> — Servfail / persistent DoS</td><td>Silencing <em>all</em> nameservers for a zone makes the resolver mark every one as faulty, so it returns SERVFAIL directly to clients, domain resolution fully breaks for that zone</td><td>Recursive resolver, nameserver</td></tr>
+          </tbody>
+        </table>
+        <p>The <strong>V<sub>LB</sub>/V<sub>SF</sub> pairing</strong> is a clean illustration of one root cause, an intermediate resolver's own load-balancing logic, producing two distinct severities from the same trigger: silence <em>some</em> nameservers to overload the rest (V<sub>LB</sub>), or silence <em>all</em> of them to break resolution entirely (V<sub>SF</sub>). Both bypass conventional DoS defenses, because the "attack traffic" is a small number of specially-crafted queries, not a volumetric flood, there's nothing for rate-limiting or traffic-shaping to catch.</p>
+
+        <h2 id="scale">5. Real-world scale: this isn't a lab curiosity</h2>
+        <p>What separates SHAR from a typical protocol-ambiguity finding is the scale of empirical validation, this wasn't tested against a handful of toy setups:</p>
+        <table class="papers">
+          <thead><tr><th>Category</th><th>Vulnerable</th></tr></thead>
+          <tbody>
+            <tr><td>Mainstream DNS software</td><td><strong>31 / 31</strong> tested</td></tr>
+            <tr><td>Wi-Fi routers</td><td><strong>21 / 21</strong> tested</td></tr>
+            <tr><td>Router operating systems</td><td><strong>6 / 6</strong> tested</td></tr>
+            <tr><td>Public DNS services</td><td><strong>43 / 43</strong> tested (affected by at least one variant)</td></tr>
+            <tr><td>Open DNS resolvers (internet-wide scan)</td><td><strong>531,100</strong> (60.1% of scanned resolvers)</td></tr>
+            <tr><td>Top-level domains</td><td><strong>522</strong> (36.1% of all TLDs)</td></tr>
+            <tr><td>Individual domain names</td><td><strong>12.5 million</strong> (5.6% of the tested set)</td></tr>
+          </tbody>
+        </table>
+        <p>The <strong>100% hit rate across every tested software stack, router, router OS, and public DNS service</strong> is the number that should concern anyone running DNS infrastructure. This isn't one vendor's bug, it's the predictable outcome of an entire industry independently improvising an answer to a question the RFCs themselves never resolved.</p>
+
+        <h2 id="impact">6. What this actually enables</h2>
+        <p>Stitching the variants together, an attacker with the SHAR primitive can achieve, depending on target and variant:</p>
+        <ul>
+          <li><strong>Domain takeover</strong> and <strong>full TLD hijacking</strong> via revived brute-force or enhanced classic cache poisoning, an attacker who wins the race gets to inject an arbitrary IP address for a victim domain into a resolver's cache, redirecting anyone who queries through that resolver.</li>
+          <li><strong>Persistent denial of service</strong> against a zone via V<sub>SF</sub>, resolvers stop being able to resolve that domain at all until the condition clears.</li>
+          <li><strong>Reduced resilience and overload</strong> via V<sub>LB</sub>, concentrating traffic onto a shrinking pool of "responsive" nameservers, an attacker-induced version of exactly the kind of cascading failure that ordinary infrastructure overload causes.</li>
+        </ul>
+        <p>And because V<sub>EN</sub> specifically <strong>enhances existing, well-known attacks</strong> rather than replacing them, SHAR isn't a niche new technique sitting alongside the old ones, it's a force-multiplier for an entire established attack literature, making previously-marginal cache-poisoning attempts more reliable.</p>
+
+        <h2 id="mitigation">7. Root cause and mitigations</h2>
+        <p>The team is explicit that the root cause is squarely the specification conflict: <strong>RFC 1035 and RFC 2181 disagree on allowed characters</strong>, and in the absence of a resolved standard, real-world implementations, including major TLD operators, second-level domain operators, and major cloud DNS services, have converged on silently dropping unsupported characters as their de facto (undocumented) answer. That silent-drop behavior is precisely what turns a specification ambiguity into an exploitable timing primitive.</p>
+        <div class="bm-fix">
+          <ul style="margin:0">
+            <li><strong>Resolve the specification conflict at the source.</strong> Follow the latest RFCs consistently and either fully support all valid characters or return an explicit, immediate error for disallowed ones, never silence.</li>
+            <li><strong>Deploy 0x20 encoding</strong> (randomizing the case of query letters as an additional, hard-to-guess verification bit) <strong>and DNSSEC</strong> to make cache poisoning cryptographically difficult regardless of the timing window available to an attacker.</li>
+            <li><strong>Use anomaly detection and rate limiting</strong> tuned to catch spoofed response floods specifically, since SHAR's own attack traffic (the triggering queries) is low-volume and won't trip conventional DoS thresholds.</li>
+            <li><strong>Resolvers should periodically probe deprioritized/low-priority nameservers</strong> rather than permanently trusting an earlier failure, this directly mitigates the load-balancing disruption variants (V<sub>LB</sub>/V<sub>SF</sub>) by preventing a single silence from causing a lasting priority demotion.</li>
+          </ul>
+        </div>
+        <p>The broader lesson the researchers draw: <strong>special character handling is critical to DNS security</strong>, and a specification-level inconsistency that has existed since the late 1980s and 1990s was never systematically tested against real-world software at scale until now, despite 40 years of DNS operating as core internet infrastructure.</p>
+
+        <details class="faq"><summary>Is this a new protocol flaw or an implementation bug?</summary><p>Both, layered. The root cause is a genuine specification-level contradiction (RFC 1035 vs. RFC 2181) that has existed for decades. On top of that, individual implementations chose "silently drop the query" as their undocumented resolution to the ambiguity, which is the specific implementation choice that creates the exploitable timing window. Fixing either layer (a clarified spec, or non-silent error handling) closes the vulnerability.</p></details>
+        <details class="faq"><summary>Does DNSSEC already prevent this?</summary><p>DNSSEC prevents an attacker from injecting a cryptographically-unsigned forged response into a validating resolver's cache for a signed zone, so it mitigates the cache-poisoning impact (V<sub>EN</sub>/V<sub>BF</sub>) where deployed and validated end-to-end. It does not address the load-balancing disruption or persistent-DoS variants (V<sub>LB</sub>/V<sub>SF</sub>), which don't depend on forging a response at all, they only need the ability to make a nameserver go silent.</p></details>
+        <details class="faq"><summary>Why does brute-forcing 32 bits of TxID+port suddenly work again?</summary><p>The 32-bit space itself hasn't changed; what changed is the time available to try guesses. A normal response arrives in roughly 80-100ms, leaving too small a window for a brute-force attempt to succeed reliably. SHAR extends that window to the resolver's full retry/timeout period (often several seconds) by making the legitimate nameserver silently fail to respond, giving an attacker 10-100x longer to land a forged guess.</p></details>
+        <details class="faq"><summary>What should a DNS operator check first?</summary><p>Test how your own resolvers and nameservers handle queries containing non-alphanumeric ASCII characters: do they return a clean, immediate error, or do they silently drop the query with no response? Any silent-drop behavior is the precondition for every SHAR variant, and per this research, the majority of real-world software and services currently exhibit it.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>RFC 1035 and RFC 2181 directly contradict each other</strong> on which characters a domain label may contain, an unresolved specification conflict since the 1980s/1990s.</li>
+          <li>Many real DNS implementations respond to the ambiguity by <strong>silently dropping unsupported-character queries</strong> instead of erroring cleanly, this is the "silent vulnerability."</li>
+          <li><strong>Silence converts a sub-100ms race window into a multi-second timeout window</strong>, which is what revives 32-bit TxID/port brute-force cache poisoning, thought dead since 2008.</li>
+          <li>Four attack variants (<strong>V<sub>EN</sub>, V<sub>BF</sub>, V<sub>LB</sub>, V<sub>SF</sub></strong>) span enhanced classic cache poisoning, direct brute-force poisoning, load-balancing disruption, and persistent DoS, from one root cause.</li>
+          <li><strong>100% of tested DNS software, routers, router OSes, and public DNS services were vulnerable</strong>, plus 531K+ open resolvers, 522 TLDs, and 12.5M domains at internet scale.</li>
+          <li>Fixes require both a <strong>clarified specification</strong> and <strong>non-silent, explicit error handling</strong> for invalid characters, alongside standard defenses (0x20 encoding, DNSSEC, anomaly detection, periodic nameserver re-probing).</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/#one-char-to-rule-them-all-systematically-exploring-and-exploiting-dns-silent-vulnerabilities-in-domain-name-resolution-50554" target="_blank" rel="noopener">Black Hat Asia 2026 — this talk's official page</a> <span>— abstract, speaker bio, and slides/video when posted.</span></li>
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — full Briefings schedule</a> <span>— every talk in the conference.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc1035" target="_blank" rel="noopener">RFC 1035 — Domain Names, Implementation and Specification</a> <span>· <a href="https://www.rfc-editor.org/rfc/rfc2181" target="_blank" rel="noopener">RFC 2181 — Clarifications to the DNS Specification</a> — the two contradictory documents at the root of the vulnerability.</span></li>
+          <li><a href="https://www.miaofs18.top/" target="_blank" rel="noopener">Fasheng Miao — homepage</a> <span>— the researcher's publications, including prior IEEE S&amp;P/ACM CCS/ACM IMC DNS work.</span></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc4033" target="_blank" rel="noopener">RFC 4033 — DNS Security Introduction and Requirements (DNSSEC)</a> <span>— the standard mitigation for cache-poisoning impact.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-ethereum-llm-differential-testing.html">← prev: Ethereum Differential Testing</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

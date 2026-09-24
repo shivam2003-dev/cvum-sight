@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-shar-dns-silent-vulnerabilities",
+    title: "One char to rule them all — the DNS silence that revived a dead attack.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "dns", "internet-infrastructure", "cache-poisoning"],
+    time: 11,
+    words: 2136,
+    excerpt: "Black Hat Asia 2026, talk 16. Fasheng Miao (Tsinghua) exploits a 40-year-old contradiction between RFC 1035 (domain labels: letters/digits/hyphens only) and RFC 2181 (implementations must impose no restriction). Many real DNS components resolve the ambiguity by silently dropping queries with special characters rather than returning an error — the 'silent vulnerability.' That silence turns the ~80-100ms DNS cache-poisoning race into a multi-second timeout window, reviving 32-bit TxID/port brute-force poisoning thought infeasible since 2008 (SHAR: 4 variants — enhanced poisoning, brute-force, load-balancing disruption, persistent DoS). Empirically confirmed on all 31 tested DNS software stacks, all tested routers and router OSes, all 43 public DNS services, 531K+ open resolvers, 522 TLDs, and 12.5M domains.",
+    series: "blackhat-asia-2026",
+    seriesNum: "16"
+  },
+  {
     slug: "bhas26-ethereum-llm-differential-testing",
     title: "Fortifying the foundation — 98 bugs hiding under every Ethereum wallet.",
     date: "Sep 24, 2026",

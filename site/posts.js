@@ -534,11 +534,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "side-channels"
   ],
-  "time": 13,
-  "words": 2512,
-  "excerpt": "Build an assurance argument across constant-time code, decapsulation behavior, physical attacks, randomness, memory safety, test vectors, fuzzing, and scoped formal verification.",
+  "time": 16,
+  "words": 3123,
+  "excerpt": "KyberSlash's real division-timing leak, why logging the internal KEM validity flag breaks implicit rejection, dead-store elimination silently removing zeroization, and reading mlkem-native's formal-verification proof scope instead of its headline.",
   "series": "pqc",
   "seriesNum": "13"
 },

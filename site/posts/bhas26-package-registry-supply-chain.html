@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hack the Source, Of the Source — When Package Registries Themselves Get Popped — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Tsi-Lin Ng (splitline) moves the supply-chain conversation up a level — instead of publishing a malicious package, what if you compromise the registry infrastructure itself? Disclosed, fixed vulnerabilities across LuaRocks, JuliaHub, NuGet, and CocoaPods show that registry backend logic (manifest generation, git-based version resolution, metadata-file selection during package processing, and account-verification flows) is itself part of the trust boundary — and it wasn't always holding.">
+<link rel="stylesheet" href="../style.css?v=88">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">Hack the Source, Of the Source</p>
+        <p class="series-banner-meta">Talk 17 · Supply chain security · analysis from the speaker's published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-shar-dns-silent-vulnerabilities.html">← prev: SHAR DNS Attack</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 24, 2026 · conferences · 11 min read · 2241 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Hack the source, of the source — when the registry itself is the supply chain.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">supply-chain</span>
+          <span class="tag">package-registries</span>
+          <span class="tag">appsec</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Tsi-Lin "splitline" Ng</strong> pushes the software supply-chain conversation up a level. The standard advice, use well-known package sources, install from trusted developers, don't typo a package name, all assumes the registry itself (PyPI, npm, LuaRocks, NuGet, and their peers) is a solid foundation to trust. Ng's question: <strong>what if the foundation itself has bugs?</strong> Rather than publishing a malicious package (the well-studied "malicious upload" supply-chain vector), this research targets the <strong>registry's own backend processing logic</strong>, the code that generates manifests, resolves versions from source control, selects metadata files out of an uploaded archive, and verifies publisher identity. Across four ecosystems, <strong>LuaRocks (Lua)</strong>, <strong>JuliaHub (Julia)</strong>, <strong>NuGet (C#/.NET)</strong>, and <strong>CocoaPods (Objective-C/Swift)</strong>, the same category of mistake recurred: backend logic trusted attacker-controlled input (a URL, a filename, a version string, a registration timing window) more than it should have, in ways that let an attacker <strong>poison what every downstream consumer of a totally legitimate-looking package would receive</strong>. All findings shown were responsibly reported and are already fixed.</p>
+
+        <p>Post 17 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. Every vulnerability here has already been disclosed and patched; I describe the classes of bug and their impact, not the exact injection syntax or reproduction steps, those live in the original vendor advisories.</p>
+
+        <h2 id="reframe">1. Reframing the supply-chain threat model</h2>
+        <p>Most supply-chain security advice targets one specific threat: a malicious actor <strong>uploads or takes over a package</strong> (typosquatting, dependency confusion, a compromised maintainer account) and legitimate infrastructure faithfully distributes it. That threat model implicitly treats the registry, the servers that receive uploads, store them, generate metadata, and serve them back to millions of installers, as a neutral, trustworthy pipe.</p>
+        <p>Ng's research tests that assumption directly: <strong>package registries are themselves complex, internet-facing software systems, built by fallible engineers, under the same kinds of deadline and legacy-code pressure as anything else.</strong> If the registry's own processing pipeline can be tricked, an attacker doesn't need to compromise any individual developer or account at all, they can make the registry <em>itself</em> serve poisoned content for an otherwise completely legitimate package, to every single person who ever installs it.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 170" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="ink" text-anchor="middle">Two different supply-chain threat models</text>
+            <rect x="20" y="45" width="290" height="90" rx="8" class="boxy"/>
+            <text x="165" y="68" class="lbl" text-anchor="middle">Classic: malicious package</text>
+            <text x="165" y="88" class="sm" text-anchor="middle">Attacker → uploads evil package</text>
+            <text x="165" y="104" class="sm" text-anchor="middle">Registry → faithfully distributes it</text>
+            <text x="165" y="120" class="sm" text-anchor="middle">Defense: vet what you install</text>
+            <rect x="370" y="45" width="290" height="90" rx="8" class="boxr"/>
+            <text x="515" y="68" class="lbl" text-anchor="middle">This talk: registry logic bug</text>
+            <text x="515" y="88" class="sm" text-anchor="middle">Attacker → exploits backend processing</text>
+            <text x="515" y="104" class="sm" text-anchor="middle">Registry → serves poisoned metadata</text>
+            <text x="515" y="120" class="sm" text-anchor="middle">for an otherwise trusted package</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — "Only install from trusted sources" doesn't help when the trusted source's own backend can be made to lie.</p>
+        </div>
+
+        <h2 id="luarocks">2. LuaRocks: version data and manifest generation</h2>
+        <p>LuaRocks is the package manager for Lua, widely used in configurations like OpenResty/ngx_lua and Neovim plugin ecosystems. Its central <strong>manifest</strong> file describes, for every package name, which versions exist and where their metadata (a "rockspec" file) and source archive can be found. Ng's research examined how that manifest is <strong>generated and validated</strong>, specifically, whether the fields describing a package's version and architecture were treated as trusted structural data or as attacker-influenceable strings.</p>
+        <p>Because rockspec files are themselves Lua-syntax data structures, and because manifest generation involves composing and re-parsing pieces of that syntax, the boundary between "a legitimate package's declared metadata" and "a string an attacker can shape" turned out to be thinner than it should have been in one specific processing path. Separately, the research also touched on a numeric-precision quirk (large integers behaving differently between a Lua runtime using doubles versus one using native 64-bit integers), a classic <strong>type-confusion-adjacent inconsistency</strong> where the same version identifier could be interpreted differently by the server generating the manifest than by the client consuming it, exactly the kind of client/server disagreement that shows up repeatedly across this series (see also <a href="bhas26-auth-reflection-unicode-bypass.html">the Windows auth-reflection Unicode bypass</a>) as a general pattern: whenever two components must independently agree on the meaning of the same data, and don't share one canonical implementation, an attacker can sometimes make them disagree in their favor.</p>
+
+        <h2 id="julia">3. JuliaHub / General Registry: resolving versions through Git and an external API</h2>
+        <p>Julia's package ecosystem resolves package versions in part by consulting the package's source Git repository directly, asking a Git operation to resolve a reference (a branch, tag, or commit) within a given subdirectory, and separately calling the GitHub API to look up repository metadata such as the canonical clone URL. Ng's research found that the values feeding into both of those operations, a repository reference string, and a repository URL sourced from an API response, were not fully constrained before being incorporated into command-line invocations of external tools (a Git subprocess) and into a URL later used to construct further requests.</p>
+        <p>This is the shape of a classic <strong>argument/command injection via insufficiently validated external input</strong>: the trusted party (the registry) faithfully consumes a value from a source it doesn't fully control (a repository's own metadata, or a field in a JSON API response) and passes it, with too little sanitization, into a context (a shell command, a URL construction routine) where unexpected characters change its meaning rather than its content. The specific fix path involved constraining which characters are permitted in these fields and using safer construction methods that don't allow argument or command boundaries to be manipulated by the data itself. The research also touched on a path-confusion angle, where a value expected to identify a single path segment could instead be shaped to traverse into unrelated resources, a variant of the "the same string means different things to different parsers" theme covered in <a href="bhas26-ghost-bits-cast-attack.html">Ghost Bits</a> earlier in this series.</p>
+
+        <h2 id="nuget">4. NuGet: which metadata file does the registry actually trust?</h2>
+        <p>A NuGet package (a <code>.nupkg</code> file) is a ZIP archive that must contain exactly one <strong>.nuspec</strong> metadata file at its root, describing the package's ID, version, and dependencies. NuGet.org's backend processing pipeline performs an <strong>upload validation</strong> pass and then separate <strong>background jobs</strong> that traverse the archive to locate and use that .nuspec file for indexing, dependency resolution, and eventually generating the package's public registration metadata and searchable catalog entry.</p>
+        <p>The interesting finding is a <strong>selection-logic inconsistency between two different stages of that pipeline</strong>. The initial upload-validation stage and the later background-processing stage each independently implemented their own logic for "which file counts as the package's root .nuspec, and which files count as being in a subdirectory (and should therefore be ignored)." Ng showed that a specially-constructed archive could contain <strong>two different .nuspec files with two different declared package identities and dependency sets</strong>, arranged so that the <em>validation</em> stage's path-parsing logic considered one file to be "at the root" (and validated it as a normal, benign package), while the <em>later processing</em> stage's separate path-parsing logic selected the <em>other</em> file, the attacker's real, malicious metadata, when actually generating what gets published.</p>
+        <div class="bm-warn"><strong>The result: a package that validates as benign, but publishes as something else entirely.</strong> Because the two pipeline stages disagreed about which file was "the" nuspec, an uploader could pass the safety check with one identity and dependency declaration, and have the registry publish a completely different one, including malicious dependencies, an <strong>SSRF-capable</strong> reference embedded in metadata fields the registry later fetches server-side (such as an icon URL), and ultimately a path where a crafted, dual-purpose file (a "polyglot" valid as both an image format and a ZIP archive) could be smuggled through an icon-processing step. Each stage was individually reasonable; disagreeing with its sibling stage is what broke the guarantee.</p></div>
+        <p>This is architecturally the cleanest example in the talk of the recurring lesson across this whole series (see also <a href="bhas26-intentguard-iac-semantics.html">IntentGuard</a> and <a href="bhas26-dfir-agent-prompt-injection.html">the DFIR-agent boundary-perturbation talk</a>): <strong>a multi-stage pipeline is only as consistent as its least-agreeing pair of stages</strong>, and "we validated it" means nothing if the thing that gets published afterward was selected by different logic than the thing that got checked.</p>
+
+        <h2 0="cocoapods" id="cocoapods">5. CocoaPods: a probabilistic gap in publisher verification</h2>
+        <p>CocoaPods (the package manager for Objective-C and Swift) verifies a new publisher's control of an email address via a <strong>time-limited verification code</strong> sent by email, a standard pattern used across countless registration systems. Ng's research examined the <strong>size of the code's value space and the length of its validity window</strong> together, rather than either property in isolation, and found that the combination made a <strong>birthday-paradox-style collision attack against the verification code space practical within the code's own validity period</strong>, given a realistic request rate. In other words, the code space wasn't small enough, or the validity window wasn't short enough, for the two together to resist a determined, moderately-resourced guessing campaign, a textbook illustration of why "add a random code" is not automatically sufficient without also reasoning quantitatively about the actual collision probability an attacker faces.</p>
+        <p>The practical consequence of defeating this verification step is registering as, or hijacking the registration flow for, a publisher identity you don't actually control, the entry point for a classic account/identity-based supply-chain compromise, just reached through a probability weakness in the verification mechanism rather than a credential leak.</p>
+
+        <h2 id="pattern">6. The common thread across all four ecosystems</h2>
+        <table class="papers">
+          <thead><tr><th>Registry</th><th>The trust that broke</th></tr></thead>
+          <tbody>
+            <tr><td>LuaRocks</td><td>Manifest/version data assumed to be structurally well-formed, and consistently interpreted across the value ranges different Lua runtimes actually support</td></tr>
+            <tr><td>JuliaHub</td><td>Repository-sourced strings (a Git ref, an API-provided URL) assumed safe to pass into command and URL construction without full sanitization</td></tr>
+            <tr><td>NuGet</td><td>Two independent pipeline stages assumed to agree on "which file is the real metadata", they didn't</td></tr>
+            <tr><td>CocoaPods</td><td>A verification code's guessability assumed negligible without checking the math against its own validity window and achievable request rate</td></tr>
+          </tbody>
+        </table>
+        <p>None of these is a novel bug <em>class</em>, injection via unsanitized external input, multi-stage validation disagreement, and undersized probabilistic secrets are all well-known categories individually. What makes this research notable is <strong>where</strong> they were found: not in some obscure internal tool, but in the backend of infrastructure that <strong>every developer in each of these four language ecosystems implicitly trusts every single day</strong>, often multiple times, without a second thought.</p>
+
+        <h2 id="defense">7. What this means for defenders</h2>
+        <div class="bm-fix">
+          <p style="margin:0 0 8px"><strong>For registry operators:</strong></p>
+          <ul style="margin:0">
+            <li><strong>Treat every stage of your ingest/publish pipeline as a potential trust boundary</strong>, and specifically test whether independently-implemented parsing/selection logic in different stages can be made to disagree about the same input.</li>
+            <li><strong>Fully validate and constrain any externally-sourced string</strong> (a Git ref, an API response field, a URL) before it reaches a command-line invocation or a URL-construction routine; prefer parameterized/argument-array APIs over string concatenation into shell commands.</li>
+            <li><strong>Quantify probabilistic security controls</strong> (verification codes, tokens, session identifiers) against their actual validity window and realistic attacker request rate, not just against a vague sense that the code space is "big enough."</li>
+          </ul>
+          <p style="margin:14px 0 8px"><strong>For developers and organizations consuming these ecosystems:</strong></p>
+          <ul style="margin:0">
+            <li><strong>"Trusted source" and "trustworthy" are not the same claim.</strong> Even a widely-used, well-maintained registry can have backend bugs; pin dependency versions and hashes, and use lockfiles that verify content integrity rather than trusting a name/version pair alone.</li>
+            <li><strong>Where available, use registries' own signing and provenance features</strong> (package signing, Sigstore-style attestations) as a defense layer that doesn't depend on the registry's internal processing logic being bug-free.</li>
+            <li><strong>Report registry-infrastructure anomalies, not just suspicious packages.</strong> This entire research direction exists because someone asked "what if the pipe itself is broken?" rather than only "what if this specific package is malicious?"</li>
+          </ul>
+        </div>
+
+        <details class="faq"><summary>Are these vulnerabilities still exploitable?</summary><p>No. The talk includes an explicit disclaimer that all the bugs discussed were reported and fixed. This is retrospective, defensive research explaining what was found and how it was mitigated, not a live-exploitation guide.</p></details>
+        <details class="faq"><summary>Isn't "don't trust user input" already a solved problem?</summary><p>The principle is well known; applying it consistently across every stage of a large, evolved backend system, especially when two stages were written at different times by different people with different assumptions, is where real systems keep failing. That inconsistency between stages, not ignorance of the principle, is what these bugs exploited.</p></details>
+        <details class="faq"><summary>Does this mean I shouldn't trust package registries at all?</summary><p>The researcher's own closing point is more measured: "even trusted sources are not necessarily fully trustworthy." The practical response isn't distrust, it's defense in depth: pin versions and hashes, use lockfiles, prefer registries with signing/provenance, and don't treat "it's on the official registry" as a complete security guarantee on its own.</p></details>
+        <details class="faq"><summary>Why does this matter if I only use one of these four ecosystems?</summary><p>The specific bugs are ecosystem-specific, but the underlying patterns (unsanitized external strings reaching command/URL construction, multi-stage validation disagreement, undersized probabilistic secrets) apply to essentially any package registry, build system, or artifact pipeline. If you operate similar infrastructure for an internal package feed or a CI artifact store, the same questions are worth asking of your own system.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>The registry itself is part of the supply-chain trust boundary</strong>, not just the packages it distributes; this research targeted registry backend logic directly across four ecosystems.</li>
+          <li><strong>LuaRocks:</strong> version/manifest data interpreted inconsistently across processing contexts, including a cross-runtime numeric-precision gap.</li>
+          <li><strong>JuliaHub:</strong> externally-sourced strings (Git refs, API-provided URLs) insufficiently sanitized before use in command and URL construction.</li>
+          <li><strong>NuGet:</strong> two independent pipeline stages disagreed about which file in an archive was "the real" metadata, letting a package validate as benign while publishing as malicious.</li>
+          <li><strong>CocoaPods:</strong> a verification code's size and validity window, combined, were vulnerable to a birthday-paradox-style collision attack.</li>
+          <li>All findings were <strong>responsibly disclosed and are already fixed</strong>; the durable lesson is architectural: audit consistency <em>between</em> pipeline stages, not just within any single stage.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/#hack-the-source-of-the-source-51400" target="_blank" rel="noopener">Black Hat Asia 2026 — this talk's official page</a> <span>— abstract, speaker bio, and slides/video when posted.</span></li>
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — full Briefings schedule</a> <span>— every talk in the conference.</span></li>
+          <li><a href="https://blog.devco.re/" target="_blank" rel="noopener">DEVCORE Research Blog</a> <span>— the researcher's team publications.</span></li>
+          <li><a href="https://luarocks.org/" target="_blank" rel="noopener">LuaRocks</a> <span>· <a href="https://juliahub.com/" target="_blank" rel="noopener">JuliaHub</a> · <a href="https://www.nuget.org/" target="_blank" rel="noopener">NuGet.org</a> · <a href="https://cocoapods.org/" target="_blank" rel="noopener">CocoaPods</a> — the affected registries.</span></li>
+          <li><a href="https://www.sigstore.dev/" target="_blank" rel="noopener">Sigstore</a> <span>— an example of package-signing/provenance infrastructure that adds defense independent of registry backend correctness.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-shar-dns-silent-vulnerabilities.html">← prev: SHAR DNS Attack</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

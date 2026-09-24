@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-package-registry-supply-chain",
+    title: "Hack the source, of the source — when the registry itself is the supply chain.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "supply-chain", "package-registries", "appsec"],
+    time: 11,
+    words: 2241,
+    excerpt: "Black Hat Asia 2026, talk 17. Tsi-Lin Ng targets the registry backends themselves — LuaRocks, JuliaHub, NuGet, CocoaPods — where manifest generation, git-based version resolution, metadata-file selection and account verification each had trust-boundary bugs. All disclosed and fixed.",
+    series: "blackhat-asia-2026",
+    seriesNum: "17"
+  },
+  {
     slug: "bhas26-shar-dns-silent-vulnerabilities",
     title: "One char to rule them all — the DNS silence that revived a dead attack.",
     date: "Sep 24, 2026",

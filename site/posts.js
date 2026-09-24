@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-macos-pid-domain-llm-discovery",
+    title: "AI in the loop \u2014 how entitlements hide a macOS sandbox-escape surface.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "macos", "sandbox", "llm", "vulnerability-research"],
+    time: 7,
+    words: 1452,
+    excerpt: "Black Hat Asia 2026, talk 23. Researchers show that macOS PID-domain services (~40% of system services) are reachable from sandboxed apps and gain power from entitlements. LLM-assisted static analysis over 302 services found 19 acknowledged vulnerabilities and 7 CVEs.",
+    series: "blackhat-asia-2026",
+    seriesNum: "23"
+  },
+  {
     slug: "bhas26-whisperpair-google-fast-pair",
     title: "WhisperPair \u2014 one tap to pair, zero clicks to hijack.",
     date: "Sep 24, 2026",

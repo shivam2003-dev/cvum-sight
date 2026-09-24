@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-ethereum-llm-differential-testing",
+    title: "Fortifying the foundation — 98 bugs hiding under every Ethereum wallet.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "blockchain", "llm-testing", "differential-testing"],
+    time: 13,
+    words: 2596,
+    excerpt: "Black Hat Asia 2026, talk 15. Jie Ma, Ningyu He and colleagues found 98 real bugs across all 11 mainstream Ethereum execution and consensus clients using two LLM-assisted differential testers: OpDiffer (EVM opcode semantics, ISSTA'25) generates minimal spec-valid bytecode seeds instead of relying on scarce source code or semantically-broken mutations, and APIDiffer (JSON-RPC/Beacon-API, OOPSLA'26) uses an LLM-as-judge to separate real bugs from allowed differences. Case studies: a nil-pointer EVM crash that propagated to a downstream fork, a client returning the wrong JSON-RPC error shape, and a specification bug that could have caused valid requests to be rejected across every client.",
+    series: "blackhat-asia-2026",
+    seriesNum: "15"
+  },
+  {
     slug: "bhas26-serial-to-ip-critical-infrastructure",
     title: "We'll eat your serial for breakfast — the boxes bridging your grid to the internet.",
     date: "Sep 24, 2026",

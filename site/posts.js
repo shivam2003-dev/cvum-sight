@@ -431,9 +431,9 @@ const POSTS = [
     date: "Sep 22, 2026",
     cat: "ml",
     tags: ["ml", "frontier-models", "evaluation", "test-time-compute", "agents"],
-    time: 31,
-    words: 6176,
-    excerpt: "Technical-only: Grok 4.7's disclosed training recipe (predecessor-distilled SFT, harness-native RL, Cursor workflow data that puts CursorBench in-distribution) and its deliberate dual-use bio regression; Opus 5.5's always-on thinking and model- and prefix-bound reasoning state; binomial confidence intervals showing most headline agentic gaps are unresolved; a cache-economics crossover where Opus 5.5 input undercuts Grok 4.7; and a sourced status check on the still-unpublished GPT-6 Sol."
+    time: 34,
+    words: 6783,
+    excerpt: "Technical-only: Grok 4.7's disclosed training recipe (predecessor-distilled SFT, harness-native RL, Cursor workflow data that puts CursorBench in-distribution) and its deliberate dual-use bio regression; Opus 5.5's always-on thinking and model- and prefix-bound reasoning state; binomial confidence intervals showing most headline agentic gaps are unresolved; a cache-economics crossover where Opus 5.5 input undercuts Grok 4.7. Updated Sep 23: GPT-6 Sol and Luna shipped at 50% below GPT-5.6 pricing, with OpenAI's own Opus 5 / Fable 5.1 comparison numbers checked against this piece's statistical and cross-table caveats."
   },
   {
     slug: "typesafe-jev-system-one-models",

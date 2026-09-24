@@ -582,11 +582,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "falcon"
   ],
-  "time": 13,
-  "words": 2508,
-  "excerpt": "Evaluate Falcon's compact lattice signatures, HQC's code-based diversity, Classic McEliece, and the additional-signature process without confusing candidates with final standards.",
+  "time": 15,
+  "words": 2919,
+  "excerpt": "Falcon's trapdoor sampling and why it needs exact-distribution Fourier sampling, HQC vs. Classic McEliece as two different code-based tradeoffs, why 'not selected' isn't a cryptanalytic verdict, and why two algorithm names in a config isn't a reviewed hybrid.",
   "series": "pqc",
   "seriesNum": "10"
 },

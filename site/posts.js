@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-overkill-wifi7-chip-privilege-escalation",
+    title: "Overkill \u2014 escalating to SYSTEM from inside a Wi-Fi chip's firmware.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "windows", "firmware", "privilege-escalation", "wifi"],
+    time: 8,
+    words: 1541,
+    excerpt: "Black Hat Asia 2026, talk 26. ZHAW's Nicola Stauffer and G\u00fcrkan G\u00fcr chain a driver info-leak, a side-channel KASLR bypass and a firmware primitive in MediaTek's Wi-Fi 7 chip to escalate to SYSTEM on Windows 25H2, showing peripheral firmware as an overlooked trust boundary.",
+    series: "blackhat-asia-2026",
+    seriesNum: "26"
+  },
+  {
     slug: "bhas26-rentable-iot-meltdown-idscope",
     title: "The rentable IoT meltdown \u2014 when a short ID turns one bug into a whole fleet.",
     date: "Sep 24, 2026",

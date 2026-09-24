@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qualcomm BootROM — When Every Link in the Hardware Trust Chain Has to Hold — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: Kaspersky's Alexander Kozlov and Sergey Anufrienko walk the layered boot security of Qualcomm's MDM9207 IoT modem chipset (CVE-2026-25262) — application-processor BootROM, the secure-download protocol, TrustZone, the secondary bootloader, the separate communication-processor BootROM, and JTAG debug fusing — and show that a chain of trust is only as strong as its weakest layer. Conceptual overview and mitigation guidance, not an exploitation walkthrough.">
+<link rel="stylesheet" href="../style.css?v=88">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">Qualcomm BootROM: A Journey Through Sahara</p>
+        <p class="series-banner-meta">Talk 13 · Hardware &amp; embedded security · high-level analysis, no exploitation detail</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-rocketchat-e2ee-key-recovery.html">← prev: Rocket.Chat E2EE</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 24, 2026 · conferences · 8 min read · 1685 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Qualcomm BootROM — a trust chain is only as strong as its weakest layer.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">embedded</span>
+          <span class="tag">hardware-security</span>
+          <span class="tag">iot</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Alexander Kozlov</strong> and <strong>Sergey Anufrienko</strong> (Kaspersky) examined the layered boot security of Qualcomm's <strong>MDM9207</strong> IoT/M2M modem chipset, widely deployed via module vendors (Telit, Quectel, and others) in smart utility meters, retail and security equipment, logistics trackers, and networking gear. Their research, tracked as <strong>CVE-2026-25262</strong> and affecting a family of related Qualcomm chips (MDM9x07, MDM9x45, MDM9x65, MSM8909, MSM8916, MSM8952, SDX50), worked through the chip's full <strong>chain of trust</strong>, from the application processor's BootROM, through its secure factory-download protocol, TrustZone's memory protections, the secondary bootloader, and down to the <em>separate</em> BootROM running on the modem's own communications processor, and found that <strong>each stated security guarantee held only until it met the next layer down.</strong> This write-up stays at the concept level: what a chip's boot security is supposed to guarantee, why a "physical access required" bug is still a real supply-chain and device-security concern, and how defenders should think about it. It deliberately omits the specific bypass mechanics, memory addresses, and debug-enablement steps from the talk.</p>
+
+        <p>Post 13 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. Hardware boot-security research like this is usually only actionable with direct physical or JTAG-level access to the device, so the value for most readers is architectural: understanding <em>why</em> layered hardware trust is hard to get right everywhere at once, and what that means for anyone deploying embedded/IoT devices at scale.</p>
+
+        <h2 id="why">1. Why a cellular modem chip's boot security matters</h2>
+        <p>The MDM9207 isn't a phone chip, it's the kind of low-cost cellular modem module that goes inside <strong>smart utility meters, retail payment and security terminals, logistics trackers, and industrial networking equipment</strong>. Devices like these are frequently deployed in the field with no physical oversight: a meter on a pole, a tracker on a truck, a terminal in an unattended kiosk. For that class of device, the chip's own boot security <em>is</em> the last line of defense, there's no data center perimeter, no locked server room, just the chip and whoever can get physical access to it.</p>
+        <p>The chip's documented security model rests on a small number of promises, and the research is organized around testing each one:</p>
+        <ul>
+          <li>The application-processor BootROM <strong>only executes verified (signed) code</strong>.</li>
+          <li><strong>TrustZone</strong> restricts access to the communications-processor (modem) subsystem's memory from the main application processor.</li>
+          <li>The communications processor's own BootROM <strong>cannot be read out</strong>.</li>
+          <li>The communications processor's BootROM likewise <strong>only executes verified code</strong>.</li>
+        </ul>
+        <p>Each of those bullets is a distinct hardware or firmware control, implemented by a different mechanism, at a different stage of boot. That's a reasonable design, defense in depth is supposed to mean that if one layer is bypassed, the next one still holds. The talk's throughline is that, on this chip family, <strong>the assumptions were tested one at a time and each was found not to hold</strong>, which meant an attacker with physical access to the device could progressively work from the outermost layer (the factory download interface) down to the innermost (debug access to the modem's own processor core).</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="20" class="ink" text-anchor="middle">Layered boot trust, conceptually</text>
+            <rect x="20" y="45" width="150" height="50" rx="8" class="boxg"/>
+            <text x="95" y="66" class="lbl" text-anchor="middle">AP BootROM</text>
+            <text x="95" y="82" class="sm" text-anchor="middle">signed code only</text>
+            <rect x="190" y="45" width="150" height="50" rx="8" class="boxy"/>
+            <text x="265" y="66" class="lbl" text-anchor="middle">TrustZone</text>
+            <text x="265" y="82" class="sm" text-anchor="middle">isolates modem memory</text>
+            <rect x="360" y="45" width="150" height="50" rx="8" class="box"/>
+            <text x="435" y="66" class="lbl" text-anchor="middle">Secondary bootloader</text>
+            <text x="435" y="82" class="sm" text-anchor="middle">brings up peripherals</text>
+            <rect x="530" y="45" width="130" height="50" rx="8" class="boxr"/>
+            <text x="595" y="66" class="lbl" text-anchor="middle">Modem CP BootROM</text>
+            <text x="595" y="82" class="sm" text-anchor="middle">separate, unreadable</text>
+            <path d="M170 70 L190 70" class="arr"/>
+            <path d="M340 70 L360 70" class="arr"/>
+            <path d="M510 70 L530 70" class="arr"/>
+            <rect x="120" y="130" width="440" height="55" rx="8" class="boxr"/>
+            <text x="340" y="152" class="lbl" text-anchor="middle">Each stage's guarantee is independent</text>
+            <text x="340" y="170" class="sm" text-anchor="middle">a bypass at one layer becomes the foothold for attacking the next</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 — The four security assumptions map onto four distinct stages. Layered trust only works if every layer is individually sound; testing that requires attacking each one in turn.</p>
+        </div>
+
+        <h2 id="method">2. The research posture: verify each stated guarantee, don't assume it</h2>
+        <p>Without walking through the specific techniques, the shape of the investigation is instructive on its own and generalizes well beyond this chip:</p>
+        <ul>
+          <li><strong>Start from the documented and marketed security claims</strong>, "BootROM only runs verified code," "the debug processor's ROM can't be dumped", and treat each as a hypothesis to test, not a fact to trust.</li>
+          <li><strong>Test the outermost, most reachable interface first.</strong> Chips like this expose a factory/service-mode download interface intended for legitimate reflashing and manufacturing use; it is also, by construction, code that runs very early with high privilege, making it a natural first target.</li>
+          <li><strong>Use whatever foothold one layer yields to examine the next.</strong> A weakness that only grants limited capability at one stage of boot can still be enough to observe or influence behavior at the following stage, this is why "boot chain" security has to be evaluated end-to-end, not layer by layer in isolation.</li>
+          <li><strong>Revisit every stated assumption at the end</strong>, checking off which of the original four security promises actually held once the full chain had been examined.</li>
+        </ul>
+        <div class="bm-note"><strong>The general lesson, independent of any one chip (my note).</strong> Layered security architectures, whether it's a hardware boot chain, a cloud IAM hierarchy, or a network segmentation model, are only as strong as the assumption that <em>every named layer actually enforces its claimed boundary</em>. Vendors document the layers; they rarely publish adversarial testing of every boundary between them. That gap, between "the architecture diagram says this is isolated" and "we verified it," is where this kind of research lives, and it's the same gap that shows up in <a href="bhas26-hybrid-boundaries-wac.html">the Windows Admin Center hybrid-boundary talk</a> and <a href="bhas26-auth-reflection-unicode-bypass.html">the auth-reflection bypass chain</a> elsewhere in this series.</p></div>
+
+        <h2 id="jtag">3. Why "needs physical access" doesn't mean "not a real risk"</h2>
+        <p>A natural reaction to chip-level boot research is "this needs a chip on a bench, so it doesn't matter for my threat model." Two reasons that's incomplete for this class of device:</p>
+        <ul>
+          <li><strong>Supply-chain and field-deployment exposure.</strong> Utility meters, trackers, and unattended terminals sit in physically accessible locations for years. A device an attacker can borrow, tamper with, and return (or one they can buy off a resale market and study at length) gives exactly the kind of extended physical access this research assumes.</li>
+          <li><strong>Debug access, once enabled, persists.</strong> Hardware debug interfaces are typically fused off in production devices specifically because, once available, they hand an attacker deep, low-level control, arbitrary memory read/write, execution control, register-level access, that is difficult or impossible to detect from software running on the device. A technique that re-enables such access converts a one-time physical compromise into a durable capability against that unit, and potentially against its firmware/key material in ways that could affect other units in the same fleet if secrets are shared or derivable.</li>
+        </ul>
+        <p>The disclosed timeline shows the researchers reported the issue in early-to-mid 2025, with the CVE and public advisory following in 2026, the standard responsible-disclosure cadence for hardware-level silicon issues, which typically take longer to remediate than software bugs because fixes may require new silicon revisions or fused-off mitigations rather than a simple firmware patch.</p>
+
+        <h2 id="defense">4. What to actually do about it</h2>
+        <div class="bm-fix">
+          <ul style="margin:0">
+            <li><strong>Inventory affected silicon.</strong> If your product or fleet uses MDM9x07, MDM9x45, MDM9x65, MSM8909, MSM8916, MSM8952, or SDX50-based modules (commonly OEM'd by module vendors like Telit, Quectel, and others), check with your module vendor for guidance and any available mitigations or revised parts.</li>
+            <li><strong>Apply available firmware/fuse mitigations.</strong> Where Qualcomm or the module vendor has published a fix, whether a firmware update, a fuse-configuration change, or a revised part, apply it before field deployment, and audit already-deployed units where feasible.</li>
+            <li><strong>Treat physical access as a real threat for field-deployed IoT.</strong> Devices in unattended locations should be designed assuming an attacker will eventually get hands-on time. Don't rely solely on "physical access required" as a reason to deprioritize a hardware finding for this device class.</li>
+            <li><strong>Minimize the blast radius of a single compromised unit.</strong> Avoid shared secrets or keys across a whole fleet where a single device's compromise (via a boot-chain or debug-access bypass) could be leveraged against the rest of the fleet.</li>
+            <li><strong>Physically harden or monitor debug interfaces</strong> on high-value deployed hardware where feasible, tamper-evident enclosures, tamper-detection circuitry, and epoxy-potted debug headers are standard mitigations for exactly this class of exposure.</li>
+          </ul>
+        </div>
+
+        <details class="faq"><summary>Does this affect smartphones?</summary><p>The affected chip family here (MDM9207 and related MDM9x07/9x45/9x65, MSM8909/8916/8952, SDX50 parts) is primarily IoT/M2M modem silicon, not the flagship application processors used in current smartphones. Check your specific device's chipset against the CVE-2026-25262 advisory if you need a definitive answer for a particular product.</p></details>
+        <details class="faq"><summary>Is this remotely exploitable?</summary><p>No. The research describes a chain of bypasses that require direct physical and, in later stages, hardware debug-level access to the device. It is not a remote network attack. Its relevance is to physical device security, supply-chain integrity, and field-deployed hardware, not to a remotely reachable service.</p></details>
+        <details class="faq"><summary>Why does this take so long to fix compared to a software CVE?</summary><p>Boot-ROM code is typically burned into silicon at manufacture and cannot be patched after the fact; the practical fixes are firmware updates to later boot stages, fuse-configuration changes on future production lots, or a revised silicon stepping. That's inherently slower than shipping a software patch, which is part of why hardware root-of-trust bugs get a longer disclosure timeline.</p></details>
+        <details class="faq"><summary>What's the single takeaway for someone building IoT hardware?</summary><p>Don't assume a chip vendor's documented security boundaries have all been independently, adversarially verified end-to-end. Ask your silicon and module vendors directly whether their boot chain has had third-party security review, and design your product's threat model to include "an attacker eventually gets physical access to one unit."</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>Qualcomm's MDM9207 (and related chips) ship <strong>four separate, layered boot-security guarantees</strong>, application-processor BootROM signing, TrustZone memory isolation, and two more for the separate modem communications-processor BootROM.</li>
+          <li>The research (<strong>CVE-2026-25262</strong>) is organized around <strong>testing each stated guarantee in turn</strong> rather than trusting the architecture diagram, and found each successive layer's promise did not fully hold once the previous one was bypassed.</li>
+          <li>This chip family is widely used in <strong>utility meters, retail/security, logistics, and networking equipment</strong>, devices that are frequently deployed with extended, unattended physical accessibility.</li>
+          <li><strong>"Requires physical access" is not the same as "not a real risk"</strong> for field-deployed IoT hardware, especially once a hardware debug interface can be durably re-enabled.</li>
+          <li>Fixes for silicon-level boot issues are <strong>slower than software patches</strong> (firmware, fuse config, or new steppings), so inventorying affected parts and applying vendor guidance promptly matters.</li>
+          <li>The general lesson generalizes past this chip: <strong>a layered trust architecture is only as strong as its least-verified boundary.</strong></li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — Briefings schedule</a> <span>— official session listing and slides.</span></li>
+          <li><a href="https://nvd.nist.gov/vuln/detail/CVE-2026-25262" target="_blank" rel="noopener">CVE-2026-25262</a> <span>— the tracked vulnerability across the affected Qualcomm chip family.</span></li>
+          <li><a href="https://www.qualcomm.com/company/product-security/bulletins" target="_blank" rel="noopener">Qualcomm Product Security Bulletins</a> <span>— vendor advisories and mitigation guidance for affected chipsets.</span></li>
+          <li><a href="https://securelist.com/" target="_blank" rel="noopener">Kaspersky Securelist</a> <span>— the research team's technical publications.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-rocketchat-e2ee-key-recovery.html">← prev: Rocket.Chat E2EE</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

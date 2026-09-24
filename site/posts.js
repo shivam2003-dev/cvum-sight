@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-qualcomm-bootrom-trust-chain",
+    title: "Qualcomm BootROM — a trust chain is only as strong as its weakest layer.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "embedded", "hardware-security", "iot"],
+    time: 8,
+    words: 1685,
+    excerpt: "Black Hat Asia 2026, talk 13. Kaspersky's Alexander Kozlov and Sergey Anufrienko examine the layered boot security of Qualcomm's MDM9207 IoT modem chipset (CVE-2026-25262, affecting a wider MDM9x07/9x45/9x65/MSM8909/8916/8952/SDX50 family) used in utility meters, retail/security gear, logistics trackers, and networking equipment. A conceptual, non-operational look at the four stacked trust guarantees (AP BootROM signing, TrustZone isolation, and two more on the separate modem processor's own BootROM), why each was tested rather than assumed, and why physical-access-only hardware bugs still matter for field-deployed IoT.",
+    series: "blackhat-asia-2026",
+    seriesNum: "13"
+  },
+  {
     slug: "bhas26-rocketchat-e2ee-key-recovery",
     title: "Payload compromised — how toLowerCase() broke Rocket.Chat's E2EE.",
     date: "Sep 23, 2026",

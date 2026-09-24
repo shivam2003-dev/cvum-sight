@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-bad-vibes-pwning-coding-agents",
+    title: "Bad vibes \u2014 the same three bugs, in nearly every AI coding agent.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "ai-security", "prompt-injection", "sandboxing", "devtools"],
+    time: 10,
+    words: 1997,
+    excerpt: "Black Hat Asia 2026, talk 29. Palo Alto Networks' Nil Ashkenazi and Philip Tsukerman find the same command-injection, filesystem-escape and sandbox-escape bug classes across nearly every major AI coding agent. 81+ reports, 18 CVEs, ~$50,000 in bounties across Anthropic, Google, OpenAI and Cursor.",
+    series: "blackhat-asia-2026",
+    seriesNum: "29"
+  },
+  {
     slug: "bhas26-rebirthday-dns-cache-poisoning-ecs",
     title: "REBIRTHDAY \u2014 how a helpful DNS feature undid a 20-year-old fix.",
     date: "Sep 24, 2026",

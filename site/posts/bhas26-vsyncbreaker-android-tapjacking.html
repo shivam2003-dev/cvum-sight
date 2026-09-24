@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VsyncBreaker: Android Screen Trust — Black Hat Asia 2026 — cvam.sight</title>
+<meta name="description" content="Black Hat Asia 2026 deep dive: AOSP researcher WeiMin Cheng finds that Android&#x27;s compositor and input dispatcher independently track different properties of the same window, enabling a no-permission tapjacking chain patched as CVE-2025-48621.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Black Hat Asia 2026 (Singapore, Apr 23–24) — Briefings Deep Dives</p>
+        <p class="series-banner-title">VsyncBreaker: Subverting Screen Trust via State Disruption and ONE-WAY Flooding</p>
+        <p class="series-banner-meta">Talk 33 · Android platform security · analysis from the speaker's published deck</p>
+        <div class="series-banner-nav">
+          <a href="bhas26-jvm-memory-shell-auto-search.html">← prev: JVM Memory Shell Search</a>
+          <a href="../series-blackhat-asia-2026.html">all talks →</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 24, 2026 · conferences · 9 min read · 1772 words <span class="difficulty expert">expert</span></p>
+        <h1>VsyncBreaker — when what's drawn and what's touchable quietly disagree.</h1>
+        <div class="tag-row">
+          <span class="tag fill">conferences</span>
+          <span class="tag">blackhat</span>
+          <span class="tag">android</span>
+          <span class="tag">tapjacking</span>
+          <span class="tag">aosp</span>
+          <span class="tag">ui-security</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+        <div class="yt-embed">
+          <div class="yt-embed-frame"><iframe src="https://www.youtube-nocookie.com/embed/sYoeYDSBjrI" title="Black Hat Asia 2026 talk recording" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+          <p class="yt-embed-cap">Official recording, Black Hat YouTube channel · <a href="https://www.youtube.com/watch?v=sYoeYDSBjrI" target="_blank" rel="noopener">open on YouTube ↗</a></p>
+        </div>
+
+        <p class="bm-tldr"><strong>WeiMin Cheng</strong>, an independent AOSP (Android Open Source Project) researcher, spent years chasing a single question: is Android's layered defence against <strong>tapjacking</strong> (tricking a user into tapping something they can't see, the mobile cousin of web clickjacking, long weaponised by banking malware families like Anubis and by APT groups) actually complete, or does it just look complete? His answer, <strong>VsyncBreaker</strong>: a chain that gets around every layer Android has added since the original overlay-abuse bugs, culminating in a bug in how two of Android's own core graphics and input subsystems, <strong>SurfaceFlinger and InputDispatcher</strong>, quietly disagree about what "showing" a window even means. The core finding was reported in 2023 and only fixed in December 2025 as <strong>CVE-2025-48621</strong>. This is disclosed, patched research into Android's UI security model; I explain the conceptual weaknesses and their fixes, not the working bypass chain.</p>
+
+<p>Post 33 of my <a href="../series-blackhat-asia-2026.html">Black Hat Asia 2026 series</a>. Everything below is publicly disclosed and patched. I focus on why each defensive layer existed, what gap let research continue past it, and the underlying architectural lesson, not reproducible bypass steps.</p>
+
+<h2 id="tapjacking">1. What tapjacking is, and why it keeps coming back</h2>
+<p>Web clickjacking hides a legitimate control under attacker-controlled content so a click meant for one thing actually lands on another. Android's version, <strong>tapjacking</strong>, exploits the platform's ability to draw one window <em>on top of</em> another: if an attacker can overlay content over a legitimate app (say, a bank's PIN entry screen) while still routing the user's tap through to the real control underneath, the user believes they're interacting with the visible content while actually authorising whatever the hidden app wants. Because it requires no data exfiltration and no traditional malware payload, just control over what's drawn and how touches are routed, it has been a recurring building block in real banking-trojan and APT campaigns for years.</p>
+<p>Two classic primitives made this practical on older Android versions: the <strong>system alert window</strong> permission (letting an app draw over everything else) combined with a flag that makes the overlay <strong>click-through</strong> (touches pass to whatever is underneath), and later a separate bug (CVE-2021-39617) that achieved a similar effect via an ordinary Activity rather than a system overlay. Google responded to each with a specific defensive mechanism, and the research this talk describes is essentially a history of testing whether each mechanism, once patched, actually closed the door or just moved it.</p>
+
+<h2 id="layers">2. Three defensive layers, and what research found in each</h2>
+<table class="papers">
+<thead><tr><th>Defence</th><th>What it's supposed to stop</th></tr></thead>
+<tbody>
+<tr><td><strong>Hide non-system overlay windows</strong></td><td>Lets a sensitive screen (like a banking PIN entry) request that no untrusted overlay be drawn above it at all, removing the overlay primitive entirely for that screen</td></tr>
+<tr><td><strong>ActivityRecordInputSink (ARIS)</strong></td><td>A protective input-handling layer inserted behind every Activity specifically to close the Activity-based variant (CVE-2021-39617), designed to catch touches that shouldn't be allowed through</td></tr>
+<tr><td><strong>Trusted overlay marking</strong></td><td>Reserves the ability to draw an overlay that's allowed to sit above protected content to privileged, system-level processes only, denying that capability to ordinary apps</td></tr>
+</tbody></table>
+<p>The research doesn't claim any single layer is fundamentally broken by design. Instead it describes finding, for each layer in turn, a narrower condition under which the protection's own logic didn't fully cover the case it was supposed to, and demonstrates that these narrow gaps could be chained together to produce a working end-to-end tapjacking primitive with <strong>no runtime permission and no elevated privilege required</strong>, a materially more severe finding than a bug requiring the user to have already granted a suspicious permission.</p>
+<div class="bm-note"><strong>Why "no permission required" matters so much.</strong> Android's whole permission model exists to make the user (or the platform) a checkpoint before a sensitive capability is granted. A tapjacking primitive that needs zero permissions removes that checkpoint entirely, meaning ordinary app review and permission-prompt scrutiny, the defences most users and even reviewers actually rely on, never had a chance to catch it.</p></div>
+
+<h2 id="deeper">3. The deeper finding: two subsystems that don't agree on "visible"</h2>
+<p>After exhausting the layered mechanism-specific bugs, the research asks a more architectural question: what if the individual protection mechanisms have no logic bugs left to find at all, is the attack surface actually closed? The answer it arrives at is no, because of a subtler, structural mismatch between two of Android's core subsystems that have to cooperate constantly but were built with different concerns in mind:</p>
+<ul>
+<li><strong>InputDispatcher</strong> decides which window receives a touch by searching from the topmost window down, based on where a touch is <em>allowed to land</em>. Critically, it doesn't care whether that window is actually visible on screen, only whether it's touchable.</li>
+<li><strong>SurfaceFlinger</strong>, Android's compositor, decides what gets <em>drawn</em> to the screen. It doesn't care whether a given window is touchable, only whether it should be shown.</li>
+</ul>
+<p>These are two independently-reasonable responsibilities, and normally they cooperate closely: SurfaceFlinger's rendering pipeline (driven by the display's VSYNC timing signal) packages up current window/frame data and hands it off to InputDispatcher so touch routing stays consistent with what's actually on screen. The research's central architectural insight is that <strong>"touchable" and "visible" are two different properties, tracked by two different subsystems, kept in sync by a data hand-off rather than by a single shared source of truth</strong>, and that a component with enough control over what it reports about its own window can influence what SurfaceFlinger tells InputDispatcher, independent of what's actually rendered. Whenever two systems must agree on a property but each derives that property independently rather than sharing one canonical implementation, the gap between them is exploitable, exactly the recurring theme in this series's parser-differential and trust-boundary talks (see also <a href="bhas26-macos-pid-domain-llm-discovery.html">the macOS PID-domain research</a> and <a href="bhas26-overkill-wifi7-chip-privilege-escalation.html">Overkill</a>).</p>
+
+<h2 id="ipc">4. A second, independent gap: how inter-process messages are delivered</h2>
+<p>Separately from the visibility/touchability mismatch, the research also examines how Android's <strong>Binder IPC</strong> mechanism, the core inter-process communication layer nearly everything on the platform relies on, delivers messages between different system components. Binder supports two delivery modes: a synchronous mode where the caller waits for a response and can observe failure, and a fire-and-forget <strong>one-way (oneway)</strong> mode intended for calls where the caller doesn't need to wait or confirm delivery. Oneway calls also carry a materially smaller maximum message size than the synchronous mode.</p>
+<p>The research observes that not every interface between Android's UI-relevant system components consistently applies the same scrutiny to oneway-mode traffic that synchronous traffic receives, and that oversized oneway messages can fail delivery in ways that aren't uniformly and safely handled by every recipient across the platform's many interacting components (window management, transition/animation handling, and the compositor itself). This is presented as a second, independent architectural weak point, distinct from the visibility/touchability mismatch, but rhyming with it: a boundary between two cooperating components where one side's assumptions about reliable, complete data delivery don't hold under adversarial conditions.</p>
+
+<h2 id="disclosure">5. Disclosure timeline</h2>
+<p>The core finding underlying this research was originally noticed in <strong>2021</strong>, before the researcher was doing formal security work and before its significance as a vulnerability was recognised. It was formally reported in <strong>2023</strong>, and a fix landed in the AOSP security bulletin on <strong>20 December 2025</strong>, assigned <strong>CVE-2025-48621</strong>. That multi-year gap between an initial observation and its eventual formal disclosure and fix is a reminder that architectural mismatches like this one (two subsystems disagreeing about a shared concept) are often much harder to fully characterise, and much harder to patch cleanly, than a single memory-safety bug in one function.</p>
+
+<h2 id="lessons">6. What this means for platform and app developers</h2>
+<div class="bm-fix">
+<ul style="margin:0">
+<li><strong>Layered, mechanism-specific defences accumulate coverage gaps over time.</strong> Each new protection (hide-overlay flags, input sinks, trusted-overlay marking) closes the specific bypass that prompted it, but doesn't guarantee the underlying capability (making a window untouchable-but-visible, or visible-but-untouchable, in ways a user can't perceive) is closed everywhere else it might still be reachable.</li>
+<li><strong>Where two subsystems must agree on one property, that property should have a single source of truth</strong>, not two independently-computed answers reconciled only by a best-effort data hand-off. This is the general architectural lesson, not just an Android-specific one.</li>
+<li><strong>For app developers building sensitive UI</strong> (payment confirmation, credential entry, permission grants): don't assume platform-level overlay protections are a complete guarantee. Where the platform offers an explicit "this screen must not be obscured" API, use it, and treat it as one layer of defence rather than the only one.</li>
+<li><strong>For platform security teams:</strong> a component that reports its own state (visibility, size, touchability) to another subsystem is a trust boundary. Audit whether that self-reported state can be influenced independently of the property it's meant to represent.</li>
+</ul>
+</div>
+
+<details class="faq"><summary>Is this still exploitable on current Android?</summary><p>No. The core finding was patched in the December 2025 AOSP security bulletin as CVE-2025-48621. Keeping devices on a current security patch level is the mitigation.</p></details>
+<details class="faq"><summary>Did this require the user to install a malicious app with special permissions?</summary><p>The research's key point is that its full chain required no runtime permission grant and no elevated privilege, which is what made it more severe than earlier overlay-permission-based tapjacking variants.</p></details>
+<details class="faq"><summary>Is this a bug in one specific Android component, or something broader?</summary><p>The most severe part of the research is architectural: a mismatch between how two separate core subsystems (the compositor and the input dispatcher) each independently determine window state, rather than a single isolated coding mistake in one function.</p></details>
+<details class="faq"><summary>Why did it take from 2021 to 2025 to get fixed?</summary><p>The finding wasn't formally reported until 2023 (the researcher didn't initially recognise its security significance), and architectural mismatches between core subsystems generally take longer to characterise and fix safely than isolated memory-safety bugs, since a fix has to preserve legitimate functionality for every other caller of both subsystems.</p></details>
+
+<h2 id="takeaways">Takeaways</h2>
+<ul>
+<li><strong>Tapjacking defences on Android accumulated in layers</strong> (hide-overlay flags, input sinks, trusted-overlay restrictions), each closing a specific prior bypass rather than the underlying capability.</li>
+<li>The research's core architectural finding: <strong>SurfaceFlinger (what's drawn) and InputDispatcher (what's touchable) independently track different properties of the same window</strong>, reconciled only by a data hand-off rather than a shared source of truth.</li>
+<li>A second, independent gap involves inconsistent handling of Android's <strong>Binder one-way IPC mode</strong> across cooperating system components.</li>
+<li>The full chain required <strong>no runtime permission and no elevated privilege</strong>, a materially more severe bar than earlier overlay-permission-based tapjacking.</li>
+<li>Reported in 2023, fixed <strong>December 2025 as CVE-2025-48621</strong>. Keep devices patched; sensitive-screen developers should use platform obscured-window protections as one layer, not the only one.</li>
+</ul>
+
+<h2 id="refs">References &amp; further reading</h2>
+<ul class="reflist">
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/#vsyncbreaker-subverting-screen-trust-via-state-disruption-and-one-way-flooding-50006" target="_blank" rel="noopener">Black Hat Asia 2026 — this talk's official page</a> <span>— abstract, speaker bio, and slides/video when posted.</span></li>
+          <li><a href="https://www.youtube.com/watch?v=sYoeYDSBjrI" target="_blank" rel="noopener">Official talk recording on YouTube</a> <span>— Black Hat channel.</span></li>
+          <li><a href="https://blackhat.com/asia-26/briefings/schedule/" target="_blank" rel="noopener">Black Hat Asia 2026 — full Briefings schedule</a> <span>— every talk in the conference.</span></li>
+<li><a href="https://source.android.com/docs/security/bulletin/2025-12-01" target="_blank" rel="noopener">Android Security Bulletin, December 2025</a> <span>— where CVE-2025-48621 was disclosed and patched.</span></li>
+<li><a href="https://nvd.nist.gov/vuln/detail/CVE-2021-39617" target="_blank" rel="noopener">CVE-2021-39617</a> <span>— the earlier Activity-based tapjacking bug this research builds on.</span></li>
+<li><a href="https://source.android.com/docs/core/graphics/surfaceflinger-windowmanager" target="_blank" rel="noopener">Android: SurfaceFlinger and WindowManager</a> <span>— background on the compositor/input architecture discussed.</span></li>
+</ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="bhas26-jvm-memory-shell-auto-search.html">← prev: JVM Memory Shell Search</a>
+        <a href="../series-blackhat-asia-2026.html">all talks →</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

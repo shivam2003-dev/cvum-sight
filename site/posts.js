@@ -17,6 +17,18 @@
 const POSTS = [
   /* BHAS26 START (newest first) */
   {
+    slug: "bhas26-vsyncbreaker-android-tapjacking",
+    title: "VsyncBreaker \u2014 when what's drawn and what's touchable quietly disagree.",
+    date: "Sep 24, 2026",
+    cat: "conferences",
+    tags: ["conferences", "blackhat", "android", "tapjacking", "aosp", "ui-security"],
+    time: 9,
+    words: 1772,
+    excerpt: "Black Hat Asia 2026, talk 33. AOSP researcher WeiMin Cheng bypasses Android's layered tapjacking defences (hide-overlay flags, ActivityRecordInputSink, trusted-overlay marking) and finds a deeper architectural mismatch between SurfaceFlinger and InputDispatcher. Reported 2023, fixed December 2025 as CVE-2025-48621, requiring no runtime permission.",
+    series: "blackhat-asia-2026",
+    seriesNum: "33"
+  },
+  {
     slug: "bhas26-jvm-memory-shell-auto-search",
     title: "More JVM memory shells \u2014 systematically finding fileless Java backdoors.",
     date: "Sep 24, 2026",

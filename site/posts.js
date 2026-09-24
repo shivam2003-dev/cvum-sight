@@ -614,11 +614,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "ml-dsa"
   ],
-  "time": 13,
-  "words": 2549,
-  "excerpt": "Understand Fiat–Shamir with aborts, ML-DSA parameter sizes, message contexts, hedged signing, and a reproducible sign-and-verify experiment.",
+  "time": 15,
+  "words": 2964,
+  "excerpt": "Fiat-Shamir with aborts, why rejected signing candidates are normal (not errors), hedged vs. deterministic signing, and a reproducible OpenSSL lab that verifies tamper rejection, wrong-context rejection, and deterministic repeatability with real results.",
   "series": "pqc",
   "seriesNum": "8"
 },

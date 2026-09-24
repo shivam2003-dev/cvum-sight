@@ -710,11 +710,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "tls"
   ],
-  "time": 14,
-  "words": 2740,
-  "excerpt": "Build the vocabulary of hashes, MACs, AEAD, key derivation, public keys, signatures, certificates, and TLS—with small reproducible experiments.",
+  "time": 19,
+  "words": 3821,
+  "excerpt": "Hashes, MACs, AEAD, key derivation, public/private keys, Diffie-Hellman, signatures, and X.509 trust as narrow contracts, not vibes—with a reproducible OpenSSL lab proving a tampered message actually gets rejected.",
   "series": "pqc",
   "seriesNum": "2"
 },

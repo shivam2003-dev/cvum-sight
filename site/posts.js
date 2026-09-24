@@ -598,11 +598,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "slh-dsa"
   ],
-  "time": 13,
-  "words": 2518,
-  "excerpt": "Build intuition from Lamport signatures and Merkle paths to WOTS+, FORS, stateless hypertrees, exact SLH-DSA sizes, and limited-use draft parameters.",
+  "time": 15,
+  "words": 2976,
+  "excerpt": "Lamport one-time signatures to Winternitz chains to Merkle trees to FORS to the SLH-DSA hypertree, deriving the exact 7,856-byte signature-size formula by hand, plus a reproducible OpenSSL lab verifying two parameter sets against it on real hardware.",
   "series": "pqc",
   "seriesNum": "9"
 },

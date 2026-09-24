@@ -646,11 +646,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "lattices"
   ],
-  "time": 14,
-  "words": 2608,
-  "excerpt": "Derive noisy-linear-system encryption, distinguish LWE and Module-SIS, and understand polynomial multiplication and NTT butterflies through checked examples.",
+  "time": 16,
+  "words": 3163,
+  "excerpt": "A fully worked noisy-linear-system encryption example with real numbers (q=97), why LWE and Module-SIS play different roles despite shared machinery, and a reproducible negacyclic NTT-style transform in Python that checks against Part 4's polynomial example.",
   "series": "pqc",
   "seriesNum": "6"
 },

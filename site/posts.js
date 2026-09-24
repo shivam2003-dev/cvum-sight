@@ -518,11 +518,12 @@ const POSTS = [
   "tags": [
     "security",
     "post-quantum",
-    "cryptography"
+    "cryptography",
+    "performance"
   ],
-  "time": 13,
-  "words": 2515,
-  "excerpt": "Measure post-quantum operations and complete handshakes honestly: exact wire sizes, local OpenSSL observations, CPU and memory boundaries, concurrency, and reproducible benchmark design.",
+  "time": 14,
+  "words": 2883,
+  "excerpt": "A real OpenSSL 3.5.8 benchmark on Apple M4 Pro (ML-KEM-768, ML-DSA-65, SLH-DSA-128s/f) with actual measured ops/second, why you can't multiply that into a service-capacity promise, and the benchmark protocol built to prevent the comparisons that mislead.",
   "series": "pqc",
   "seriesNum": "14"
 },

@@ -17,6 +17,18 @@
 const POSTS = [
   /* AWS COST START (newest first) */
   {
+    slug: "aws-cost-10-agent-prompts",
+    title: "AI agent prompts for AWS cost work: check, reason and suggest, never act.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "ai-agents", "prompts"],
+    time: 34,
+    words: 6839,
+    excerpt: "A copy-ready prompt library for AWS cost work with Claude, Claude Code or any AI agent: read-only guard rails, discovery, lever audits, verification, a subagent team with an independent critic, and one-click copy.",
+    series: "aws-cost",
+    seriesNum: "10"
+  },
+  {
     slug: "aws-cost-09-playbook",
     title: "A 90-day AWS cost playbook, and how to apply it to a Kubernetes platform stack.",
     date: "Sep 26, 2026",

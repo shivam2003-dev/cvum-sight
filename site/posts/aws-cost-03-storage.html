@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Storage lifecycle: when bytes pay the bill and objects pay the migration — cvam.sight</title>
+<meta name="description" content="Storage bills grow quietly because data rarely gets deleted. Three case studies show how to match storage class to real access patterns and, crucially, how to price the migration itself: Canva saved $3.6M a year by moving user content to S3 Glacier I">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="canonical" href="https://shivam2003.com/posts/aws-cost-03-storage">
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #6a8f5f;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(106,143,95,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(201,100,66,.07)}
+  .dl-box{display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px;border:1.5px solid var(--ink);border-radius:8px;padding:14px 18px;margin:0 0 26px;background:var(--paper)}
+  .dl-box p{margin:0;flex:1 1 260px;font-size:.92rem;color:var(--ink-faint);line-height:1.5}
+  .dl-box p strong{color:var(--ink)}
+  .dl-btn{display:inline-block;background:#c96442;color:#fff !important;text-decoration:none !important;font-weight:700;padding:10px 18px;border-radius:6px;font-size:.92rem;white-space:nowrap}
+  .dl-btn:hover{background:#a94e30}
+  .diagram-container{border:1.5px solid var(--ink);border-radius:5px;padding:18px;margin:22px 0;background:var(--paper)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-faint);margin:10px 0 0;text-align:center}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  h2{scroll-margin-top:20px;margin-top:34px}
+  h3{margin-top:24px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 8px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg .box{fill:var(--paper);stroke:#2a2620;stroke-width:1.5}
+  svg .boxy{fill:#f7e9c0;stroke:#2a2620;stroke-width:1.5}
+  svg .boxg{fill:#dfead8;stroke:#2a2620;stroke-width:1.5}
+  svg .boxr{fill:#f3d9cf;stroke:#c96442;stroke-width:1.5}
+  svg .ink{font-family:var(--font-body);font-weight:700;font-size:12.5px;fill:#2a2620}
+  svg .lbl{font-family:var(--font-body);font-weight:600;font-size:11px;fill:#2a2620}
+  svg .sm{font-family:monospace;font-size:10px;fill:#6b6254}
+  svg .arr{stroke:#c96442;stroke-width:1.8;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"\2013"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  .post-body pre{background:#2a2620;color:#ebe3cf;padding:16px;border-radius:6px;overflow-x:auto;font-size:.85rem;line-height:1.6}
+  .post-body pre code{font-family:var(--font-mono);color:inherit}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="series-banner">
+        <p class="series-banner-label">Cutting the AWS Bill — 28 case studies</p>
+        <p class="series-banner-title">Part 3: Storage and Data Lifecycle</p>
+        <p class="series-banner-meta">Part 3 of 9 · intermediate</p>
+        <div class="series-banner-nav">
+          <a href="aws-cost-02-visibility.html">&larr; Part 2</a>
+          <a href="aws-cost-04-graviton.html">next: Part 4 &rarr;</a>
+        </div>
+      </div>
+
+      <div class="post-header">
+        <p class="meta">Sep 26, 2026 · devops · 17 min read · 3320 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Storage lifecycle: when bytes pay the bill and objects pay the migration.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">aws</span>
+          <span class="tag">s3</span>
+          <span class="tag">storage</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr">Storage bills grow quietly because data rarely gets deleted. Three case studies show how to match storage class to real access patterns and, crucially, how to price the migration itself: Canva saved $3.6M a year by moving user content to S3 Glacier Instant Retrieval (paying about $1.6M once to transition roughly 80 billion objects), Snap moved more than two exabytes and saved tens of millions, and Rewind's lifecycle-rule edit came with a $103K invoice and a six-month payback. The unifying insight is unit economics applied to storage: ongoing savings scale with bytes, the one-off transition cost scales with object count, and their ratio, the average object size, is the best single predictor of payback. This part builds that rule into a worked break-even table and a complete S3 and EBS lifecycle checklist.</p>
+
+        <div class="dl-box">
+          <p><strong>Get the full report.</strong> This series expands the research report <em>Cutting the AWS Bill: 28 Case Studies</em> (53 pages, PDF, 780 KB). One click starts the download.</p>
+          <a class="dl-btn" href="../downloads/AWS_Cost_Reduction_28_Case_Studies.pdf" download="AWS_Cost_Reduction_28_Case_Studies.pdf">&#11015; Download PDF</a>
+        </div>
+
+        <h2 id="why-storage">1. Why storage quietly dominates</h2>
+        <p>Compute is visible: instances, tasks and nodes appear on dashboards and in on-call rotations. Storage is not. It accumulates in the background as backups, log archives, container images, snapshots, object versions and user uploads, and nobody ever decides that it should keep growing. Storage cost is bytes times copies times duration, and all three multipliers rise on their own.</p>
+        <p>The three cases in this part come from very different businesses (an online design tool, a social network, a backup provider) and share one method: measure how the data is actually accessed, choose the cheapest class that keeps the product promise, and do the payback maths for the migration <em>before</em> flipping the switch. The last step is the one teams forget, and it is where Rewind's story lives.</p>
+        <div class="diagram-container">
+          <svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+            <text x="340" y="18" class="ink" text-anchor="middle">Two different meters run when you change storage class</text>
+            <rect x="30" y="35" width="290" height="110" rx="8" class="boxg"/>
+            <text x="175" y="60" class="lbl" text-anchor="middle">Ongoing saving</text>
+            <text x="175" y="82" class="sm" text-anchor="middle">scales with BYTES</text>
+            <text x="175" y="102" class="sm" text-anchor="middle">(GB x price difference x months)</text>
+            <text x="175" y="125" class="sm" text-anchor="middle">paid back every month</text>
+            <rect x="360" y="35" width="290" height="110" rx="8" class="boxr"/>
+            <text x="505" y="60" class="lbl" text-anchor="middle">One-off transition cost</text>
+            <text x="505" y="82" class="sm" text-anchor="middle">scales with OBJECT COUNT</text>
+            <text x="505" y="102" class="sm" text-anchor="middle">(~$0.02 per 1,000 requests)</text>
+            <text x="505" y="125" class="sm" text-anchor="middle">paid once, up front</text>
+            <text x="340" y="172" class="sm" text-anchor="middle">Ratio of the two = average object size = payback predictor</text>
+          </svg>
+          <p class="diagram-label">Fig. 1 - Storage economics in one picture: bytes save money, objects cost money.</p>
+        </div>
+
+        <h2 id="s3-classes">2. The S3 storage classes and their prices</h2>
+        <p>The report uses approximate us-east-1 list prices as of September 2026; always confirm on the current AWS pricing pages. The numbers below are the ones that drive every calculation in this part.</p>
+        <table class="papers">
+          <tr><th>Class</th><th>Approx. price per GB-month</th><th>Access</th><th>Watch for</th></tr>
+          <tr><td>S3 Standard</td><td>$0.023</td><td>Milliseconds</td><td>The default; nothing to migrate</td></tr>
+          <tr><td>Standard-IA</td><td>$0.0125</td><td>Milliseconds</td><td>30-day minimum, 128 KB minimum billable size, retrieval fee</td></tr>
+          <tr><td>Glacier Instant Retrieval</td><td>$0.004</td><td>Milliseconds</td><td>90-day minimum, 128 KB minimum size, higher retrieval charge than IA</td></tr>
+          <tr><td>Glacier Deep Archive</td><td>$0.00099</td><td>Hours</td><td>180-day minimum; only for data that must be kept but is almost never read</td></tr>
+          <tr><td>Intelligent-Tiering</td><td>Automatic</td><td>Milliseconds (frequent/infrequent tiers)</td><td>Per-object monitoring fee; objects under 128 KB are not auto-tiered</td></tr>
+        </table>
+        <p>Transitions between classes are billed per request, at roughly $0.02 per thousand objects for the classes discussed here. That per-object charge, set against a per-byte saving, is the whole story of this part.</p>
+
+        <h2 id="cs07">3. CS-07 Canva: bytes pay the bill, objects pay the migration</h2>
+        <table class="papers">
+          <tr><th>Field</th><th>Detail</th></tr>
+          <tr><td>Business</td><td>Online design tool, 100M+ monthly active users</td></tr>
+          <tr><td>Data</td><td>230+ PB in S3; largest bucket ~45 PB</td></tr>
+          <tr><td>Change</td><td>Standard-IA to S3 Glacier Instant Retrieval</td></tr>
+          <tr><td>Result</td><td>$3.6M saved per year (~$300K a month), growing with data</td></tr>
+        </table>
+        <h3 id="cs07-context">3.1 Context</h3>
+        <p>Canva keeps templates, stock photos and graphics in S3 Standard because users hit them constantly. User uploads and designs behave differently: they are accessed heavily for a short time while a design is being made, then rarely. Those had historically lived in Standard-IA, while logs and backups used Glacier Flexible Retrieval.</p>
+        <h3 id="cs07-did">3.2 What they did</h3>
+        <ul>
+          <li><strong>Measured access patterns.</strong> Using S3 Storage Class Analysis and internal frequency-segmentation work, Canva saw retrievals drop sharply after about 15 days, while the IA data kept a flat, low retrieval rate over time.</li>
+          <li><strong>Waited for the right product.</strong> S3 Glacier Instant Retrieval, launched in late 2021, offered archive-level storage prices with millisecond access, a fit for user content that is rarely opened but must open instantly.</li>
+          <li><strong>Did the migration maths per bucket.</strong> Transitions are billed per object, while savings accrue per byte. Moving everything would have cost millions (a third-party write-up puts it near $6M). So Canva computed break-even time by each bucket's average object size and prioritised buckets whose average object was roughly 400 KB or larger.</li>
+          <li><strong>Moved selectively.</strong> About 80 billion objects were transitioned, for a one-off cost of about $1.6M.</li>
+        </ul>
+        <div class="bm-fix"><strong>Result.</strong> Roughly 130 PB of the 230 PB now sits in Glacier Instant Retrieval. About $300K saved per month ($3.6M a year), with positive ROI after only a few months. The saving keeps growing because user-generated data keeps growing.</div>
+        <h3 id="cs07-pattern">3.3 The thinking pattern</h3>
+        <p>This is unit economics applied to storage. Ongoing savings scale with bytes; one-time transition cost scales with object count. Their ratio is the average object size, which makes it the single best predictor of payback. Rank buckets by that ratio and migrate the fastest-payback buckets first. Canva's own payback, per the report's arithmetic, is $1.6M divided by $0.3M a month, about 5.3 months.</p>
+        <p><strong>Lessons to steal.</strong></p>
+        <ul>
+          <li>Measure access before choosing a class: S3 Storage Class Analysis and Storage Lens are cheap ways to do it.</li>
+          <li>Compute payback per bucket (section 5 has a ready-made table).</li>
+          <li>Glacier IR has a 90-day minimum storage duration and a 128 KB minimum billable object size, and its retrievals cost more than IA.</li>
+          <li>Re-check your storage map whenever AWS launches a new class. New price points change the optimal answer.</li>
+        </ul>
+        <div class="bm-warn"><strong>Watch-out.</strong> Glacier IR is only a win if retrievals really are rare. A product change that makes old content popular again can reverse the economics, so keep monitoring retrieval volume.</div>
+
+        <h2 id="cs08">4. CS-08 Snap Inc.: two exabytes of Memories on Glacier Instant Retrieval</h2>
+        <table class="papers">
+          <tr><th>Field</th><th>Detail</th></tr>
+          <tr><td>Business</td><td>Snapchat, 363M+ daily active users at the time</td></tr>
+          <tr><td>Data</td><td>2+ exabytes, about 1.5 trillion photos and videos</td></tr>
+          <tr><td>Change</td><td>Long-lived media to S3 Glacier Instant Retrieval</td></tr>
+          <tr><td>Result</td><td>Tens of millions of dollars saved, same user experience</td></tr>
+        </table>
+        <p>Snapchat began as an ephemeral app, but features like Memories turned it into a long-term media store. Most saved media is rarely re-opened, yet it must load instantly when it is. Snap migrated its storage from another cloud provider to S3 and placed long-term, rarely accessed media in S3 Glacier Instant Retrieval. More than 2 EB (roughly 1.5 trillion files) moved without users noticing.</p>
+        <div class="bm-fix"><strong>Result.</strong> Tens of millions of dollars saved, 99.99% availability, and 20-30% lower download latency in some regions.</div>
+        <p><strong>The thinking pattern.</strong> Start from the product promise (instant access, rare access) and pick the cheapest storage that keeps that promise. <strong>Lessons:</strong> translate product features into access SLOs, so the SLO rather than habit chooses the storage class; at exabyte scale, even a few tenths of a cent per GB-month is tens of millions of dollars a year.</p>
+        <div class="bm-warn"><strong>Watch-out.</strong> Snap's move also involved a cross-cloud migration; its economics reflect negotiated pricing at enormous scale. Do not expect the same percentages at a smaller footprint.</div>
+
+        <h2 id="cs09">5. CS-09 Rewind: a lifecycle-rule edit with a $103K invoice attached</h2>
+        <table class="papers">
+          <tr><th>Field</th><th>Detail</th></tr>
+          <tr><td>Business</td><td>SaaS backup provider</td></tr>
+          <tr><td>Data</td><td>Tens of billions of small objects</td></tr>
+          <tr><td>Change</td><td>Standard-IA to Glacier IR via a lifecycle rule</td></tr>
+          <tr><td>Result</td><td>~35% lower total S3 cost, ~6-month payback</td></tr>
+        </table>
+        <p>A backup company stores huge numbers of objects that are almost never read, which makes it a textbook Glacier IR candidate. But Rewind's objects are small, and that changes everything.</p>
+        <ul>
+          <li><strong>Priced the transition first.</strong> Moving the content would cost about $103,000 in one-off transition requests against roughly $16,000 of monthly savings, a payback of a little over six months. They accepted it and amortised the cost.</li>
+          <li><strong>Respected the 90-day minimum.</strong> Glacier IR bills at least 90 days of storage per object. The lifecycle transition was set at 90 days so objects deleted earlier would not incur early-deletion charges.</li>
+          <li><strong>Let S3 do the work.</strong> After the rule change, S3 transitioned the eligible objects in about two days.</li>
+        </ul>
+        <div class="bm-fix"><strong>Result.</strong> Overall S3 cost dropped about 35% while stored bytes stayed flat.</div>
+        <p><strong>The thinking pattern.</strong> A single configuration change can produce a large one-time bill. Estimate the one-off cost and the payback period before you save the lifecycle rule, then decide deliberately. <strong>Lessons:</strong> payback equals one-off cost divided by monthly saving (write it down before you flip the switch); align transition ages with minimum storage durations to avoid early-deletion fees; small objects are expensive to move, so consider aggregating them before archiving.</p>
+        <div class="bm-warn"><strong>Watch-out.</strong> Rewind's objects were small, which made the transition expensive relative to savings. With larger objects the payback would have been much faster; compare Canva.</div>
+
+        <h2 id="break-even">6. The break-even formula, worked</h2>
+        <p>The report distils the Canva and Rewind experience into one formula. Using approximate list prices (Standard-IA $0.0125 and Glacier IR $0.004 per GB-month, about $0.02 per 1,000 transition requests), the number of months to break even for an average object of a given size is:</p>
+        <pre><code>months = (0.02 / 1000) / (object_GB x (0.0125 - 0.004))
+
+# per-object transition cost: $0.00002
+# per-object monthly saving: object_GB x $0.0085</code></pre>
+        <table class="papers">
+          <tr><th>Average object size</th><th>Months to break even</th><th>Verdict</th></tr>
+          <tr><td>128 KB</td><td>19.3</td><td>Only if data will stay cold for years</td></tr>
+          <tr><td>200 KB</td><td>12.3</td><td>Marginal</td></tr>
+          <tr><td>400 KB</td><td>6.2</td><td>Canva's cut-off; good</td></tr>
+          <tr><td>1 MB</td><td>2.4</td><td>Excellent</td></tr>
+          <tr><td>4 MB</td><td>0.6</td><td>Immediate win</td></tr>
+        </table>
+        <p>You can verify one row by hand. For a 400 KB object, the object size in GB is about 0.0004. The monthly saving is 0.0004 times $0.0085, which is $0.0000034. The one-off transition cost is $0.00002. Divide: about 5.9 months with decimal gigabytes, or 6.2 months if you use binary gigabytes (1 GB = 1,048,576 KB), which is the convention behind the table. The point is not the second digit but the shape: doubling the object size halves the payback, and below a couple of hundred kilobytes the migration barely pays.</p>
+        <div class="bm-note"><strong>Include retrieval volume if data is not truly cold.</strong> Glacier IR bills a minimum of 90 days per object and 128 KB per object, and its retrieval charges are higher than Standard-IA's. If a meaningful share of the data is read each month, the retrieval fees can erase the storage saving. Canva's whole case rests on retrievals really being rare after about 15 days.</div>
+        <h3 id="worked-example">6.1 A worked example with your own numbers</h3>
+        <p>Suppose a bucket holds 500 TB of images averaging 800 KB each in Standard-IA. The object count is 500 TB divided by 800 KB, roughly 650 million objects. The one-off transition cost is 650 million divided by 1,000, times $0.02, which is about $13,000. The monthly saving is 500,000 GB times ($0.0125 minus $0.004), about $4,250. Payback is about three months. By contrast, a 500 TB bucket of 30 KB log files holds around 17 billion objects; the transition would cost roughly $350,000 against the same $4,250 monthly saving, an 80-month payback, and objects under 128 KB are billed as 128 KB anyway. Same bytes, opposite decision.</p>
+
+        <h2 id="lifecycle-rules">7. Turning the lessons into lifecycle rules</h2>
+        <p>Every storage case ends in a lifecycle configuration. A minimal but complete rule set for a versioned bucket does five things: transitions cold data, expires noncurrent versions, aborts incomplete multipart uploads, and (where appropriate) expires data outright. The JSON below is a sketch of the S3 lifecycle configuration structure; adapt the prefixes, ages and classes to your measured access data, and remember the 90-day minimum when choosing the transition age for Glacier IR.</p>
+        <pre><code>{
+  "Rules": [
+    {
+      "ID": "cold-after-90d",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "user-content/" },
+      "Transitions": [
+        { "Days": 90, "StorageClass": "GLACIER_IR" }
+      ]
+    },
+    {
+      "ID": "expire-noncurrent",
+      "Status": "Enabled",
+      "Filter": {},
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    },
+    {
+      "ID": "abort-incomplete-mpu",
+      "Status": "Enabled",
+      "Filter": {},
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    }
+  ]
+}</code></pre>
+        <p>Three details from the cases matter more than the syntax. First, <strong>pause event consumers</strong> before a bulk transition: Levels.fyi's S3 event notifications fed an SQS pipeline, and a mass storage-class change would have flooded the backend, so the listeners were detached for the migration and re-attached afterwards. Second, <strong>versioned buckets keep every overwrite forever</strong> unless you expire noncurrent versions, which is exactly the Duolingo finding. Third, <strong>incomplete multipart uploads</strong> are billed but invisible in listings, so add the abort rule to every bucket.</p>
+
+        <h2 id="beyond-s3">8. Beyond S3: EBS, snapshots, registries and backups</h2>
+        <p>The same bytes-times-copies-times-duration logic applies outside S3, and the earlier cases supply concrete moves:</p>
+        <ul>
+          <li><strong>EBS gp2 to gp3.</strong> About 20% cheaper per GB, with IOPS and throughput decoupled from volume size. Levels.fyi did this for RDS after backups, in a low-traffic window.</li>
+          <li><strong>Unattached volumes and old snapshots.</strong> Orphans accumulate after instances are deleted. Snapshot before deleting.</li>
+          <li><strong>Tiered backup retention.</strong> Grandfather-father-son rotation (daily for a month, weekly for a year, monthly long-term) keeps recovery points while cutting copies; Levels.fyi cut RDS backup storage from 15.7 TB to 3 TB.</li>
+          <li><strong>ECR lifecycle policies.</strong> Old images pile up per build; keep the last N (Levels.fyi kept 25) plus anything referenced by a running or rollback release.</li>
+          <li><strong>DynamoDB.</strong> TTL for automatic deletion (backfill the attribute for existing rows), and the Standard-IA table class for large, rarely read tables.</li>
+        </ul>
+        <div class="bm-note"><strong>PostgreSQL on S3 with pgBackRest.</strong> If your backups live in an S3 repository, write down the retention you actually need (full, differential and WAL) and configure pgBackRest expiry to match. Be careful with lifecycle transitions on the repository prefix: objects that pgBackRest expires early may incur minimum-duration charges in IA or Glacier classes. Do the payback maths first (Part 9 returns to this).</div>
+
+        <h2 id="decision-flow">9. A decision flow for any bucket</h2>
+        <ol>
+          <li><strong>Measure.</strong> Turn on Storage Class Analysis or Storage Lens and collect at least 30 days of access data per prefix.</li>
+          <li><strong>Segment.</strong> Group prefixes by average object size and by age-versus-retrieval curve. Canva's curve showed retrievals collapsing after roughly 15 days.</li>
+          <li><strong>Price the move.</strong> Compute per-bucket payback with the formula in section 6. Discard anything with payback beyond your tolerance (the report treats under six months as an easy yes and above eighteen as needing a strategic reason).</li>
+          <li><strong>Protect the pipeline.</strong> Identify event consumers, replication rules and analytics jobs that a bulk transition would trigger, and pause or filter them.</li>
+          <li><strong>Respect minimums.</strong> Set lifecycle ages at or beyond the target class's minimum storage duration.</li>
+          <li><strong>Roll out by bucket, fastest payback first.</strong> Then watch retrieval volume monthly; a popular-again product feature can reverse the economics.</li>
+        </ol>
+
+        <h2 id="measure-with-inventory">10. Measuring object size and age with S3 Inventory</h2>
+        <p>The break-even formula needs two inputs per bucket or prefix: average object size and how quickly objects go cold. You can get both without touching production traffic. Enable S3 Inventory on the bucket (daily or weekly, Parquet output), which lists every object with its size, storage class and last-modified date, then query it with Athena. The sketch below groups a bucket by top-level prefix and computes count, total size and average object size; the column names follow the standard inventory schema, so confirm them against your own configuration.</p>
+        <pre><code>SELECT split_part(key, '/', 1)                    AS prefix,
+       COUNT(*)                                   AS objects,
+       ROUND(SUM(size) / POWER(1024, 4), 2)       AS total_tb,
+       ROUND(AVG(size) / 1024, 1)                 AS avg_kb,
+       ROUND(SUM(CASE WHEN size &lt; 131072 THEN 1 ELSE 0 END)
+             * 100.0 / COUNT(*), 1)               AS pct_under_128kb
+FROM   s3_inventory
+WHERE  is_latest = TRUE
+GROUP  BY 1
+ORDER  BY total_tb DESC
+LIMIT  25;</code></pre>
+        <p>The last column matters because objects under 128 KB are billed as 128 KB in the IA and Glacier IR classes and are skipped by Intelligent-Tiering. A prefix where most objects fall under that threshold is a candidate for aggregation, expiry or simply staying put, not for a class transition. For age, group by the month of <code>last_modified_date</code> and compare against Storage Class Analysis output: the curve you want is bytes retrieved per byte stored, by object age. Canva's curve fell off a cliff around 15 days; yours may not.</p>
+        <h3 id="retrieval-sensitivity">10.1 Retrieval sensitivity: when "cold" is not cold enough</h3>
+        <p>The break-even table assumes retrievals are negligible. Before committing, model the sensitivity. If a class charges a per-GB retrieval fee, then a fraction r of the data read each month adds r times the retrieval price to the monthly cost. For a bucket where a few percent is read monthly the extra cost is small next to the storage saving; for a bucket where a third is read monthly it can exceed the saving. A practical rule from the cases: only tier data whose monthly retrieval volume you have measured, over a full business cycle including any seasonal peak, and keep an alert on retrieval bytes after the move so a product change cannot silently reverse the decision.</p>
+
+        <h2 id="failure-modes">11. Common storage failure modes</h2>
+        <table class="papers">
+          <tr><th>Failure mode</th><th>What happens</th><th>Guard rail</th></tr>
+          <tr><td>Bulk transition fires events</td><td>S3 notifications flood SQS or Lambda consumers (Levels.fyi)</td><td>Detach or filter listeners; re-attach afterwards</td></tr>
+          <tr><td>Small-object archive</td><td>Transition cost dwarfs saving (Rewind: $103K for $16K a month)</td><td>Compute per-prefix payback; aggregate small objects first</td></tr>
+          <tr><td>Transition age below minimum</td><td>Early-deletion charges on objects removed before 90 days</td><td>Set transition age at or above the class minimum</td></tr>
+          <tr><td>Versioning left unbounded</td><td>Every overwrite kept forever (Duolingo)</td><td>Expire noncurrent versions after a defined window</td></tr>
+          <tr><td>Incomplete multipart uploads</td><td>Billed parts nobody can see</td><td>Abort rule on every bucket</td></tr>
+          <tr><td>Product reheats cold data</td><td>Retrieval fees exceed the saving (Canva watch-out)</td><td>Alert on retrieval bytes; review after launches</td></tr>
+          <tr><td>New TTL assumed to clean old rows</td><td>DynamoDB rows written before the TTL persist (Duolingo)</td><td>Backfill the TTL attribute or run a one-off purge</td></tr>
+          <tr><td>Maximal compliance retention</td><td>Backups grow far past database size (Levels.fyi 15.7 TB)</td><td>Define, document and follow a tiered policy</td></tr>
+        </table>
+        <p>Almost every row is an old decision that was correct once. The remedy is procedural as much as technical: give every bucket an owner, a retention statement and a review date, and put lifecycle configuration in the same Terraform module that creates the bucket so a new bucket cannot exist without one.</p>
+        <h3 id="ownership">11.1 Ownership is the hard part</h3>
+        <p>Deleting data is a business decision, not an infrastructure one, which is why storage waste persists. Canva could act because it had frequency-segmentation data and a clear product owner for user content. Snap could act because the product promise was explicit. Where nobody owns a bucket, nobody will approve a deletion or a class change, and the bytes accumulate. A lightweight fix that appears in several of the cases is a one-page retention table: what the data is, how many copies exist, how long each copy is kept, why, and who can change it. It takes an afternoon and removes most of the debate the next time someone asks whether a bucket can be tiered or trimmed.</p>
+
+        <details class="faq"><summary>Why not just use Intelligent-Tiering everywhere?</summary><p>It is a good fit where access is unpredictable and objects are larger, as Airbnb uses it. But it charges a per-object monitoring fee and does not auto-tier objects under 128 KB, so buckets full of small objects gain little. Where access is predictable (Canva measured a clear 15-day cliff) an explicit lifecycle rule is cheaper.</p></details>
+        <details class="faq"><summary>What if my average object size is small?</summary><p>The Rewind case is the answer: small objects make transitions expensive relative to the saving, so payback stretches. Consider aggregating small objects into larger archives before tiering, or accept the longer payback only if the data will stay cold for years.</p></details>
+        <details class="faq"><summary>Is Glacier Instant Retrieval always cheaper than Standard-IA?</summary><p>Only when retrievals are rare. Storage is much cheaper ($0.004 versus $0.0125 per GB-month) but retrieval charges are higher and there is a 90-day minimum. Monitor retrieval volume after the move.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>Bytes save money; objects cost money.</strong> Their ratio, the average object size, predicts payback better than anything else.</li>
+          <li><strong>Measure access first</strong> with Storage Class Analysis or Storage Lens; Canva saw retrievals collapse after ~15 days.</li>
+          <li><strong>Price the one-off cost before saving a lifecycle rule.</strong> Rewind's rule edit came with a $103K invoice and a six-month payback.</li>
+          <li><strong>Honour minimum durations and sizes</strong> (90 days and 128 KB for Glacier IR) or pay early-deletion and rounding charges.</li>
+          <li><strong>Pause event consumers</strong> before bulk transitions; expire noncurrent versions; abort incomplete multipart uploads.</li>
+          <li><strong>Start from the product promise.</strong> Snap chose the cheapest class that kept "instant but rare".</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="../downloads/AWS_Cost_Reduction_28_Case_Studies.pdf" download>Cutting the AWS Bill: 28 Case Studies (PDF)</a> <span>- chapter B (CS-07 to CS-09) and section 6.2 (break-even table).</span></li>
+          <li><a href="https://aws.amazon.com/blogs/storage/how-canva-saves-over-3-million-annually-in-amazon-s3-costs" target="_blank" rel="noopener">AWS Storage Blog - How Canva saves over $3 million annually in Amazon S3 costs</a></li>
+          <li><a href="https://aws.amazon.com/solutions/case-studies/snap-case-study/" target="_blank" rel="noopener">AWS - Snap case study</a></li>
+          <li><a href="https://rewind.com/blog/saving-money-aws-glacier-instant-retrieval" target="_blank" rel="noopener">Rewind - Saving money with AWS Glacier Instant Retrieval</a></li>
+          <li><a href="https://aws.amazon.com/s3/pricing/" target="_blank" rel="noopener">Amazon S3 pricing</a> <span>- confirm current per-GB and per-request prices before you compute payback.</span></li>
+          <li><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html" target="_blank" rel="noopener">S3 lifecycle configuration examples</a></li>
+        </ul>
+
+
+        <div class="dl-box">
+          <p><strong>Keep it offline.</strong> The complete 28-case report, with the scoreboard, lever matrix and 90-day playbook, is one PDF.</p>
+          <a class="dl-btn" href="../downloads/AWS_Cost_Reduction_28_Case_Studies.pdf" download="AWS_Cost_Reduction_28_Case_Studies.pdf">&#11015; Download PDF</a>
+        </div>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="aws-cost-02-visibility.html">&larr; Part 2</a>
+        <a href="aws-cost-04-graviton.html">next: Part 4 &rarr;</a>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

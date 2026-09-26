@@ -15,6 +15,116 @@
  */
 
 const POSTS = [
+  /* AWS COST START (newest first) */
+  {
+    slug: "aws-cost-09-playbook",
+    title: "A 90-day AWS cost playbook, and how to apply it to a Kubernetes platform stack.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "playbook", "kubernetes"],
+    time: 12,
+    words: 2400,
+    excerpt: "A 90-day AWS cost playbook, the operating rhythm and KPIs that stop savings eroding, and concrete checks for an EKS, Vault, Argo CD, pgBackRest and SQL Server platform.",
+    series: "aws-cost",
+    seriesNum: "9"
+  },
+  {
+    slug: "aws-cost-08-technique-catalogue",
+    title: "The AWS cost technique catalogue, the maths, and twenty pitfalls.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "finops", "reference"],
+    time: 13,
+    words: 2626,
+    excerpt: "Every AWS cost technique by service with watch-outs, eight reusable formulas and twenty pitfalls with guard rails: a review checklist.",
+    series: "aws-cost",
+    seriesNum: "8"
+  },
+  {
+    slug: "aws-cost-07-leaving-aws",
+    title: "Leaving (some of) AWS: six repatriation stories and one cautionary tale.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "repatriation", "finops"],
+    time: 14,
+    words: 2717,
+    excerpt: "37signals, Dropbox, X, Prerender.io, OneUptime and GEICO: when repatriation pays, when it fails, and a total-cost-of-ownership skeleton to test it.",
+    series: "aws-cost",
+    seriesNum: "7"
+  },
+  {
+    slug: "aws-cost-06-architecture-network",
+    title: "Commitments, architecture and network topology: where the invisible costs hide.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "architecture", "networking"],
+    time: 16,
+    words: 3211,
+    excerpt: "HERE's $50M commitment strategy, Prime Video's Step Functions trap, Recall.ai's $1M WebSocket copy, DoorDash's zone-aware routing and nOps's $12K NAT route.",
+    series: "aws-cost",
+    seriesNum: "6"
+  },
+  {
+    slug: "aws-cost-05-elasticity",
+    title: "Elasticity that pays: Spot, Karpenter and switching things off.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "kubernetes", "spot"],
+    time: 16,
+    words: 3171,
+    excerpt: "Salesforce Audience Studio on Spot, Tinybird's Karpenter consolidation, Salesforce's EKS fleet and Moneysmart's off-hours schedules, with the workload discipline that makes them safe.",
+    series: "aws-cost",
+    seriesNum: "5"
+  },
+  {
+    slug: "aws-cost-04-graviton",
+    title: "Graviton in practice: four teams that cut compute cost 30-47%.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "graviton", "compute"],
+    time: 16,
+    words: 3180,
+    excerpt: "Pinterest, Honeycomb, Zomato and Zendesk on Graviton, plus a pilot plan, benchmark method, Kubernetes node-pool rollout and worked fleet model.",
+    series: "aws-cost",
+    seriesNum: "4"
+  },
+  {
+    slug: "aws-cost-03-storage",
+    title: "Storage lifecycle: when bytes pay the bill and objects pay the migration.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "s3", "storage"],
+    time: 17,
+    words: 3320,
+    excerpt: "Canva's $3.6M S3 move, Snap's two exabytes and Rewind's $103K lifecycle invoice, with the break-even formula that decides whether a storage-class change pays back.",
+    series: "aws-cost",
+    seriesNum: "3"
+  },
+  {
+    slug: "aws-cost-02-visibility",
+    title: "Visibility first: six teams that read their AWS bill line by line.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "finops", "observability"],
+    time: 20,
+    words: 3954,
+    excerpt: "Six teams that read their AWS bill line by line: Levels.fyi's two clean-ups, Segment's $1M push, Duolingo's 20%, Lyft's -40% cost per ride and Airbnb's billing data product.",
+    series: "aws-cost",
+    seriesNum: "2"
+  },
+  {
+    slug: "aws-cost-01-mental-model",
+    title: "Cutting the AWS bill: the cost equation, twelve levers and fourteen thinking patterns.",
+    date: "Sep 26, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "finops", "cloud-cost"],
+    time: 19,
+    words: 3728,
+    excerpt: "The AWS cost equation, twelve levers, an eight-step order of operations and fourteen thinking patterns distilled from 28 public case studies, with the scoreboard of all 28 results.",
+    series: "aws-cost",
+    seriesNum: "1"
+  },
+  /* AWS COST END */
   /* BHAS26 START (newest first) */
   {
     slug: "bhas26-faster-detection-nday-chromium",

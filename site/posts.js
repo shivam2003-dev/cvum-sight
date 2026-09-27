@@ -4163,8 +4163,8 @@ const POSTS = [
     date: "May 18, 2026",
     cat: "devops",
     tags: ["devops", "ai-tools", "claude-code", "anthropic", "terminal-agent"],
-    time: 35,
-    words: 8400,
+    time: 27,
+    words: 5321,
     excerpt: "Terminal-native, conversational, infinitely extensible. Claude Code's hooks, subagents, agent teams, MCP servers, permission modes, and the Explore→Plan→Code workflow that makes complex refactors reliable.",
     series: "ai-tools",
     seriesNum: "4"
@@ -4175,8 +4175,8 @@ const POSTS = [
     date: "May 18, 2026",
     cat: "devops",
     tags: ["devops", "ai-tools", "codex", "openai", "cloud-agent"],
-    time: 30,
-    words: 7200,
+    time: 25,
+    words: 4929,
     excerpt: "Submit a task, walk away, come back to verified code with citations. OpenAI's cloud-native async agent runs in isolated sandboxes with no internet — parallel execution, AGENTS.md configuration, and the Codex CLI.",
     series: "ai-tools",
     seriesNum: "3"
@@ -4187,8 +4187,8 @@ const POSTS = [
     date: "May 18, 2026",
     cat: "devops",
     tags: ["devops", "ai-tools", "github-copilot", "vscode", "agent-mode"],
-    time: 35,
-    words: 8400,
+    time: 22,
+    words: 4457,
     excerpt: "From tab-complete to autonomous cloud agents that open PRs. Every Copilot feature explained — inline suggestions, NES, chat, agent mode, 20+ models, MCP servers, custom agents, Spaces, Spark, and real DevOps workflows.",
     series: "ai-tools",
     seriesNum: "2"
@@ -4199,8 +4199,8 @@ const POSTS = [
     date: "May 18, 2026",
     cat: "devops",
     tags: ["devops", "ai-tools", "fundamentals", "llm", "developer-productivity"],
-    time: 22,
-    words: 5200,
+    time: 17,
+    words: 3337,
     excerpt: "Before you master Copilot, Codex, or Claude Code — understand what you're actually talking to. Tokens, context windows, the two-layer model, three modes of assistance, and the skills that separate prompt-blind developers from prompt-fluent ones.",
     series: "ai-tools",
     seriesNum: "1"

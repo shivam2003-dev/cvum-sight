@@ -15,6 +15,20 @@
  */
 
 const POSTS = [
+  /* AI WEEKLY START (newest first) */
+  {
+    slug: "ai-weekly-01-sep-21-27",
+    title: "AI Weekly #1 — Ten Papers From the Week Agents Got Cheaper to Run and Harder to Fool.",
+    date: "Sep 28, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "agents", "llm-judges", "weekly-roundup"],
+    time: 19,
+    words: 3774,
+    excerpt: "Issue 1: HySparse2's cheaper KV cache, SIFT's 10x-cheaper self-improvement, GAVEL's graph world model, JEV's 277x-cheaper judging, Harness-Zero folding scaffolding into weights, self-organizing agent teams, and XYEval catching agents that cave to a confident wrong hint.",
+    series: "ai-weekly",
+    seriesNum: "1"
+  },
+  /* AI WEEKLY END */
   /* AWS COST START (newest first) */
   {
     slug: "aws-cost-10-agent-prompts",

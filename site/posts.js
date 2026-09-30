@@ -21,8 +21,8 @@ const POSTS = [
     date: "Sep 30, 2026",
     cat: "ml",
     tags: ["ml", "inference", "structured-output", "open-source"],
-    time: 21,
-    words: 4257,
+    time: 22,
+    words: 4341,
     excerpt: "TypeSafe never disclosed Jev's architecture. Reconstructed from three independent sources: Niels Rogge's step-by-step decode trace, Harsha Gundala's open Qwen2.5-1B-RLCD release ('Parallel Constrained Decoding', no new training required), and Bespoke Labs' Nimble — a fully open data/training/serving recipe for a Jev-shaped model benchmarked directly against jev-1.13.0, tracing back to Durrett and Tang's MiniCheck (2024).",
   },
   /* AI WEEKLY START (newest first) */

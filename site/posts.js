@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "parallel-constrained-decoding",
+    title: "Parallel Constrained Decoding — A Technical Reference.",
+    date: "Sep 30, 2026",
+    cat: "ml",
+    tags: ["ml", "inference", "structured-output", "decoding"],
+    time: 20,
+    words: 4009,
+    excerpt: "Technical reference for Parallel Constrained Decoding: the six-stage algorithm (broadcast prefill, KV-cache broadcast, sub-vocabulary logit slicing, calibrated softmax, token-tree disambiguation, programmatic assembly), complexity vs autoregressive and grammar-constrained decoding, schema/API spec, benchmark data, and stated limitations. No narrative — spec format with pseudocode.",
+  },
+  {
     slug: "how-jev-works-parallel-constrained-decoding",
     title: "How Jev Actually Works — Parallel Constrained Decoding, Reverse-Engineered.",
     date: "Sep 30, 2026",

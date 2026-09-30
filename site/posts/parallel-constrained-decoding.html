@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parallel Constrained Decoding — A Technical Reference — cvam.sight</title>
+<meta name="description" content="Technical reference for Parallel Constrained Decoding: the six-stage algorithm (broadcast prefill, KV-cache broadcast, sub-vocabulary logit slicing, calibrated softmax, token-tree disambiguation, programmatic assembly), complexity vs autoregressive and grammar-constrained decoding, the schema/API spec, benchmark data, and stated limitations.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container img{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:38px} h3{margin-top:26px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.92rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 9px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .post-body pre{background:color-mix(in srgb,var(--ink) 5%,var(--paper));border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;overflow-x:auto;font-size:.86rem;line-height:1.6}
+  .post-body code{font-family:var(--font-mono);font-size:.9em}
+  mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  mjx-container[display="true"]{padding:2px 0 6px}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Sep 30, 2026 · ml · 20 min read · 4009 words <span class="difficulty advanced">advanced</span></p>
+        <h1>Parallel Constrained Decoding — A Technical Reference.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">inference</span>
+          <span class="tag">structured-output</span>
+          <span class="tag">decoding</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Definition.</strong> Parallel Constrained Decoding (PCD) is an inference technique for schema-bounded structured generation that replaces token-by-token autoregressive decoding with one context prefill plus one short, independently-computed forward pass per output field. It applies when every output field's value is drawn from a small, pre-declared, enumerable candidate set (a boolean, or an enum with up to 255 choices) rather than open-ended text. The public reference implementation is Harsha Gundala's <code>Qwen2.5-1B-RLCD</code> release for Apple Silicon (MLX), evaluated against <code>mlx-community/Qwen2.5-1.5B-Instruct-4bit</code>. This is a specification and reference document — for the reverse-engineering context (how this connects to TypeSafe's Jev and Bespoke Labs' Nimble), see <a href="how-jev-works-parallel-constrained-decoding.html">How Jev Actually Works</a>.</p>
+
+        <h2 id="problem">1. Problem statement</h2>
+        <p>Standard LLM structured generation — JSON mode, function calling, grammar-guided sampling — decodes autoregressively: each output token is produced by one full forward pass through the model, conditioned on every token generated so far.</p>
+        <pre><code>[Context Prompt] -&gt; "{" -&gt; "\n" -&gt; " " -&gt; "risk" -&gt; ":" -&gt; " " -&gt; "HIGH" -&gt; ...
+(requires 150 to 500 sequential forward passes for a typical multi-field schema)</code></pre>
+        <p>Total latency is the sum of per-token step costs:</p>
+        \[ T_{\text{autoregressive}} = \sum_{k=1}^{K} t_{\text{step}}(k) \]
+        <p>where \(K\) is the number of output tokens. \(K\) grows with schema size (more fields, more JSON syntax, longer field names, longer enum-value strings), so latency scales linearly with schema size under this model. Two further properties of autoregressive structured generation motivate PCD specifically:</p>
+        <ul>
+          <li><strong>Syntax degradation:</strong> a sampling error at any single token position (a missed closing brace, a truncated string) can invalidate the entire output, regardless of how many tokens were correct before it.</li>
+          <li><strong>Field omission and hallucination:</strong> nothing structurally prevents the model from skipping a required key or inventing a key not in the schema; grammar-guided sampling constrains the <em>syntax</em> token-by-token but does not, by itself, guarantee every declared field is populated with a value from its declared candidate set.</li>
+        </ul>
+
+        <h2 id="property">2. The structural property PCD exploits</h2>
+        <p>In structured extraction and classification, field values belong to <strong>bounded candidate sets</strong>: a boolean field has exactly two valid values; an enum field has a fixed, pre-declared list of string choices (up to 255 in the reference implementation). This is a strictly narrower output space than open-ended text generation, and it makes a specific reformulation possible: instead of <em>generating</em> a field's value token by token, you can <em>score</em> every candidate value directly from the model's own next-token logits and select the highest-scoring one — with no generation step at all.</p>
+
+        <div class="diagram-container">
+          <img src="../assets/parallel-constrained-decoding-pipeline.png" alt="Six-stage Parallel Constrained Decoding pipeline: (1) broadcast prefill of context and schema into a KV cache, (2) cache broadcast across M fields, (3) sub-vocabulary logit slicing per field, (4) calibrated softmax over the candidate slice, (5) token-tree disambiguation for multi-token choices, (6) programmatic JSON assembly from verified values. Bottom formula compares autoregressive total latency (sum of K per-token steps) against parallel total latency (prefill time plus the slowest single field's evaluation time)." width="1680" height="520" loading="eager" style="border:1.5px solid var(--ink);border-radius:9px;background:#ebe3cf">
+          <p class="diagram-label">Fig. 1 — The six-stage pipeline, as specified in the <code>Qwen2.5-1B-RLCD</code> model card. Stages 1–2 run once per request; stages 3–5 run once per field, independently and in parallel.</p>
+        </div>
+
+        <h2 id="algorithm">3. Algorithm</h2>
+        <p>The pipeline as specified, in order:</p>
+        <ol>
+          <li><strong>Single broadcast prefill.</strong> The context document and the schema's field descriptions are prefilled into the model exactly once, producing a KV (key-value) cache — the same caching mechanism every standard transformer inference stack already implements for autoregressive decoding, used here as the terminal step rather than the first of many.</li>
+          <li><strong>KV-cache broadcasting.</strong> The single KV cache from step 1 is broadcast across all \(M\) schema fields. No field re-processes the context; every field's evaluation starts from the same cached state.</li>
+          <li><strong>Sub-vocabulary logit slicing.</strong> For each field independently, a short forward pass (over that field's suffix/instruction tokens only, reusing the broadcast cache) produces logits over the model's full vocabulary. Only the logits at the token IDs corresponding to that field's valid candidate answers are read; every other vocabulary position is discarded (masked).</li>
+          <li><strong>Calibrated softmax.</strong> The sliced candidate logits are normalized into a probability distribution with a temperature-scaled softmax:
+            \[ P(c_i) = \frac{\exp(z_i / T)}{\sum_{j=1}^{C} \exp(z_j / T)} \]
+            where \(z_i\) is the logit for candidate \(i\), \(C\) is the number of valid candidates for that field, and \(T\) is a temperature parameter. This produces exact, normalized probabilities over only the declared candidate set — not an approximation.</li>
+          <li><strong>Token-tree disambiguation.</strong> Candidate choices whose string representation spans more than one token (e.g. a multi-word enum value) share a common token prefix. For these, the engine executes additional continuation steps using <em>sliced</em> cache states — reusing the already-computed cache rather than reallocating or recomputing it — to resolve which full multi-token candidate was selected.</li>
+          <li><strong>Programmatic assembly.</strong> The final output JSON is constructed directly, in code, from the verified per-field values and their probabilities — not by asking the model to emit JSON syntax and then parsing it. Because every value is drawn from a set already known to be valid for its field, the assembled output is syntactically valid by construction, with zero possibility of a JSON parse error.</li>
+        </ol>
+
+        <h3 id="rationale">3.1 Why each stage is necessary</h3>
+        <table class="papers">
+          <thead><tr><th>Stage</th><th>What breaks if it's skipped</th></tr></thead>
+          <tbody>
+            <tr><td>1. Broadcast prefill</td><td>Without a single shared prefill, every field's evaluation would need to reprocess the full context independently — turning an \(O(1)\)-prefill, \(O(M)\)-field-evaluation system back into an \(O(M)\)-context-processing system, which is exactly the cost PCD exists to avoid.</td></tr>
+            <tr><td>2. Cache broadcast</td><td>Attention layers compute keys and values as a function of all preceding tokens. Reusing the cached keys/values means a field's forward pass only needs to compute attention for its own (short) suffix against the already-cached context — not recompute the context's own self-attention. Skipping this forces exactly that recomputation per field.</td></tr>
+            <tr><td>3. Logit slicing</td><td>Without slicing to the candidate token IDs, the argmax would be taken over the full ~150k-token vocabulary, which can select a token that isn't even a valid answer for the field — the model's raw top prediction is not constrained to the schema at all until this step is applied.</td></tr>
+            <tr><td>4. Calibrated softmax</td><td>Raw logits are unbounded and not comparable across fields or across requests. Softmax-normalizing only the candidate slice is what turns "field X's answer scored higher than field Y's" into an actual probability your calling code can threshold, compare, or log.</td></tr>
+            <tr><td>5. Token-tree disambiguation</td><td>If a candidate spans multiple tokens and this step is skipped, only the first token of each multi-token candidate could be scored — which under-determines the choice whenever two candidates share a first token (e.g. "BILLING" and "BILLING_DISPUTE" as separate enum values).</td></tr>
+            <tr><td>6. Programmatic assembly</td><td>If the model were asked to <em>emit</em> the final JSON itself instead of code assembling it from verified values, every syntax-validity guarantee from steps 1–5 would be void — you'd be back to trusting generated text to be well-formed.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="numerics">3.2 Numerical notes on the masked softmax</h3>
+        <p>Two properties of stage 4's formula are worth being explicit about, since they're easy to get subtly wrong in a from-scratch reimplementation:</p>
+        <ul>
+          <li><strong>The normalization is exact only over the sliced set.</strong> \(P(c_i)\) sums to 1 across the \(C\) candidates for that field, not across the full vocabulary. This is the entire point — it's what turns an arbitrary logit magnitude into a genuine probability conditioned on "given that the answer is one of these \(C\) options" — but it also means these probabilities are not directly comparable to a full-vocabulary softmax probability from a different, unconstrained generation, and shouldn't be treated as if they were.</li>
+          <li><strong>Temperature \(T\) changes calibration sharpness, not the argmax.</strong> Because softmax is monotonic in the logits for any \(T > 0\), the selected candidate (the argmax) is identical for any temperature — only the reported confidence value changes. Low \(T\) sharpens the distribution toward the top candidate (higher reported confidence, same selection); high \(T\) flattens it. If downstream code thresholds on the reported probability (e.g. "only escalate if <code>requires_escalation.prob > 0.9</code>"), the temperature setting directly determines how many results clear that bar, even though it never changes which candidate is selected.</li>
+        </ul>
+
+        <h3 id="pseudocode">3.3 Reference pseudocode</h3>
+        <pre><code>def parallel_constrained_decode(context, schema, model, T=1.0):
+    # Stage 1-2: broadcast prefill, single KV cache for the whole request
+    kv_cache = model.prefill(context + schema.render_descriptions())
+
+    results = {}
+    for field in schema.fields:               # independent; parallelizable
+        # Stage 3: short forward pass reusing kv_cache, then slice logits
+        logits = model.forward(field.suffix_tokens, cache=kv_cache)
+        candidate_ids = field.candidate_token_ids()   # len == C
+        sliced = logits[candidate_ids]                # discard all other vocab
+
+        # Stage 4: calibrated softmax over the slice only
+        probs = softmax(sliced / T)                    # sums to 1 over C candidates
+
+        # Stage 5: resolve multi-token candidates via sliced-cache continuation
+        if field.has_multi_token_candidates():
+            probs = resolve_token_tree(field, kv_cache, probs)
+
+        results[field.name] = {
+            "value": field.candidates[argmax(probs)],
+            "prob": max(probs),
+            "distribution": dict(zip(field.candidates, probs)),
+        }
+
+    # Stage 6: assemble directly from verified values -- never parse generated text
+    return assemble_json(results)</code></pre>
+        <p>Two implementation details this pseudocode elides but matter in practice: masking (stage 3) is typically implemented by setting non-candidate logit positions to \(-\infty\) before the softmax rather than by physically gathering only the candidate indices, which keeps the operation a fixed-shape tensor op rather than a variable-length gather — a performance detail, not a semantic one, since \(\exp(-\infty) = 0\) removes those positions from the normalization identically either way. And argmax ties (two candidates with numerically identical top probability) are not addressed in the public specification; a production implementation needs its own explicit tie-breaking rule.</p>
+
+        <h2 id="complexity">4. Complexity</h2>
+        <table class="papers">
+          <thead><tr><th>Property</th><th>Autoregressive</th><th>Parallel Constrained Decoding</th></tr></thead>
+          <tbody>
+            <tr><td>Sequential forward passes</td><td>\(K\) (one per output token, 150–500 typical)</td><td>1 (the broadcast prefill only — field evaluations are independent of each other, not sequential with respect to one another)</td></tr>
+            <tr><td>Total latency</td><td>\(T = \sum_{k=1}^{K} t_{\text{step}}(k)\)</td><td>\(T \approx t_{\text{prefill}} + \max_i\, t_{\text{field}}(i)\) under full parallelism, or \(t_{\text{prefill}} + \sum_i t_{\text{field}}(i)\) if fields are evaluated one after another on hardware without parallel field evaluation</td></tr>
+            <tr><td>Scaling with field count \(M\)</td><td>Roughly linear — every additional field adds output tokens to generate</td><td>Sub-linear in practice — prefill cost is fixed and amortized; each additional field adds one small, cheap forward pass</td></tr>
+            <tr><td>Output token count</td><td>Equal to the generated JSON's token length</td><td>Zero — no tokens are generated; values are selected, not produced</td></tr>
+            <tr><td>Syntax validity</td><td>Not guaranteed; degrades with schema complexity</td><td>Guaranteed by construction (step 6)</td></tr>
+          </tbody>
+        </table>
+        <p>The measured effect of this scaling difference: in the reference benchmark, going from a 4-field schema to a 28-field schema increased the autoregressive baseline's cost from ~148 output tokens to ~312 (roughly 2.1×), while PCD's speedup over that baseline actually <em>improved</em>, from 5.6× to 7.0–7.1×, because the fixed prefill cost is a smaller fraction of a larger field count's total autoregressive alternative.</p>
+
+        <h3 id="worked">4.1 Worked example, from the published numbers</h3>
+        <p>Using the 28-field support-triage scenario's own reported figures: the autoregressive baseline took 1,894.2 ms for 312 tokens, implying an average \(t_{\text{step}} \approx 6.07\) ms per token. PCD's total for the same request was 268.4 ms, all within 1 sequential pass.</p>
+        <p>The §6 example response (a separate, 3-field incident-triage request) reports a prefill/suffix split directly: <code>elapsed_ms: 74.5</code>, <code>prefill_ms: 52.1</code>, <code>suffix_eval_ms: 18.2</code> — meaning prefill was ~70% of total latency and per-field suffix evaluation (for all fields combined) was ~24%, with the remainder assembly and rounding overhead. Applying that same ratio as a rough estimate to the 28-field, 268.4 ms scenario: prefill would account for roughly 188 ms, leaving roughly 65 ms split across all 28 fields' independent short passes — on the order of 2–3 ms per field once the shared prefill is already paid for. This is an estimate, extrapolated from a different scenario's measured ratio, not a directly reported 28-field breakdown; the published data doesn't include a per-field timing split for the support-triage benchmark specifically. But it's consistent with the complexity model in §4's table: the marginal cost of one more field is small and roughly constant, while the marginal cost of one more autoregressive output token is not — it's paid on top of every token already generated for the fields ahead of it in the sequence.</p>
+
+        <h3 id="decision">4.2 When this technique applies</h3>
+        <table class="papers">
+          <thead><tr><th>Your output shape</th><th>PCD applicable?</th></tr></thead>
+          <tbody>
+            <tr><td>Every field is boolean or a fixed enum, known at schema-design time</td><td>Yes — this is exactly the case the technique targets.</td></tr>
+            <tr><td>One or more fields need free-text (a summary, an explanation, extracted verbatim text)</td><td>No, for those fields — the public implementation has no mechanism for open-ended output. A mixed system would need to route text fields to a different generation path entirely.</td></tr>
+            <tr><td>A field's valid choices depend on another field's value in the same call (e.g. "sub-category" options change based on "category")</td><td>Not within a single call — §5 and §9 both note fields are scored independently; this needs either two sequential PCD calls or application-level filtering of the returned distribution.</td></tr>
+            <tr><td>Schema needs nested objects or arrays</td><td>No — schemas must be flat in the reference implementation.</td></tr>
+            <tr><td>An enum field could plausibly have more than 255 valid values</td><td>Not directly — would need bucketing, hierarchical decomposition, or a different technique.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="schema">5. Schema specification</h2>
+        <p>Fields are defined with a type, a natural-language description (used to condition the model's scoring, not shown to an end user), and — for enum fields — an explicit choice list:</p>
+        <pre><code>from core.schema import StructuredSchema, FieldDefinition
+
+# Dictionary-based definition
+schema_dict = {
+    "priority": {
+        "type": "enum",
+        "choices": ["P0_CRITICAL", "P1_HIGH", "P2_NORMAL", "P3_LOW"],
+        "description": "Urgency tier based on customer business impact"
+    },
+    "requires_escalation": {
+        "type": "boolean",
+        "description": "Whether an on-call engineer must be notified immediately"
+    },
+    "department": {
+        "type": "enum",
+        "choices": ["BILLING", "INFRASTRUCTURE", "SECURITY", "PRODUCT_SUPPORT"],
+        "description": "Target handling department"
+    }
+}
+schema = StructuredSchema(schema_dict)
+
+# Or explicitly, via FieldDefinition
+fields = {
+    "tariff_classification": FieldDefinition(
+        name="tariff_classification",
+        field_type="enum",
+        description="Harmonized System 6-digit tariff category code",
+        choices=["0101.21", "0101.29", "8471.30", "8517.12", "8542.31"]  # up to 255
+    )
+}</code></pre>
+        <table class="papers">
+          <thead><tr><th>Constraint</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Field types</td><td><code>boolean</code>, <code>enum</code></td></tr>
+            <tr><td>Max choices per enum field</td><td>255</td></tr>
+            <tr><td>Nesting</td><td>Not supported — schemas are flat; no nested objects or arrays</td></tr>
+            <tr><td>Cross-field dependency</td><td>Not supported — each field is scored independently against the shared prefill cache; fields cannot see other fields' selected values within the same call</td></tr>
+            <tr><td>Free-text fields</td><td>Not supported — every field must resolve to a member of a declared candidate set</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="api">6. Execution and output format</h2>
+        <pre><code>from core.engine import run_parallel_generation
+
+context = """
+Incident Report: Production database db-primary-01 CPU at 100%.
+Payment gateway failing for 40% of checkout requests.
+Tier 1 Enterprise customer affected: Acme Global.
+"""
+
+result = run_parallel_generation(context, schema)
+
+print(f"Latency: {result['elapsed_ms']} ms")
+print(f"Prefill Time: {result['prefill_ms']} ms")
+print(f"Passes: {result['sequential_forward_passes']}")
+print(result["parsed_json"])</code></pre>
+        <p>Response structure:</p>
+        <pre><code>{
+    "mode": "parallel_constrained_calibrated",
+    "elapsed_ms": 74.5,
+    "prefill_ms": 52.1,
+    "suffix_eval_ms": 18.2,
+    "sequential_forward_passes": 1,
+    "is_valid_json": true,
+    "schema_match": true,
+    "parsed_json": {
+        "priority": { "value": "P0_CRITICAL", "prob": 0.9924 },
+        "requires_escalation": { "value": "true", "prob": 0.9981 },
+        "department": { "value": "INFRASTRUCTURE", "prob": 0.9815 }
+    },
+    "field_telemetry": {
+        "priority": {
+            "value": "P0_CRITICAL",
+            "confidence": 0.9924,
+            "cardinality": 4,
+            "top_choices": [
+                { "choice": "P0_CRITICAL", "probability": 0.9924 },
+                { "choice": "P1_HIGH",     "probability": 0.0068 },
+                { "choice": "P2_NORMAL",   "probability": 0.0006 },
+                { "choice": "P3_LOW",      "probability": 0.0002 }
+            ]
+        }
+    }
+}</code></pre>
+        <p>Two fields in this response are worth calling out precisely: <code>sequential_forward_passes: 1</code> confirms the entire multi-field request resolved in one prefill's worth of sequential dependency — everything after it is parallel, independent field evaluation, not a chain. <code>field_telemetry</code> exposes the full candidate distribution per field (not just the argmax), which is what makes downstream code able to apply its own confidence threshold rather than trusting a bare top-1 selection.</p>
+
+        <h2 id="benchmarks">7. Benchmark data</h2>
+        <p>Measured on Apple Silicon M4 Max, using <code>mlx-community/Qwen2.5-1.5B-Instruct-4bit</code> as the base model, on macOS Sequoia:</p>
+        <table class="papers">
+          <thead><tr><th>Scenario</th><th>Fields</th><th>Autoregressive</th><th>PCD</th><th>Speedup</th><th>Syntax validity</th></tr></thead>
+          <tbody>
+            <tr><td>Fintech fraud routing</td><td>4</td><td>420 ms (120 tok/s)</td><td>75 ms</td><td>5.6×</td><td>100% guaranteed (both)</td></tr>
+            <tr><td>Code security audit</td><td>4</td><td>380 ms (125 tok/s)</td><td>68 ms</td><td>5.6×</td><td>100% guaranteed (both)</td></tr>
+            <tr><td>High-cardinality tariff classification</td><td>1 field, 255 choices</td><td>500 ms (118 tok/s)</td><td>89 ms</td><td>5.6×</td><td>100% guaranteed (both)</td></tr>
+            <tr><td>Enterprise support triage</td><td>28</td><td>1,900 ms (130 tok/s)</td><td>270 ms</td><td>7.0×</td><td>100% guaranteed (both)</td></tr>
+          </tbody>
+        </table>
+        <p>The CLI benchmark runner's raw output for the same scenarios reports the underlying step counts directly:</p>
+        <pre><code>--&gt; Running preset: Fintech Fraud Detection (4 fields)...
+    Autoregressive Baseline :    421.3 ms | 148 tokens (122.4 tok/s) | Passes: 148
+    Parallel Constrained    :     74.8 ms |   0 tokens (O(1))       | Passes: 1
+    &gt;&gt; SPEEDUP: 5.6x faster (Step reduction: 148.0x)
+    &gt;&gt; Schema match: Naive=True | Parallel=True (100% guaranteed)
+----------------------------------------------------------------------
+--&gt; Running preset: Support Triage Matrix (28 fields)...
+    Autoregressive Baseline :   1894.2 ms | 312 tokens (131.2 tok/s) | Passes: 312
+    Parallel Constrained    :    268.4 ms |   0 tokens (O(1))       | Passes: 1
+    &gt;&gt; SPEEDUP: 7.1x faster (Step reduction: 312.0x)</code></pre>
+        <p>Note the <strong>step reduction</strong> figures (148.0×, 312.0×) are far larger than the <strong>latency</strong> speedup figures (5.6×, 7.1×). This gap is expected and informative: a single autoregressive token step is cheap in isolation, so cutting 148 sequential steps down to 1 doesn't produce a 148× latency win — the fixed cost of the one remaining prefill pass, plus per-field evaluation overhead, dominates at this scale. The latency speedup is the number that matters for a production SLA; the step-reduction number explains mechanistically where that speedup comes from.</p>
+
+        <h2 id="comparison">8. Comparison with related structured-output techniques</h2>
+        <table class="papers">
+          <thead><tr><th>Technique</th><th>Decoding pattern</th><th>Guarantees valid syntax</th><th>Sequential passes for a schema with \(M\) fields</th></tr></thead>
+          <tbody>
+            <tr><td>Plain JSON-mode prompting</td><td>Autoregressive, unconstrained</td><td>No — model can emit invalid JSON</td><td>\(K\) (one per output token)</td></tr>
+            <tr><td>Grammar-constrained decoding (e.g. a CFG/FSM-based sampler)</td><td>Autoregressive, but each token is masked to only grammar-valid continuations before sampling</td><td>Yes, for syntax — the grammar guarantees well-formed structure; it does not by itself guarantee every field is populated with a semantically valid enum member unless the grammar itself encodes the exact candidate set per field</td><td>\(K\) — still one forward pass per output token; the constraint is applied to logits at each step, decoding remains sequential</td></tr>
+            <tr><td>Parallel Constrained Decoding</td><td>One prefill, then one independent scored evaluation per field — no autoregressive generation of field values at all</td><td>Yes — every field's value is selected from its declared candidate set by construction</td><td>1 (prefill), plus \(M\) independent, parallelizable evaluations — not chained to each other</td></tr>
+          </tbody>
+        </table>
+        <p>The distinction that matters: grammar-constrained decoding (the family PCD is most often confused with) still generates output <em>autoregressively</em> — it constrains what each next token is allowed to be, but a full forward pass is still required per output token, and total latency still scales with output length. PCD removes the autoregressive generation step for the field-value portion of the output entirely, replacing it with a scoring operation. The two techniques are not mutually exclusive in principle — a system could use PCD for its bounded-candidate fields and fall back to grammar-constrained or unconstrained generation for any genuinely open-ended text fields in a mixed schema — but the public PCD implementation reviewed here does not support open-ended fields at all (see §5's constraint table).</p>
+
+        <h2 id="limitations">9. Stated limitations</h2>
+        <ul>
+          <li><strong>No free-text or open-ended fields.</strong> Every field must resolve to a member of a pre-declared candidate set. A field like "summarize this in one sentence" is out of scope for this technique entirely.</li>
+          <li><strong>No nested schemas.</strong> Fields are flat; the reference implementation does not support nested objects or arrays within a single schema.</li>
+          <li><strong>No cross-field conditioning within one call.</strong> Because every field is scored independently against the same broadcast cache, a field cannot be made to depend logically on another field's selected value inside the same request — that consistency has to be enforced by the calling code, if needed, typically by issuing a second call once the first field's value is known.</li>
+          <li><strong>255-choice ceiling per enum field</strong> in the reference implementation, and single-token-per-choice is the fast path — choices whose string spans multiple tokens require the extra token-tree disambiguation step (§3, step 5), which adds cost relative to a single-token choice.</li>
+          <li><strong>Platform-specific reference implementation.</strong> The published engine targets Apple Silicon via MLX specifically; the technique itself (prefill once, score candidates via logit slicing) is platform-agnostic and implementable on any inference stack that exposes raw logits and KV-cache reuse (CUDA, for instance — see Nimble's separate CUDA scorer path in the note below), but the benchmarked numbers in §7 are MLX/M4-Max-specific and should not be assumed to transfer directly to other hardware or frameworks.</li>
+          <li><strong>Base model dependency.</strong> Accuracy (as opposed to latency and syntax validity, which are structural guarantees) depends entirely on how well the underlying model's logits actually rank the correct candidate — PCD guarantees the <em>output is valid</em>, not that it's <em>correct</em>. The reference benchmarks report latency and syntax validity; they do not report task accuracy for the base 1.5B-Instruct-4bit model on the four preset scenarios.</li>
+        </ul>
+        <div class="bm-note"><strong>Cross-implementation note:</strong> Bespoke Labs' Nimble implements the same core pattern independently, with two scorer variants — a <code>ParallelScorer</code> for Apple Silicon that, like the reference implementation here, processes the shared context once and scores all fields in parallel, and a separate CUDA scorer that scores each field on its own with the full prompt each time (i.e., without the cache-broadcast optimization of §3, step 2, on that code path). Nimble's docs state explicitly that fields "cannot see other fields' answers" within a call — the same independence constraint as §5's cross-field-dependency limitation above, arrived at independently.</div>
+
+        <h2 id="faq">Frequently asked questions</h2>
+        <details class="faq"><summary>Is this the same as speculative decoding?</summary><p>No. Speculative decoding still produces open-ended autoregressive output; it speeds up generation by having a small draft model propose several tokens that a larger model verifies in one pass, but the output space is still unconstrained token sequences. PCD is specific to bounded-candidate-set fields and doesn't generate tokens for field values at all — it scores pre-declared candidates directly.</p></details>
+        <details class="faq"><summary>Can PCD produce an answer that isn't in the declared candidate set?</summary><p>No — that's the structural guarantee in §3, step 6. Because every field's value is selected from logits sliced to only that field's candidate token IDs, an out-of-schema value is not in the space the argmax is taken over. This guarantees syntactic and schema validity; it says nothing about whether the selected in-schema value is the semantically correct one for the given context.</p></details>
+        <details class="faq"><summary>Does adding more fields always help the speedup ratio?</summary><p>In the four benchmarked scenarios, yes — the ratio improved from 5.6× at 4 fields to 7.0–7.1× at 28 fields, because the fixed prefill cost is amortized over more field evaluations while the autoregressive baseline's cost keeps growing with each additional field's output tokens. This isn't unbounded, though: per-field evaluation still has a real (small) cost, and very large field counts would eventually be bottlenecked by that sum rather than by the fixed prefill — the reference benchmarks don't test schemas larger than 28 fields.</p></details>
+        <details class="faq"><summary>Where can I see this run without installing anything?</summary><p>The model card links a live, hosted side-by-side comparison: <a href="https://huggingface.co/spaces/drinkmoonshine/parallel-constrained-decoding" target="_blank" rel="noopener">drinkmoonshine/parallel-constrained-decoding on Hugging Face Spaces</a>, which streams the autoregressive baseline and the parallel-constrained result next to each other with synchronized field highlighting.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>PCD is a scoring reformulation, not a faster generator.</strong> For bounded-candidate fields, it replaces "generate tokens, then validate" with "score every candidate directly from cached logits, then assemble" — eliminating the generation step for those fields entirely.</li>
+          <li><strong>The complexity win is structural:</strong> \(K\) sequential passes (autoregressive) collapse to 1 prefill pass plus \(M\) independent, parallelizable field evaluations, which is why the speedup ratio improves as schema size grows in the reference benchmarks (5.6× at 4 fields, 7.0–7.1× at 28).</li>
+          <li><strong>Syntax validity is a hard guarantee, accuracy is not.</strong> Every output is schema-valid by construction; nothing in the technique guarantees the selected candidate is semantically correct — that's a function of the base model's logit quality, unmeasured in the public benchmark data.</li>
+          <li><strong>It is not grammar-constrained decoding.</strong> Grammar-constrained samplers still decode autoregressively, one forward pass per output token, with constraints applied at each step. PCD removes the autoregressive loop for field values altogether.</li>
+          <li><strong>The constraint set is real:</strong> flat schemas only, no cross-field conditioning in one call, no open-ended text fields, 255-choice ceiling per field, and the published benchmarks are specific to Apple Silicon/MLX and one 1.5B base model.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://huggingface.co/harshatheg/Qwen-2.5-1B-RLCD" target="_blank" rel="noopener">harshatheg/Qwen-2.5-1B-RLCD on Hugging Face</a> <span>— the primary source for this entire document: the algorithm, formulas, API, and benchmark data.</span></li>
+          <li><a href="https://huggingface.co/spaces/drinkmoonshine/parallel-constrained-decoding" target="_blank" rel="noopener">Live side-by-side demo on Hugging Face Spaces</a> <span>— run the comparison in a browser with no local setup.</span></li>
+          <li><a href="https://x.com/harshagundal/status/2100044305536889015" target="_blank" rel="noopener">Harsha Gundala — release announcement</a> <span>— original context for why this was built and released.</span></li>
+          <li><a href="https://github.com/bespokelabsai/nimble" target="_blank" rel="noopener">bespokelabsai/nimble on GitHub</a> <span>— an independent implementation of the same core pattern (§9's cross-implementation note), with separate Apple Silicon and CUDA scorer paths.</span></li>
+          <li><a href="how-jev-works-parallel-constrained-decoding.html">This site — How Jev Actually Works</a> <span>— the applied context: how this technique reconstructs TypeSafe's Jev, plus the MiniCheck lineage and training-side (RLCD, contrastive curation) discussion this reference document doesn't cover.</span></li>
+          <li><a href="typesafe-jev-system-one-models.html">This site — System One Models and Jev</a> <span>— the original technical read on Jev's launch, RLCD vs RLHF/RLVR, and the workflow-evals numbers.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="how-jev-works-parallel-constrained-decoding.html">&larr; prev: How Jev Actually Works</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

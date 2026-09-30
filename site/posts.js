@@ -15,6 +15,16 @@
  */
 
 const POSTS = [
+  {
+    slug: "how-jev-works-parallel-constrained-decoding",
+    title: "How Jev Actually Works — Parallel Constrained Decoding, Reverse-Engineered.",
+    date: "Sep 30, 2026",
+    cat: "ml",
+    tags: ["ml", "inference", "structured-output", "open-source"],
+    time: 21,
+    words: 4257,
+    excerpt: "TypeSafe never disclosed Jev's architecture. Reconstructed from three independent sources: Niels Rogge's step-by-step decode trace, Harsha Gundala's open Qwen2.5-1B-RLCD release ('Parallel Constrained Decoding', no new training required), and Bespoke Labs' Nimble — a fully open data/training/serving recipe for a Jev-shaped model benchmarked directly against jev-1.13.0, tracing back to Durrett and Tang's MiniCheck (2024).",
+  },
   /* AI WEEKLY START (newest first) */
   {
     slug: "ai-weekly-01-sep-21-27",
@@ -577,9 +587,9 @@ const POSTS = [
     date: "Sep 16, 2026",
     cat: "ml",
     tags: ["ml", "inference", "reinforcement-learning", "mlops", "structured-output"],
-    time: 26,
-    words: 5107,
-    excerpt: "TypeSafe AI's Jev ditches free-text generation for typed, calibrated, parallel-sampled outputs trained with a new objective called RLCD. A technical read of the architecture, how RLCD differs from RLHF/RLVR, the workflow-evals numbers (Jev beats LLMs on cost/latency but not on accuracy), the open-source adapter that makes the comparison reproducible, and where the '0% hallucination' claim needs an asterisk. Updated Sep 24: GA docs, TypeSafe's own nine-item failure-mode list with worked fixes, and the first independent usage numbers (1.46T tokens via OpenRouter)."
+    time: 28,
+    words: 5603,
+    excerpt: "TypeSafe AI's Jev ditches free-text generation for typed, calibrated, parallel-sampled outputs trained with a new objective called RLCD. A technical read of the architecture, how RLCD differs from RLHF/RLVR, the workflow-evals numbers (Jev beats LLMs on cost/latency but not on accuracy), the open-source adapter that makes the comparison reproducible, and where the '0% hallucination' claim needs an asterisk. Updated Sep 24: GA docs and a vendor-authored failure-mode list. Updated Sep 30: the community reverse-engineers the architecture (Niels Rogge, Harsha Gundala's open Qwen2.5-1B-RLCD, Bespoke Labs' Nimble)."
   },
   /* PQC COURSE START */
 {

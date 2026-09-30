@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Jev Actually Works — Parallel Constrained Decoding, Reverse-Engineered — cvam.sight</title>
+<meta name="description" content="TypeSafe never published Jev's architecture. This piece reconstructs the mechanism from three independent sources: Niels Rogge's step-by-step decode explainer, Harsha Gundala's open Qwen2.5-1B-RLCD release ('Parallel Constrained Decoding'), and Bespoke Labs' Nimble — a full open recipe for a Jev-like model, traced back further to Durrett and Tang's MiniCheck.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .bm-tldr{border-left:3px solid #f0c040;padding:6px 0 6px 14px;margin:0 0 22px;color:var(--ink-faint)}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.08)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #c96442;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(201,100,66,.08)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:3px solid #3f7d53;border-radius:8px;padding:14px 16px;margin:16px 0;background:rgba(63,125,83,.08)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:22px 20px 16px;margin:26px 0;background:color-mix(in srgb,var(--paper) 55%,transparent);box-shadow:0 12px 34px color-mix(in srgb,var(--ink) 6%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block;overflow:visible}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink-faint);margin:14px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:38px} h3{margin-top:26px}
+  table.papers{width:100%;border-collapse:collapse;margin:18px 0;font-size:.92rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:11px 9px;text-align:left;vertical-align:top;line-height:1.5}
+  table.papers th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;color:var(--ink-faint);background:rgba(82,122,168,.06)}
+  table.papers td:first-child{font-weight:650}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink-faint)}
+  svg .d-title{font-family:var(--font-display,var(--font-body));font-weight:800;font-size:14px;fill:var(--ink)}
+  svg .d-lbl{font-family:var(--font-body);font-weight:600;font-size:11.5px;fill:var(--ink)}
+  svg .d-sub{font-family:var(--font-mono,monospace);font-size:10px;fill:var(--ink-soft)}
+  svg .d-note{font-family:var(--font-body);font-weight:600;font-size:12px;fill:var(--ink-soft)}
+  svg .d-box{fill:color-mix(in srgb,var(--paper) 90%,var(--ink) 3%);stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1.4}
+  svg .d-box.hot{fill:color-mix(in srgb,var(--accent) 14%,var(--paper));stroke:var(--accent)}
+  svg .d-box.cool{fill:color-mix(in srgb,#527aa8 14%,var(--paper));stroke:#527aa8}
+  svg .d-box.warm{fill:color-mix(in srgb,#3f7d53 14%,var(--paper));stroke:#3f7d53}
+  svg .d-flow{stroke:var(--accent);stroke-width:2;fill:none}
+  svg .d-dash{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"–"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink-faint);line-height:1.6}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .post-body pre{background:color-mix(in srgb,var(--ink) 5%,var(--paper));border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;overflow-x:auto;font-size:.86rem;line-height:1.6}
+  .post-body code{font-family:var(--font-mono);font-size:.9em}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Sep 30, 2026 · ml · 21 min read · 4257 words <span class="difficulty advanced">advanced</span></p>
+        <h1>How Jev Actually Works — Parallel Constrained Decoding, Reverse-Engineered.</h1>
+        <div class="tag-row">
+          <span class="tag fill">ml</span>
+          <span class="tag">inference</span>
+          <span class="tag">structured-output</span>
+          <span class="tag">open-source</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>TL;DR —</strong> My <a href="typesafe-jev-system-one-models.html">earlier piece on Jev</a> flagged one big gap: TypeSafe never disclosed the architecture, only the input/output shape and the headline numbers. Since then, three independent, verifiable sources have filled most of that gap without any cooperation from TypeSafe. Niels Rogge published a step-by-step trace of the decode mechanism. Harsha Gundala open-sourced a working reproduction — <strong>Qwen2.5-1B-RLCD</strong> — under the name <strong>Parallel Constrained Decoding</strong>, with a public benchmark table. And Bespoke Labs shipped <strong>Nimble</strong>, a full open recipe (data, training, serving code) for a Jev-shaped model, benchmarked directly against Jev 1.13.0. None of this is an official TypeSafe disclosure — treat it as a well-evidenced reconstruction, not a confirmed spec — but it's specific enough to actually explain why Jev's numbers look the way they do.</p>
+
+        <h2 id="three-sources">The three sources this reconstruction is built from</h2>
+        <p>The original Jev launch post described what the model takes in and what it returns, and it gave real cost and latency figures, but it explicitly withheld the model architecture — "details remain proprietary." That's a reasonable thing for a vendor to do at launch, and it's also exactly the kind of gap that a fast-moving open-source ML community doesn't leave alone for long. In the two weeks since launch, three people independently converged on the same underlying mechanism from three different angles:</p>
+        <table class="papers">
+          <thead><tr><th>Source</th><th>What it is</th><th>What it adds</th></tr></thead>
+          <tbody>
+            <tr><td>Niels Rogge</td><td>A visual, step-by-step explainer of the decode mechanism, posted to X</td><td>The clearest plain-language trace of what happens inside one Jev call, field by field</td></tr>
+            <tr><td>Harsha Gundala</td><td>Qwen2.5-1B-RLCD, an open model + inference technique on Hugging Face, named "Parallel Constrained Decoding"</td><td>A working, runnable reproduction with a published latency/validity benchmark table — no new training required</td></tr>
+            <tr><td>Bespoke Labs</td><td>Nimble, an open GitHub repo: data, training recipe, and serving code for a Jev-shaped model, explicitly framed as "an open Jev"</td><td>The training side — how you'd actually teach a model to be <em>good</em> at this, not just fast — plus a direct head-to-head accuracy number against Jev 1.13.0</td></tr>
+          </tbody>
+        </table>
+        <p>Stacked together, these three sources cover the two things the original launch post left open: the <strong>inference mechanism</strong> (Rogge and Gundala) and the <strong>training approach</strong> (Bespoke Labs), plus — as a bonus — a credible intellectual lineage stretching back two years to a 2024 fact-checking paper that TypeSafe itself credits as foundational. This piece works through all of it in order.</p>
+
+        <h2 id="mechanism">Step by step: what actually happens inside a Jev call</h2>
+        <p>Niels Rogge's explainer is built specifically around the Qwen2.5-RLCD model Harsha Gundala released, which he states directly is the basis for his explanation of how Jev works. The mechanism he traces has five steps, and the key idea running through all of them is this: <strong>replace token-by-token generation with one prefill pass plus one short, parallelizable forward pass per output field.</strong></p>
+        <ol>
+          <li><strong>Single prefill.</strong> The context (whatever text or state you're judging) and the JSON schema (the questions you've predefined) are run through the transformer decoder exactly once. The keys and values produced at every layer, for every token, are cached — this is the same KV-cache mechanism every modern LLM serving stack already uses, just stopped after one pass instead of continued token-by-token.</li>
+          <li><strong>Per-field forward pass, reusing the cache.</strong> For each field in the schema, only that field's suffix tokens (essentially, "now answer <em>this</em> question") are passed through the decoder again — but reusing the KV cache from step 1, so the expensive part (processing the full context) is never repeated. This is the step that makes multi-field scoring cheap: a 28-field schema doesn't mean 28 full passes over the context, it means one full pass plus 28 short passes over a few suffix tokens each.</li>
+          <li><strong>Final hidden state through the LM head.</strong> The last hidden state produced by that short forward pass goes through the model's standard language-modeling head — the same output layer any LLM uses to predict the next token — producing a score (a logit) for every token in the model's entire vocabulary.</li>
+          <li><strong>Mask to only the allowed tokens.</strong> Instead of looking at all ~150,000 vocabulary logits, the scorer looks only at the handful of tokens that correspond to valid answers for this specific field — for a boolean field, that might be just the tokens for "true" and "false"; for a category field, one token per allowed category. Those logits go through a <strong>softmax</strong>, turning raw scores into a probability distribution that sums to 1 across only the allowed answers.</li>
+          <li><strong>Take the highest-probability token.</strong> The typed answer is whichever allowed option got the highest probability, and the full probability distribution across every allowed option is returned alongside it — which is exactly the "typed answer plus a probability per option" shape both the original Jev launch post and Nimble's README describe.</li>
+        </ol>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg">
+            <text x="380" y="24" class="d-title" text-anchor="middle">Architecture: one prefill, then one short pass per field</text>
+
+            <rect x="20" y="46" width="300" height="60" rx="10" class="d-box cool"/>
+            <text x="170" y="70" class="d-lbl" text-anchor="middle">Context + JSON schema</text>
+            <text x="170" y="90" class="d-sub" text-anchor="middle">"customer message…" + {is_angry: bool, category: enum[8]}</text>
+
+            <line x1="170" y1="106" x2="170" y2="132" class="d-flow" marker-end="url(#arrow1)"/>
+            <rect x="20" y="132" width="300" height="60" rx="10" class="d-box hot"/>
+            <text x="170" y="156" class="d-lbl" text-anchor="middle">Single prefill pass</text>
+            <text x="170" y="176" class="d-sub" text-anchor="middle">transformer decoder runs once → KV cache stored</text>
+
+            <line x1="320" y1="162" x2="420" y2="162" class="d-dash"/>
+            <text x="370" y="150" class="d-note" text-anchor="middle" font-size="9">reused, not recomputed</text>
+
+            <rect x="420" y="46" width="320" height="330" rx="10" class="d-box warm"/>
+            <text x="580" y="70" class="d-lbl" text-anchor="middle">Per field — reusing the KV cache</text>
+
+            <g>
+              <rect x="440" y="86" width="280" height="76" rx="8" class="d-box"/>
+              <text x="580" y="104" class="d-sub" text-anchor="middle">Field: "is_angry" (boolean)</text>
+              <text x="580" y="120" class="d-sub" text-anchor="middle">suffix tokens → short forward pass → LM head</text>
+              <text x="580" y="136" class="d-sub" text-anchor="middle">mask to {true, false} → softmax</text>
+              <text x="580" y="152" class="d-note" text-anchor="middle" font-size="10">→ true: 0.91, false: 0.09</text>
+            </g>
+            <g>
+              <rect x="440" y="172" width="280" height="76" rx="8" class="d-box"/>
+              <text x="580" y="190" class="d-sub" text-anchor="middle">Field: "category" (8 options)</text>
+              <text x="580" y="206" class="d-sub" text-anchor="middle">suffix tokens → short forward pass → LM head</text>
+              <text x="580" y="222" class="d-sub" text-anchor="middle">mask to 8 category tokens → softmax</text>
+              <text x="580" y="238" class="d-note" text-anchor="middle" font-size="10">→ billing: 0.74, other: 0.11, …</text>
+            </g>
+            <g>
+              <rect x="440" y="258" width="280" height="40" rx="8" class="d-box"/>
+              <text x="580" y="282" class="d-sub" text-anchor="middle">… one short pass per remaining field, in parallel</text>
+            </g>
+            <text x="580" y="322" class="d-note" text-anchor="middle">Fields don't see each other's answers —</text>
+            <text x="580" y="338" class="d-note" text-anchor="middle">each is scored independently (Nimble's design too)</text>
+            <text x="580" y="360" class="d-lbl" text-anchor="middle">→ typed decision + full probability distribution, no generated text</text>
+
+            <defs>
+              <marker id="arrow1" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/></marker>
+            </defs>
+          </svg>
+          <p class="diagram-label">Fig. 1 — Reconstructed from Niels Rogge's decode trace and Nimble's <code>ParallelScorer</code> implementation. One expensive pass over the context, then one cheap pass per field, all reusing the same cache — instead of one token-by-token pass per generated character of a JSON blob.</p>
+        </div>
+
+        <p>Compare this to what a standard LLM does when you ask it to "return JSON matching this schema": it generates the entire output autoregressively, token by token — <code>{</code>, then a newline, then <code>"</code>, then <code>i</code>, <code>s</code>, <code>_</code>, <code>a</code>… — with a full forward pass through the model for every single token, and no guarantee the result parses as valid JSON at the end. The mechanism above sidesteps that completely for a specific, narrower class of problem: when every output is a choice from a small, pre-declared set of options rather than open-ended text, you don't need to generate anything — you only need to <em>score</em> the handful of tokens that could possibly be the answer, and you can score every field's candidates in one short pass rather than accumulating them one token at a time.</p>
+
+        <h2 id="gundala">The open proof of concept: Qwen2.5-1B-RLCD and "Parallel Constrained Decoding"</h2>
+        <p>Harsha Gundala's release is the part of this story that turns the mechanism above from a plausible theory into something you can actually run and time yourself. The model card frames it directly: <em>"every LLM has the ability to efficiently batch inference every key of a JSON at the same time and generate probabilities from a set of possible categories. No new training required, but it's easy to optimize if you need!"</em> That "no new training required" line is worth sitting with — it means the core speedup doesn't come from a specially-trained model at all, it comes from a different way of <em>using</em> a stock instruction-tuned model's existing weights. Training on top (RLCD or otherwise) is an optional accuracy/calibration improvement layered onto a mechanism that already works on an off-the-shelf model.</p>
+        <p>The technique is named <strong>Parallel Constrained Decoding</strong>, and the model card describes it with the same shape as Rogge's trace, in more implementation-level terms: a single broadcast prefill of the context and schema into an MLX key-value cache, then that cache is <strong>broadcast</strong> across every schema field in parallel, and for each field only the candidate token IDs that belong to that field's valid answer set are looked at — a step the card calls <strong>sub-vocabulary logit slicing</strong>. The problem statement it's solving is stated plainly too: standard autoregressive structured generation needs somewhere between 150 and 500 sequential forward passes for a typical schema, each one a full round-trip through the accelerator, and total latency scales linearly with output length — <code>T = Σ t_step(k)</code> for <em>k</em> = 1…<em>K</em> generated tokens. Parallel Constrained Decoding collapses that sum into one broadcast prefill plus <em>M</em> small, independent, parallelizable field evaluations.</p>
+
+        <table class="papers">
+          <thead><tr><th>Scenario (Apple Silicon M4 Max, Qwen2.5-1.5B-Instruct-4bit)</th><th>Fields</th><th>Autoregressive baseline</th><th>Parallel Constrained</th><th>Speedup</th></tr></thead>
+          <tbody>
+            <tr><td>Fintech fraud routing</td><td>4</td><td>420 ms (120 tok/s)</td><td>75 ms</td><td>5.6×</td></tr>
+            <tr><td>Code security audit</td><td>4</td><td>380 ms (125 tok/s)</td><td>68 ms</td><td>5.6×</td></tr>
+            <tr><td>High-cardinality tariff classification</td><td>1 field, 255 choices</td><td>500 ms (118 tok/s)</td><td>89 ms</td><td>5.6×</td></tr>
+            <tr><td>Enterprise support triage</td><td>28</td><td>1,900 ms (130 tok/s)</td><td>270 ms</td><td>7.0×</td></tr>
+          </tbody>
+        </table>
+        <p>Every scenario in that table also reports <strong>100% schema validity, guaranteed</strong> — not "usually valid JSON," but structurally guaranteed, for the same reason described in the original Jev piece: a model that can only select from a pre-declared set of tokens per field cannot emit a malformed key, an invalid enum value, or broken JSON syntax, because those aren't in its output space to begin with. Note too that the 28-field enterprise-triage scenario shows the largest speedup (7.0× vs 5.6× for smaller schemas) — which is exactly what you'd expect from an architecture whose expensive part (the context prefill) is paid once regardless of field count, while the autoregressive baseline's cost keeps growing linearly with every additional field it has to generate tokens for.</p>
+
+        <h2 id="numbers">Why this explains Jev's specific numbers</h2>
+        <p>The earlier piece on this site flagged a specific bm-note: <em>"What's not disclosed: TypeSafe's launch post explicitly withholds the model architecture itself… none of it has been independently verified."</em> The mechanism reconstructed above doesn't officially close that gap — TypeSafe hasn't confirmed any of it — but it does make several of Jev's headline numbers stop looking like marketing claims and start looking like straightforward consequences of a specific, describable architecture:</p>
+        <table class="papers">
+          <thead><tr><th>Jev claim</th><th>How the reconstructed mechanism explains it</th></tr></thead>
+          <tbody>
+            <tr><td>70–500 ms latency</td><td>One context prefill (the expensive, unavoidable part) plus short, parallel per-field passes — not hundreds of sequential token-by-token forward passes.</td></tr>
+            <tr><td>Free output tokens / $0.042 per MTok input only</td><td>There's no generation step to meter output tokens for — the "output" is a softmax over a handful of cached logits, not a stream of newly generated tokens.</td></tr>
+            <tr><td>"Cannot produce malformed JSON" / structural 0% type-error rate</td><td>The output space is a closed set of pre-declared allowed tokens per field; "malformed" isn't a category the scorer can select from, matching Nimble's own "there is no generated JSON to parse" description.</td></tr>
+            <tr><td>Latency roughly flat across schema size (relative to a naive baseline)</td><td>Field count adds cheap parallel short-passes on top of one fixed prefill cost, not additional sequential generation — matching the M4 Max benchmark table's growing speedup as field count rises.</td></tr>
+          </tbody>
+        </table>
+        <div class="bm-warn"><strong>What this still doesn't confirm:</strong> the reconstructed mechanism explains the <em>shape</em> of Jev's numbers well, but Jev's actual model size, base architecture, and serving infrastructure remain undisclosed by TypeSafe. Gundala's and Bespoke Labs' work independently arrived at the same general mechanism and it fits the evidence unusually well — but "a plausible, evidence-consistent reconstruction from independent open replications" is a different epistemic status than "TypeSafe confirmed this is what Jev does." Treat everything in this section as strong circumstantial evidence, not an official spec.</div>
+
+        <h2 id="nimble">Nimble: Bespoke Labs' full open reproduction of "an open Jev"</h2>
+        <p>Where Gundala's release demonstrates the inference mechanism, <strong>Nimble</strong> — released by Bespoke Labs on GitHub — goes a step further and open-sources the entire stack: training data curation, the training recipe, and production-grade serving code for both Apple Silicon and NVIDIA GPUs. The README states its purpose without hedging: <em>"Data, Model, Recipe for an open Jev,"</em> and is explicit that it's inspiration, not extraction — <em>"Note that we did not distill from Jev. The point of the repository is to show how to curate data, how to train, and to serve such a model, and encourage more research!"</em> The base model is <strong>Qwen3.5-9B</strong>, fine-tuned with LoRA on a deliberately small, carefully curated dataset — 2,676 training examples and 324 held-out examples, spanning ten domains including commerce, education, and media.</p>
+
+        <h3>The serving code matches the reconstructed mechanism exactly</h3>
+        <p>Nimble's own description of how it scores a field lines up almost line-for-line with Rogge's trace and Gundala's card: <em>"Each allowed answer has a code that is one token long. The scorer reads the model's logits for these codes… The scorer turns the logits into probabilities with the softmax function. Our Python code then builds the output from these probabilities, so there is no generated JSON to parse."</em> On Apple Silicon specifically, Nimble's <code>ParallelScorer</code> "processes the shared context once and then scores all the fields in parallel" — the same single-prefill-then-broadcast pattern as Parallel Constrained Decoding, implemented independently by a different team. One useful implementation detail Nimble's docs make explicit that the other two sources don't: <strong>fields are scored independently of each other and cannot see one another's answers</strong> — there's no cross-field conditioning within a single call, which is a real constraint worth knowing if you need one field's answer to logically depend on another's (your application code has to enforce that consistency itself).</p>
+
+        <h3>How close does an open, one-day build get to Jev itself?</h3>
+        <table class="papers">
+          <thead><tr><th>Model</th><th>Held-out accuracy (324 examples)</th></tr></thead>
+          <tbody>
+            <tr><td>Qwen3.5-9B (base model, no fine-tuning)</td><td>66.36%</td></tr>
+            <tr><td>Bespoke-Nimble-9B (fine-tuned)</td><td>90.12%</td></tr>
+            <tr><td>Jev 1.13.0</td><td><strong>93.21%</strong></td></tr>
+          </tbody>
+        </table>
+        <p>Three things worth noting in that table. First, fine-tuning on just 2,676 curated examples took a 9B open model from 66.36% to 90.12% — a 23.76-point jump, which says most of "being good at this task" comes from the training data and objective, not from parameter count or a proprietary architecture. Second, Jev still wins by 3.09 points on Bespoke Labs' own held-out set, which is a reasonable, not-embarrassing gap for a same-domain evaluation against a one-day open build. Third — and this is the fairer test — Bespoke Labs also published a <strong>public benchmark suite</strong> (credited to contributor Edgar Dyck) that runs both Nimble and Jev against 13 public, human-labeled subsets neither model was tuned on, specifically so the comparison isn't graded on Nimble's own home turf; the guide and results live in the repository's public-benchmarks documentation, linked below, for anyone who wants the out-of-domain picture rather than just the in-domain one.</p>
+
+        <div class="bm-note"><strong>The naming isn't an accident.</strong> Gundala names his model <code>Qwen2.5-1B-RLCD</code> — the same acronym TypeSafe uses for Jev's training objective (Reinforcement Learning for Calibrated Decisions). Read alongside his "no new training required" framing, the naming choice reads as a pointed technical claim: the RLCD-style training TypeSafe describes is a calibration/accuracy layer on top of a mechanism that works, at least at a basic level, on a stock instruction-tuned model with no RLCD training at all. That's consistent with Bespoke Labs' own numbers above — the base model already gets 66.36% with zero fine-tuning, before any calibration training is added.</div>
+
+        <h2 id="contrastive">Contrastive data curation: how Nimble teaches discrimination, not just format</h2>
+        <p>The inference mechanism explains why this architecture is <em>fast</em>; it says nothing about why the resulting model would be <em>accurate</em>. That's a training problem, and it's the one part of this whole picture where Bespoke Labs publishes an actual, specific methodology rather than a withheld "proprietary" label. Nimble's training data is built through what the README calls <strong>contrastive data curation</strong>: <em>"We write two examples that are almost the same. They differ in one relevant fact, and this difference changes the correct answer."</em></p>
+        <p>Concretely, the pipeline runs four checks before a training pair is accepted: verify that the decision rule genuinely can produce two different answers depending on the fact in question (so you're not manufacturing a distinction without a difference), build the evidence pair with a controlled, minimal edit between the two versions, validate both resulting examples independently through separate model calls, and only generate the final training label once every check passes. The reasoning behind this is a specific, well-known failure mode in classifier training: a model trained on ordinary, unpaired examples can learn to key off surface features that happen to correlate with the label in the training set — sentence length, specific phrasing, topic — without ever learning to actually locate and weigh the one fact that determines the correct answer. A contrastive pair, where <em>everything is held constant except the one fact that flips the label</em>, removes that shortcut: the only way to get both halves of the pair right is to actually find and use the deciding fact, because any other feature the model might have leaned on is identical in both examples.</p>
+        <p>This is a materially different and more specific claim than TypeSafe's own RLCD description, and it's useful for exactly that reason — the earlier piece on this site flagged, as the single most important open technical question in the whole Jev launch, that TypeSafe never published its calibration training methodology or where its ground-truth labels come from. Nimble's contrastive curation doesn't answer that question for Jev specifically, but it's a fully disclosed, independently reproducible answer to the more general question of "how would you actually train a model like this to be good," and Bespoke Labs' own accuracy jump (66.36% → 90.12%) is a real data point that this specific approach works, not just a plausible-sounding description.</p>
+
+        <h2 id="lineage">The lineage: two years earlier than Jev, by TypeSafe's own account</h2>
+        <p>The credits shared alongside Jev's launch material name <a href="https://gregdurrett.github.io/" target="_blank" rel="noopener">Greg Durrett</a> and <a href="https://www.tangliyan.com/" target="_blank" rel="noopener">Liyan Tang</a>'s work on <strong>MiniCheck</strong> specifically, describing it as work that "was two years early and laid the foundations" — and singles out <strong>Bespoke-MiniCheck</strong>, a follow-on model built jointly with Bespoke Labs, the same company behind Nimble. That's not a coincidence worth skipping past: the lineage from MiniCheck to Nimble runs through one continuous thread, with the same lab appearing at both ends.</p>
+        <table class="papers">
+          <thead><tr><th>Model</th><th>Year</th><th>What it does</th><th>Headline result</th></tr></thead>
+          <tbody>
+            <tr><td>MiniCheck (Tang, Laban, Durrett)</td><td>2024 (EMNLP)</td><td>Checks whether a claim is factually supported by a grounding document — fact-checking, not open classification</td><td>MiniCheck-FT5 (770M params) matches GPT-4-level fact-checking accuracy at roughly 400× lower cost</td></tr>
+            <tr><td>Bespoke-MiniCheck-7B (Bespoke Labs)</td><td>2024–25</td><td>Scaled-up fact-checking, fine-tuned from InternLM2.5-7B-Chat on ANLI plus synthetic data generated with Llama-3.1-405B</td><td>State-of-the-art on LLM-AggreFact, the unified fact-checking benchmark MiniCheck introduced</td></tr>
+            <tr><td>Nimble / Bespoke-Nimble-9B (Bespoke Labs)</td><td>2026</td><td>General typed-decision scoring — not limited to fact-checking, explicitly modeled on Jev's System One shape</td><td>90.12% on held-out data, within ~3 points of Jev 1.13.0</td></tr>
+          </tbody>
+        </table>
+        <p>The throughline across all three is the same core insight, applied to a widening scope: you don't need a frontier generative model's full sequential-decoding machinery to answer a narrow, well-defined question about a piece of text — a small model, trained on the right kind of contrastive or synthetically-adversarial data, can match a much larger model's accuracy on that narrow question at a small fraction of the cost. MiniCheck proved this specifically for "is this claim supported by this document." Nimble is the same bet generalized to arbitrary typed schemas — booleans, categories, and rating scales — which is a meaningfully broader claim, and one TypeSafe is implicitly making at much larger scale and, per the undisclosed-architecture caveat above, with resources and training data Nimble's one-day build simply doesn't have access to.</p>
+
+        <h2 id="building-your-own">If you wanted to build one of these yourself</h2>
+        <p>All three sources above converge on the same practical recipe, and it's worth spelling out as one, because it's genuinely buildable with tools that already exist rather than requiring anything proprietary:</p>
+        <ol>
+          <li><strong>Pick a base model and confirm it exposes logits, not just sampled tokens.</strong> Any standard Hugging Face causal LM does this — you need access to the raw output of the LM head before sampling, which is standard in every mainstream inference library (transformers, MLX, vLLM, SGLang all expose this).</li>
+          <li><strong>Define your schema as flat fields with a fixed, single-token answer set per field.</strong> Nimble's constraint — no nested JSON, each allowed answer maps to exactly one token — isn't an arbitrary limitation, it's what makes the "mask to allowed tokens, then softmax" step work cleanly. A multi-token answer breaks the one-shot scoring trick, because you'd need to score a sequence, not a single position.</li>
+          <li><strong>Prefill once, cache the KV state, then run one short forward pass per field.</strong> This is the part every inference library already supports via its KV-cache API — you're not implementing new low-level infrastructure, you're just calling the existing cache-reuse path once per field instead of once per generated token.</li>
+          <li><strong>Slice the logits to your field's allowed token IDs, softmax, and take the argmax</strong> — a handful of lines of tensor indexing, not a new model component.</li>
+          <li><strong>If accuracy on your specific domain matters, fine-tune with contrastive pairs</strong> rather than ordinary labeled examples — Nimble's four-step curation pipeline (verify the rule can flip the answer, build a controlled minimal-edit pair, validate both halves independently, only then generate the label) is fully described in its docs and is the one part of this recipe that takes real curation effort rather than engineering effort.</li>
+        </ol>
+        <p>What you'd end up with, following exactly this recipe, is functionally Nimble — which is exactly why Nimble is worth treating as more than a curiosity: it's a complete, working reference implementation of the recipe above, not just a description of it. If you're building a routing, moderation, or scoring function inside a larger agent or pipeline and currently paying full LLM latency and price for what's really a bounded, structured decision, this is the concrete starting point — clone the repo, point it at your own schema, and measure whether the accuracy on your domain clears whatever bar the frontier-LLM alternative currently sets, before deciding whether it's worth curating your own contrastive training set on top.</p>
+
+        <h2 id="faq">Frequently asked questions</h2>
+        <details class="faq"><summary>Is Nimble literally the same model as Jev?</summary><p>No, and Bespoke Labs is explicit about this: "we did not distill from Jev." Nimble is an independent reproduction of the same general approach — fast typed decisions via cached-context scoring — trained on its own curated data on top of a different base model (Qwen3.5-9B). It gets close to Jev's accuracy on Bespoke Labs' own held-out set (90.12% vs 93.21%) but that's evidence the approach generalizes, not evidence the two models share weights or training data.</p></details>
+        <details class="faq"><summary>Does this mean TypeSafe's RLCD is basically the same as Nimble's contrastive data curation?</summary><p>They're solving related but not identical problems, and TypeSafe hasn't confirmed RLCD's actual mechanics, so this is necessarily speculative. TypeSafe frames RLCD as targeting <em>calibration</em> specifically — making a stated 90% confidence actually correct about 90% of the time. Nimble's contrastive curation targets <em>discrimination</em> — making sure the model actually keys off the deciding fact rather than a surface shortcut. Good calibration usually requires good discrimination as a prerequisite (you can't be well-calibrated about a decision you can't actually make correctly), so the two are complementary rather than the same technique, but without TypeSafe publishing RLCD's actual loss function this can't be confirmed either way.</p></details>
+        <details class="faq"><summary>Can I run this kind of model myself today?</summary><p>Yes — that's the entire point of both open releases. Harsha Gundala's Qwen2.5-1B-RLCD is runnable via MLX on Apple Silicon with a few lines of Python, no fine-tuning required. Nimble is a full clone-and-run repository with quickstart instructions for both Apple Silicon and NVIDIA GPUs, plus the training data and recipe if you want to fine-tune your own domain-specific version. Links for both are in the references below.</p></details>
+        <details class="faq"><summary>Why does field count change the speedup so much (5.6× vs 7.0×) in Gundala's benchmark?</summary><p>The prefill cost (processing the context once) is fixed regardless of how many fields you're scoring, while the autoregressive baseline's cost grows roughly linearly with total output tokens, which itself grows with field count. So as schema size increases, the fixed cost gets amortized over more fields in the parallel approach, while the sequential baseline keeps paying its per-token cost for every additional field — which is exactly why the 28-field enterprise-triage scenario shows the largest gap (7.0×) of the four benchmarked scenarios.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li><strong>The core mechanism is now well-reconstructed from independent sources, even without TypeSafe's confirmation:</strong> one prefill of context + schema, then one short forward pass per field reusing that cache, masked to each field's allowed tokens, softmaxed into a probability distribution — no token-by-token generation at all.</li>
+          <li><strong>This mechanism works on a stock model with no special training</strong> — Gundala's release explicitly needed none — which means TypeSafe's proprietary RLCD training is best understood as a calibration/accuracy layer on top of a mechanism that isn't itself the proprietary part.</li>
+          <li><strong>Nimble is the most complete open evidence available:</strong> a fully disclosed training methodology (contrastive data curation), a fully disclosed serving implementation, and a direct, if in-domain, accuracy comparison against Jev 1.13.0 (90.12% vs 93.21%).</li>
+          <li><strong>The lineage is real and vendor-acknowledged:</strong> MiniCheck (2024) → Bespoke-MiniCheck-7B → Nimble is one continuous thread through the same lab, and TypeSafe's own credits name MiniCheck as foundational prior work.</li>
+          <li><strong>What's still genuinely unconfirmed:</strong> Jev's actual base model, parameter count, and the precise RLCD training objective. Everything in this piece is a well-evidenced reconstruction from independent replications, not an official TypeSafe specification — read it accordingly.</li>
+        </ul>
+
+        <h2 id="refs">References &amp; further reading</h2>
+        <ul class="reflist">
+          <li><a href="https://x.com/NielsRogge/status/2100239244501430438" target="_blank" rel="noopener">Niels Rogge (@NielsRogge) — visual explanation of how Jev works</a> <span>— the primary source for the five-step decode trace in this piece.</span></li>
+          <li><a href="https://x.com/harshagundal/status/2100044305536889015" target="_blank" rel="noopener">Harsha Gundala (@harshagundal) — Qwen-2.5-1B-RLCD open-source release announcement</a> <span>— the open, runnable proof of concept and inspiration for this line of work.</span></li>
+          <li><a href="https://huggingface.co/harshatheg/Qwen-2.5-1B-RLCD" target="_blank" rel="noopener">harshatheg/Qwen-2.5-1B-RLCD on Hugging Face</a> <span>— model card with the "Parallel Constrained Decoding" writeup and the M4 Max benchmark table.</span></li>
+          <li><a href="https://github.com/bespokelabsai/nimble" target="_blank" rel="noopener">bespokelabsai/nimble on GitHub</a> <span>— "Data, Model, Recipe for an open Jev": training data, contrastive curation methodology, and serving code.</span></li>
+          <li><a href="https://huggingface.co/bespokelabs/Bespoke-Nimble-9B" target="_blank" rel="noopener">bespokelabs/Bespoke-Nimble-9B on Hugging Face</a> <span>— the trained model referenced in the accuracy table above.</span></li>
+          <li><a href="https://arxiv.org/abs/2404.10774" target="_blank" rel="noopener">Tang, Laban &amp; Durrett — MiniCheck: Efficient Fact-Checking of LLMs on Grounding Documents (EMNLP 2024)</a> <span>— the 2024 paper TypeSafe's own credits name as foundational prior work.</span></li>
+          <li><a href="https://huggingface.co/bespokelabs/Bespoke-MiniCheck-7B" target="_blank" rel="noopener">bespokelabs/Bespoke-MiniCheck-7B on Hugging Face</a> <span>— the follow-on model TypeSafe's credits cite by name, connecting MiniCheck's lineage to Bespoke Labs specifically.</span></li>
+          <li><a href="https://gregdurrett.github.io/" target="_blank" rel="noopener">Greg Durrett</a> <span>— co-author of MiniCheck, credited by TypeSafe.</span></li>
+          <li><a href="https://www.tangliyan.com/" target="_blank" rel="noopener">Liyan Tang</a> <span>— co-author of MiniCheck, credited by TypeSafe.</span></li>
+          <li><a href="typesafe-jev-system-one-models.html">This site — System One Models and Jev: the original technical read</a> <span>— covers the RLCD-vs-RLHF-vs-RLVR framing, the workflow-evals benchmark numbers, and the "0% hallucination" caveat this piece builds on.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="typesafe-jev-system-one-models.html">&larr; prev: System One Models and Jev</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam — written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

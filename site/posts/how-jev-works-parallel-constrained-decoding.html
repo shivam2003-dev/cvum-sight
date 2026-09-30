@@ -110,53 +110,10 @@
           <li><strong>Take the highest-probability token.</strong> The typed answer is whichever allowed option got the highest probability, and the full probability distribution across every allowed option is returned alongside it — which is exactly the "typed answer plus a probability per option" shape both the original Jev launch post and Nimble's README describe.</li>
         </ol>
 
-        <div class="diagram-container">
-          <svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg">
-            <text x="380" y="24" class="d-title" text-anchor="middle">Architecture: one prefill, then one short pass per field</text>
-
-            <rect x="20" y="46" width="300" height="60" rx="10" class="d-box cool"/>
-            <text x="170" y="70" class="d-lbl" text-anchor="middle">Context + JSON schema</text>
-            <text x="170" y="90" class="d-sub" text-anchor="middle">"customer message…" + {is_angry: bool, category: enum[8]}</text>
-
-            <line x1="170" y1="106" x2="170" y2="132" class="d-flow" marker-end="url(#arrow1)"/>
-            <rect x="20" y="132" width="300" height="60" rx="10" class="d-box hot"/>
-            <text x="170" y="156" class="d-lbl" text-anchor="middle">Single prefill pass</text>
-            <text x="170" y="176" class="d-sub" text-anchor="middle">transformer decoder runs once → KV cache stored</text>
-
-            <line x1="320" y1="162" x2="420" y2="162" class="d-dash"/>
-            <text x="370" y="150" class="d-note" text-anchor="middle" font-size="9">reused, not recomputed</text>
-
-            <rect x="420" y="46" width="320" height="330" rx="10" class="d-box warm"/>
-            <text x="580" y="70" class="d-lbl" text-anchor="middle">Per field — reusing the KV cache</text>
-
-            <g>
-              <rect x="440" y="86" width="280" height="76" rx="8" class="d-box"/>
-              <text x="580" y="104" class="d-sub" text-anchor="middle">Field: "is_angry" (boolean)</text>
-              <text x="580" y="120" class="d-sub" text-anchor="middle">suffix tokens → short forward pass → LM head</text>
-              <text x="580" y="136" class="d-sub" text-anchor="middle">mask to {true, false} → softmax</text>
-              <text x="580" y="152" class="d-note" text-anchor="middle" font-size="10">→ true: 0.91, false: 0.09</text>
-            </g>
-            <g>
-              <rect x="440" y="172" width="280" height="76" rx="8" class="d-box"/>
-              <text x="580" y="190" class="d-sub" text-anchor="middle">Field: "category" (8 options)</text>
-              <text x="580" y="206" class="d-sub" text-anchor="middle">suffix tokens → short forward pass → LM head</text>
-              <text x="580" y="222" class="d-sub" text-anchor="middle">mask to 8 category tokens → softmax</text>
-              <text x="580" y="238" class="d-note" text-anchor="middle" font-size="10">→ billing: 0.74, other: 0.11, …</text>
-            </g>
-            <g>
-              <rect x="440" y="258" width="280" height="40" rx="8" class="d-box"/>
-              <text x="580" y="282" class="d-sub" text-anchor="middle">… one short pass per remaining field, in parallel</text>
-            </g>
-            <text x="580" y="322" class="d-note" text-anchor="middle">Fields don't see each other's answers —</text>
-            <text x="580" y="338" class="d-note" text-anchor="middle">each is scored independently (Nimble's design too)</text>
-            <text x="580" y="360" class="d-lbl" text-anchor="middle">→ typed decision + full probability distribution, no generated text</text>
-
-            <defs>
-              <marker id="arrow1" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/></marker>
-            </defs>
-          </svg>
-          <p class="diagram-label">Fig. 1 — Reconstructed from Niels Rogge's decode trace and Nimble's <code>ParallelScorer</code> implementation. One expensive pass over the context, then one cheap pass per field, all reusing the same cache — instead of one token-by-token pass per generated character of a JSON blob.</p>
-        </div>
+        <figure class="diagram-container">
+          <img src="../assets/how-jev-works-architecture.png" alt="Architecture diagram: context and JSON schema feed a single prefill pass that stores a KV cache; that cache is reused, not recomputed, by one short forward pass per schema field (is_angry, category, ...), each masked to its allowed tokens and passed through softmax, producing a typed decision plus a full probability distribution with no generated text." width="1680" height="760" loading="eager" style="width:100%;height:auto;display:block;border:1.5px solid var(--ink);border-radius:9px;background:#ebe3cf">
+          <figcaption class="diagram-label">Fig. 1 — Reconstructed from Niels Rogge's decode trace and Nimble's <code>ParallelScorer</code> implementation. One expensive pass over the context, then one cheap pass per field, all reusing the same cache — instead of one token-by-token pass per generated character of a JSON blob.</figcaption>
+        </figure>
 
         <p>Compare this to what a standard LLM does when you ask it to "return JSON matching this schema": it generates the entire output autoregressively, token by token — <code>{</code>, then a newline, then <code>"</code>, then <code>i</code>, <code>s</code>, <code>_</code>, <code>a</code>… — with a full forward pass through the model for every single token, and no guarantee the result parses as valid JSON at the end. The mechanism above sidesteps that completely for a specific, narrower class of problem: when every output is a choice from a small, pre-declared set of options rather than open-ended text, you don't need to generate anything — you only need to <em>score</em> the handful of tokens that could possibly be the answer, and you can score every field's candidates in one short pass rather than accumulating them one token at a time.</p>
 

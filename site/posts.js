@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "branching-strategies-big-tech-startups-comparison",
+    title: "Branching Strategies at Big Tech, MNCs and Startups: What Each One Actually Does.",
+    date: "Oct 1, 2026",
+    cat: "devops",
+    tags: ["devops", "git", "ci-cd", "engineering-culture"],
+    time: 19,
+    words: 3894,
+    excerpt: "How Google, Meta, Amazon, Microsoft, Shopify, GitLab and the Linux kernel actually branch their code. Trunk based development, GitHub Flow, GitFlow, GitLab Flow and Release Flow compared with real numbers, pros, cons, common mistakes and a decision table.",
+  },
+  {
     slug: "parallel-constrained-decoding",
     title: "Parallel Constrained Decoding: A Technical Reference.",
     date: "Sep 30, 2026",

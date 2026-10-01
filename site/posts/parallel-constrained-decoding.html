@@ -75,7 +75,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Sep 30, 2026 · ml · 10 min read · 1913 words <span class="difficulty advanced">advanced</span></p>
+        <p class="meta">Sep 30, 2026 · ml · 18 min read · 3658 words <span class="difficulty advanced">advanced</span></p>
         <h1>Parallel Constrained Decoding: A Technical Reference.</h1>
         <div class="tag-row">
           <span class="tag fill">ml</span>
@@ -97,6 +97,7 @@
         </div>
 
         <h2 id="glance">1. At a glance</h2>
+        <p>PCD answers one narrow question well: when a model call only ever needs to pick an answer from a small, known list, why pay for open ended text generation at all. The table below is the full specification in miniature. Everything after it is detail.</p>
         <table class="papers">
           <thead><tr><th>Item</th><th>Detail</th></tr></thead>
           <tbody>
@@ -119,9 +120,10 @@
         <p>Here \(K\) is the number of output tokens. It grows with every added field, so latency grows with schema size.</p>
         <p>Two more problems come with this approach:</p>
         <ul>
-          <li><strong>Syntax errors:</strong> one bad token can break the whole JSON.</li>
-          <li><strong>Missing or invented keys:</strong> the model can skip a required field or make up a new one.</li>
+          <li><strong>Syntax errors:</strong> one bad token can break the whole JSON. A missing closing brace or an unescaped quote anywhere in the output makes the entire response unparseable, even if every field value was correct.</li>
+          <li><strong>Missing or invented keys:</strong> the model can skip a required field or make up a new one. Nothing in standard autoregressive decoding stops the model from emitting a field name that was never in the schema, or quietly dropping one it was asked for.</li>
         </ul>
+        <p>This matters most for agent and automation workloads, where a single step calls a model many times a request, for small decisions: is this ticket urgent, which of these eight categories, does this transaction look fraudulent. Paying the full cost of token by token generation, with its failure modes, for a decision that only ever has a few possible answers is the specific waste PCD targets.</p>
 
         <h2 id="idea">3. The core idea</h2>
         <p>Each field value comes from a small known set. So do not generate it. Score every allowed answer from the model's own logits and pick the best one.</p>
@@ -131,6 +133,16 @@
           <li>Look only at the tokens that are valid answers for the field.</li>
           <li>Build the JSON in code from the chosen values.</li>
         </ul>
+        <p>A language model already computes, at every position, a score for every token in its vocabulary before it samples one. Normal decoding throws almost all of that away and keeps only the single sampled token. PCD keeps the scores instead of throwing them away, and only for the small set of tokens that could possibly be a valid answer.</p>
+        <table class="papers">
+          <thead><tr><th>Normal decoding</th><th>PCD</th></tr></thead>
+          <tbody>
+            <tr><td>Compute full vocabulary logits</td><td>Compute full vocabulary logits</td></tr>
+            <tr><td>Sample or pick top 1 token</td><td>Discard all but the schema's candidate tokens</td></tr>
+            <tr><td>Append token, repeat</td><td>Softmax over the kept candidates, pick the best</td></tr>
+            <tr><td>Stop on an end token or limit</td><td>Stop. One pass per field, done.</td></tr>
+          </tbody>
+        </table>
 
         <div class="diagram-container">
           <img src="../assets/parallel-constrained-decoding-pipeline.png" alt="Six stage Parallel Constrained Decoding pipeline: broadcast prefill, cache broadcast, logit slicing, calibrated softmax, token tree disambiguation, programmatic assembly." width="1680" height="520" loading="eager" style="border:1.5px solid var(--ink);border-radius:9px;background:#ebe3cf">
@@ -195,6 +207,18 @@
           <li><strong>Masking detail.</strong> Implementations often set non candidate logits to \(-\infty\) instead of gathering. The result is identical because \(\exp(-\infty) = 0\).</li>
           <li><strong>Ties</strong> are not covered by the public spec. Add your own tie break rule.</li>
         </ul>
+        <p>A worked example with two candidates. A boolean field has logits 4.1 for <code>true</code> and 1.8 for <code>false</code>. At \(T = 1\):</p>
+        \[ P(\text{true}) = \frac{e^{4.1}}{e^{4.1} + e^{1.8}} \approx 0.91, \quad P(\text{false}) \approx 0.09 \]
+        <p>At \(T = 2\), the same logits give a flatter result, around 0.76 and 0.24. The chosen answer, <code>true</code>, does not change at either temperature. Only how confident the returned number says the model is changes.</p>
+
+        <h3 id="tokenids">How candidate token IDs are found</h3>
+        <p>Before any scoring happens, each field's allowed answers must be mapped to token IDs once, when the schema is built, not on every request:</p>
+        <ul>
+          <li>Tokenize each candidate string with the model's own tokenizer.</li>
+          <li>If a candidate tokenizes to exactly one token, record that ID. This is the fast path logit slicing uses directly.</li>
+          <li>If a candidate tokenizes to more than one token, it needs the token tree step (stage 5) at scoring time, since a single logit lookup cannot resolve it.</li>
+          <li>Candidates sharing a first token, such as <code>BILLING</code> and <code>BILLING_DISPUTE</code>, are exactly the case stage 5 exists for.</li>
+        </ul>
 
         <h2 id="complexity">5. Complexity</h2>
         <table class="papers">
@@ -208,6 +232,7 @@
           </tbody>
         </table>
         <p>In the reference benchmark, going from 4 fields to 28 fields raised the autoregressive output from about 148 tokens to about 312. The PCD speedup improved from 5.6x to 7.0x, because the fixed prefill is a smaller share of the alternative.</p>
+        <p>The "with full parallelism" condition in the table matters. If the hardware or runtime evaluates fields one after another instead of concurrently, total latency becomes \(t_{\text{prefill}} + \sum_i t_{\text{field}}(i)\), the sum over all fields rather than the slowest one. The published M4 Max numbers reflect whatever concurrency the MLX reference implementation actually achieves on that hardware, not a theoretical best case. Either way, the key property holds: field cost does not compound with generated token length the way autoregressive cost does.</p>
 
         <h3 id="worked">Worked example</h3>
         <p>Published numbers for the 28 field triage scenario:</p>
@@ -237,6 +262,15 @@ schema = StructuredSchema({
         "description": "Target handling department"
     }
 })</code></pre>
+        <p>Fields can also be built explicitly through <code>FieldDefinition</code>, which is the form to use when choices are generated at runtime rather than hand written, such as a tariff code list pulled from a database:</p>
+        <pre><code>from core.schema import FieldDefinition
+
+tariff = FieldDefinition(
+    name="tariff_classification",
+    field_type="enum",
+    description="Harmonized System 6-digit tariff category code",
+    choices=["0101.21", "0101.29", "8471.30", "8517.12", "8542.31"]  # up to 255
+)</code></pre>
         <table class="papers">
           <thead><tr><th>Constraint</th><th>Value</th></tr></thead>
           <tbody>
@@ -283,6 +317,14 @@ print(result["parsed_json"])</code></pre>
           <li><code>sequential_forward_passes: 1</code> means the whole request had one sequential dependency.</li>
           <li><code>field_telemetry</code> exposes the full distribution, so your code can apply its own confidence threshold.</li>
         </ul>
+        <p>A typical use of <code>field_telemetry</code> is routing low confidence answers to a human or to a larger model instead of trusting every automated decision equally:</p>
+        <pre><code>result = run_parallel_generation(context, schema)
+for name, field in result["parsed_json"].items():
+    if field["prob"] < 0.75:
+        send_for_human_review(name, field["value"], field["prob"])
+    else:
+        apply_automatically(name, field["value"])</code></pre>
+        <p>This pattern, a confidence threshold deciding between automatic action and escalation, is the same cascade idea used by cheap LLM judges: accept confident answers, send the rest somewhere more expensive or more careful.</p>
 
         <h2 id="benchmarks">8. Benchmark data</h2>
         <p>Apple Silicon M4 Max, <code>mlx-community/Qwen2.5-1.5B-Instruct-4bit</code>, macOS Sequoia.</p>
@@ -307,6 +349,9 @@ Support Triage Matrix (28 fields)
   SPEEDUP: 7.1x (step reduction 312x)</code></pre>
         <div class="bm-note"><strong>Why 148x fewer steps gives only 5.6x lower latency:</strong> one token step is cheap. Cutting 148 steps to 1 removes those steps, but the single prefill and the per field work still cost real time. The latency number is what matters for an SLA. The step count explains where the gain comes from.</div>
 
+        <h3 id="throughput">What this means for throughput, not just latency</h3>
+        <p>Latency per request is one axis. The other is how many requests a single machine can serve per second, which matters more for a high volume classification endpoint than for a one-off call. Because PCD replaces 148 to 312 sequential forward passes with 1, a server handling many concurrent requests spends far less total compute per request, which directly raises how many requests the same hardware can serve before it needs to scale out. The published benchmarks report single-request latency only; they do not report a throughput or requests-per-second figure, so treat the throughput gain as directionally implied by the step count reduction, not as a measured number.</p>
+
         <h2 id="comparison">9. Compared with other structured output methods</h2>
         <table class="papers">
           <thead><tr><th>Method</th><th>How it decodes</th><th>Valid syntax</th><th>Sequential passes</th></tr></thead>
@@ -319,7 +364,30 @@ Support Triage Matrix (28 fields)
         <p>Grammar constrained decoding still generates token by token. It limits what each token may be, but it still needs one forward pass per token. PCD removes the generation loop for field values.</p>
         <p>The two can be combined in principle: PCD for bounded fields, another method for free text. The public PCD code does not support free text fields.</p>
 
-        <h2 id="when">10. When to use it</h2>
+        <h3 id="speculative">PCD versus speculative decoding</h3>
+        <p>These solve different problems and are easy to confuse because both claim to cut the number of real forward passes.</p>
+        <table class="papers">
+          <thead><tr><th></th><th>Speculative decoding</th><th>PCD</th></tr></thead>
+          <tbody>
+            <tr><td>Output space</td><td>Open ended text, any length</td><td>A fixed set of candidates per field</td></tr>
+            <tr><td>How it saves passes</td><td>A small draft model guesses several tokens, the big model verifies them in one pass</td><td>Candidates are scored directly, nothing is generated</td></tr>
+            <tr><td>Needs a second model</td><td>Yes, a draft model</td><td>No</td></tr>
+            <tr><td>Guarantees valid output</td><td>No more than normal decoding does</td><td>Yes, by construction</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="build">10. Building it yourself</h2>
+        <p>None of this needs proprietary infrastructure. The pieces are standard parts of any modern inference stack:</p>
+        <ol>
+          <li><strong>Pick a model that exposes logits</strong>, not just sampled text. Any local Hugging Face model, or an API that returns logprobs, qualifies.</li>
+          <li><strong>Tokenize every candidate answer once</strong>, at schema build time, and record which are single token and which need the token tree step.</li>
+          <li><strong>Prefill the context and keep the KV cache</strong>, using whatever cache API your inference library already exposes for normal autoregressive generation.</li>
+          <li><strong>For each field, run one short forward pass reusing the cache</strong>, slice the logits to the candidate IDs, and softmax.</li>
+          <li><strong>Assemble the output in code</strong>, never by asking the model to produce the final JSON string.</li>
+        </ol>
+        <p>Harsha Gundala's repository and Bespoke Labs' Nimble are both working reference implementations of exactly this recipe, in Python, and are the fastest way to see it running before writing your own version.</p>
+
+        <h2 id="when">11. When to use it</h2>
         <table class="papers">
           <thead><tr><th>Your output</th><th>Use PCD?</th></tr></thead>
           <tbody>
@@ -331,32 +399,66 @@ Support Triage Matrix (28 fields)
           </tbody>
         </table>
 
-        <h2 id="limitations">11. Limits</h2>
+        <h3 id="edge-cases">Edge cases worth planning for</h3>
+        <table class="papers">
+          <thead><tr><th>Situation</th><th>What to do</th></tr></thead>
+          <tbody>
+            <tr><td>None of the candidates actually fit the input</td><td>Add an explicit "none of the above" or "not stated" choice to the field. Without one, the model is forced to pick the least-wrong option and the probability on it will usually be low, which your confidence threshold should catch.</td></tr>
+            <tr><td>A field's correct answer genuinely requires context from another field</td><td>Split into two calls: resolve the first field, then pass its value into the context for a second call that resolves the dependent field.</td></tr>
+            <tr><td>Candidate list changes often, such as a product catalog</td><td>Use <code>FieldDefinition</code> with choices generated at request time rather than hard coding a static schema, and re-tokenize whenever the list changes.</td></tr>
+            <tr><td>You need an explanation alongside the decision</td><td>PCD cannot produce one. Log the full probability distribution and, if a reason is required, pair the decision with a separate, normal generative call only when needed.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="limitations">12. Limits</h2>
         <ul>
-          <li><strong>No free text</strong> and <strong>no nesting</strong> in the reference implementation.</li>
-          <li><strong>No cross field conditioning</strong> inside one call. Enforce consistency in your own code.</li>
-          <li><strong>255 choice ceiling</strong> per enum. Multi token choices need the extra token tree step, which costs more than single token choices.</li>
-          <li><strong>Apple Silicon only</strong> in the published engine. The idea works on any stack that exposes logits and KV cache reuse, but the benchmark numbers are specific to MLX on an M4 Max.</li>
-          <li><strong>Valid is not correct.</strong> PCD guarantees a valid output. It does not guarantee the chosen answer is right. The public benchmarks report latency and validity, not task accuracy.</li>
+          <li><strong>No free text</strong> and <strong>no nesting</strong> in the reference implementation. A field that needs a short explanation, a summary, or a verbatim quote from the context cannot be expressed in this schema format at all.</li>
+          <li><strong>No cross field conditioning</strong> inside one call. If field B's valid choices should depend on what field A returned, that dependency has to be enforced by your own code after the fact, or split into two sequential calls.</li>
+          <li><strong>255 choice ceiling</strong> per enum. Multi token choices need the extra token tree step, which costs more than single token choices, so a schema built entirely from long, multi-word candidate strings will not see the full benchmarked speedup.</li>
+          <li><strong>Apple Silicon only</strong> in the published engine. The idea works on any stack that exposes logits and KV cache reuse, but the benchmark numbers are specific to MLX on an M4 Max and have not been reproduced on CUDA or other hardware in the public material this reference is built from.</li>
+          <li><strong>Valid is not correct.</strong> PCD guarantees a valid output. It does not guarantee the chosen answer is right. The public benchmarks report latency and validity, not task accuracy, so accuracy on your own data needs its own evaluation.</li>
+          <li><strong>No built in explanation.</strong> The output is a value and a probability, never a reason. If your workflow needs "why did it pick this," that has to come from a separate system, such as logging the full candidate distribution for later review.</li>
         </ul>
         <div class="bm-note"><strong>Same pattern elsewhere:</strong> Bespoke Labs' Nimble uses the same idea. Its <code>ParallelScorer</code> on Apple Silicon processes the context once and scores all fields. Its CUDA scorer scores each field with the full prompt, so it skips the cache sharing. Nimble also says fields cannot see each other's answers.</div>
+
+        <h3 id="jev-relation">How this relates to Jev</h3>
+        <p>PCD is the mechanism several independent sources use to explain how TypeSafe's Jev model likely works internally, though TypeSafe itself has never confirmed an architecture. The match is based on matching behavior: Jev's 70 to 500 millisecond latency, its free output tokens, and its guaranteed valid output all follow directly from this kind of scoring based pipeline rather than generation. See <a href="how-jev-works-parallel-constrained-decoding.html">How Jev Actually Works</a> for the full reverse engineering writeup, including a side by side accuracy comparison against an open model trained the same way.</p>
+
+        <h2 id="glossary">13. Glossary</h2>
+        <table class="papers">
+          <thead><tr><th>Term</th><th>Meaning here</th></tr></thead>
+          <tbody>
+            <tr><td>Prefill</td><td>The forward pass over the input context, before any output is produced.</td></tr>
+            <tr><td>KV cache</td><td>The stored key and value tensors from prefill, reused so later passes do not recompute attention over the same context.</td></tr>
+            <tr><td>Logit</td><td>A model's raw, unnormalized score for one vocabulary token, before softmax.</td></tr>
+            <tr><td>Logit slicing</td><td>Keeping only the logits at a chosen subset of token IDs and discarding the rest.</td></tr>
+            <tr><td>Argmax</td><td>The candidate with the highest probability or score.</td></tr>
+            <tr><td>Calibration</td><td>Whether a stated confidence, such as 90%, actually matches how often that answer is correct.</td></tr>
+          </tbody>
+        </table>
 
         <h2 id="faq">FAQ</h2>
         <details class="faq"><summary>Is this speculative decoding?</summary><p>No. Speculative decoding speeds up open ended generation with a draft model. PCD does not generate field values. It scores a fixed set of candidates.</p></details>
         <details class="faq"><summary>Can it return a value outside the schema?</summary><p>No. Logits are sliced to the field's candidate token IDs, so the argmax can only be one of them. This guarantees schema validity. It says nothing about whether the value is correct.</p></details>
         <details class="faq"><summary>Does more fields always improve the speedup?</summary><p>In the four benchmarks, yes: 5.6x at 4 fields, 7.0x at 28. It is not unbounded. Each field still costs a small pass, and the benchmarks stop at 28 fields.</p></details>
         <details class="faq"><summary>Where can I try it without installing?</summary><p>The model card links a hosted demo: <a href="https://huggingface.co/spaces/drinkmoonshine/parallel-constrained-decoding" target="_blank" rel="noopener">drinkmoonshine/parallel-constrained-decoding</a> on Hugging Face Spaces.</p></details>
+        <details class="faq"><summary>Does the model need special training to support this?</summary><p>No. The published technique runs on a stock instruction tuned model with no fine tuning. Training can improve accuracy and calibration on top of it, but the mechanism itself works on an off the shelf model.</p></details>
+        <details class="faq"><summary>What happens if two candidates get the exact same score?</summary><p>The public specification does not define tie breaking behavior. In practice, floating point ties are rare but not impossible, especially at low temperature on a small model. Pick a deterministic rule, such as the first candidate in declaration order, and apply it consistently in your own code.</p></details>
+        <details class="faq"><summary>Is this the same as adding a classification head to the model?</summary><p>No. A classification head is a separate trained layer bolted onto the model, specific to one task, usually requiring its own training run. PCD reuses the model's existing, general purpose language modeling head and vocabulary. The same base model can answer any new schema you define without retraining anything.</p></details>
 
         <h2 id="takeaways">Takeaways</h2>
         <ul>
           <li>PCD swaps generation for scoring on bounded fields.</li>
           <li>\(K\) sequential passes become 1 prefill plus \(M\) small independent passes.</li>
-          <li>Valid syntax is guaranteed. Correctness is not.</li>
-          <li>It is not grammar constrained decoding, which still loops per token.</li>
-          <li>Limits: flat schema, no free text, no cross field dependency, 255 choices, Apple Silicon benchmarks.</li>
+          <li>Valid syntax is guaranteed. Correctness is not, so accuracy still needs its own evaluation on your data.</li>
+          <li>It is not grammar constrained decoding, which still loops per token, and it is not speculative decoding, which needs a second draft model.</li>
+          <li>No training is required to get the speedup. Training only improves accuracy and calibration on top of it.</li>
+          <li><code>field_telemetry</code>'s full probability distribution is what makes a confidence-threshold cascade to human review or a bigger model possible.</li>
+          <li>Limits: flat schema, no free text, no cross field dependency in one call, 255 choices per field, no built in explanation, and published benchmarks specific to Apple Silicon.</li>
         </ul>
 
         <h2 id="refs">References</h2>
+        <p>Primary sources for every claim, formula and number in this reference document:</p>
         <ul class="reflist">
           <li><a href="https://huggingface.co/harshatheg/Qwen-2.5-1B-RLCD" target="_blank" rel="noopener">harshatheg/Qwen-2.5-1B-RLCD on Hugging Face</a> <span>Primary source for the algorithm, formulas, API and benchmarks.</span></li>
           <li><a href="https://huggingface.co/spaces/drinkmoonshine/parallel-constrained-decoding" target="_blank" rel="noopener">Live side by side demo</a> <span>Runs in the browser.</span></li>

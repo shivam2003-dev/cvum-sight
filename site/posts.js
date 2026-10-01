@@ -31,9 +31,9 @@ const POSTS = [
     date: "Sep 30, 2026",
     cat: "ml",
     tags: ["ml", "inference", "structured-output", "decoding"],
-    time: 10,
-    words: 1913,
-    excerpt: "Technical reference for Parallel Constrained Decoding: the six stage algorithm, complexity versus autoregressive and grammar constrained decoding, schema and API spec, benchmarks, and limits. Tables and pseudocode, no narrative.",
+    time: 18,
+    words: 3658,
+    excerpt: "Technical reference for Parallel Constrained Decoding: the six stage algorithm, complexity versus autoregressive, speculative decoding and grammar constrained decoding, schema and API spec, a worked example, build-it-yourself guide, benchmarks, limits and a glossary.",
   },
   {
     slug: "how-jev-works-parallel-constrained-decoding",
@@ -41,9 +41,9 @@ const POSTS = [
     date: "Sep 30, 2026",
     cat: "ml",
     tags: ["ml", "inference", "structured-output", "open-source"],
-    time: 7,
-    words: 1332,
-    excerpt: "TypeSafe never published how Jev works. Three independent sources explain the same mechanism: Niels Rogge's decode trace, Harsha Gundala's open Qwen2.5-1B-RLCD, and Bespoke Labs' Nimble, benchmarked against Jev 1.13.0.",
+    time: 16,
+    words: 3271,
+    excerpt: "TypeSafe never published how Jev works. Three independent sources explain the same mechanism: Niels Rogge's decode trace, Harsha Gundala's open Qwen2.5-1B-RLCD, and Bespoke Labs' Nimble, benchmarked against Jev 1.13.0, traced back to MiniCheck with a full timeline.",
   },
   /* AI WEEKLY START (newest first) */
   {

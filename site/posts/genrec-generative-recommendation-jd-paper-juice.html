@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GenRec: Generative Recommendation at JD.com, Explained | cvam.sight</title>
+<meta name="description" content="Paper Juice breakdown of GenRec (arXiv 2604.14878), a decoder only generative retrieval system deployed on the JD App. Page wise next token prediction, an asymmetric token merger, GRPO-SR reinforcement learning with a relevance gate, the ablations, and the online A/B results.">
+<link rel="stylesheet" href="../style.css?v=89">
+<script src="/theme-init.js?v=9"></script>
+<script>MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']], packages: {'[+]': ['ams']} }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  .post-body{font-size:1.02rem;line-height:1.75}
+  .post-body p{margin:0 0 14px;color:var(--ink)}
+  .post-body li{margin:6px 0;color:var(--ink)}
+  .bm-tldr{border-left:4px solid #f0c040;padding:12px 16px;margin:0 0 26px;color:var(--ink);background:rgba(240,192,64,.12);border-radius:0 8px 8px 0}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-left:4px solid #527aa8;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.10);color:var(--ink)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:4px solid #c96442;border-radius:8px;padding:14px 16px;margin:18px 0;background:rgba(201,100,66,.10);color:var(--ink)}
+  .keyfacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:18px 0 26px}
+  .keyfacts div{border:1px solid var(--rule,#d8cfb8);border-radius:10px;padding:12px 14px;background:var(--paper)}
+  .keyfacts strong{display:block;font-size:1.3rem;line-height:1.2;color:#c96442;margin-bottom:4px}
+  .keyfacts span{font-size:.86rem;color:var(--ink)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:18px 16px 12px;margin:24px 0;background:color-mix(in srgb,var(--paper) 55%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink);margin:12px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:44px;padding-top:6px} h3{margin-top:26px}
+  table.papers{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:10px 9px;text-align:left;vertical-align:top;line-height:1.5;color:var(--ink)}
+  table.papers th{font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;color:var(--ink);background:rgba(82,122,168,.10)}
+  table.papers td:first-child{font-weight:650}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink)}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:10px}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+";font-family:var(--font-mono);font-size:1.1rem;color:#c96442;flex:0 0 auto}
+  details.faq[open] summary::before{content:"\2013"}
+  details.faq > p{margin:0;padding:0 16px 15px 42px;color:var(--ink);line-height:1.65}
+  .post-body table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .post-body code{font-family:var(--font-mono);font-size:.9em}
+  .post-body pre{background:color-mix(in srgb,var(--ink) 7%,var(--paper));color:var(--ink);border:1px solid var(--rule,#d8cfb8);border-radius:8px;padding:14px 16px;overflow-x:auto;font-size:.86rem;line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html" class="active">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p class="sidebar-stat" id="site-readers"></p>
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Oct 3, 2026 · paperjuice · 15 min read · 2942 words <span class="difficulty advanced">advanced</span></p>
+        <h1>GenRec: Generative Recommendation at JD.com, Explained.</h1>
+        <div class="tag-row">
+          <span class="tag fill">paperjuice</span>
+          <span class="tag">recommendation</span>
+          <span class="tag">generative-retrieval</span>
+          <span class="tag">reinforcement-learning</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+
+        <p class="bm-tldr"><strong>Summary:</strong> GenRec (arXiv 2604.14878, Zou et al., SIGIR 2026) replaces the usual retrieve and rank pipeline with one decoder only language model that writes item identifiers directly. It is deployed on the JD App homepage feed. Three ideas make it work at that scale: supervise a whole page of interactions at once, compress the input during prefill only, and align the model to real clicks and purchases with a reinforcement learning method that has a relevance gate against reward hacking. The online A/B test over one month reports 9.5% more clicks and 8.7% more transactions.</p>
+
+        <div class="keyfacts">
+          <div><strong>+9.5%</strong><span>clicks in one month of online A/B testing</span></div>
+          <div><strong>+8.7%</strong><span>transactions in the same test</span></div>
+          <div><strong>560M</strong><span>user interaction sequences in the training data</span></div>
+          <div><strong>~2x</strong><span>shorter prompt from the token merger</span></div>
+        </div>
+
+        <h2 id="why">1. Why this paper matters</h2>
+        <p>Most large scale recommenders still follow a multi stage pipeline: candidate retrieval narrows millions of items to hundreds, then ranking models score those hundreds. Each stage is trained separately, with its own features and its own failure modes. Generative recommendation tries to collapse those stages into one model that directly generates the items a user is likely to interact with, the same way a language model generates the next word.</p>
+        <p>That idea has a practical problem. A language model is comfortable generating words. Generating items at industrial scale means dealing with three things that do not show up in toy demos:</p>
+        <ul>
+          <li><strong>Pagination.</strong> A user scrolls through pages of results, and the same history can produce several valid positive items. A point wise training label cannot capture that.</li>
+          <li><strong>Input length.</strong> Long behavior histories, where each item is represented by several tokens, make prompts expensive and slow to serve.</li>
+          <li><strong>Alignment.</strong> A model trained only to imitate past behavior reproduces popularity bias and past habits. Optimizing a reward directly invites reward hacking, where the model finds outputs that score well on the reward model without matching what users actually want.</li>
+        </ul>
+        <p>GenRec addresses each of these with a specific, testable component, and it reports results from a production system rather than a benchmark alone.</p>
+
+        <h2 id="setup">2. Problem setup and notation</h2>
+        <p>The model receives a user history \(S_u\) and must produce a page of items. Each item \(v\) is represented not by a single ID but by a hierarchical Semantic ID (SID) of three tokens. Generation then means writing a sequence of SID tokens, with a separator token between items.</p>
+        <p>The objective the paper targets is the probability of the next token given the history and the tokens written so far:</p>
+        \[ \mathcal{L}_{\text{SFT}} = -\sum_{t=1}^{|Y_{\text{page}}|} \log P_\theta\left(y_t \mid S_u, y_{<t}\right) \]
+        <p>Everything else in the paper is about what goes into \(Y_{\text{page}}\), how the input \(S_u\) is compressed, and how the policy is pushed beyond imitation afterward.</p>
+
+        <h2 id="sid">3. Semantic IDs: turning items into tokens</h2>
+        <p>An item needs a discrete identity the model can generate. GenRec builds it in three steps:</p>
+        <ol>
+          <li><strong>Multimodal encoding.</strong> A multimodal model, Qwen2.5-VL, encodes each item's image and text into one embedding, so visual appearance and description both count.</li>
+          <li><strong>Domain fine tuning.</strong> The embeddings are refined using collaborative pairs, items that users interact with together, so the space reflects recommendation similarity rather than only visual or textual similarity.</li>
+          <li><strong>Residual quantization with K means.</strong> RQ K means repeatedly clusters the residual of each vector. The result is a hierarchical tuple of cluster indices, \(\text{SID}(v_i) = \{s_i^1, s_i^2, s_i^3\}\). Coarse clusters come first, finer ones after.</li>
+        </ol>
+        <p>The result is three tokens per item. That is the number the rest of the paper has to work with, and it is the reason input compression matters: a history of 100 items becomes 300 tokens before any separators.</p>
+
+        <h2 id="architecture">4. Architecture and model sizes</h2>
+        <p>GenRec is a decoder only transformer built on the Qwen2.5 family. The authors tested three sizes:</p>
+        <table class="papers">
+          <thead><tr><th>Model</th><th>Layers</th><th>Hidden size</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td>1.5B</td><td>36</td><td>2048</td><td>Smallest variant</td></tr>
+            <tr><td>3B</td><td>36</td><td>2048</td><td>Primary model, used for the production results</td></tr>
+            <tr><td>7B</td><td>28</td><td>3584</td><td>Largest variant, almost no extra gain over 3B</td></tr>
+          </tbody>
+        </table>
+        <p>The 3B model is deeper and narrower than the 7B model, and the paper reads that as evidence that depth matters more than width for this domain. Going from 1.5B to 3B gives 8.6% relative HR@10. Going from 3B to 7B, with 2.3 times the parameters, gives only 0.6%. For a team deciding how big to make a production model, that curve is the practical takeaway: the extra parameters past 3B buy very little here.</p>
+
+        <h2 id="pagewise">5. Page wise next token prediction</h2>
+        <p>Standard next token training treats each item as its own example. The paper's observation is that the same user history can be followed by several valid positives, because a page of results contains several things the user clicks or buys. Point wise labels force the model to treat one of those as correct and the others as wrong, which blurs the gradient.</p>
+        <p>The fix is to supervise the whole page as one target sequence. The target contains the items the user ordered, the items clicked, and the items exposed, ordered by interaction intensity. That gives the model a denser signal from each forward pass, since one page supplies many correct tokens instead of one.</p>
+        <table class="papers">
+          <thead><tr><th>Training objective</th><th>Hit rate at 10</th><th>Hallucination rate</th></tr></thead>
+          <tbody>
+            <tr><td>TIGER (point wise)</td><td>0.1660</td><td>15.46%</td></tr>
+            <tr><td>LC-Rec (point wise)</td><td>0.3669</td><td>7.80%</td></tr>
+            <tr><td>GenRec, page wise</td><td><strong>0.4456</strong></td><td><strong>4.96%</strong></td></tr>
+          </tbody>
+        </table>
+        <p>Against the point wise LC-Rec baseline, page wise training gives a 21% relative improvement in HR@10 and a 36% reduction in hallucination rate. Hallucination here means the model generates an item identifier that does not correspond to a real item in the catalog, which is a concrete failure mode for generative retrieval and the reason the paper tracks it separately.</p>
+
+        <div class="diagram-container">
+          <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .g-box{fill:#ebe3cf;stroke:#2a2620;stroke-width:1.5}
+              .g-hot{fill:#f4dccd;stroke:#c96442;stroke-width:1.5}
+              .g-cool{fill:#dde6ef;stroke:#527aa8;stroke-width:1.5}
+              .g-ok{fill:#dfeee3;stroke:#3f7d53;stroke-width:1.5}
+              .g-t{font-family:sans-serif;font-size:12px;font-weight:700;fill:#2a2620;text-anchor:middle}
+              .g-s{font-family:sans-serif;font-size:10px;fill:#4a4438;text-anchor:middle}
+              .g-h{font-family:sans-serif;font-size:11px;font-weight:700;fill:#c96442;text-anchor:middle;letter-spacing:.04em}
+              .g-arrow{stroke:#948a78;stroke-width:1.6;fill:none}
+            </style>
+            <text x="360" y="22" class="g-h">GENREC PIPELINE, END TO END</text>
+            <rect x="20" y="50" width="140" height="76" rx="10" class="g-cool"/>
+            <text x="90" y="78" class="g-t">Item</text>
+            <text x="90" y="96" class="g-s">Qwen2.5-VL embedding</text>
+            <text x="90" y="112" class="g-s">+ collaborative tuning</text>
+            <rect x="200" y="50" width="140" height="76" rx="10" class="g-box"/>
+            <text x="270" y="78" class="g-t">Semantic ID</text>
+            <text x="270" y="96" class="g-s">RQ K means</text>
+            <text x="270" y="112" class="g-s">3 tokens per item</text>
+            <rect x="380" y="50" width="150" height="76" rx="10" class="g-hot"/>
+            <text x="455" y="78" class="g-t">Token merger</text>
+            <text x="455" y="96" class="g-s">prefill only, ~2x shorter</text>
+            <text x="455" y="112" class="g-s">decode stays full length</text>
+            <rect x="550" y="50" width="150" height="76" rx="10" class="g-box"/>
+            <text x="625" y="78" class="g-t">Decoder LM</text>
+            <text x="625" y="96" class="g-s">Qwen2.5, 3B primary</text>
+            <text x="625" y="112" class="g-s">36 layers, 2048 hidden</text>
+            <line x1="160" y1="88" x2="200" y2="88" class="g-arrow"/>
+            <line x1="340" y1="88" x2="380" y2="88" class="g-arrow"/>
+            <line x1="530" y1="88" x2="550" y2="88" class="g-arrow"/>
+            <rect x="200" y="160" width="330" height="62" rx="10" class="g-hot"/>
+            <text x="365" y="186" class="g-t">Page wise next token training</text>
+            <text x="365" y="205" class="g-s">one page of ordered, clicked and exposed items as the target</text>
+            <rect x="200" y="236" width="330" height="48" rx="10" class="g-ok"/>
+            <text x="365" y="265" class="g-t">GRPO-SR alignment</text>
+            <line x1="625" y1="126" x2="625" y2="190" class="g-arrow"/>
+            <line x1="625" y1="190" x2="530" y2="190" class="g-arrow"/>
+            <line x1="365" y1="222" x2="365" y2="236" class="g-arrow"/>
+            <rect x="550" y="160" width="150" height="124" rx="10" class="g-box"/>
+            <text x="625" y="188" class="g-t">Beam search</text>
+            <text x="625" y="206" class="g-s">point wise decoding</text>
+            <text x="625" y="222" class="g-s">writes candidate pages</text>
+            <text x="625" y="258" class="g-s">served to the feed</text>
+          </svg>
+          <p class="diagram-label">Fig. 1: The GenRec pipeline from raw item to served page. Orange boxes are the paper's three main contributions: the token merger, page wise training, and GRPO-SR alignment.</p>
+        </div>
+
+        <h2 id="merger">6. Asymmetric linear token merger</h2>
+        <p>Three tokens per item means long histories get expensive. The token merger shortens the prompt, but only on the prefill side. Its job is to take each item's three SID embeddings and combine them into one vector with a single linear projection:</p>
+        \[ \mathbf{h}_{v_i} = \text{Linear}\left(\text{Concat}\left(\mathbf{e}(s_i^1), \mathbf{e}(s_i^2), \mathbf{e}(s_i^3)\right)\right) \]
+        <p>The word asymmetric is doing real work here. Only the input history gets merged. Special structural tokens such as the separator are left alone, so the model can still see where items begin and end. And decoding is untouched: the model still generates the full three token SID for every output item, at full resolution, using the original generative objective.</p>
+        <p>The cost of this design is that the merged input is a lossy summary. The paper's ablation shows that in this setting the loss is negligible. Removing the merger changes HR@10 from 0.4456 to 0.4467, a difference inside noise, while halving the prompt length. That is the central trade: the model keeps its accuracy with about half the input tokens.</p>
+        <div class="bm-note"><strong>Why asymmetric matters:</strong> merging the output side as well would make the model generate in a shorter code, which is a different and harder task. Restricting the change to prefill keeps the generative target identical to training, so nothing about what the model is learning to produce has to change.</div>
+
+        <h2 id="rl">7. GRPO-SR: aligning the model to real preferences</h2>
+        <p>Supervised training teaches the model to imitate what users did. It does not teach it what they would prefer. The paper uses reinforcement learning on top of supervised training, based on Group Relative Policy Optimization (GRPO), with two additions the authors call GRPO-SR.</p>
+
+        <h3 id="grpo">7.1 The objective</h3>
+        <p>GRPO samples a group of candidate outputs for each user, scores them, and updates the policy toward the better candidates within the group, using the group average as the baseline. The full GRPO-SR loss has two parts:</p>
+        \[ \mathcal{L}_{\text{GRPO-SR}}(\theta) = -\mathbb{E}\left[\sum_{i=1}^{G} \frac{\pi_\theta(o_{i,t} \mid S_u, o_{i,<t})}{\text{sg}\left(\pi_\theta(o_{i,t} \mid S_u, o_{i,<t})\right)} \hat{A}_{i,t}\right] - \alpha \cdot \mathbb{E}_{v \sim \mathcal{D}^+}\left[\sum_t \log \pi_\theta(v_t \mid S_u, v_{<t})\right] \]
+        <p>The first term is the policy gradient with importance sampling, which keeps the update stable in a single step. The second term is a negative log likelihood regularizer on real positive items, weighted by \(\alpha\). The authors state its purpose directly: it anchors the policy to real user behavior, so optimizing the reward cannot drift the model far from what actually happens on the platform.</p>
+
+        <h3 id="reward">7.2 The reward: dense, gated, and calibrated</h3>
+        <p>The reward for each candidate has three parts, and each one addresses a specific failure:</p>
+        <ul>
+          <li><strong>Dense preference score.</strong> A SIM based preference model gives every candidate a score between 0 and 1, rather than a binary hit or miss. Dense rewards carry more information per sample.</li>
+          <li><strong>Relevance gate.</strong> A gate \(\mathcal{G}_i = \mathbb{I}(s_i > \tau)\) multiplies the score. If a candidate is not a syntactically valid combination of semantic ID tokens, its reward is zeroed. The gate is the paper's answer to reward hacking: without it, the policy learns to emit combinations that the preference model happily scores but that do not correspond to real items.</li>
+          <li><strong>Calibration to the group maximum.</strong> Positive items from the training data are anchored to the highest reward in the group, so the model is pushed toward the best candidates rather than merely away from the worst.</li>
+        </ul>
+        <p>Written compactly, each candidate's reward is \(r_i = \mathcal{G}_i \cdot r_i^{\text{pref}}\), and the calibrated version replaces positive items' rewards with \(r_{\max}\) of the group.</p>
+
+        <h3 id="rl-results">7.3 What RL changes</h3>
+        <table class="papers">
+          <thead><tr><th>Model</th><th>HR@50</th><th>R@1</th><th>R@10</th><th>Hallucination rate</th></tr></thead>
+          <tbody>
+            <tr><td>Base SFT</td><td>0.7192</td><td>0.1027</td><td>0.1519</td><td>4.96%</td></tr>
+            <tr><td>Plain GRPO (no gate, no NLL anchor)</td><td>0.7248</td><td>0.1177</td><td>0.1650</td><td>6.03%</td></tr>
+            <tr><td>GRPO-SR (full)</td><td><strong>0.7438</strong></td><td><strong>0.1212</strong></td><td><strong>0.1679</strong></td><td><strong>2.68%</strong></td></tr>
+            <tr><td>GRPO-SR without the gate</td><td>0.7016</td><td>0.1067</td><td>0.1598</td><td>1.96%</td></tr>
+          </tbody>
+        </table>
+        <p>Three details in this table matter more than the headline. First, plain GRPO raises the accuracy metrics but also raises the hallucination rate, from 4.96% to 6.03%. That is the reward hacking signature: better scores paired with more invalid outputs. Second, GRPO-SR cuts hallucinations to 2.68%, 46% below the base model, while also improving every accuracy metric. Third, removing only the gate drops HR@50 from 0.7438 to 0.7016, which the authors read as clear evidence of reward hacking. The one number that looks better without the gate, hallucination at 1.96%, is the gate's own kind of artifact: fewer outputs, many of them safe but less useful.</p>
+        <p>The relative gain in R@1 over base SFT is 18%, from 0.1027 to 0.1212.</p>
+
+        <h2 id="data">8. Data, training, and infrastructure</h2>
+        <ul>
+          <li><strong>Source:</strong> interaction logs from JD.com's recommendation platform, about 560 million user interaction sequences collected over one month.</li>
+          <li><strong>Split:</strong> the last day is held out for testing, the rest is used for training.</li>
+          <li><strong>Hardware:</strong> distributed training on 8 NVIDIA H100 GPUs.</li>
+          <li><strong>Optimizer:</strong> AdamW with a linear warmup over the first 1% of steps, followed by cosine decay.</li>
+          <li><strong>Inference:</strong> point wise beam search, generating a beam of candidate items for each query.</li>
+        </ul>
+        <p>The paper does not publish training time, total GPU hours, or per request latency numbers, so the efficiency claims rest on the 2x prompt compression and the production deployment rather than on a latency table.</p>
+
+        <h2 id="ab">9. Online A/B test</h2>
+        <p>The strongest evidence in the paper is not a benchmark. The authors deployed the base SFT model and the RL aligned model on the JD homepage feed, each receiving 10% of traffic, for one month, with a two sided significance test at p below 0.05.</p>
+        <table class="papers">
+          <thead><tr><th>Model</th><th>Exposure rate</th><th>Click count</th><th>Transaction count</th></tr></thead>
+          <tbody>
+            <tr><td>GenRec SFT (versus control)</td><td>48.7%</td><td>+8.5%</td><td>+7.3%</td></tr>
+            <tr><td>GenRec with GRPO-SR (versus control)</td><td>57.3%</td><td>+9.5%</td><td>+8.7%</td></tr>
+          </tbody>
+        </table>
+        <p>The RL step adds about one point of clicks and 1.4 points of transactions on top of supervised training. The exposure rate rises from 48.7% to 57.3%, which is consistent with the authors' claim that RL resolves a click conversion misalignment: the supervised model shows items people click but do not buy, and the aligned model shifts toward items that convert.</p>
+        <p>Long tail items, the ones rarely shown, do better: the paper reports a 10% increase in exposure rate, 16% more clicks, and 13% more transactions for that group. A recommender that only imitates history tends to concentrate exposure on popular items, so a gain specifically on long tail items is the more interesting result.</p>
+        <div class="bm-warn"><strong>How to read these numbers:</strong> the A/B test runs on one platform, one feed, and one month. The control is the team's own production system, not a published baseline. The results are statistically significant by the paper's test, but they do not establish that the same gains would appear on another platform, or that the improvement holds beyond the period tested.</div>
+
+        <h2 id="limits">10. Limitations, as the paper and the setup imply</h2>
+        <p>The paper's own discussion of limitations is brief. The authors say they will investigate the reasoning ability of such frameworks in future work, which points to a real gap: the model predicts what a user will engage with, but it does not reason explicitly about why. Beyond that, the following constraints follow from the design:</p>
+        <table class="papers">
+          <thead><tr><th>Limit</th><th>Why it matters</th></tr></thead>
+          <tbody>
+            <tr><td>No explicit reasoning</td><td>The model imitates and optimizes engagement. It cannot explain a recommendation or handle a user intent that never appeared in logs.</td></tr>
+            <tr><td>Scaling flattens past 3B</td><td>The 7B model adds almost nothing, so bigger is not automatically better for this task.</td></tr>
+            <tr><td>Dependence on page level logs</td><td>The page wise objective needs the page structure, meaning which items were shown together. Platforms without that logging cannot reproduce the training target.</td></tr>
+            <tr><td>Reward model bias</td><td>The preference score comes from a learned model. Calibration and the gate reduce the risk of exploitation, but do not eliminate the bias of the reward model itself.</td></tr>
+            <tr><td>Single platform evidence</td><td>All production results come from JD. Transferability to other catalogs, languages, or user populations is untested in the paper.</td></tr>
+            <tr><td>No released code or model</td><td>The paper does not state a public release. Reproduction depends on re implementing the SID pipeline, the merger, and the reward model.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="takeaways-practical">11. What a practitioner can take from it</h2>
+        <ul>
+          <li><strong>Supervise sets, not single items, when a context has several valid outputs.</strong> Page wise targets reduced ambiguity and gave a 21% lift in HR@10 over point wise training.</li>
+          <li><strong>Compress only where it is safe.</strong> Prefill compression halved the prompt with no measurable loss, because the output side and the training target stayed unchanged.</li>
+          <li><strong>Gate the reward, always.</strong> Without the relevance gate, RL optimizes a proxy that the model learns to game. Validity checks belong inside the reward.</li>
+          <li><strong>Keep a likelihood anchor during RL.</strong> The NLL term stops the policy drifting away from real behavior while it chases the reward.</li>
+          <li><strong>Measure hallucination separately.</strong> In generative retrieval, a generated ID that maps to no real item is a distinct failure from a wrong but valid item, and it needs its own metric.</li>
+          <li><strong>Judge scale by the curve, not the headline.</strong> The step from 1.5B to 3B mattered. The step from 3B to 7B did not.</li>
+        </ul>
+
+        <h2 id="glossary">12. Glossary</h2>
+        <table class="papers">
+          <thead><tr><th>Term</th><th>Meaning here</th></tr></thead>
+          <tbody>
+            <tr><td>Generative retrieval</td><td>Producing item identifiers directly with a language model, instead of scoring a fixed candidate list.</td></tr>
+            <tr><td>Semantic ID (SID)</td><td>A short, hierarchical token sequence that represents an item, built by clustering its embedding.</td></tr>
+            <tr><td>RQ K means</td><td>Residual quantization: cluster a vector, then cluster the leftover residual, repeatedly, to get coarse to fine codes.</td></tr>
+            <tr><td>HR@K, hit rate</td><td>The fraction of test cases where the true item appears in the top K generated results.</td></tr>
+            <tr><td>NDCG, N@K</td><td>A ranking metric that rewards placing relevant items higher in the list.</td></tr>
+            <tr><td>GRPO</td><td>Group Relative Policy Optimization: a policy gradient method that uses the average reward of a sampled group as the baseline.</td></tr>
+            <tr><td>Reward hacking</td><td>When a policy improves its reward score without improving the real objective, often by exploiting flaws in the reward model.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="faq">FAQ</h2>
+        <details class="faq"><summary>Does GenRec replace the whole recommendation stack?</summary><p>The paper presents it as a single generative model for the homepage feed, which collapses retrieval and ranking into one generation step. Whether a production system should fully remove the old stack is a separate engineering decision that the paper does not settle.</p></details>
+        <details class="faq"><summary>Why three tokens per item?</summary><p>Three levels of residual quantization give a hierarchical identity: the first token captures a coarse cluster, the next two refine it. The paper uses three levels, and that choice is what makes the token merger's 2x compression relevant.</p></details>
+        <details class="faq"><summary>Is the RL step worth its cost?</summary><p>The paper's A/B result says it adds about one point of clicks and 1.4 points of transactions over supervised training, and it cuts hallucinations by 46% relative to the base model. Whether that is worth the extra training pipeline depends on the value of those points on your platform.</p></details>
+        <details class="faq"><summary>Can I reproduce this?</summary><p>Not directly. No code or model release is stated in the paper, and the training data is proprietary JD logs. The ideas are reproducible on public data: semantic IDs from any multimodal embedding, page wise targets from any logged feed, and a GRPO style update with a validity gate. The specific numbers are JD specific.</p></details>
+
+        <h2 id="takeaways">Takeaways</h2>
+        <ul>
+          <li>GenRec is a decoder only generative recommender with three items of tokens per product, deployed on the JD homepage feed.</li>
+          <li>Page wise next token training gives a 21% relative HR@10 gain over point wise training and a 36% cut in hallucination rate.</li>
+          <li>The asymmetric token merger halves prompt length during prefill with a negligible accuracy change, because decoding is left at full resolution.</li>
+          <li>GRPO-SR combines a dense preference reward, a relevance gate and an NLL anchor. The gate is what prevents reward hacking.</li>
+          <li>The one month A/B test reports +9.5% clicks and +8.7% transactions, with bigger gains on long tail items. It is one platform, one feed, one period.</li>
+        </ul>
+
+        <h2 id="refs">References</h2>
+        <ul class="reflist">
+          <li><a href="https://arxiv.org/abs/2604.14878" target="_blank" rel="noopener">GenRec: A Preference-Oriented Generative Framework for Large-Scale Recommendation, arXiv 2604.14878</a> <span>The paper this article is based on. Zou, Qi, Huang, Li, Xu, Gao, Zhao, Yang, Xu and Li.</span></li>
+          <li><a href="https://arxiv.org/html/2604.14878" target="_blank" rel="noopener">HTML version of the paper</a> <span>Method details, equations and full ablation tables.</span></li>
+          <li><span>Related work named in the paper: TIGER and LC-Rec, the point wise generative recommendation baselines the results are compared against.</span></li>
+          <li><span>GRPO, Group Relative Policy Optimization, the policy gradient method GRPO-SR extends.</span></li>
+        </ul>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="../paperjuice.html">&larr; Paper Juice index</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam. written in plaintext, served warm</span>
+    </footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../settings.js?v=17"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "genrec-generative-recommendation-jd-paper-juice",
+    title: "GenRec: Generative Recommendation at JD.com, Explained.",
+    date: "Oct 3, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "recommendation", "generative-retrieval", "reinforcement-learning"],
+    time: 15,
+    words: 2942,
+    excerpt: "Paper Juice breakdown of GenRec (arXiv 2604.14878): a decoder only generative recommender on the JD App. Page wise next token training, an asymmetric prefill token merger, GRPO-SR reinforcement learning with a relevance gate, the ablations and the one month A/B test results.",
+  },
+  {
     slug: "branching-strategies-big-tech-startups-comparison",
     title: "Branching Strategies at Big Tech, MNCs and Startups: What Each One Actually Does.",
     date: "Oct 1, 2026",

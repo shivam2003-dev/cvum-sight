@@ -72,7 +72,7 @@
 
     <article>
       <div class="post-header">
-        <p class="meta">Oct 3, 2026 · paperjuice · 15 min read · 2942 words <span class="difficulty advanced">advanced</span></p>
+        <p class="meta">Oct 3, 2026 · paperjuice · 25 min read · 4946 words <span class="difficulty advanced">advanced</span></p>
         <h1>GenRec: Generative Recommendation at JD.com, Explained.</h1>
         <div class="tag-row">
           <span class="tag fill">paperjuice</span>
@@ -276,7 +276,99 @@
           <li><strong>Judge scale by the curve, not the headline.</strong> The step from 1.5B to 3B mattered. The step from 3B to 7B did not.</li>
         </ul>
 
-        <h2 id="glossary">12. Glossary</h2>
+        <h2 id="walkthrough">12. One request, step by step</h2>
+        <p>Abstract descriptions hide what actually happens when a user opens the app. This section follows one request through the system, using only the components and numbers the paper reports, so you can see where each contribution sits in time.</p>
+        <ol>
+          <li><strong>The user opens the homepage.</strong> The serving system gathers the user's recent behavior: items viewed, clicked, and ordered. Each item in that history is already stored as its three token Semantic ID, so no image or text model runs at request time.</li>
+          <li><strong>The prompt is assembled.</strong> The history is laid out as a sequence of item triples, with separator tokens between items. For a history of 100 items, that is roughly 300 item tokens before separators.</li>
+          <li><strong>Prefill with the token merger.</strong> The asymmetric merger combines each item's three embeddings into one vector through a linear layer, halving the prompt length the decoder must process. Separator tokens pass through unchanged so item boundaries stay visible.</li>
+          <li><strong>Decoding at full resolution.</strong> The decoder now generates output items. Each output item is written as three full resolution tokens, exactly as during training. The merger has no effect on this step, which is why the training target and the served output stay the same.</li>
+          <li><strong>Beam search.</strong> The paper uses point wise beam search, generating a beam of candidate items per query. Candidates that are not valid combinations of semantic ID tokens are the ones the relevance gate was trained to avoid producing in the first place.</li>
+          <li><strong>The page is returned.</strong> The candidate items form the feed. Impressions and interactions are logged, and those logs become the next day's training data, which closes the loop the reward model and the A/B test measure.</li>
+        </ol>
+        <p>Two properties of this flow matter for anyone trying to adapt it. First, the expensive parts that depend on the item catalog, the multimodal encoder and the quantizer, run offline when items are added. Second, the online cost is dominated by prefill and decoding of a single decoder. There is no separate candidate retrieval index to keep fresh, which is one of the operational arguments for the generative design. The paper does not measure serving cost against the previous pipeline, so that argument should be read as a design rationale, not a benchmarked result.</p>
+
+        <h2 id="comparison">13. How GenRec differs from the baselines it names</h2>
+        <p>The paper compares against two generative baselines, TIGER and LC-Rec, and the differences between them are the clearest way to see what GenRec changes.</p>
+        <table class="papers">
+          <thead><tr><th>Aspect</th><th>TIGER</th><th>LC-Rec</th><th>GenRec</th></tr></thead>
+          <tbody>
+            <tr><td>Training target</td><td>Single next item, point wise</td><td>Single next item, point wise, with language alignment</td><td>Whole page of ordered, clicked and exposed items</td></tr>
+            <tr><td>Input length handling</td><td>Full token sequence</td><td>Full token sequence</td><td>Prefill merger, about 2x shorter</td></tr>
+            <tr><td>Post training alignment</td><td>None reported</td><td>None reported</td><td>GRPO-SR with dense reward, gate and NLL anchor</td></tr>
+            <tr><td>HR@10 (paper's table)</td><td>0.1660</td><td>0.3669</td><td>0.4456</td></tr>
+            <tr><td>Hallucination rate (paper's table)</td><td>15.46%</td><td>7.80%</td><td>4.96%</td></tr>
+          </tbody>
+        </table>
+        <p>Reading the table carefully: TIGER and LC-Rec differ from GenRec in more than one way at once. The gap between LC-Rec and GenRec is therefore not attributable to a single change. The paper's ablations are what separate the effects, and they are discussed in the next section. The honest summary is that the page wise objective is the component with a direct ablation in the paper that shows it working against a point wise baseline, while the RL component has its own ablation on top of the supervised model.</p>
+
+        <h2 id="ablations">14. Reading the ablations table by table</h2>
+        <h3 id="abl-merger">14.1 The token merger</h3>
+        <p>The merger ablation removes the merge step and compares the two directly. HR@10 is 0.4456 with the merger and 0.4467 without, while N@10 moves from 0.2635 to 0.2653 without it. Both differences are very small. The sensible reading is that, in this setting, the merged prefill representation carries essentially the same information as the full three token representation, at half the input length. The paper's claim of negligible accuracy loss is supported by this table.</p>
+        <p>One caution. The ablation is run on the offline test set. Whether the same is true under the distribution shift of a live feed, where the catalog and user mix change over time, is not tested in the paper.</p>
+
+        <h3 id="abl-scale">14.2 Scaling</h3>
+        <table class="papers">
+          <thead><tr><th>Size</th><th>HR@1</th><th>HR@10</th><th>N@10</th><th>HR@50</th><th>Hallucination rate</th></tr></thead>
+          <tbody>
+            <tr><td>1.5B</td><td>0.1077</td><td>0.4103</td><td>0.2484</td><td>0.6527</td><td>5.34%</td></tr>
+            <tr><td>3B</td><td>0.1189</td><td>0.4456</td><td>0.2635</td><td>0.7192</td><td>4.96%</td></tr>
+            <tr><td>7B</td><td>0.1221</td><td>0.4483</td><td>0.2649</td><td>0.7216</td><td>5.42%</td></tr>
+          </tbody>
+        </table>
+        <p>The step from 1.5B to 3B is the one that matters. HR@10 rises by about 8.6% relative, and hallucination falls slightly. The step from 3B to 7B adds 0.6% relative HR@10 and actually raises hallucination from 4.96% to 5.42%. A team choosing a production size would stop at 3B on these numbers, and would spend the compute saved on RL alignment or data instead. The paper's depth over width explanation, that the 3B model is deeper and narrower while the 7B model is shallower and wider, is consistent with the table but is a hypothesis the authors support with this one comparison, not a controlled study of depth versus width.</p>
+
+        <h3 id="abl-rl">14.3 Reinforcement learning</h3>
+        <p>The RL table is the most informative in the paper because it isolates each design choice. Moving from base SFT to plain GRPO raises HR@50 from 0.7192 to 0.7248 and R@1 from 0.1027 to 0.1177, but raises hallucination from 4.96% to 6.03%. Adding the gate and the NLL anchor, the full GRPO-SR, raises HR@50 to 0.7438 and R@1 to 0.1212 while lowering hallucination to 2.68%. Removing only the gate from GRPO-SR drops HR@50 back to 0.7016 and gives a hallucination rate of 1.96%.</p>
+        <p>The last row needs careful interpretation. A lower hallucination rate is not automatically better. The gate-free model emits fewer invalid identifiers, but it also loses 5.7% of its HR@50 relative to the full model. The authors read the combination as reward hacking suppressed by the gate: without the gate the policy finds a region of outputs that the preference model scores well, while the real target, the items users interact with, is not improved as much. A useful practical rule follows. When a metric improves only in one direction and another metric falls, check whether a constraint in the objective is being traded away.</p>
+        <table class="papers">
+          <thead><tr><th>Step from base SFT</th><th>Change in HR@50</th><th>Change in R@1</th><th>Change in hallucination</th></tr></thead>
+          <tbody>
+            <tr><td>Plain GRPO</td><td>+0.8% relative</td><td>+14.6% relative</td><td>+1.07 points, worse</td></tr>
+            <tr><td>GRPO-SR (full)</td><td>+3.4% relative</td><td>+18.0% relative</td><td>-2.28 points, better</td></tr>
+            <tr><td>GRPO-SR without gate</td><td>-2.4% relative</td><td>+3.9% relative</td><td>-3.00 points, better</td></tr>
+          </tbody>
+        </table>
+        <p>These percentages are computed directly from the paper's Table 3 values, not reported by the paper in this form, so they are a presentation of the paper's numbers rather than a new result.</p>
+
+        <h3 id="abl-ntp">14.4 Page wise training against point wise</h3>
+        <p>Page wise training improves HR@10 by 21% relative over the point wise LC-Rec baseline and cuts hallucination by 36% relative. The paper attributes the gain to denser gradient signal, since one page contributes many correct tokens rather than one, and to removing the ambiguity of one input having several valid labels. The authors also state that page wise training reduces hallucination by over 50% compared with vanilla next token prediction, a comparison whose exact baseline is described in less detail than the LC-Rec comparison, so readers should treat that specific figure with the same caution as the rest of the offline numbers.</p>
+
+        <h2 id="failure">15. Failure modes worth designing for</h2>
+        <p>Generative recommenders fail in ways that retrieval pipelines do not, and the paper's own measurements point at several of them. A team adapting this approach should plan for each one before deployment.</p>
+        <table class="papers">
+          <thead><tr><th>Failure mode</th><th>Why it happens here</th><th>What to monitor or build</th></tr></thead>
+          <tbody>
+            <tr><td>Invalid item identifiers</td><td>The decoder can generate a token combination that maps to no real item. The paper tracks this as hallucination rate, which ranges from 2.68% to 6.03% across its variants.</td><td>Track the hallucination rate per deployment. Enforce validity with a gate in training and a constrained decoder or fallback at serving time.</td></tr>
+            <tr><td>Reward hacking</td><td>A learned preference model can be exploited by outputs that score well but do not match real interactions. The gate ablation shows a 5.7% HR@50 drop when the gate is removed.</td><td>Keep a likelihood anchor on real positives and monitor the gap between reward and held out interaction metrics.</td></tr>
+            <tr><td>Popularity concentration</td><td>A model trained on history favors frequent items. The paper reports long tail gains from RL, which suggests the baseline does concentrate exposure.</td><td>Track exposure share of long tail items and set a floor if the business needs variety.</td></tr>
+            <tr><td>Staleness of semantic IDs</td><td>Item embeddings and the quantizer are fitted on a snapshot. New items or shifting content can drift away from the learned codebook.</td><td>Refit or extend the codebook on a schedule and test how many new items fall into poorly populated clusters.</td></tr>
+            <tr><td>Distribution shift in the test</td><td>The offline test uses the last day of logs. A month long A/B test is the stronger signal, and the paper's offline numbers may not predict live results exactly.</td><td>Use a live experiment as the decision point, and keep an offline metric as an early filter only.</td></tr>
+          </tbody>
+        </table>
+        <div class="bm-warn"><strong>Note on the offline metrics:</strong> HR and N metrics are computed on the held out day of logs. They measure agreement with recorded behavior, which is a proxy. The one month online test is the outcome the paper actually reports as a business result, and that is where the decision should be anchored.</div>
+
+        <h2 id="repro">16. What it would take to reproduce the core idea</h2>
+        <p>The paper gives enough detail to reconstruct the design, though not enough to reproduce the numbers. A reasonable reproduction on public data would proceed in stages, each with its own check.</p>
+        <ol>
+          <li><strong>Choose a public interaction dataset with page structure.</strong> The method needs logs where items were shown together, not only isolated click pairs. Several public recommendation datasets record impressions, which is the closest substitute.</li>
+          <li><strong>Build semantic IDs.</strong> Embed items with any available multimodal encoder, refine with collaborative pairs, then apply residual quantization to get three levels per item. Check that the codebook uses its clusters: a codebook where most items fall into a few clusters defeats the purpose.</li>
+          <li><strong>Train the supervised baseline first.</strong> Use a small decoder, compare page wise targets against point wise targets, and reproduce the direction of the HR@10 gap before attempting anything more elaborate.</li>
+          <li><strong>Add the merger and measure the cost.</strong> Halve the prefill input and confirm the accuracy change is within noise on your data. If it is not, the claim does not transfer to your setting.</li>
+          <li><strong>Add GRPO-SR last.</strong> Implement the dense reward, the gate, and the NLL anchor as separate switches so each ablation is one flip away. Watch hallucination and the held out metric together, not one at a time.</li>
+        </ol>
+        <p>Expect the absolute numbers to differ. The paper's values come from JD's catalog, JD's logs, and JD's preference model. The reproduction is successful if it reproduces the direction of each effect: page wise beats point wise, the merger is roughly neutral, and the gate matters for hallucination and reward hacking.</p>
+
+        <h2 id="open">17. Open questions the paper leaves</h2>
+        <ul>
+          <li><strong>Does the reasoning gap matter?</strong> The authors plan to study reasoning ability in future work. A model that predicts engagement without explaining it may be fine for a feed, but it limits use cases such as conversational recommendation or justifying a choice to a user.</li>
+          <li><strong>How well does the merger scale with history length?</strong> The 2x compression is reported for the setting used. The paper does not show a sweep over history length, so the compression benefit at very long histories is unknown.</li>
+          <li><strong>How sensitive is the gate threshold?</strong> The gate uses a threshold \(\tau\) on the validity score. The paper does not report a sweep over \(\tau\), so the stability of the gate under threshold changes is an open question.</li>
+          <li><strong>Does the gain persist?</strong> A one month A/B test is a strong result, but it does not show whether the gain holds over quarters, as users and catalog change.</li>
+          <li><strong>What happens on other platforms?</strong> The paper's evidence comes from a single large e-commerce platform. Catalogs with different structure, such as news, video, or small inventories, would stress the semantic ID design differently.</li>
+        </ul>
+
+        <h2 id="glossary">18. Glossary</h2>
         <table class="papers">
           <thead><tr><th>Term</th><th>Meaning here</th></tr></thead>
           <tbody>

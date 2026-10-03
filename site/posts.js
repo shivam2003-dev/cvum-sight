@@ -21,8 +21,8 @@ const POSTS = [
     date: "Oct 3, 2026",
     cat: "paperjuice",
     tags: ["paperjuice", "recommendation", "generative-retrieval", "reinforcement-learning"],
-    time: 15,
-    words: 2942,
+    time: 25,
+    words: 4946,
     excerpt: "Paper Juice breakdown of GenRec (arXiv 2604.14878): a decoder only generative recommender on the JD App. Page wise next token training, an asymmetric prefill token merger, GRPO-SR reinforcement learning with a relevance gate, the ablations and the one month A/B test results.",
   },
   {
@@ -31,8 +31,8 @@ const POSTS = [
     date: "Oct 1, 2026",
     cat: "devops",
     tags: ["devops", "git", "ci-cd", "engineering-culture"],
-    time: 19,
-    words: 3894,
+    time: 22,
+    words: 4415,
     excerpt: "How Google, Meta, Amazon, Microsoft, Shopify, GitLab and the Linux kernel actually branch their code. Trunk based development, GitHub Flow, GitFlow, GitLab Flow and Release Flow compared with real numbers, pros, cons, common mistakes and a decision table.",
   },
   {
@@ -41,8 +41,8 @@ const POSTS = [
     date: "Sep 30, 2026",
     cat: "ml",
     tags: ["ml", "inference", "structured-output", "decoding"],
-    time: 18,
-    words: 3658,
+    time: 22,
+    words: 4466,
     excerpt: "Technical reference for Parallel Constrained Decoding: the six stage algorithm, complexity versus autoregressive, speculative decoding and grammar constrained decoding, schema and API spec, a worked example, build-it-yourself guide, benchmarks, limits and a glossary.",
   },
   {
@@ -51,8 +51,8 @@ const POSTS = [
     date: "Sep 30, 2026",
     cat: "ml",
     tags: ["ml", "inference", "structured-output", "open-source"],
-    time: 16,
-    words: 3271,
+    time: 21,
+    words: 4198,
     excerpt: "TypeSafe never published how Jev works. Three independent sources explain the same mechanism: Niels Rogge's decode trace, Harsha Gundala's open Qwen2.5-1B-RLCD, and Bespoke Labs' Nimble, benchmarked against Jev 1.13.0, traced back to MiniCheck with a full timeline.",
   },
   /* AI WEEKLY START (newest first) */
@@ -62,8 +62,8 @@ const POSTS = [
     date: "Sep 28, 2026",
     cat: "paperjuice",
     tags: ["paperjuice", "agents", "llm-judges", "weekly-roundup"],
-    time: 11,
-    words: 2160,
+    time: 20,
+    words: 4001,
     excerpt: "Issue 1: HySparse2, SIFT, GAVEL, WFM, JEV as a Judge, Harness-Zero, self organizing teams, ScientistTwo, XYEval and EvoOntology, each as a short card with problem, method, result and why it matters.",
     series: "ai-weekly",
     seriesNum: "1"
@@ -618,7 +618,7 @@ const POSTS = [
     cat: "ml",
     tags: ["ml", "inference", "reinforcement-learning", "mlops", "structured-output"],
     time: 28,
-    words: 5603,
+    words: 5530,
     excerpt: "TypeSafe AI's Jev ditches free-text generation for typed, calibrated, parallel-sampled outputs trained with a new objective called RLCD. A technical read of the architecture, how RLCD differs from RLHF/RLVR, the workflow-evals numbers (Jev beats LLMs on cost/latency but not on accuracy), the open-source adapter that makes the comparison reproducible, and where the '0% hallucination' claim needs an asterisk. Updated Sep 24: GA docs and a vendor-authored failure-mode list. Updated Sep 30: the community reverse-engineers the architecture (Niels Rogge, Harsha Gundala's open Qwen2.5-1B-RLCD, Bespoke Labs' Nimble)."
   },
   /* PQC COURSE START */

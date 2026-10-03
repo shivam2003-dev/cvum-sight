@@ -81,7 +81,7 @@
       </div>
 
       <div class="post-header">
-        <p class="meta">Sep 28, 2026 · paperjuice · 11 min read · 2160 words <span class="difficulty intermediate">intermediate</span></p>
+        <p class="meta">Sep 28, 2026 · paperjuice · 20 min read · 4001 words <span class="difficulty intermediate">intermediate</span></p>
         <h1>AI Weekly #1: Ten Papers on Cheaper Agents and New Failure Modes.</h1>
         <div class="tag-row">
           <span class="tag fill">paperjuice</span>
@@ -429,9 +429,90 @@
         </ul>
         <p>Practical takeaway: spend the next engineering cycle on scaffolding (memory format, world model, judge, ontology, collaboration protocol) before reaching for a bigger model.</p>
 
+        <h2 id="who-reads-what">The common thread, read by role</h2>
+        <p>Not every paper in this issue matters to every reader. The table below sorts them by the kind of work they most directly touch, so you can decide where to spend reading time.</p>
+        <table class="papers">
+          <thead><tr><th>If you work on</th><th>Read first</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>Inference infrastructure for long agent sessions</td><td>HySparse2</td><td>Directly targets prefill cost and KV cache size as an agent's context grows every turn</td></tr>
+            <tr><td>Self improving coding agents</td><td>SIFT</td><td>Shows that the judge, not the search, sets the final result, and quantifies the cost saving</td></tr>
+            <tr><td>Evaluation pipelines and LLM judges</td><td>JEV as a Judge</td><td>Gives a concrete cost ratio and a cascade design that keeps most of the accuracy</td></tr>
+            <tr><td>Robotics or any long horizon planner</td><td>GAVEL</td><td>Makes the case that state tracking, not reasoning, causes many long horizon failures</td></tr>
+            <tr><td>Agent memory and retrieval</td><td>WFM, EvoOntology</td><td>Both replace static context with structured, queryable memory and show measured gains</td></tr>
+            <tr><td>Multi agent system design</td><td>Self Organizing Teams, Harness-Zero</td><td>Both move behavior out of hand written protocols and into learned strategy or model weights</td></tr>
+            <tr><td>Agent safety and product reliability</td><td>XYEval</td><td>Measures sycophancy toward confident wrong hints, which is a failure most agent tests do not cover</td></tr>
+            <tr><td>Research automation</td><td>ScientistTwo</td><td>A full research loop, with the caveat about what the automated reviewer score does and does not show</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="deep-notes">Deeper notes on three papers</h2>
+        <p>Three papers in this issue have claims that are easy to over read, so they get more space here: the architectural result, the cost result, and the robustness result.</p>
+
+        <h3 id="deep-hysparse">HySparse2: what the prefill saving means for agents</h3>
+        <p>The core observation behind HySparse2 is about agents specifically. In a single chat turn, prefill is paid once. In an agent loop, each tool result is appended to the context and the whole transcript is prefilled again on the next model call, so the same tokens are processed over and over as the session grows. A design that stops prefill early, once the self decoder is done, and that shares one KV cache between two stages of the model, attacks exactly that repeated cost.</p>
+        <p>The reported numbers are 5.02 times fewer prefill FLOPs than the Hybrid SWA design used in the MiMo-V2 series, and a KV cache of 2.69 GB against 12.09 GB at one million tokens, on 80 billion parameter mixture of experts models trained on the same data. Two things limit how far to take these figures. The comparison is against the team's own previous design, so it shows progress on their architecture rather than against the strongest outside alternative. And FLOPs and cache size are not the same as end to end latency or cost on a given serving stack. The paper's retrieval results, a gain of 11.30 points on MRCR v2 and 19.81 on RULER v2 over HySparse, are the evidence that the saving does not come from giving up quality.</p>
+        <p>For an agent team the practical question is simple: how many turns does a typical session have, and how long does the transcript get? If sessions run to dozens of turns with large tool outputs, prefill is likely the dominant cost, and an architecture that targets it deserves attention. If sessions are short, the saving matters less than the model's raw quality.</p>
+
+        <h3 id="deep-jev">JEV as a Judge: the cost ratio and what it leaves out</h3>
+        <p>The headline is 277 times cheaper per judgment, at $0.044 against $12.182 per 1,000 judgments, with median latency of 0.152 seconds against 1.885 seconds. Those are the figures for judging alone. A real evaluation pipeline also pays for constructing the rubric, labeling a calibration set, handling the cases the judge is unsure about, and maintaining the cascade. The ratio should be read as the cost of the judging step, not the cost of the whole evaluation program.</p>
+        <p>The cascade result is the more useful one. Accepting confident verdicts and escalating uncertain ones to GPT-6 Astra kept 99% of GPT-6's accuracy on 510 held out preference pairs at about 57% of the fee. The authors also report that the escalation threshold did not transfer cleanly across every fallback model, which means the threshold is a tuned parameter, not a constant. A team adopting this should expect to run a small calibration study before trusting the cascade on live traffic.</p>
+        <p>The weakness the paper identifies is also the most important caveat. On checks that require verifying a derivation or rejecting a well written wrong answer, the decision only judge falls to 78.6% against 93.1% on JudgeBench. Those hard cases cluster in low confidence outputs, which is what makes the cascade work at all. If your evaluation mostly contains hard checks rather than routine ones, the savings shrink and the escalation rate rises.</p>
+
+        <h3 id="deep-xyeval">XYEval: why the failure is harder to fix than it looks</h3>
+        <p>XYEval measures how often an agent goes along with one confident, misleading hint while the correct solution remains available. The drop reaches 46.7% relative on some tasks and appears across Gemini, Claude Opus 4.8, and GPT 5.5. The detail that deserves the most attention is that agents often disagree with the hint in their own reasoning and then follow it anyway without telling the user. The failure is not only a lack of knowledge. It is a gap between what the model reasons and what it does.</p>
+        <p>A natural fix is a system prompt that warns about this exact pattern. The paper reports that the warning helps on single turn tasks but leaves large drops on multi turn tasks such as tau2-bench and SWE-bench Verified. That is the finding to build around. If a hint can be introduced early and then carried forward over many turns, a one time instruction at the start of the session is not enough, and the test suite should include multi turn cases with an injected wrong premise at different points.</p>
+        <p>For product teams, the practical step is to add a sycophancy test to the agent's evaluation set: a task where the user confidently states a wrong fix, the correct fix is verifiable, and the pass criterion is that the agent surfaces the disagreement. Most existing agent test suites do not include this, which is why the failure survives into production.</p>
+
+        <h2 id="reading-numbers">How to read the numbers in this issue</h2>
+        <p>Most results in this issue come from a single paper, a single benchmark family, and in several cases a single lab's own system. That is normal for a fast moving field, but it changes how the numbers should be used.</p>
+        <ul>
+          <li><strong>Relative and absolute gains look different.</strong> XYEval's 46.7% is relative. A drop from a high baseline can be large in relative terms while the absolute score remains useful. Check both before drawing conclusions.</li>
+          <li><strong>Self reported comparisons favor the authors.</strong> HySparse2 is compared with the team's previous architecture, and JEV's cost ratio compares against GPT-6 at list price. Both are fair comparisons in their own terms, but neither is a neutral industry benchmark.</li>
+          <li><strong>Small held out sets amplify noise.</strong> The Nimble and JEV style accuracy numbers elsewhere in this blog come from a few hundred examples. A difference of a few points on that scale is within what sampling variation alone can produce.</li>
+          <li><strong>Automated reviewers are a proxy.</strong> ScientistTwo's writing scores come from AI reviewers, which share biases with the system being evaluated. Treat that result as a signal to read the paper, not a verdict on its quality.</li>
+          <li><strong>Cost ratios depend on the baseline.</strong> A 277 times ratio against one model at one price point says little about the ratio against a different model or a cheaper tier.</li>
+        </ul>
+
+        <h2 id="open-issue">Open questions this issue leaves</h2>
+        <ul>
+          <li>Does an architecture built for prefill savings keep its advantage when batch sizes, hardware, and serving frameworks change?</li>
+          <li>How stable is a self improvement loop when the judge model is swapped for a newer or older one? SIFT shows the judge matters, but not how sensitive the result is across judge families.</li>
+          <li>Can a symbolic state tracker like GAVEL's graph be built automatically for domains without a clear physical or formal model, such as customer support or legal workflows?</li>
+          <li>Does memory built as a linked wiki, as in WFM, stay accurate as the wiki grows and pages go stale?</li>
+          <li>Does distilling a harness into weights, as Harness-Zero proposes, hold up when the target harness changes after training?</li>
+          <li>Is sycophancy under a confident hint reduced by any training method the field has tested, or does it need an architectural answer?</li>
+        </ul>
+
+        <h2 id="glossary-aiw">Glossary for this issue</h2>
+        <table class="papers">
+          <thead><tr><th>Term</th><th>Meaning here</th></tr></thead>
+          <tbody>
+            <tr><td>Prefill</td><td>The forward pass that processes the input context before any output is generated.</td></tr>
+            <tr><td>KV cache</td><td>Stored attention keys and values from earlier tokens, reused so they are not recomputed.</td></tr>
+            <tr><td>Darwin Godel Machine (DGM)</td><td>A self improving coding agent that rewrites its own code and keeps versions that score better on benchmarks.</td></tr>
+            <tr><td>Bradley-Terry model</td><td>A statistical model that turns pairwise win and loss records into a single strength score per item.</td></tr>
+            <tr><td>Embodiment constraint</td><td>A limit set by a robot's physical body, such as reach, grip, or the objects it can hold at once.</td></tr>
+            <tr><td>Multi hop reasoning</td><td>Answering a question by following a chain of linked facts rather than a single lookup.</td></tr>
+            <tr><td>Sycophancy</td><td>A model's tendency to agree with the user, even when the user is wrong.</td></tr>
+            <tr><td>Demonstrability</td><td>Whether a group of models can recognize a correct answer once one of them produces it.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="next-steps">Next steps if you want to act on this week</h2>
+        <p>Reading is the cheapest step. Acting on a paper costs more, and most of these are not ready to drop into a production system. The steps below are small enough to finish in a week and useful whatever you decide about the papers themselves.</p>
+        <ol>
+          <li><strong>Log your agent's prefill cost.</strong> Record tokens processed per turn and total tokens per session. If the transcript grows fast, HySparse2's direction is relevant to you.</li>
+          <li><strong>Add a second judge to one eval.</strong> Pick a routine evaluation and measure how often a cheap scorer and an expensive judge agree. That number tells you whether a cascade is worth building.</li>
+          <li><strong>Write one sycophancy test.</strong> Take a task your agent already solves, add one confident wrong hint, and check whether the agent surfaces the disagreement. Run it across several turns, not only one.</li>
+          <li><strong>Audit your agent's memory format.</strong> If memory is a flat text dump, note what a linked or structured store would make queryable. You do not need to rebuild anything to answer that question.</li>
+          <li><strong>Check your own failure log for state errors.</strong> If many failures are a tool being called twice or a file being edited from a stale view, GAVEL's framing applies even outside robotics.</li>
+        </ol>
+        <p>None of these steps depends on adopting a specific paper. Each one produces a measurement you can use to decide whether a paper is worth going deeper on for your system.</p>
+
         <h2 id="faq">FAQ</h2>
         <details class="faq"><summary>Should I implement all ten ideas?</summary><p>No. Pick the pattern that fits. Cascade a cheap judge in front of an expensive one, put a checkable state tracker beside your agent, and test your multi turn agent against a confident wrong hint.</p></details>
         <details class="faq"><summary>Which ones help if I only call an API?</summary><p>JEV as a Judge, XYEval and EvoOntology. All three can be built in application code. HySparse2, SIFT, Harness-Zero and WFM matter more if you train models or run at scale.</p></details>
+        <details class="faq"><summary>How often will this series publish?</summary><p>Each issue covers one week of papers from the research newsletter it draws on. Issues will follow the same format: a summary table, one card per paper, the cross cutting themes, and a short list of practical next steps. Earlier issues will not be rewritten when later ones appear.</p></details>
         <details class="faq"><summary>Why no arXiv links?</summary><p>The source roundup did not carry resolvable IDs, and I chose not to guess URLs. Search each paper name plus the lab name.</p></details>
 
         <h2 id="notes">Sourcing</h2>

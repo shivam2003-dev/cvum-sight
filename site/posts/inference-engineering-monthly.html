@@ -302,117 +302,83 @@
           </div>
         </details>
 
-        <details class="month" id="2026-07">
-          <summary>July 2026 <span class="m-sub">the legacy attention path is deleted, DSpark confidence-driven drafting, a runner default for dense models, agents inside the CLI</span></summary>
+                <details class="month" id="2026-07">
+          <summary>July 2026 <span class="m-sub">the old attention path is deleted, speculation learns to size its own window, and agents move into the command line</span></summary>
           <div class="month-body">
 
-            <p class="bm-tldr"><mark class="hl hl-1"><strong>Summary:</strong> July was the month the stack removed its old paths and made its new ones the default.</mark></p>
+            <p class="bm-tldr"><mark class="hl hl-1"><strong>Summary:</strong> July was the month the engines started deleting their old paths. vLLM v0.25.0 made Model Runner V2 the default for all dense models and removed the legacy PagedAttention implementation, while SGLang v0.5.16 added DSpark, a speculative method that sizes its verification window from the draft's own confidence.</mark><a class="src" href="https://github.com/vllm-project/vllm/releases" target="_blank" rel="noopener">source ↗</a></p>
 
-            <h2 id="jul-why">Deleting code as a feature</h2>
-            <p><mark class="hl hl-3">Most of the features in this series were additions.</mark> A new <span class="term" tabindex="0" data-key="kernel" data-def="A small program that runs on the GPU, such as one matrix multiply or one attention step.">kernel</span>, a new cache policy, a new routing method.</p>
-            <p>Deleting a path is expensive to do well. The old implementation has users, edge cases, and tests that depend on its behavior.</p>
-            <p>For operators, the lesson of a deletion is to read the removal notice as a forced migration.</p>
-            <p>July also shows that the engines have started to converge on a common set of paths.</p>
+            <h2 id="jul-story">The month the old road was closed</h2>
+            <p><mark class="hl hl-2">Every long-running project has a road that everybody still uses, even though a newer road was built beside it.</mark> Keeping both open is expensive. Each change to the shared code must be checked against the old road as well as the new one. In July, vLLM closed the old road. Its v0.25.0 release, on July 11, made Model Runner V2 the default for all dense models and removed the legacy <span class="term" tabindex="0" data-key="PagedAttention" data-def="Storing the <span class="term" tabindex="0" data-key="KV cache" data-def="The stored keys and values for past tokens, kept so <span class="term" tabindex="0" data-key="decode" data-def="The step-by-step generation of output tokens. Each step reads the cache and adds one entry, so decode is limited by memory bandwidth.">decode</span> does not recompute attention over the whole history.">KV cache</span> in fixed-size blocks, like virtual memory pages, so requests share memory without waste.">PagedAttention</span> implementation, because the newer backends are now the standard path.</p>
+            <p>That sentence can alarm a reader who remembers PagedAttention as the heart of vLLM. It is worth being precise. The idea of managing the cache in fixed blocks lives on in the newer backends. What was deleted is one particular implementation of that idea. A project can only delete code after the replacement has earned its place through months of testing on common setups. The removal is therefore a sign of confidence, and it is also a deadline for anyone whose configuration depended on the old code.</p>
+            <p>The same release made the Transformers modeling backend as fast as native vLLM, and added FP8 <span class="term" tabindex="0" data-key="mixture-of-experts" data-def="A model where each token is routed to a few expert sub-networks, so only part of the model runs per token.">mixture-of-experts</span> support to it. A team can now run a new architecture through the Transformers code and get close to native speed. The native path may still carry model-specific tuning, so compare on the models you actually run.</p>
 
-            <h2 id="jul-vllm">Model Runner V2 as the default</h2>
-            <p><mark class="hl hl-3">vLLM v0.25.0 on July 11 brought 558 commits from 232 contributors.</mark><a class="src" href="https://github.com/vllm-project/vllm/releases" target="_blank" rel="noopener">source ↗</a></p>
-            <p>The same release made the Transformers modeling backend as fast as native vLLM, and added FP8 <span class="term" tabindex="0" data-key="mixture-of-experts" data-def="A model where each token is routed to a few expert sub-networks, so only part of the model runs per token.">mixture-of-experts</span> support to it, along with migrations for several older model families.</p>
-            <p>vLLM v0.25.1 on July 14 was a two-commit patch that stopped a missing system FFmpeg from blocking model startup when torchcodec was installed.</p>
-            <p>vLLM v0.26.0 on July 27 brought 411 commits from 212 contributors.</p>
+            <h2 id="jul-dspark">Sizing the window by confidence</h2>
+            <p><mark class="hl hl-3">Think of speculation as sending a scout ahead to guess the next few steps on a trail.</mark> In the fixed-length method, the scout always goes the same distance, whether the trail is clear or not. If the scout is unsure, the distance wastes effort. If the scout is confident and the distance is short, the group walks slower than it could.</p>
+            <p>SGLang v0.5.16, released July 25, introduced DSpark, which it describes as confidence-driven <span class="term" tabindex="0" data-key="speculative decoding" data-def="A cheaper proposer guesses several tokens ahead, and the large model checks them all in one parallel pass.">speculative decoding</span>. The draft is produced in blocks, and each verification window is sized from the draft's own confidence. A confident scout gets a longer leash, and an uncertain one comes back sooner. The reported result is 383.7 tokens per second at an average accept length of about five, on DeepSeek V4 Pro with <span class="term" tabindex="0" data-key="tensor parallel" data-def="Splitting each layer&#x27;s matrix math across GPUs, so one layer runs on several devices at once.">tensor parallel</span> 8 on B300 hardware at batch size one.</p>
+            <p>Batch size one is the best case for speculation, because there is no crowd to share the work with. Treat the number as proof that the mechanism works, and then test it at the batch sizes you actually run. A miscalibrated confidence signal can be worse than a fixed length, because it can send the scout too far when the trail is bad. The hard engineering problem is making that signal cheap and well calibrated.</p>
+            <p>SGLang v0.5.15, on July 10, had made Spec V2 the default, with zero-overhead scheduling through graph-friendly draft extension and fewer synchronizations between device and host. The same release described GLM-5.2 NVFP4 serving on Blackwell at over 500 tokens per second per user on eight B300 GPUs at batch size one. A post-release on July 14 fixed NaN outputs from a FlashInfer FP4 <span class="term" tabindex="0" data-key="kernel" data-def="A small program that runs on the GPU, such as one matrix multiply or one attention step.">kernel</span> on long inputs, which is the kind of correctness fix that matters more than any headline <span class="term" tabindex="0" data-key="throughput" data-def="How many tokens or requests a system finishes per second. It is measured at a stated <span class="term" tabindex="0" data-key="latency" data-def="How long one request takes from start to finish, or how long each step takes.">latency</span>, or it means little.">throughput</span>.</p>
 
-            <h2 id="jul-dspark">DSpark: sizing the verify window by confidence</h2>
-            <p><mark class="hl hl-3">SGLang v0.5.16 on July 25 introduced DSpark, which the notes describe as confidence-driven speculative decoding.</mark><a class="src" href="https://github.com/sgl-project/sglang/releases" target="_blank" rel="noopener">source ↗</a></p>
-            <p>DSpark drafts in blocks, semi-autoregressively, and then sizes each verification window from the draft's own confidence.</p>
-            <p>The idea of tying the window to confidence is a general one.</p>
-            <p>The release notes also mention an environment setting that changes how verification is batched in compact mode.</p>
-            <p>SGLang v0.5.15 on July 10 made Spec V2 the default, with zero-overhead scheduling through CUDA-graphable draft extension, removed device-to-host and host-to-device synchronizations, and fused metadata operations.</p>
+            <h2 id="jul-cacheblend">Reusing text that moved</h2>
+            <p><mark class="hl hl-3">Normal prefix caching has a strict rule: a cached block only helps if the request starts with exactly the same prefix.</mark> But a retrieval system often inserts the same document at a different position in each prompt. The document is the same, the offset is different, and the cache misses.</p>
+            <p>LMCache v0.5.2, released July 22, brought CacheBlend under vLLM's hybrid memory manager. CacheBlend reuses cached text computed in another context, corrects its position, and recomputes a small part of the cache to keep the answer right. The subtle part is position. A block cached at one offset carries the wrong position if it is reused at another. The release adds support for the two positional schemes that sliding-window models use. Test reused-context answers against a fresh computation before you trust them, because a positional error does not throw an exception. It just gives a slightly wrong answer.</p>
+            <p>The same release made NIXL an optional install, and it needs vLLM 0.26 or later. Pin the cache library and the engine together, as one unit.</p>
 
-            <h2 id="jul-lmcache">CacheBlend under the hybrid manager</h2>
-            <p><mark class="hl hl-3">LMCache v0.5.2 on July 22 carried an important compatibility requirement.</mark><a class="src" href="https://github.com/LMCache/LMCache/releases" target="_blank" rel="noopener">source ↗</a></p>
-            <p>CacheBlend is a method for reusing cached text that was computed in a different context.</p>
-            <p>Position is the subtle part. A rotary position embedding encodes where a token sits in the sequence, so a block cached at one offset carries the wrong position if it is reused at another.</p>
-            <p>The compatibility line is a practical one. A team running vLLM 0.25 cannot take LMCache 0.5.2 without checking the version pairing.</p>
+            <h2 id="jul-trt">A deprecation with a reason</h2>
+            <p><mark class="hl hl-3">TensorRT-LLM v1.3.0rc21, on July 15, announced that its AutoDeploy backend is being deprecated.</mark><a class="src" href="https://github.com/NVIDIA/TensorRT-LLM/releases" target="_blank" rel="noopener">source ↗</a> The notice gives its reasoning in plain language. The team is working on agent-driven porting to the PyTorch backend, and it cites MiniMax M3 functional support delivered within the first week of that model's release as an early sign. The bet is that porting can become fast enough that a single primary backend covers the need.</p>
+            <p>That reasoning describes a real tension. Teams want new models quickly, and a backend that loads models without hand-written code is valuable for exactly that. Keeping several backends alive has a cost. The project is betting that the cost of porting is falling, and the next few months of notes will show whether that bet holds.</p>
 
-            <h2 id="jul-trt">TensorRT-LLM: the AutoDeploy deprecation</h2>
-            <p><mark class="hl hl-3">TensorRT-LLM v1.3.0rc21 on July 15 included a deprecation notice for its AutoDeploy backend.</mark><a class="src" href="https://github.com/NVIDIA/TensorRT-LLM/releases" target="_blank" rel="noopener">source ↗</a></p>
-            <p>That reasoning is worth thinking about, because it describes a real tension.</p>
-            <p>The rc23 release on July 31 listed a long set of known issues, including hangs on GB300 disaggregated setups for DeepSeek V4 Pro and a multi-GPU crash for DeepSeek R1 with pipeline and <span class="term" tabindex="0" data-key="multi-token prediction" data-def="A model head that predicts several future tokens at once, often used as a built-in draft for speculation.">multi-token prediction</span>.</p>
+            <h2 id="jul-ollama">The command that became an agent</h2>
+            <p><mark class="hl hl-3">Ollama v0.32.0, released July 11, changed the meaning of its simplest command.</mark><a class="src" href="https://github.com/ollama/ollama/releases" target="_blank" rel="noopener">source ↗</a> Running plain <code>ollama</code> now starts an interactive agent that can help with code and delegated tasks, and the example uses a cloud model. The release also renamed the Codex app integration to ChatGPT and simplified how a launch chooses its integration.</p>
+            <p>The change matters because it changes what a local runner is for. An agent sends a stream of requests with a growing context, tool calls, and sometimes web search. That is the traffic profile of an agent workload, which is full of repeated prefixes. A runner's speed now depends on how well it handles that pattern, not just on single prompts. Ollama's v0.32.5 patch on July 27 fixed an MLX bug that reduced output quality for NVFP4 models, a reminder that quality checks belong in local workflows too.</p>
 
-            <h2 id="jul-ollama">Ollama becomes an agent</h2>
-            <p><mark class="hl hl-3">Ollama v0.32.0 on July 11 changed what the command does.</mark><a class="src" href="https://github.com/ollama/ollama/releases" target="_blank" rel="noopener">source ↗</a> Running plain <code>ollama</code> now launches an interactive agent that can help with coding and delegated tasks, using a cloud model by default in the example.</p>
-            <p>For the series, the shift matters because it changes what a local runner is for.</p>
-            <p>v0.31.2 on July 6 had a set of changes that matter to hardware coverage.</p>
-            <p>The v0.32.5 patch on July 27 fixed an MLX Metal bug that could reduce output quality for NVFP4 models, particularly Laguna.</p>
+            <h2 id="jul-lmdeploy">Prefix hits even when speculating</h2>
+            <p><mark class="hl hl-3">LMDeploy v0.15.0, on July 31, supported long-context and multi-token-prediction prefix-cache hits.</mark><a class="src" href="https://github.com/InternLM/lmdeploy/releases" target="_blank" rel="noopener">source ↗</a> Speculation and <span class="term" tabindex="0" data-key="prefix caching" data-def="Reusing the KV cache of a shared prompt prefix across requests, so the prefix is computed once.">prefix caching</span> used to interact badly in some engines, because the draft state muddied what counted as a reusable block. Making the hit work for both means a long shared prefix pays off even when speculation is on.</p>
+            <p>The same release added guided decoding for speculative decoding. Guided decoding forces output into a grammar, such as valid JSON. Combining it with speculation is harder than it sounds, because the grammar has to reject drafted tokens that would be invalid. For structured-output products, the schema validity rate is the number to test, because a broken combination can pass every latency test while producing invalid output.</p>
 
-            <h2 id="jul-lmdeploy">LMDeploy v0.15 and prefix hits with speculation</h2>
-            <p><mark class="hl hl-3">LMDeploy v0.15.0 on July 31 had a feature that connects two earlier themes.</mark><a class="src" href="https://github.com/InternLM/lmdeploy/releases" target="_blank" rel="noopener">source ↗</a></p>
-            <p>The release also added guided decoding support for <span class="term" tabindex="0" data-key="speculative decoding" data-def="A cheaper proposer guesses several tokens ahead, and the large model checks them all in one parallel pass.">speculative decoding</span>.</p>
-            <p>LMDeploy's turbomind backend also gained a memory allocator, an object cache, and scheduler integration in this line, which continues the theme of the memory system becoming a product feature.</p>
+            <h2 id="jul-transport">Moving big blocks across busy links</h2>
+            <p><mark class="hl hl-3">Mooncake v0.3.12, on July 23, added transport-level work.</mark><a class="src" href="https://github.com/kvcache-ai/Mooncake/releases" target="_blank" rel="noopener">source ↗</a> Its notes mention path diversity for RDMA queue pairs through UDP source ports, link aggregation balance, and quality of service with slice spraying for its transfer engine. Spraying splits one transfer across several paths, so a single hot link cannot become the limit.</p>
+            <p>These changes are invisible to most users, and critical to a cache-heavy cluster. When many machines move large blocks at once, the busiest link sets the speed, and the whole system waits on it. Spreading the traffic keeps tail latency under control, and the benefit is easiest to see under concurrent load, so benchmark it there.</p>
 
-            <h2 id="jul-mooncake">Mooncake: transport quality and spraying</h2>
-            <p><mark class="hl hl-3">Mooncake v0.3.12 on July 23 and v0.3.12.post1 on July 25 added transport-level work.</mark><a class="src" href="https://github.com/kvcache-ai/Mooncake/releases" target="_blank" rel="noopener">source ↗</a></p>
-            <p>These changes are invisible to most users and critical to cache-heavy clusters.</p>
-            <p>The post-release also rebuilt the NPU wheel with stripped shared libraries to reduce its size, and updated documentation for the multiprocess interface used with vLLM and LMCache.</p>
+            <h2 id="jul-ray">Early warnings from a memory monitor</h2>
+            <p><mark class="hl hl-3">Ray 2.56.1, on July 17, fixed regressions that the 2.56 release had introduced in Ray Data's conversion to pandas, including an overflow crash and a crash on empty tensor columns.</mark><a class="src" href="https://github.com/ray-project/ray/releases" target="_blank" rel="noopener">source ↗</a> It also added early detection of memory pressure on system slices, where the memory monitor takes snapshots of usage. Early detection is valuable because an out-of-memory kill destroys work in progress. A monitor that notices pressure building lets the system shed load or spill data while the work can still be recovered.</p>
 
-            <h2 id="jul-ray">Ray 2.56.1 and early memory warnings</h2>
-            <p><mark class="hl hl-3">Ray 2.56.1 on July 17 fixed several regressions that the 2.56 release had introduced in Ray Data's conversion to pandas.</mark><a class="src" href="https://github.com/ray-project/ray/releases" target="_blank" rel="noopener">source ↗</a></p>
-            <p>Early detection is the important part. Out-of-memory failures are expensive because they kill work in progress.</p>
-            <p>The pandas regressions are a reminder that data-conversion paths are a common source of surprises after a version bump.</p>
-
-            <h2 id="jul-fa4">FlashAttention 4 through beta 24</h2>
-            <p><mark class="hl hl-3">The FlashAttention repository published fa4 betas 20 through 24 in July, on a steady weekly cadence.</mark><a class="src" href="https://github.com/Dao-AILab/flash-attention/releases" target="_blank" rel="noopener">source ↗</a></p>
-            <p>The kernel line has now run through most of the year, from the first betas in March through beta 24 in late July.</p>
-
-            <h2 id="jul-reading-month">Reading July against the earlier months</h2>
-            <p><mark class="hl hl-2">The months since February have a clear arc.</mark> February asked whether the pieces could run together.</p>
-            <p>That shift has a practical consequence for benchmarking. When a feature is optional, a benchmark compares it against the default.</p>
-            <p>The arc also changes the risk. A feature in beta risks a bug in one configuration.</p>
-
-            <h2 id="jul-concepts">Concepts this month adds</h2>
-            <p>July adds three concepts. The first is removal as maintenance.</p>
-            <p><mark class="hl hl-2">The second concept is confidence as a control signal.</mark> DSpark ties the verification window to the proposer's confidence, rather than to a fixed number.</p>
-            <p>The third concept is position in cache reuse. Reusing a cached block at a different offset requires correcting its positional encoding, and getting that wrong degrades answers quietly.</p>
+            <h2 id="jul-concepts">The concepts July adds</h2>
+            <p><mark class="hl hl-2">July adds three ideas that make the stack easier to reason about.</mark></p>
+            <p>The first is removal as maintenance. A deleted path is a sign that its replacement has earned the default. Treat a removal as a forced migration, and read its notice as carefully as a new feature.</p>
+            <p>The second is confidence as a control signal. A system that knows how sure it is can allocate work to match. The pattern will appear in batching and cache policy too. The risk is miscalibration.</p>
+            <p>The third is position in cache reuse. A block is only useful at the position it was computed for, unless the system corrects it. The test is a comparison against fresh computation, not a latency number.</p>
 
             <h2 id="jul-checks">What to check this month</h2>
             <ol>
-              <li><strong>Find configurations that depended on the removed attention path.</strong> Before upgrading vLLM past v0.25.0, check your settings for anything that assumed the legacy implementation, and test the new default on your traffic.</li>
-              <li><strong>Check optional dependencies at build time.</strong> The FFmpeg fix shows that an optional library can block startup. Verify the container starts with every model you serve.</li>
-              <li><strong>Pair LMCache with vLLM by version.</strong> LMCache 0.5.2 requires vLLM 0.26 or later for its supported path. Pin the pair as one unit.</li>
-              <li><strong>Test DSpark against fixed-length speculation.</strong> Compare both on your batch sizes and content, not on the batch-one headline number.</li>
-              <li><strong>Test CacheBlend answers against a fresh computation.</strong> For reused context, check that answers match a no-cache reference on the documents you serve.</li>
-              <li><strong>Check schema validity under speculation.</strong> For structured output, test that constrained decoding still produces valid output with speculation on.</li>
-              <li><strong>Review the Ollama telemetry default if you use its launch path.</strong> The Claude Code launch path now disables telemetry by default, and you should confirm that matches your policy.</li>
+              <li><strong>Find configs that depended on the removed path.</strong> Audit your settings before moving past v0.25.0.</li>
+              <li><strong>Check optional dependencies at build time.</strong> Make sure every model you serve starts in the container.</li>
+              <li><strong>Pair LMCache with vLLM by version.</strong> Pin them together.</li>
+              <li><strong>Test DSpark against fixed-length speculation.</strong> Use your batch sizes and content, not the batch-one headline.</li>
+              <li><strong>Test CacheBlend answers against fresh computation.</strong> Check the documents you actually serve.</li>
+              <li><strong>Check schema validity under speculation.</strong> Constrained output must stay valid with speculation on.</li>
             </ol>
 
             <h2 id="jul-faq">Frequently asked questions</h2>
-            <details class="faq"><summary>Did vLLM remove PagedAttention entirely?</summary><p>The notes say the legacy attention implementation was removed, and that the newer backends are the standard path. The block-based idea remains in those backends. What is gone is the older code path that implemented it.</p></details>
-            <details class="faq"><summary>Is DSpark faster than a fixed draft length?</summary><p>The notes show a strong result at batch size one on one model and hardware. Whether it wins on your workload depends on batch size, content, and calibration. Measure both methods on your traffic.</p></details>
-            <details class="faq"><summary>Should I trust a release candidate with known hangs?</summary><p>Not for production. A candidate with open hang reports needs more time. Wait for a stable release, or test the candidate against your exact configuration first.</p></details>
-            <details class="faq"><summary>Does the Ollama agent change how I should benchmark it?</summary><p>Yes. An agent sends repeated, growing-context requests, so benchmark with multi-turn sessions and tool calls, not single prompts.</p></details>
+            <details class="faq"><summary>Did vLLM remove PagedAttention entirely?</summary><p>The legacy implementation was removed. The block-based idea remains inside the newer backends, which are now the standard path.</p></details>
+            <details class="faq"><summary>Is DSpark faster than a fixed draft length?</summary><p>The strong result is at batch size one on one model and hardware. Whether it wins for you depends on batch size, content, and calibration. Measure both methods on your traffic.</p></details>
 
-            <h2 id="jul-glossary">Glossary additions</h2>
+            <h2 id="jul-glossary">Glossary</h2>
             <table class="papers">
               <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
               <tbody>
-                <tr><td>Confidence-driven drafting</td><td>Sizing the speculative verification window from the proposer's confidence rather than a fixed length.</td></tr>
-                <tr><td>CacheBlend</td><td>Reusing cached text computed in another context, with positional correction and partial recomputation.</td></tr>
-                <tr><td>Rotary position embedding</td><td>A way of encoding token position inside attention, which must be corrected when a cached block moves.</td></tr>
-                <tr><td>Slice spraying</td><td>Splitting a transfer across several network paths to avoid a single congested link.</td></tr>
-                <tr><td>Backend deprecation</td><td>A notice that an engine path will be removed, with a named replacement.</td></tr>
-                <tr><td>Guided decoding</td><td>Constraining model output to a grammar or schema during generation.</td></tr>
+                <tr><td>Confidence-driven drafting</td><td>Sizing the speculative window from the proposer's confidence.</td></tr>
+                <tr><td>CacheBlend</td><td>Reusing cached text computed in another context, with positional correction.</td></tr>
+                <tr><td>Slice spraying</td><td>Splitting a transfer across several network paths.</td></tr>
+                <tr><td>Guided decoding</td><td>Constraining output to a grammar or schema during generation.</td></tr>
               </tbody>
             </table>
 
             <h2 id="jul-reading">Reading links</h2>
             <ul class="reflist">
-              <li><a href="https://github.com/vllm-project/vllm/releases/tag/v0.25.0" target="_blank" rel="noopener">vLLM v0.25.0 release notes</a> <span>Model Runner V2 default and removal of the legacy attention path.</span></li>
-              <li><a href="https://github.com/vllm-project/vllm/releases/tag/v0.26.0" target="_blank" rel="noopener">vLLM v0.26.0 release notes</a> <span>Inkling model family and DeepSeek V4 performance work.</span></li>
+              <li><a href="https://github.com/vllm-project/vllm/releases/tag/v0.25.0" target="_blank" rel="noopener">vLLM v0.25.0 release notes</a> <span>Model Runner V2 default and the legacy path removed.</span></li>
               <li><a href="https://github.com/sgl-project/sglang/releases/tag/v0.5.16" target="_blank" rel="noopener">SGLang v0.5.16 release notes</a> <span>DSpark confidence-driven speculative decoding.</span></li>
-              <li><a href="https://www.lmsys.org/blog/2026-07-06-dspark-sglang" target="_blank" rel="noopener">LMSYS: DSpark in SGLang</a> <span>The design write-up for the DSpark method.</span></li>
-              <li><a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.2" target="_blank" rel="noopener">LMCache v0.5.2 release notes</a> <span>CacheBlend under vLLM's hybrid manager and the vLLM 0.26 requirement.</span></li>
-              <li><a href="https://github.com/NVIDIA/TensorRT-LLM/releases" target="_blank" rel="noopener">TensorRT-LLM releases</a> <span>The AutoDeploy deprecation notice in rc21.</span></li>
-              <li><a href="https://github.com/ollama/ollama/releases/tag/v0.32.0" target="_blank" rel="noopener">Ollama v0.32.0 release notes</a> <span>The interactive agent and the ChatGPT integration rename.</span></li>
-              <li><a href="https://github.com/InternLM/lmdeploy/releases/tag/v0.15.0" target="_blank" rel="noopener">LMDeploy v0.15.0 release notes</a> <span>Prefix-cache hits under speculation and guided decoding.</span></li>
+              <li><a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.2" target="_blank" rel="noopener">LMCache v0.5.2 release notes</a> <span>CacheBlend and the vLLM 0.26 requirement.</span></li>
             </ul>
           </div>
         </details>

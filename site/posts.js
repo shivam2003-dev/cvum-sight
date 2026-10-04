@@ -16,16 +16,6 @@
 
 const POSTS = [
   {
-    slug: "inference-engineering-monthly",
-    title: "Inference Engineering, Monthly 2026.",
-    date: "Oct 4, 2026",
-    cat: "ml",
-    tags: ["ml", "inference", "vllm", "sglang", "monthly-series"],
-    time: 150,
-    words: 36661,
-    excerpt: "One running page for 2026 inference engineering, newest month first: async scheduling, cache-aware routing, KV offload, peer cache transfer, FlashAttention 4, DeepSeek V4, and the defaults that changed each month. Jan to Sep, one collapsible section per month.",
-  },
-  {
     slug: "genrec-generative-recommendation-jd-paper-juice",
     title: "GenRec: Generative Recommendation at JD.com, Explained.",
     date: "Oct 3, 2026",

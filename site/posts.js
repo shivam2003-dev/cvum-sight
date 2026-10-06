@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "industry-ai-technical-field-guide",
+    title: "How Industry Is Using AI, a Technical Field Guide.",
+    date: "Oct 6, 2026",
+    cat: "ml",
+    tags: ["ml", "industry", "mcp", "recommendation", "field-guide"],
+    time: 30,
+    words: 4829,
+    excerpt: "A long technical tour of how large companies use AI: the MCP gateway pattern from Uber, LLM-backed rankers from Netflix, predictive maintenance, document grounding, route optimization and drug discovery, with the engineering behind each.",
+  },
+  {
     slug: "genrec-generative-recommendation-jd-paper-juice",
     title: "GenRec: Generative Recommendation at JD.com, Explained.",
     date: "Oct 3, 2026",

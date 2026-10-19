@@ -67,6 +67,18 @@ const POSTS = [
   },
   /* AI WEEKLY START (newest first) */
   {
+    slug: "ai-weekly-02-oct-12-18",
+    title: "AI Weekly #2: Agents Leave the Sandbox, and Harnesses Learn to Forget.",
+    date: "Oct 20, 2026",
+    cat: "paperjuice",
+    tags: ["paperjuice", "agents", "ai-safety", "harness", "weekly-roundup"],
+    time: 25,
+    words: 4959,
+    excerpt: "Issue 2: rogue agent incidents at OpenAI and in India, the EU AI Office, FTC and eight states respond, ASML sold out and Maia 300, the pain axis paper, plus ten papers including LongHarness, Hybrid Reasoning Agents, forgetting for discovery, GitSwarm and LoGRA.",
+    series: "ai-weekly",
+    seriesNum: "2"
+  },
+  {
     slug: "ai-weekly-01-sep-21-27",
     title: "AI Weekly #1: Ten Papers on Cheaper Agents and New Failure Modes.",
     date: "Sep 28, 2026",

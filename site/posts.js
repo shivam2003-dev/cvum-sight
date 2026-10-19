@@ -93,6 +93,18 @@ const POSTS = [
   /* AI WEEKLY END */
   /* AWS COST START (newest first) */
   {
+    slug: "aws-cost-11-how-aws-bills",
+    title: "How Every AWS Component Is Billed: Per Hour, Per GB, Per Request.",
+    date: "Oct 21, 2026",
+    cat: "devops",
+    tags: ["devops", "aws", "finops", "billing"],
+    time: 30,
+    words: 5869,
+    excerpt: "Every AWS line item uses one of seven meters. A component by component guide with Mumbai list prices, Cost Explorer usage types, formulas, traps and levers for Network Firewall, NAT, load balancers, EKS, EC2, Savings Plans, VPC, data transfer, EBS, S3, CloudWatch and more.",
+    series: "aws-cost",
+    seriesNum: "11"
+  },
+  {
     slug: "aws-cost-10-agent-prompts",
     title: "AI agent prompts for AWS cost work: check, reason and suggest, never act.",
     date: "Sep 26, 2026",

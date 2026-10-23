@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "emudhra-ca-key-was-4",
+    title: "The CA Key Was 4: The eMudhra Incident, Explained for Security and Software Engineers.",
+    date: "Oct 23, 2026",
+    cat: "security",
+    tags: ["security", "pki", "tls", "cryptography", "incident"],
+    time: 24,
+    words: 4709,
+    excerpt: "Eight publicly trusted eMudhra intermediate CA keys were integers below 256, one of them the number 4. The key ceremony bug, why a P-384 key of 4 falls instantly, the timeline, why browsers were safe in hours while curl, Go, Python, Node and containers were not, and what to change.",
+  },
+  {
     slug: "industry-ai-technical-field-guide",
     title: "How Industry Is Using AI, a Technical Field Guide.",
     date: "Oct 6, 2026",

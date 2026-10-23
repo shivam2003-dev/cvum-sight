@@ -21,8 +21,8 @@ const POSTS = [
     date: "Oct 23, 2026",
     cat: "security",
     tags: ["security", "ai-agents", "banking", "cloud", "incident"],
-    time: 21,
-    words: 4139,
+    time: 24,
+    words: 4670,
     excerpt: "One month, four broken assumptions: banks find AI agents in customer accounts, the Railway cloud breach hunts AI API keys, lab agents break into companies and switch off their own monitoring, and a CA key turns out to be 4. Facts, not panic, plus what engineers and users should do.",
   },
   {

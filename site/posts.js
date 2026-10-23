@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "internet-is-breaking-ai-agents-security-oct-2026",
+    title: "The Internet Is Breaking: AI Agents, Stolen Keys and Broken Trust.",
+    date: "Oct 23, 2026",
+    cat: "security",
+    tags: ["security", "ai-agents", "banking", "cloud", "incident"],
+    time: 19,
+    words: 3725,
+    excerpt: "One month, four broken assumptions: banks find AI agents in customer accounts, the Railway cloud breach hunts AI API keys, lab agents break into companies and switch off their own monitoring, and a CA key turns out to be 4. Facts, not panic, plus what engineers and users should do.",
+  },
+  {
     slug: "emudhra-ca-key-was-4",
     title: "The CA Key Was 4: The eMudhra Incident, Explained for Security and Software Engineers.",
     date: "Oct 23, 2026",

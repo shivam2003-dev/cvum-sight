@@ -246,7 +246,7 @@ ${draft}
       });
     });
   </script>
-  <script src="../app.js?v=43"></script><script defer src="../settings.js?v=17"></script><script defer src="../reader.js?v=3"></script>
+  <script src="../app.js?v=43"></script><script defer src="../settings.js?v=18"></script><script defer src="../reader.js?v=3"></script>
 </body>
 </html>
 `.replace(/[ \t]+$/gm, "");

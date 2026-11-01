@@ -22,6 +22,17 @@
     { id: "scroll-paged",  label: "Paged" }
   ];
   var hasArticle = !!document.querySelector(".post-body");
+  var ADS_CLIENT = "ca-pub-5574558258960633";
+  var adsOn = localStorage.getItem("cvam-ads") !== "off";
+
+  // AdSense auto ads: article pages only, and only while the reader hasn't switched ads off
+  if (hasArticle && adsOn) {
+    var adScript = document.createElement("script");
+    adScript.async = true;
+    adScript.crossOrigin = "anonymous";
+    adScript.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" + ADS_CLIENT;
+    document.head.appendChild(adScript);
+  }
 
   document.documentElement.classList.remove("view-modern", "theme-paper", "theme-developer", "theme-hacker", "theme-god", "theme-anime", "theme-minimalist", "theme-modernist", "theme-apple-glass");
   localStorage.setItem("cvam-view", "classic");
@@ -83,6 +94,17 @@
       '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:6px;">' +
         '<label class="seg-label">Scroll style</label>' +
         '<div class="seg-row scroll-row">' + seg("scroll-btn", "data-scroll", SCROLLS, savedScroll) + '</div>' +
+      '</div>';
+  }
+
+  if (hasArticle) {
+    html +=
+      '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:6px;">' +
+        '<label class="seg-label">Ads</label>' +
+        '<div class="seg-row ads-row">' +
+          '<button type="button" class="ads-btn' + (adsOn ? ' active' : '') + '" data-ads="on" aria-pressed="' + adsOn + '">On</button>' +
+          '<button type="button" class="ads-btn' + (adsOn ? '' : ' active') + '" data-ads="off" aria-pressed="' + !adsOn + '">Off</button>' +
+        '</div>' +
       '</div>';
   }
 
@@ -221,6 +243,17 @@
       localStorage.setItem("cvam-scroll", mode);
       applyPaged(mode === "scroll-paged");
       activate(scrollBtns, this);
+    });
+  });
+
+  // ── ads on/off (reload so already-injected ads go away) ──
+  var adsBtns = panel.querySelectorAll(".ads-btn");
+  adsBtns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      var mode = this.getAttribute("data-ads");
+      if ((mode === "on") === adsOn) return;
+      localStorage.setItem("cvam-ads", mode);
+      location.reload();
     });
   });
 })();

@@ -399,7 +399,7 @@ ${conceptHtml}
 <p>These are independent companion notes, not a replacement for the textbook. The chapter organization follows Sutton and Barto's second edition; explanations and examples here are original. Use the <a href="http://incompleteideas.net/book/the-book-2nd.html" target="_blank" rel="noopener">authors' book page</a>, the <a href="https://mitpress.mit.edu/9780262039246/reinforcement-learning/" target="_blank" rel="noopener">MIT Press edition page</a>, and the <a href="https://mitp-content-server.mit.edu/books/content/sectbyfn/books_pres_0/10094/Toc.pdf?dl=1" target="_blank" rel="noopener">official table of contents</a> for the primary source and exact section sequence.</p>
 </div><div class="post-nav">${index > 0 ? `<a href="${chapterFile(chapters[index - 1], index - 1)}">&larr; previous: Chapter ${index}</a>` : `<a href="../reinforcement-learning-introduction.html">&larr; chapter index</a>`}${nextLink(index)}</div></article><footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div>
 <aside class="toc-panel chapter-panel"><p class="toc-panel-label">// chapters</p><nav class="chapter-nav">${chapterNav(index)}</nav></aside></div>
-<script src="../stats.js?v=2"></script><script src="../app.js?v=43"></script><script defer src="../settings.js?v=17"></script><script defer src="../reader.js?v=3"></script></body></html>`;
+<script src="../stats.js?v=2"></script><script src="../app.js?v=43"></script><script defer src="../settings.js?v=18"></script><script defer src="../reader.js?v=3"></script></body></html>`;
 }
 
 function renderLanding() {
@@ -420,7 +420,7 @@ function renderLanding() {
 <p class="meta" style="max-width:760px">Independent learning material, written in original language. It follows the official chapter sequence without copying the book. ${publishedCount === chapters.length ? "All 17 chapters are complete and ready to read." : "Chapters are being written and published one by one."}</p></section><hr class="rule">
 <section class="series-index" style="margin-bottom:32px"><p class="meta" style="margin-bottom:12px">CHAPTERS · ${publishedCount} LIVE</p><div class="chapter-grid">${cards}</div></section>
 <footer class="footer"><span>© cvam — written in plaintext, served warm</span></footer></div></div>
-<script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=43"></script><script defer src="settings.js?v=17"></script><script defer src="reader.js?v=3"></script></body></html>`;
+<script src="posts.js?v=2"></script><script src="stats.js?v=2"></script><script src="app.js?v=43"></script><script defer src="settings.js?v=18"></script><script defer src="reader.js?v=3"></script></body></html>`;
 }
 
 function updateBooksExplained() {

@@ -21,9 +21,9 @@ const POSTS = [
     date: "Nov 10, 2026",
     cat: "security",
     tags: ["security", "social-engineering", "human-factor", "counterintelligence", "insider-risk"],
-    time: 38,
-    words: 7568,
-    excerpt: "An old investing line turns out to be a threat model: state, attachment and hold. Why smart people are the best targets, the human shortcuts attackers press on, the six stage recruitment cycle, the Nvidia spy allegations in brief, warning signs, and defences for people and companies.",
+    time: 49,
+    words: 9746,
+    excerpt: "An old investing line turns out to be the best short description of social engineering: state, attachment and hold. An essay on why smart people open the door, how a slow approach really unfolds, what the Nvidia spy allegations show, and what actually helps.",
   },
   {
     slug: "internet-is-breaking-ai-agents-security-oct-2026",

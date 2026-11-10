@@ -17,7 +17,7 @@
 const POSTS = [
   {
     slug: "liquor-ladies-leverage-social-engineering",
-    title: "Only 3 Ways a Smart Person Gets Hacked: Liquor, Ladies and Leverage.",
+    title: "Liquor, Ladies, Leverage: The Three Exploits No Patch Can Fix.",
     date: "Nov 10, 2026",
     cat: "security",
     tags: ["security", "social-engineering", "human-factor", "counterintelligence", "insider-risk"],

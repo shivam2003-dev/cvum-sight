@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "google-maps-system-design",
+    title: "Google Maps System Design: The Whole Whiteboard, Box by Box.",
+    date: "Nov 10, 2026",
+    cat: "devops",
+    tags: ["devops","system-design","maps","routing","geospatial","traffic"],
+    time: 55,
+    words: 11089,
+    excerpt: "A maps product is three systems sharing one database of the world: tile delivery, routing and traffic. I walk a dense whiteboard design from A to O, one box at a time, in plain language.",
+  },
+  {
     slug: "liquor-ladies-leverage-social-engineering",
     title: "Liquor, Ladies, Leverage: The Three Exploits No Patch Can Fix.",
     date: "Nov 10, 2026",

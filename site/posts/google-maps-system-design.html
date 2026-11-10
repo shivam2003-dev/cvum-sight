@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Google Maps System Design: The Whole Whiteboard, Box by Box | cvam.sight</title>
+<meta name="description" content="A section-by-section guide to a Google Maps style system design: clients, CDN and API doors, tile generation, geospatial indexing, the road graph, route calculation, ETA, navigation, real-time traffic, places search, offline maps, storage, ML and reliability.">
+<link rel="stylesheet" href="../style.css?v=90">
+<script src="/theme-init.js?v=9"></script>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<style>
+  .post-body{font-size:1.02rem;line-height:1.75}
+  .post-body p{margin:0 0 14px;color:var(--ink)}
+  .post-body li{margin:6px 0;color:var(--ink)}
+  .bm-tldr{border-left:4px solid #f0c040;padding:12px 16px;margin:0 0 26px;color:var(--ink);background:rgba(240,192,64,.12);border-radius:0 8px 8px 0}
+  .bm-note{border:1px solid var(--rule,#d8cfb8);border-left:4px solid #527aa8;border-radius:8px;padding:14px 16px;margin:20px 0;background:rgba(82,122,168,.10);color:var(--ink)}
+  .bm-warn{border:1px solid var(--rule,#d8cfb8);border-left:4px solid #c96442;border-radius:8px;padding:14px 16px;margin:18px 0;background:rgba(201,100,66,.10);color:var(--ink)}
+  .bm-fix{border:1px solid var(--rule,#d8cfb8);border-left:4px solid #3f7d53;border-radius:8px;padding:14px 16px;margin:18px 0;background:rgba(63,125,83,.10);color:var(--ink)}
+  .keyfacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:18px 0 26px}
+  .keyfacts div{border:1px solid var(--rule,#d8cfb8);border-radius:10px;padding:12px 14px;background:var(--paper)}
+  .keyfacts strong{display:block;font-size:1.3rem;line-height:1.2;color:#c96442;margin-bottom:4px}
+  .keyfacts span{font-size:.86rem;color:var(--ink)}
+  .diagram-container{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:16px;padding:18px 16px 12px;margin:24px 0;background:color-mix(in srgb,var(--paper) 55%,transparent)}
+  .diagram-container svg{width:100%;height:auto;display:block}
+  .diagram-label{font-family:var(--font-mono);font-size:.76rem;line-height:1.55;color:var(--ink);margin:12px 4px 0;text-align:center}
+  h2{scroll-margin-top:20px;margin-top:44px;padding-top:6px} h3{margin-top:26px}
+  table.papers{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9rem}
+  table.papers th,table.papers td{border-bottom:1px solid var(--rule,#d8cfb8);padding:9px 8px;text-align:left;vertical-align:top;line-height:1.5;color:var(--ink)}
+  table.papers th{font-family:var(--font-mono);font-size:.74rem;text-transform:uppercase;background:rgba(82,122,168,.10)}
+  .reflist{list-style:none;padding:0;margin:0}
+  .reflist li{padding:9px 0;border-bottom:1px dashed var(--ink-faint)}
+  .reflist li a{color:var(--accent,#c96442);text-decoration:none;font-weight:600}
+  .reflist li span{color:var(--ink)}
+  details.faq{border:1px solid var(--rule,#d8cfb8);border-radius:8px;margin:10px 0;background:var(--paper);overflow:hidden}
+  details.faq[open]{border-color:#f0c040}
+  details.faq summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;color:var(--ink)}
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+ ";color:#c96442;font-family:var(--font-mono)}
+  details.faq[open] summary::before{content:"- "}
+  details.faq > p, details.faq > ul{margin:0;padding:0 16px 15px;color:var(--ink);line-height:1.65}
+  details.faq > ul{padding-left:36px}
+  .post-body .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:16px 0 22px}
+  .post-body .tbl-scroll > table{display:table !important;width:100%;margin:0}
+  .post-body pre{overflow-x:auto}
+</style>
+</head>
+<body>
+  <div class="progress-bar"></div>
+  <div class="layout has-toc">
+    <aside class="sidebar">
+      <a href="../index.html" class="logo"><span class="dot"></span> cvam.sight</a>
+      <p class="sidebar-sub">blog from a devops + ml apprentice</p>
+      <nav>
+        <a href="../index.html">Home</a>
+        <a href="../series.html">Series</a>
+        <a href="../ai-native.html">AI Native</a>
+        <a href="../archive.html">Archive</a>
+        <a href="../paperjuice.html">Paper Juice</a>
+        <a href="../discover.html">Discover</a>
+        <a href="../about.html">About</a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="https://www.linkedin.com/in/shivam-kumar2003/" target="_blank">LinkedIn</a>
+        <a href="mailto:shivam.sk2003@gmail.com">Email</a>
+      </div>
+    </aside>
+    <div class="page">
+
+    <article>
+      <div class="post-header">
+        <p class="meta">Nov 10, 2026 · devops · 55 min read · 11089 words <span class="difficulty intermediate">intermediate</span></p>
+        <h1>Google Maps System Design: The Whole Whiteboard, Box by Box.</h1>
+        <div class="tag-row">
+          <span class="tag fill">devops</span>
+          <span class="tag">system-design</span>
+          <span class="tag">maps</span>
+          <span class="tag">routing</span>
+          <span class="tag">geospatial</span>
+          <span class="tag">traffic</span>
+        </div>
+      </div>
+
+      <div class="post-body">
+        <div class="bm-tldr">
+          <strong>TL;DR.</strong> A maps product is really three systems that share one database of the world. One system <strong>delivers map tiles</strong> (a read-heavy, cache-everything problem). One <strong>calculates routes</strong> (a graph-search problem on a road network with live edge costs). One <strong>measures traffic</strong> (a streaming problem fed by anonymous location pings). Everything else on the board, search, navigation, offline, ML, hangs off those three. This post walks the whole whiteboard, sections A to O, one box at a time.
+        </div>
+
+        <p>I keep coming back to one whiteboard-style diagram of a Google Maps style system. It is dense. Fifteen lettered sections, three colour-coded flows, and something like a hundred boxes. Every time I look at it I understand one more corner. So I decided to do the slow thing: go through it section by section, in order, and write down what every part does and why it is there.</p>
+
+        <p>One honest note before we start, and the board says the same thing in its small print. This is a <strong>high-level educational design</strong>. It is not Google's internal architecture. The service names are generic. PostGIS, Kafka, Redis, Elasticsearch and friends are example choices that any team could make, not a claim about what Google runs. Where I mention something Google has said publicly, I say so and link it in the references.</p>
+
+        <div class="keyfacts">
+          <div><strong>3 flows</strong><span>map delivery, routing, traffic</span></div>
+          <div><strong>15 sections</strong><span>A (clients) to O (reliability)</span></div>
+          <div><strong>2 doors</strong><span>a tile door (CDN) and an API door</span></div>
+          <div><strong>1 source of truth</strong><span>the geographic database</span></div>
+        </div>
+
+        <h2 id="how-to-read">How to read the board: three flows</h2>
+
+        <p>The top of the board has three one-line summaries. If you only remember three lines from this post, remember these.</p>
+
+        <ul>
+          <li><strong>Routing flow.</strong> origin and destination → geocoding → snap to road graph → route search → traffic-weighted edge costs → ETA → ranked routes → selected route.</li>
+          <li><strong>Traffic flow.</strong> anonymised location signals → traffic ingestion → stream processing → road segment matching → segment speeds → traffic aggregation → routing engine.</li>
+          <li><strong>Map delivery.</strong> geographic data → processing → geographic DB → tile generation → tile storage → CDN → client map renderer.</li>
+        </ul>
+
+        <div class="diagram-container"><svg viewBox="0 0 760 242" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The three flows from the top of the board. Traffic ends where routing reads its edge costs."><style>
+  .b{fill:none;stroke:var(--ink);stroke-width:1.4}
+  .by{fill:rgba(240,192,64,.16);stroke:#c9962a;stroke-width:1.4}
+  .bg{fill:rgba(63,125,83,.14);stroke:#3f7d53;stroke-width:1.4}
+  .br{fill:rgba(201,100,66,.14);stroke:#c96442;stroke-width:1.4}
+  .t{font-family:var(--font-mono),monospace;font-size:10.5px;fill:var(--ink)}
+  .ts{font-family:var(--font-mono),monospace;font-size:9px;fill:var(--ink);opacity:.8}
+  .th{font-family:var(--font-mono),monospace;font-size:11.5px;font-weight:700;fill:var(--ink)}
+  .ln{stroke:var(--ink);stroke-width:1.3;fill:none}
+  .lr{stroke:#c96442;stroke-width:2;fill:none;stroke-dasharray:6 4}
+  .lg{stroke:#3f7d53;stroke-width:2.4;fill:none}
+  .ah{fill:var(--ink)}
+</style><text x="12" y="18" class="th">MAP DELIVERY (M)</text><rect x="12.0" y="26" width="94.9" height="44" rx="6" class="b"/><text x="59.4" y="45" text-anchor="middle" class="t">sources</text><text x="59.4" y="58" text-anchor="middle" class="ts">roads, POIs</text><line x1="107.9" y1="48" x2="114.9" y2="48" class="ln"/><path d="M113.9 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="118.9" y="26" width="94.9" height="44" rx="6" class="b"/><text x="166.3" y="45" text-anchor="middle" class="t">processing</text><text x="166.3" y="58" text-anchor="middle" class="ts">clean, merge</text><line x1="214.7" y1="48" x2="221.7" y2="48" class="ln"/><path d="M220.7 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="225.7" y="26" width="94.9" height="44" rx="6" class="b"/><text x="273.1" y="45" text-anchor="middle" class="t">geo DB</text><text x="273.1" y="58" text-anchor="middle" class="ts">source of truth</text><line x1="321.6" y1="48" x2="328.6" y2="48" class="ln"/><path d="M327.6 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="332.6" y="26" width="94.9" height="44" rx="6" class="b"/><text x="380.0" y="45" text-anchor="middle" class="t">tile gen</text><text x="380.0" y="58" text-anchor="middle" class="ts">per zoom</text><line x1="428.4" y1="48" x2="435.4" y2="48" class="ln"/><path d="M434.4 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="439.4" y="26" width="94.9" height="44" rx="6" class="b"/><text x="486.9" y="45" text-anchor="middle" class="t">tile storage</text><text x="486.9" y="58" text-anchor="middle" class="ts">z/x/y/ver</text><line x1="535.3" y1="48" x2="542.3" y2="48" class="ln"/><path d="M541.3 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="546.3" y="26" width="94.9" height="44" rx="6" class="b"/><text x="593.7" y="45" text-anchor="middle" class="t">CDN</text><text x="593.7" y="58" text-anchor="middle" class="ts">edge cache</text><line x1="642.1" y1="48" x2="649.1" y2="48" class="ln"/><path d="M648.1 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="653.1" y="26" width="94.9" height="44" rx="6" class="b"/><text x="700.6" y="45" text-anchor="middle" class="t">client</text><text x="700.6" y="58" text-anchor="middle" class="ts">renders</text><text x="12" y="96" class="th">ROUTING (R)</text><rect x="12.0" y="104" width="94.9" height="44" rx="6" class="bg"/><text x="59.4" y="123" text-anchor="middle" class="t">origin + dest</text><text x="59.4" y="136" text-anchor="middle" class="ts">text or pin</text><line x1="107.9" y1="126" x2="114.9" y2="126" class="ln"/><path d="M113.9 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="118.9" y="104" width="94.9" height="44" rx="6" class="bg"/><text x="166.3" y="123" text-anchor="middle" class="t">geocode</text><text x="166.3" y="136" text-anchor="middle" class="ts">to lat/lng</text><line x1="214.7" y1="126" x2="221.7" y2="126" class="ln"/><path d="M220.7 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="225.7" y="104" width="94.9" height="44" rx="6" class="bg"/><text x="273.1" y="123" text-anchor="middle" class="t">snap</text><text x="273.1" y="136" text-anchor="middle" class="ts">to road graph</text><line x1="321.6" y1="126" x2="328.6" y2="126" class="ln"/><path d="M327.6 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="332.6" y="104" width="94.9" height="44" rx="6" class="bg"/><text x="380.0" y="123" text-anchor="middle" class="t">search</text><text x="380.0" y="136" text-anchor="middle" class="ts">A* / CH</text><line x1="428.4" y1="126" x2="435.4" y2="126" class="ln"/><path d="M434.4 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="439.4" y="104" width="94.9" height="44" rx="6" class="bg"/><text x="486.9" y="123" text-anchor="middle" class="t">edge costs</text><text x="486.9" y="136" text-anchor="middle" class="ts">+ traffic</text><line x1="535.3" y1="126" x2="542.3" y2="126" class="ln"/><path d="M541.3 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="546.3" y="104" width="94.9" height="44" rx="6" class="bg"/><text x="593.7" y="123" text-anchor="middle" class="t">ETA + rank</text><text x="593.7" y="136" text-anchor="middle" class="ts">top 3</text><line x1="642.1" y1="126" x2="649.1" y2="126" class="ln"/><path d="M648.1 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="653.1" y="104" width="94.9" height="44" rx="6" class="bg"/><text x="700.6" y="123" text-anchor="middle" class="t">route</text><text x="700.6" y="136" text-anchor="middle" class="ts">polyline</text><text x="12" y="174" class="th">TRAFFIC (T)</text><rect x="12.0" y="182" width="94.9" height="44" rx="6" class="by"/><text x="59.4" y="201" text-anchor="middle" class="t">pings</text><text x="59.4" y="214" text-anchor="middle" class="ts">anonymised</text><line x1="107.9" y1="204" x2="114.9" y2="204" class="ln"/><path d="M113.9 200.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="118.9" y="182" width="94.9" height="44" rx="6" class="by"/><text x="166.3" y="201" text-anchor="middle" class="t">ingest</text><text x="166.3" y="214" text-anchor="middle" class="ts">Kafka</text><line x1="214.7" y1="204" x2="221.7" y2="204" class="ln"/><path d="M220.7 200.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="225.7" y="182" width="94.9" height="44" rx="6" class="by"/><text x="273.1" y="201" text-anchor="middle" class="t">stream</text><text x="273.1" y="214" text-anchor="middle" class="ts">windows</text><line x1="321.6" y1="204" x2="328.6" y2="204" class="ln"/><path d="M327.6 200.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="332.6" y="182" width="94.9" height="44" rx="6" class="by"/><text x="380.0" y="201" text-anchor="middle" class="t">map match</text><text x="380.0" y="214" text-anchor="middle" class="ts">to segments</text><line x1="428.4" y1="204" x2="435.4" y2="204" class="ln"/><path d="M434.4 200.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="439.4" y="182" width="94.9" height="44" rx="6" class="by"/><text x="486.9" y="201" text-anchor="middle" class="t">seg speed</text><text x="486.9" y="214" text-anchor="middle" class="ts">per window</text><line x1="535.3" y1="204" x2="542.3" y2="204" class="ln"/><path d="M541.3 200.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="546.3" y="182" width="94.9" height="44" rx="6" class="by"/><text x="593.7" y="201" text-anchor="middle" class="t">aggregate</text><text x="593.7" y="214" text-anchor="middle" class="ts">+ history</text><line x1="642.1" y1="204" x2="649.1" y2="204" class="ln"/><path d="M648.1 200.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="653.1" y="182" width="94.9" height="44" rx="6" class="by"/><text x="700.6" y="201" text-anchor="middle" class="t">store</text><text x="700.6" y="214" text-anchor="middle" class="ts">read by router</text></svg><p class="diagram-label">Fig 1 — The three flows from the top of the board. Traffic ends where routing reads its edge costs.</p></div>
+
+        <p>Notice where the flows touch. The traffic flow ends at the routing engine, because traffic is just a number on each road segment that changes how expensive that segment is. The map delivery flow and the routing flow both start from the same geographic database, but they produce very different things. Tiles are for <em>drawing</em>. The road graph is for <em>computing</em>. They are two derived views of one source of truth, and a lot of the design falls out of keeping those two views separate.</p>
+
+        <p>The legend also tells you how the steps are numbered. <strong>M</strong> steps are map and tile delivery, <strong>R</strong> steps are routing, <strong>T</strong> steps are traffic, <strong>N</strong> steps are navigation, and <strong>S</strong> steps are search. Letters A to O point to sections. I will use the same labels so you can follow along with the picture.</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Section</th><th>Name</th><th>One-line job</th></tr></thead>
+          <tbody>
+            <tr><td>A</td><td>Clients</td><td>Phones, browsers and cars that draw the map and report location</td></tr>
+            <tr><td>B</td><td>Edge and traffic management</td><td>DNS, CDN, load balancer, gateway. Two doors into the system</td></tr>
+            <tr><td>C</td><td>Core backend services</td><td>Stateless services grouped by domain</td></tr>
+            <tr><td>D</td><td>Map data and tile generation</td><td>From raw sources to tiles on your screen</td></tr>
+            <tr><td>E</td><td>Geospatial indexing</td><td>Finding things near a point, fast</td></tr>
+            <tr><td>F</td><td>Road network graph</td><td>How a router sees roads</td></tr>
+            <tr><td>G</td><td>Route calculation</td><td>One request in, ranked route options out</td></tr>
+            <tr><td>H</td><td>ETA and traffic-aware routing</td><td>Predicting arrival time with live and historical data</td></tr>
+            <tr><td>I</td><td>Turn-by-turn navigation</td><td>A stateful loop on one chosen route</td></tr>
+            <tr><td>J</td><td>Real-time traffic processing</td><td>A stream that turns pings into segment speeds</td></tr>
+            <tr><td>K</td><td>Places search and geocoding</td><td>Text to places, addresses to coordinates</td></tr>
+            <tr><td>L</td><td>Offline maps and client caching</td><td>A copy on the device, not the server DB</td></tr>
+            <tr><td>M</td><td>Data storage</td><td>Which store holds which kind of data</td></tr>
+            <tr><td>N</td><td>Analytics and machine learning</td><td>Events to features to models to better ETAs</td></tr>
+            <tr><td>O</td><td>Reliability and challenges</td><td>The ten things that make this hard</td></tr>
+          </tbody>
+        </table></div>
+
+        <h2 id="a-clients">A. Clients</h2>
+
+        <p>The left edge of the board lists who is talking to the system: an Android app, an iOS app, a web app (a browser using WebGL), a desktop browser, and in-car or navigation devices where the map is projected from the phone or built in. Five kinds of client, one backend.</p>
+
+        <p>What I find more useful is the second list, labelled <em>on the device</em>. A maps client is not a thin screen. It does real work locally.</p>
+
+        <ul>
+          <li><strong>GPS and sensors.</strong> The device produces a position fix, a speed and a heading. Phones fuse GPS with accelerometer, gyroscope, compass, Wi-Fi and cell signals. This fusion happens on the device because it needs to be fast and because raw sensor data is too much to ship.</li>
+          <li><strong>Map renderer.</strong> Vector tiles arrive as geometry and get drawn by the GPU. That is why you can rotate, tilt and zoom smoothly without asking the server for anything.</li>
+          <li><strong>Tile cache.</strong> Tiles are kept locally, both the ones you have looked at and the ones you downloaded for offline use (section L).</li>
+          <li><strong>Nav UI and voice.</strong> The banners, the arrows and the text-to-speech voice. The server says "turn left onto MG Road in 300 m", the device turns it into pixels and audio.</li>
+          <li><strong>Location reporter.</strong> Sends batched location pings up to the backend (section J). Batched matters. Sending one HTTP request per GPS fix would drain the battery and flood the servers.</li>
+        </ul>
+
+        <p>The board then has a little table of who the client talks to for what. Tiles come from the CDN. Search goes to the Places services. Directions go to the Routes services. A navigation session talks to the navigation service. Location pings go to traffic ingestion. And the traffic overlay you see on the map is not a separate picture: it is tiles plus segment speeds.</p>
+
+        <blockquote>Two different doors: rendering a map is not computing a route. The app can pan and zoom from cache with no API call at all.</blockquote>
+
+        <p>This is the first big idea. If you pan around a city you already loaded, the backend application servers do nothing. The device has the tiles, or the CDN has them. Only when you type a search or ask for directions does a request reach a real service. Keeping the heaviest traffic (map viewing) completely away from the application servers is what makes the whole thing affordable.</p>
+
+        <h2 id="b-edge">B. Edge and traffic management</h2>
+
+        <p>Section B is subtitled "a tile door and an API door". Every request from a client goes through one of two entrances, and they are built very differently.</p>
+
+        <h3>DNS and regional traffic routing</h3>
+
+        <p>Both doors start at DNS. The DNS layer is geo-aware or latency-based, and it works with anycast or geo-DNS to send each user to the nearest healthy region or point of presence (PoP). Anycast means the same IP address is announced from many locations, and the internet's routing delivers you to the closest one. The board has a nice line here: a dead region is drained by changing what DNS returns. Failover is not a special mechanism. It is the same routing decision, made with one region marked unhealthy.</p>
+
+        <h3>The tile door: CDN and edge network</h3>
+
+        <p>The request on this door looks like <code>GET /tiles/{z}/{x}/{y}</code>, and the board labels it step M7, "highest-volume path, cached everywhere". The CDN serves vector and raster tiles, sprites (icon sheets), fonts and style files. The cache key is roughly <code>style / z / x / y / version</code>.</p>
+
+        <p>A cache hit is served from a PoP near the user with zero backend work. A miss goes back to tile storage (step M6). Hot tiles, meaning big cities at low zoom levels, basically live at the edge forever. The long tail, a village at zoom 18 that someone opens once a month, goes back to origin.</p>
+
+        <p>Why does this cache so well? Because a tile is the same for everyone. The tile at <code>z=14, x=11722, y=7594</code> does not depend on who is asking. No cookies, no personalisation, no auth in the URL path. That is the best possible shape for a CDN.</p>
+
+        <h3>The API door: load balancer, gateway and friends</h3>
+
+        <p>The second door handles dynamic calls: route requests, search, navigation sessions and traffic queries. The chain on the board is:</p>
+
+        <ul>
+          <li><strong>Load balancer.</strong> Layer 7, terminates TLS, spreads requests across zones.</li>
+          <li><strong>API gateway.</strong> Routing to the right service, API versioning, and attaching a request ID so one request can be traced end to end.</li>
+          <li><strong>Authentication.</strong> API keys for developers, user tokens for signed-in users.</li>
+          <li><strong>Rate limiting.</strong> Per key, per user, per IP. A public maps API is a favourite target for scrapers, so this is not optional.</li>
+          <li><strong>Service discovery.</strong> Which instances of each service are healthy, per region.</li>
+        </ul>
+
+        <p>And then the line that ties the section together: <em>tiles never take this door</em>. If a tile request had to pass through auth, rate limiting and a gateway, you would be paying for compute on the one request type that needs none.</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th></th><th>Tile door</th><th>API door</th></tr></thead>
+          <tbody>
+            <tr><td>Typical request</td><td><code>GET /tiles/z/x/y</code></td><td>Route, search, nav session, traffic query</td></tr>
+            <tr><td>Same answer for everyone?</td><td>Yes</td><td>No, depends on user, time, traffic</td></tr>
+            <tr><td>Served by</td><td>CDN edge, falls back to tile storage</td><td>Load balancer → gateway → services</td></tr>
+            <tr><td>Cache lifetime</td><td>Long, versioned keys</td><td>Seconds to minutes, if at all</td></tr>
+            <tr><td>Main cost</td><td>Bytes out</td><td>CPU and memory</td></tr>
+            <tr><td>Fails how</td><td>Slow or stale tiles</td><td>No new routes or search results</td></tr>
+          </tbody>
+        </table></div>
+
+        <h2 id="c-core-services">C. Core backend services</h2>
+
+        <p>Behind the API door sits a grid of services. The board groups them into five columns and adds two words that matter: "stateless" and "each scales alone".</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Domain</th><th>Services</th><th>What they do</th></tr></thead>
+          <tbody>
+            <tr><td>Location</td><td>Location Ingestion, Location Processing, Location Session Manager, Device Location</td><td>Accept batched pings and ack fast, filter and smooth them, track active navigation sessions, remember the last known fix</td></tr>
+            <tr><td>Mapping</td><td>Map Data, Map Tile, Map Rendering, Map Update, Geographic Metadata</td><td>Serve geographic features, act as the tile origin, apply styles, take edits and trigger regeneration, hold regions, names and time zones</td></tr>
+            <tr><td>Search and places</td><td>Places Search, Geocoding, Reverse Geocoding, Address Resolution, Search Ranking</td><td>Text plus nearby search, address to lat/lng, lat/lng to address, parse and normalise addresses, order results by relevance and distance</td></tr>
+            <tr><td>Routing and navigation</td><td>Directions, Route Calculation, Route Optimization, ETA Estimation, Navigation Session, Turn-by-Turn</td><td>API entry point, graph search, costs and preferences and alternatives, segment times plus ML, track progress and reroute, produce maneuvers and voice text</td></tr>
+            <tr><td>Traffic</td><td>Traffic Ingestion, Traffic Aggregation, Traffic Prediction, Incident Detection</td><td>Take in signals and reports, compute speed per segment, forecast the next 15 to 60 minutes, find jams and closures</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>Why stateless matters</h3>
+
+        <p>Stateless means a service instance keeps nothing in its own memory that another instance would need. Any server can answer any request. If one dies, the load balancer sends the next request somewhere else and nobody notices. If load doubles, you add instances. The state lives in the stores (section M), not in the services.</p>
+
+        <p>"Each scales alone" is the other half. Route calculation is CPU and memory hungry. Location ingestion is write heavy and simple. Search is index heavy. If they were one big service, you would have to scale the whole thing to satisfy the hungriest part. Split up, each one gets the hardware profile it needs.</p>
+
+        <h3>Sync versus async</h3>
+
+        <p>The bottom of section C has two lines I would frame and hang on a wall.</p>
+
+        <p><strong>Sync, on the request path:</strong> Directions → Geocoding, Route Calc → ETA. Nav Session → Route Calc (for a reroute). Places → search index. These are things a user is waiting for, right now, with a spinner on screen.</p>
+
+        <p><strong>Async, through the event stream:</strong> Location Ingestion → traffic pipeline (J). Map Update → tile regeneration (D). Incidents → edge costs. Nobody is waiting on these. They happen in the background and publish their results when ready.</p>
+
+        <blockquote>Routing never waits on traffic processing. It reads the latest published speeds and moves on.</blockquote>
+
+        <p>This one sentence prevents a whole class of outages. If the traffic pipeline falls behind by five minutes, routes are a little less accurate. They are not slower, and they do not fail. The request path only ever reads a finished, published value. I will come back to this in section J because the board repeats it there, and when a diagram says something twice it is usually the point.</p>
+
+        <h2 id="d-map-data">D. Map data and tile generation</h2>
+
+        <p>Section D is drawn right to left, "from the real world to your screen". It is steps M1 to M7 of the map delivery flow.</p>
+
+        <h3>M1: data sources</h3>
+
+        <p>The raw inputs are road network data, building footprints, terrain and elevation, and points of interest. The board also lists imagery, partner data, public data and moderated user edits. No single source is complete or fully correct, which is why the next step exists.</p>
+
+        <h3>M2: map data processing</h3>
+
+        <p>This is the cleaning stage. Four jobs are listed:</p>
+
+        <ul>
+          <li><strong>Conflate and dedupe.</strong> Two sources describe the same road with slightly different coordinates. Conflation decides they are the same thing and merges them.</li>
+          <li><strong>Validate geometry.</strong> Roads that do not connect, polygons that cross themselves, a building in the sea.</li>
+          <li><strong>Attach road attributes.</strong> Speed limits, one-way flags, road class, lane counts, turn restrictions.</li>
+          <li><strong>Build the road graph.</strong> The output that goes to section F.</li>
+        </ul>
+
+        <h3>M3: the geographic database</h3>
+
+        <p>The cleaned result lands in a spatial, versioned database that the board calls the source of truth. It stores features with IDs, attributes and history. Everything downstream is derived from it. The board's side note spells out the model:</p>
+
+        <ul>
+          <li><strong>Geo DB.</strong> Features with IDs, attributes, history. Edits land here.</li>
+          <li><strong>Tiles.</strong> Derived, disposable, rebuilt from the DB.</li>
+          <li><strong>Road graph.</strong> Another derived view, shaped for routing, not for drawing.</li>
+        </ul>
+
+        <p>I like the word "disposable". If every tile vanished tomorrow, you could regenerate them. If the geographic DB vanished, you would have lost the map. That tells you where to spend your backup and replication budget.</p>
+
+        <h3>M4: tile generation</h3>
+
+        <p>Tiles are produced in batch, per zoom level. For each tile the generator clips features to the tile boundary, simplifies geometry, generalises, and places labels. Generalisation is the clever part. At zoom 5 you do not want every street in a city. You want a dot and a name. At zoom 16 you want every building outline. Same database, very different content per zoom level.</p>
+
+        <h3>The tile pyramid</h3>
+
+        <p>The board draws four little grids: z0 is one square, z1 is 2×2, z2 is 4×4, z3 is 8×8. The rule is that zoom level z has 4<sup>z</sup> tiles, and higher z means more detail.</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Zoom</th><th>Tiles across</th><th>Total tiles (4<sup>z</sup>)</th><th>Roughly shows</th></tr></thead>
+          <tbody>
+            <tr><td>0</td><td>1</td><td>1</td><td>The whole world</td></tr>
+            <tr><td>5</td><td>32</td><td>1,024</td><td>Large countries</td></tr>
+            <tr><td>10</td><td>1,024</td><td>about 1 million</td><td>A metro area</td></tr>
+            <tr><td>15</td><td>32,768</td><td>about 1 billion</td><td>Streets and blocks</td></tr>
+            <tr><td>20</td><td>1,048,576</td><td>about 1.1 trillion</td><td>Individual buildings</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>That growth is why nobody stores every tile at every zoom. Most of the planet is ocean, desert or forest. Deep-zoom tiles for empty areas can be generated on demand or skipped, and a client can keep zooming into a lower-zoom vector tile ("overzooming") when there is nothing more to show.</p>
+
+        <h3>Vector tiles versus raster tiles</h3>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th></th><th>Vector tiles</th><th>Raster tiles</th></tr></thead>
+          <tbody>
+            <tr><td>Contents</td><td>Geometry plus attributes</td><td>Pre-rendered images, for example 256 px PNG or JPEG</td></tr>
+            <tr><td>Who draws</td><td>The client styles and draws</td><td>The server already drew it</td></tr>
+            <tr><td>Rotate and tilt</td><td>Smooth, labels stay upright</td><td>Image just rotates, labels go sideways</td></tr>
+            <tr><td>Size</td><td>Fewer bytes</td><td>More bytes</td></tr>
+            <tr><td>Restyle (dark mode)</td><td>Change the style file, same tiles</td><td>Re-render every tile</td></tr>
+            <tr><td>Good for</td><td>Road maps on modern devices</td><td>Simple clients, satellite imagery</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>The board's summary: one geographic DB, two tile formats, both keyed by z/x/y, both cacheable at the edge for a long time because the keys are versioned.</p>
+
+        <h3>M5 to M7: storage, CDN, client</h3>
+
+        <p>Finished tiles go to object storage keyed by <code>style/z/x/y/ver</code>. The CDN pulls from tile storage on a cache miss, with the Map Tile service sitting in front of storage as the origin. Then the client fetches from the CDN. That is the whole delivery path.</p>
+
+        <h3>Map updates and tile invalidation</h3>
+
+        <p>The dashed yellow box in section D is the hard part of the section. A road is edited, a new building appears, a road closes. What happens?</p>
+
+        <ol>
+          <li>The Map Update service writes the change to the geographic DB.</li>
+          <li>It finds the affected tiles, meaning every (z, x, y) at every zoom level that contains the changed feature.</li>
+          <li>It regenerates only those tiles and bumps their version.</li>
+          <li>The new version means a new cache key, or the old CDN entry is purged.</li>
+        </ol>
+
+        <p>The trick is the version in the key. Purging a CDN worldwide is slow and unreliable. Changing the key is instant: clients ask for the new version and the old one simply stops being requested and ages out. This is the same idea as hashed filenames for JavaScript bundles on a website.</p>
+
+        <div class="bm-note"><strong>Gotcha.</strong> One edited road touches one tile at zoom 16 but also one tile at each lower zoom where the road is still visible. A motorway change ripples all the way up to low zooms. A footpath change does not, because footpaths are not drawn there. The "find affected tiles" step has to know the generalisation rules.</div>
+
+        <h2 id="e-geospatial-indexing">E. Geospatial indexing</h2>
+
+        <p>Section E answers one question: how do you find things near a point without checking every thing in the world?</p>
+
+        <p>A normal database index sorts by one value. Location has two, latitude and longitude. If you index on latitude alone, "everything between 12.96 and 12.98" returns a band that goes around the entire planet. The fix is to turn two dimensions into one in a way that keeps nearby places near each other in the index. The board shows this as <code>lat / lng → cell id</code>, with the example (12.9716, 77.5946), which is central Bengaluru, mapping to a geohash that starts with <code>tdr1v</code>.</p>
+
+        <h3>Three ways to cut up the world</h3>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th></th><th>Geohash</th><th>S2 cells</th><th>H3</th></tr></thead>
+          <tbody>
+            <tr><td>Shape</td><td>Rectangles on a lat/lng grid</td><td>Quadrilaterals from a cube projected on the sphere</td><td>Hexagons</td></tr>
+            <tr><td>ID</td><td>Base32 string, shared prefix means nearby</td><td>64-bit integer along a Hilbert curve</td><td>64-bit integer</td></tr>
+            <tr><td>Hierarchy</td><td>Add a character, get 32 children</td><td>Each cell has 4 children, 31 levels</td><td>Each cell has roughly 7 children</td></tr>
+            <tr><td>Strength</td><td>Dead simple, works in any key-value store</td><td>Even cell sizes worldwide, good region covering</td><td>All six neighbours are the same distance away</td></tr>
+            <tr><td>Weakness</td><td>Cells distort near the poles, edge effects</td><td>More complex library</td><td>Children do not nest perfectly inside parents</td></tr>
+            <tr><td>Good for</td><td>Nearby lookups, sharding keys</td><td>General geo indexing, covering arbitrary shapes</td><td>Aggregation and smoothing, for example demand or speed heatmaps</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>The board's one-liners match this: geohash is "lat/lng bits → base32 string, prefix = nearby". S2 is "sphere → cube → Hilbert curve, hierarchical IDs". H3 is "hexagon grid, even neighbours, good to aggregate". S2 is an open-source library from Google and H3 is an open-source library from Uber, so both are things you can use yourself.</p>
+
+        <h3>Nearby search, step by step</h3>
+
+        <p>The worked example on the board is "fuel within 2 km".</p>
+
+        <ol>
+          <li>Take the point and find its cell, at a level sized to the radius. For a 2 km search you want cells roughly that size, not cells the size of a country and not cells the size of a room.</li>
+          <li>Add the neighbouring cells, because the radius crosses cell borders. In a square grid that is your cell plus 8 around it.</li>
+          <li>Fetch candidates by cell ID. This is an index range scan, which is cheap.</li>
+          <li>Run an exact distance filter on the candidates, then rank.</li>
+        </ol>
+
+        <div class="diagram-container"><svg viewBox="0 0 760 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Nearby search with a cell and its eight neighbours"><style>
+  .b{fill:none;stroke:var(--ink);stroke-width:1.4}
+  .by{fill:rgba(240,192,64,.16);stroke:#c9962a;stroke-width:1.4}
+  .bg{fill:rgba(63,125,83,.14);stroke:#3f7d53;stroke-width:1.4}
+  .br{fill:rgba(201,100,66,.14);stroke:#c96442;stroke-width:1.4}
+  .t{font-family:var(--font-mono),monospace;font-size:10.5px;fill:var(--ink)}
+  .ts{font-family:var(--font-mono),monospace;font-size:9px;fill:var(--ink);opacity:.8}
+  .th{font-family:var(--font-mono),monospace;font-size:11.5px;font-weight:700;fill:var(--ink)}
+  .ln{stroke:var(--ink);stroke-width:1.3;fill:none}
+  .lr{stroke:#c96442;stroke-width:2;fill:none;stroke-dasharray:6 4}
+  .lg{stroke:#3f7d53;stroke-width:2.4;fill:none}
+  .ah{fill:var(--ink)}
+</style><rect x="245" y="14" width="90" height="90" class="b"/><rect x="335" y="14" width="90" height="90" class="b"/><rect x="425" y="14" width="90" height="90" class="b"/><rect x="245" y="104" width="90" height="90" class="b"/><rect x="335" y="104" width="90" height="90" class="bg"/><rect x="425" y="104" width="90" height="90" class="b"/><rect x="245" y="194" width="90" height="90" class="b"/><rect x="335" y="194" width="90" height="90" class="b"/><rect x="425" y="194" width="90" height="90" class="b"/><circle cx="402" cy="135" r="100" class="lr"/><circle cx="402" cy="135" r="5" fill="#c96442"/><text x="411" y="139" class="t">you</text><circle cx="342" cy="95" r="5" fill="#3f7d53"/><circle cx="452" cy="190" r="5" fill="#3f7d53"/><circle cx="382" cy="205" r="5" fill="#3f7d53"/><circle cx="472" cy="105" r="5" fill="#3f7d53"/><circle cx="265" cy="34" r="5" class="b"/><circle cx="273" cy="264" r="5" class="b"/><circle cx="495" cy="269" r="5" class="b"/><circle cx="507" cy="30" r="5" class="b"/><text x="14" y="40" class="th">1. your cell</text><text x="14" y="56" class="ts">sized to the radius</text><text x="14" y="100" class="th">2. + 8 neighbours</text><text x="14" y="116" class="ts">the circle crosses borders</text><text x="14" y="160" class="th">3. fetch by cell id</text><text x="14" y="176" class="ts">cheap index range scan</text><text x="14" y="220" class="th">4. exact distance</text><text x="14" y="236" class="ts">the circle decides</text><circle cx="560" cy="60" r="5" fill="#3f7d53"/><text x="572" y="64" class="t">inside radius: kept</text><circle cx="560" cy="90" r="5" class="b"/><text x="572" y="94" class="t">in a cell, too far: dropped</text><line x1="552" y1="120" x2="568" y2="120" class="lr"/><text x="572" y="124" class="t">2 km search radius</text><rect x="552" y="142" width="16" height="16" class="bg"/><text x="572" y="154" class="t">cell containing you</text></svg><p class="diagram-label">Fig 2 — Nearby search. Cells fetch candidates, the exact distance check decides.</p></div>
+
+        <p>Step 2 is the one people forget. If you stand at the very edge of a cell, the nearest petrol station might be ten metres away in the next cell. Looking only in your own cell would miss it. Step 4 is the other one people forget. The 3×3 block of cells is a square, the search area is a circle, so the corners contain things that are too far away. Cells fetch candidates. The exact maths decides.</p>
+
+        <h3>Other spatial queries</h3>
+
+        <p>The board lists a few more query types that use the same machinery:</p>
+
+        <ul>
+          <li><strong>Bounding box.</strong> The viewport on your screen → the set of cells that cover it → the features in those cells. This is what happens when you pan the map and pins appear.</li>
+          <li><strong>Point in polygon.</strong> Which city, zone or time zone is this point in? Cells or an R-tree narrow it down to a few candidate polygons, and then an exact geometry test decides.</li>
+          <li><strong>Nearest road segment for a GPS point.</strong> Used by snapping (section G) and map matching (sections I and J).</li>
+        </ul>
+
+        <p>An R-tree, if you have not met one, is a tree of nested bounding rectangles. It is what PostGIS builds through its GiST index. It handles shapes with real extent, like long roads and big polygons, better than a pure cell scheme.</p>
+
+        <blockquote>No single index for every workload: tiles use z/x/y, places use cells or R-trees, traffic keys by segment ID.</blockquote>
+
+        <p>I think this line is underrated. Beginners look for the one true geo index. There is not one. Each workload has a natural key, and the design uses whichever key makes that workload a cheap lookup.</p>
+
+
+        <h2 id="f-road-graph">F. Road network graph</h2>
+
+        <p>Section F is "the routing foundation: how a router sees roads". A router does not see a picture. It sees a graph.</p>
+
+        <ul>
+          <li>A <strong>node</strong> is an intersection.</li>
+          <li>An <strong>edge</strong> is a directed road segment between two nodes.</li>
+          <li>A two-way street is two edges, one per direction. A one-way street is one edge.</li>
+          <li>The <strong>edge weight</strong> is travel time, not length. It comes from length, speed limit, road class and live traffic.</li>
+          <li>Edges carry <strong>attributes</strong>: speed limit, one-way flag, tolls, lanes, vehicle limits, surface, turn restrictions.</li>
+        </ul>
+
+        <p>Directed edges matter more than they first seem. The two directions of the same street can have completely different speeds at 9 am. Modelling them as separate edges means the traffic system can give each its own weight with no special cases.</p>
+
+        <h3>Turn restrictions</h3>
+
+        <p>The board has a small "no turn" symbol in the middle of the graph and a note: a turn restriction is a cost on an (edge → edge) pair, so "no turn at e" is a forbidden transition.</p>
+
+        <p>This is subtle. A plain graph puts costs on edges. But "you cannot turn left from Road A onto Road B" is not a property of A or of B. Both are perfectly usable. It is a property of the <em>pair</em>. So routers either search over edge-to-edge transitions, or expand the graph so each node represents "arriving at this intersection via this edge". Either way, a forbidden turn gets infinite cost and an awkward turn (a left across traffic, a U-turn) gets a penalty in seconds.</p>
+
+        <h3>A tiny worked graph</h3>
+
+        <p>Here is my own simplified version of the example on the board. Seven minutes of staring at it teaches more than a page of text. Origin is <strong>a</strong>, destination is <strong>f</strong>, numbers are minutes.</p>
+
+        <div class="diagram-container"><svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A small road graph where a jam on one edge changes the best route"><style>
+  .b{fill:none;stroke:var(--ink);stroke-width:1.4}
+  .by{fill:rgba(240,192,64,.16);stroke:#c9962a;stroke-width:1.4}
+  .bg{fill:rgba(63,125,83,.14);stroke:#3f7d53;stroke-width:1.4}
+  .br{fill:rgba(201,100,66,.14);stroke:#c96442;stroke-width:1.4}
+  .t{font-family:var(--font-mono),monospace;font-size:10.5px;fill:var(--ink)}
+  .ts{font-family:var(--font-mono),monospace;font-size:9px;fill:var(--ink);opacity:.8}
+  .th{font-family:var(--font-mono),monospace;font-size:11.5px;font-weight:700;fill:var(--ink)}
+  .ln{stroke:var(--ink);stroke-width:1.3;fill:none}
+  .lr{stroke:#c96442;stroke-width:2;fill:none;stroke-dasharray:6 4}
+  .lg{stroke:#3f7d53;stroke-width:2.4;fill:none}
+  .ah{fill:var(--ink)}
+</style><line x1="70" y1="135" x2="250" y2="50" class="ln"/><text x="160" y="84.5" text-anchor="middle" class="th">4</text><line x1="250" y1="50" x2="440" y2="80" class="ln"/><text x="345" y="57" text-anchor="middle" class="th">3</text><line x1="440" y1="80" x2="650" y2="135" class="ln"/><text x="545" y="99.5" text-anchor="middle" class="th">5</text><line x1="70" y1="135" x2="230" y2="225" class="ln"/><text x="150" y="198" text-anchor="middle" class="th">5</text><line x1="230" y1="225" x2="450" y2="225" class="ln"/><text x="340" y="243" text-anchor="middle" class="th">4</text><line x1="450" y1="225" x2="650" y2="135" class="lr"/><text x="550" y="198" text-anchor="middle" class="th">2 → 11 (jam)</text><line x1="230" y1="225" x2="440" y2="80" class="ln"/><text x="345" y="156.5" text-anchor="start" class="th">4</text><circle cx="70" cy="135" r="17" style="fill:var(--paper)" class="b"/><circle cx="70" cy="135" r="17" class="bg"/><text x="70" y="139" text-anchor="middle" class="th">a</text><circle cx="250" cy="50" r="17" style="fill:var(--paper)" class="b"/><circle cx="250" cy="50" r="17" class="b"/><text x="250" y="54" text-anchor="middle" class="th">b</text><circle cx="440" cy="80" r="17" style="fill:var(--paper)" class="b"/><circle cx="440" cy="80" r="17" class="b"/><text x="440" y="84" text-anchor="middle" class="th">e</text><circle cx="650" cy="135" r="17" style="fill:var(--paper)" class="b"/><circle cx="650" cy="135" r="17" class="bg"/><text x="650" y="139" text-anchor="middle" class="th">f</text><circle cx="230" cy="225" r="17" style="fill:var(--paper)" class="b"/><circle cx="230" cy="225" r="17" class="b"/><text x="230" y="229" text-anchor="middle" class="th">d</text><circle cx="450" cy="225" r="17" style="fill:var(--paper)" class="b"/><circle cx="450" cy="225" r="17" class="b"/><text x="450" y="229" text-anchor="middle" class="th">g</text><text x="70" y="172" text-anchor="middle" class="ts">origin</text><text x="650" y="172" text-anchor="middle" class="ts">destination</text><text x="20" y="268" class="t">before jam: a→d→g→f = 11 min (best), a→b→e→f = 12 min</text><text x="20" y="284" class="t">after jam:  a→d→g→f = 20 min, a→b→e→f = 12 min (now best)</text></svg><p class="diagram-label">Fig 3 — My simplified road graph. Edge numbers are minutes. One changed weight flips the best route.</p></div>
+
+        <p>Before the jam, the lower path a → d → g → f costs 5 + 4 + 2 = 11 minutes and wins. The upper path a → b → e → f costs 4 + 3 + 5 = 12. Then traffic builds on g → f and that edge goes from 2 to 11 minutes. The lower path is now 20. The upper path, unchanged at 12, becomes the best route. Nothing about the roads changed. Only one number on one edge changed. That is all "traffic-aware routing" means at the graph level.</p>
+
+        <h3>Four search strategies</h3>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Algorithm</th><th>Idea</th><th>Good</th><th>Bad</th></tr></thead>
+          <tbody>
+            <tr><td>Dijkstra</td><td>Grow outward from the origin in order of cost</td><td>Exact, simple, handles any non-negative weights</td><td>Touches huge areas on long trips, it explores in all directions</td></tr>
+            <tr><td>A*</td><td>Dijkstra plus a goal heuristic (straight-line distance ÷ max speed)</td><td>Visits far fewer nodes because it leans toward the destination</td><td>Still too slow alone for continent-sized queries</td></tr>
+            <tr><td>Hierarchical routing</td><td>Local roads near the two ends, highways in between, graph partitioned into regions</td><td>Matches how people actually drive long distances</td><td>Naive versions can miss the true optimum</td></tr>
+            <tr><td>Contraction hierarchies (CH)</td><td>Precompute shortcut edges that skip unimportant nodes</td><td>Millisecond queries on huge graphs</td><td>Precomputation is tied to the weights, so live traffic needs customisable variants</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>A word on the A* heuristic, because the board writes it precisely: straight-line distance divided by <em>maximum</em> speed. The heuristic must never overestimate the remaining travel time, or A* can return a wrong answer. Dividing by the fastest possible speed guarantees an optimistic guess. You could not possibly get there faster than a straight line at top speed.</p>
+
+        <p>Contraction hierarchies deserve one more paragraph. In preprocessing, you rank nodes by importance and "contract" the unimportant ones, adding shortcut edges so that shortest paths are preserved without them. A query then only ever climbs upward in importance from both ends and meets in the middle. A cross-country query that would touch millions of nodes with Dijkstra touches a few hundred. The price is that shortcuts bake in edge weights. Change a weight and the shortcuts through it may be wrong. That tension, speed from precomputation versus freshness from live traffic, is the question the board asks in its bottom line, and I get to it in the FAQ.</p>
+
+        <p>The section ends with a careful sentence: these are concepts from the routing literature, and which mix Google runs per query is not public. The graph is built from the geographic DB per region and kept in memory on the routing servers. In memory, because a graph search does millions of random lookups, and a disk read per lookup would be hopeless.</p>
+
+        <h2 id="g-route-calculation">G. Route calculation and optimization</h2>
+
+        <p>Section G is the green box, the heart of the routing flow. Its subtitle is "one request in, ranked route options out, stateless". Eleven steps, R1 to R11.</p>
+
+        <div class="diagram-container"><svg viewBox="0 0 760 164" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Route calculation, R1 to R11. Stateless: one request in, ranked options out."><style>
+  .b{fill:none;stroke:var(--ink);stroke-width:1.4}
+  .by{fill:rgba(240,192,64,.16);stroke:#c9962a;stroke-width:1.4}
+  .bg{fill:rgba(63,125,83,.14);stroke:#3f7d53;stroke-width:1.4}
+  .br{fill:rgba(201,100,66,.14);stroke:#c96442;stroke-width:1.4}
+  .t{font-family:var(--font-mono),monospace;font-size:10.5px;fill:var(--ink)}
+  .ts{font-family:var(--font-mono),monospace;font-size:9px;fill:var(--ink);opacity:.8}
+  .th{font-family:var(--font-mono),monospace;font-size:11.5px;font-weight:700;fill:var(--ink)}
+  .ln{stroke:var(--ink);stroke-width:1.3;fill:none}
+  .lr{stroke:#c96442;stroke-width:2;fill:none;stroke-dasharray:6 4}
+  .lg{stroke:#3f7d53;stroke-width:2.4;fill:none}
+  .ah{fill:var(--ink)}
+</style><text x="12" y="18" class="th">REQUEST: R1 to R5</text><rect x="12.0" y="26" width="137.6" height="44" rx="6" class="bg"/><text x="80.8" y="45" text-anchor="middle" class="t">R1 destination</text><text x="80.8" y="58" text-anchor="middle" class="ts">typed or tapped</text><line x1="150.6" y1="48" x2="157.6" y2="48" class="ln"/><path d="M156.6 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="161.6" y="26" width="137.6" height="44" rx="6" class="bg"/><text x="230.4" y="45" text-anchor="middle" class="t">R2 geocoding</text><text x="230.4" y="58" text-anchor="middle" class="ts">text to lat/lng</text><line x1="300.2" y1="48" x2="307.2" y2="48" class="ln"/><path d="M306.2 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="311.2" y="26" width="137.6" height="44" rx="6" class="bg"/><text x="380.0" y="45" text-anchor="middle" class="t">R3 origin</text><text x="380.0" y="58" text-anchor="middle" class="ts">GPS fix</text><line x1="449.8" y1="48" x2="456.8" y2="48" class="ln"/><path d="M455.8 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="460.8" y="26" width="137.6" height="44" rx="6" class="bg"/><text x="529.6" y="45" text-anchor="middle" class="t">R4 directions</text><text x="529.6" y="58" text-anchor="middle" class="ts">mode, time, prefs</text><line x1="599.4" y1="48" x2="606.4" y2="48" class="ln"/><path d="M605.4 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="610.4" y="26" width="137.6" height="44" rx="6" class="bg"/><text x="679.2" y="45" text-anchor="middle" class="t">R5 snap</text><text x="679.2" y="58" text-anchor="middle" class="ts">nearest segment</text><text x="12" y="96" class="th">SEARCH + RESPONSE: R6 to R11  (R6 to R8 run together)</text><rect x="12.0" y="104" width="112.7" height="44" rx="6" class="bg"/><text x="68.3" y="123" text-anchor="middle" class="t">R6 search</text><text x="68.3" y="136" text-anchor="middle" class="ts">A* / CH-style</text><line x1="125.7" y1="126" x2="132.7" y2="126" class="ln"/><path d="M131.7 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="136.7" y="104" width="112.7" height="44" rx="6" class="bg"/><text x="193.0" y="123" text-anchor="middle" class="t">R7 restrictions</text><text x="193.0" y="136" text-anchor="middle" class="ts">turns, closures</text><line x1="250.3" y1="126" x2="257.3" y2="126" class="ln"/><path d="M256.3 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="261.3" y="104" width="112.7" height="44" rx="6" class="bg"/><text x="317.7" y="123" text-anchor="middle" class="t">R8 weights</text><text x="317.7" y="136" text-anchor="middle" class="ts">base + live traffic</text><line x1="375.0" y1="126" x2="382.0" y2="126" class="ln"/><path d="M381.0 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="386.0" y="104" width="112.7" height="44" rx="6" class="bg"/><text x="442.3" y="123" text-anchor="middle" class="t">R9 rank</text><text x="442.3" y="136" text-anchor="middle" class="ts">ETA, distinct</text><line x1="499.7" y1="126" x2="506.7" y2="126" class="ln"/><path d="M505.7 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="510.7" y="104" width="112.7" height="44" rx="6" class="bg"/><text x="567.0" y="123" text-anchor="middle" class="t">R10 return</text><text x="567.0" y="136" text-anchor="middle" class="ts">polyline, steps</text><line x1="624.3" y1="126" x2="631.3" y2="126" class="ln"/><path d="M630.3 122.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="635.3" y="104" width="112.7" height="44" rx="6" class="bg"/><text x="691.7" y="123" text-anchor="middle" class="t">R11 render</text><text x="691.7" y="136" text-anchor="middle" class="ts">user picks</text></svg><p class="diagram-label">Fig 4 — Route calculation, R1 to R11. Stateless: one request in, ranked options out.</p></div>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Step</th><th>Name</th><th>What happens</th></tr></thead>
+          <tbody>
+            <tr><td>R1</td><td>User enters destination</td><td>Typed text or a tapped pin, plus a mode: drive, walk or bike</td></tr>
+            <tr><td>R2</td><td>Geocoding</td><td>"12 MG Road" becomes a lat/lng, plus a place ID and an entrance if known (section K)</td></tr>
+            <tr><td>R3</td><td>Current location = origin</td><td>The device's GPS fix, or a typed start point</td></tr>
+            <tr><td>R4</td><td>Directions service</td><td>Receives origin, destination, mode, departure time and preferences</td></tr>
+            <tr><td>R5</td><td>Snap to road graph</td><td>Find the nearest road segments using the spatial index (E), using heading to pick the right side</td></tr>
+            <tr><td>R6</td><td>Route search engine</td><td>A* or CH-style search over the road graph (F)</td></tr>
+            <tr><td>R7</td><td>Restrictions</td><td>Turns, one-ways, closures, vehicle and time-of-day rules</td></tr>
+            <tr><td>R8</td><td>Edge weights + traffic</td><td>Base time plus live speeds from the traffic store (J)</td></tr>
+            <tr><td>R9</td><td>Rank candidates</td><td>ETA from section H, distinct routes, tolls, preferences, top three or so</td></tr>
+            <tr><td>R10</td><td>Return route options</td><td>Polyline, ETA, distance, steps. Not tiles</td></tr>
+            <tr><td>R11</td><td>Client renders route</td><td>Draws the polyline over its own tiles, user picks one</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>A few of these hide more than they show.</p>
+
+        <p><strong>R5, snapping.</strong> Your GPS says you are at a point. Roads are lines. The router needs to know which edge you are on and how far along it. Nearest-segment is the start, but heading matters too. If you are on a flyover above a surface street, or on a divided road, the nearest line might be going the wrong way. The destination has the same problem in reverse: the pin for a mall is in the middle of the building, but the route should end at an entrance on a road. That is why R2 mentions "entrance".</p>
+
+        <p><strong>R6 to R8 are one thing.</strong> The board has a note under the top row: R6 to R8 happen together in practice. Restrictions and traffic are evaluated as edge costs <em>while</em> the search runs. The diagram draws them as three boxes so you can see the three concerns, but there is no separate "apply traffic" pass after the search. The dashed yellow arrow coming up from section J into R8 is the traffic flow meeting the routing flow.</p>
+
+        <p><strong>R10, not tiles.</strong> The response is a polyline (an encoded list of coordinates), an ETA, a distance and a list of steps. The route is drawn by the client on top of the tiles it already has. The routing service never touches images.</p>
+
+        <h3>Shortest distance is not fastest time</h3>
+
+        <p>The board's example: the fastest route is 6.8 km and takes 9 minutes on the ring road. The shortest is 4.1 km and takes 17 minutes through signals and city streets. Routers usually minimise time, and distance is merely shown.</p>
+
+        <p>This is why edge weight is time. If weight were distance, every route would crawl through the city centre. It also explains why your route sometimes looks like a strange detour on the map. It is longer on the ground and shorter on the clock.</p>
+
+        <h3>What the cost function weighs</h3>
+
+        <pre>cost(route) = Σ edge_time(t)
+            + turn penalties
+            + toll / ferry / highway penalty   (user prefs)
+            + forbidden turn = ∞</pre>
+
+        <p>Line by line:</p>
+
+        <ul>
+          <li><strong>Σ edge_time(t).</strong> The sum of travel time over every edge. The <code>(t)</code> is important and I explain it below.</li>
+          <li><strong>Turn penalties.</strong> A left turn across traffic costs more than going straight. A U-turn costs a lot.</li>
+          <li><strong>Toll, ferry and highway penalties.</strong> This is how "avoid tolls" works. The router does not delete toll roads. It adds a penalty, large or infinite depending on how strict the preference is.</li>
+          <li><strong>Forbidden turn = ∞.</strong> Infinite cost means the search will never choose it.</li>
+        </ul>
+
+        <p>The router optimises over distance, travel time, traffic, restrictions, tolls and preferences, all folded into that one number. Having one number is what lets a single shortest-path algorithm serve "fastest", "avoid highways" and "truck-legal" by changing the weights instead of the algorithm.</p>
+
+        <blockquote>edge_time(t) is time-dependent: you reach segment 40 at 9:20, not at 9:00.</blockquote>
+
+        <p>If you leave at 9:00 on a 40-minute trip, the traffic that matters on the last stretch is the traffic at 9:35, not the traffic right now. A road that is clear now may be jammed when you get there, and the other way round. So the cost of an edge should be looked up at the time you are predicted to arrive at it. That is exactly where traffic prediction (section N) plugs in.</p>
+
+        <h3>Alternatives</h3>
+
+        <p>R9 says "distinct routes". Showing three routes that differ by one side street is useless. Good alternatives share little road with each other, are not much slower than the best, and have no silly loops. This is a ranking and filtering problem layered on top of the search, and it is one reason there is a separate Route Optimization service in section C.</p>
+
+        <h3>Route calculation is not navigation</h3>
+
+        <p>The yellow-outlined box in section G compares the two directly, and the board calls mixing them up the classic interview mistake.</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th></th><th>Route calculation (G)</th><th>Navigation (I)</th></tr></thead>
+          <tbody>
+            <tr><td>Shape</td><td>One request → options</td><td>Long-lived session</td></tr>
+            <tr><td>State</td><td>Stateless, any server can answer</td><td>Stateful, follows one chosen route</td></tr>
+            <tr><td>Frequency</td><td>Runs once per search</td><td>Streams GPS, ETA and alerts for the whole trip</td></tr>
+            <tr><td>Caching</td><td>Cacheable briefly (Redis key: origin and destination cells + mode + time bucket)</td><td>Not cacheable, it is your trip</td></tr>
+            <tr><td>Relationship</td><td>Knows nothing about navigation</td><td>Calls G again only to reroute</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>Navigation is a stateful loop on top of a stateless calculator. Keep the calculator pure and you can scale it, cache it and reuse it for everything: the directions page, reroutes, ETA sharing, delivery apps on the public API.</p>
+
+        <p>The cache key in that table is neat. Exact coordinates almost never repeat, so you cannot cache on them. But round the origin and destination to cells, add the mode, and bucket the time into a few minutes, and suddenly "city centre to the airport, driving, around 8:05" is a key that many users share.</p>
+
+        <h2 id="h-eta">H. ETA and traffic-aware routing</h2>
+
+        <p>The ETA is the number people actually judge a maps app by. Section H shows what feeds it. The ETA Estimation box takes five inputs:</p>
+
+        <ul>
+          <li><strong>Route candidate</strong> from R6.</li>
+          <li><strong>Segment travel times</strong>, the graph weights from section F.</li>
+          <li><strong>Current traffic</strong>, the live speeds from section J.</li>
+          <li><strong>Historical patterns</strong> by time of day and weekday.</li>
+          <li><strong>Route distance and turn count.</strong></li>
+        </ul>
+
+        <p>And the formula on the board is: the sum of the predicted time per segment <em>at the moment you will reach it</em>, plus an ML correction (section N). Its output goes to Route Ranking at R9, which picks the fastest first plus distinct alternatives, not three copies of one route.</p>
+
+        <h3>Why both live and historical</h3>
+
+        <p>Live traffic tells you what is true now. For the first ten minutes of a trip, that is the best information you have. For a segment you will reach in 45 minutes, "now" is weak evidence. What usually happens on that road at that time on a Tuesday is stronger. So the estimate blends the two, leaning on live data for near segments and on history and forecasts for far ones.</p>
+
+        <p>Turn count is on the list because the simple sum of segment times misses things. Each turn, signal and merge adds delay that does not belong to any one segment. The ML correction exists to learn those leftovers: the systematic gap between the simple sum and what real trips took.</p>
+
+        <div class="bm-note"><strong>Public fact.</strong> Google and DeepMind described using graph neural networks for ETA prediction in Google Maps in a 2020 blog post, followed by a paper. The board marks this as a publicly documented fact. Beyond what those sources say, the internals are not public, and I am not going to guess.</div>
+
+        <h3>During navigation</h3>
+
+        <p>The timeline at the bottom of the section is a small story:</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Time</th><th>Event</th><th>ETA</th></tr></thead>
+          <tbody>
+            <tr><td>08:50</td><td>Depart</td><td>09:32</td></tr>
+            <tr><td>09:05</td><td>A jam forms ahead</td><td>09:41</td></tr>
+            <tr><td>09:06</td><td>An alternative saves 7 minutes, so it is offered</td><td>about 09:34 if taken</td></tr>
+            <tr><td>09:33</td><td>Arrive</td><td></td></tr>
+          </tbody>
+        </table></div>
+
+        <p>The initial calculation happens once, with many candidates (section G). During navigation the system re-estimates the remaining route as traffic changes, and switches only when the gain is big enough. The board adds: no flip-flopping between two similar routes.</p>
+
+        <p>That last rule is hysteresis, and it is a product decision as much as an engineering one. If route A is 30 seconds faster now and route B is 20 seconds faster a minute later, an app that keeps switching is unbearable and probably dangerous. So there is a threshold. Offer a new route only if it saves a meaningful amount of time, and do not offer it at all if the turn-off is already too close to take safely.</p>
+
+        <h2 id="i-navigation">I. Turn-by-turn navigation</h2>
+
+        <p>Section I is "a stateful loop on the chosen route". At the top sits the Navigation Session Service, holding session = chosen route + progress + ETA, and streaming traffic and ETA updates to the client. Below it is a six-step loop, N1 to N6, that repeats for the whole trip.</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Step</th><th>Name</th><th>What happens</th></tr></thead>
+          <tbody>
+            <tr><td>N1</td><td>GPS update</td><td>About 1 Hz on the device, fused with speed and heading, batched to the server</td></tr>
+            <tr><td>N2</td><td>Map matching</td><td>Noisy fix → most likely road, given history and connectivity. Not simply the nearest road</td></tr>
+            <tr><td>N3</td><td>Current road</td><td>Segment + offset along it + direction of travel</td></tr>
+            <tr><td>N4</td><td>Route progress</td><td>On the route? Distance to next maneuver, ETA left</td></tr>
+            <tr><td>N5</td><td>Next maneuver</td><td>"Turn left onto X in 300 m" plus lane guidance</td></tr>
+            <tr><td>N6</td><td>Instruction → client</td><td>Banner and arrow on screen, voice at 500 m and again at "now"</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>Map matching, properly</h3>
+
+        <p>N2 is the step everything else depends on. GPS is off by several metres on a good day and far more between tall buildings. If you simply pick the nearest road for each fix, the blue dot jumps onto parallel service roads, onto the road under a flyover, onto side streets at every intersection.</p>
+
+        <p>A proper matcher looks at the sequence of fixes, not one fix. It asks which path through the road graph best explains the whole recent trace, given that cars move along connected roads at plausible speeds and do not teleport. The standard approach treats this as a hidden Markov model: the true road is the hidden state, the noisy fix is the observation, and the graph says which transitions are possible. During navigation there is an extra hint that the general traffic pipeline does not have. You know the planned route, so being on it is the most likely explanation.</p>
+
+        <h3>Arrival and going off-route</h3>
+
+        <p><strong>Arrival detection:</strong> you are near or past the destination and slowing → end the session and log the trip (which feeds section N).</p>
+
+        <p><strong>Off-route or wrong turn</strong> is the red box. The rule on the board: the matched road is not on the route for a few fixes, not one noisy fix → reroute. One bad GPS point should not trigger anything. Three in a row on a road that is not part of the route means the driver really did leave it.</p>
+
+        <p>Rerouting is described as a new route request from the current position and heading, back to R4 in section G. Two details here are easy to miss:</p>
+
+        <ul>
+          <li><strong>Heading.</strong> The new origin is not just a point. The car is moving in a direction, and a route that begins with an immediate U-turn is usually wrong.</li>
+          <li><strong>Keep guiding on the old route until the new one lands.</strong> Never show a blank screen. Stale guidance for one second is better than none.</li>
+        </ul>
+
+        <p>The board adds a thoughtful footnote: a wrong turn is not always off-route in the sense of needing a whole new plan. A U-turn back to the original route may still be cheaper than a new route. The router decides, by cost, like everything else.</p>
+
+        <h3>Where does the loop run?</h3>
+
+        <p>The note at the bottom says location updates keep flowing all trip → progress, ETA refresh, traffic alerts, maybe a reroute. And then: matching and guidance often run <em>on the device</em>, for tunnels and lost signal, while the server sends the route, traffic and reroutes.</p>
+
+        <p>This is a reliability decision. If turn instructions depended on a round trip to the server, every tunnel and every dead zone would silence the app at exactly the moment a driver needs it. So the device carries the route geometry and the maneuver list and can keep guiding alone. In a tunnel with no GPS at all, it can even estimate position from speed and time (dead reckoning). The server's job is the things only the server knows: fresh traffic and better routes.</p>
+
+        <h2 id="j-traffic">J. Real-time traffic processing</h2>
+
+        <p>Section J is the yellow box, the traffic flow, and its subtitle is the mental model: "a stream, not request / response". Nobody asks for this work. It simply never stops. Seven steps, T1 to T7.</p>
+
+        <div class="diagram-container"><svg viewBox="0 0 760 86" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The traffic pipeline. Nobody requests it. It runs all the time and publishes segment speeds."><style>
+  .b{fill:none;stroke:var(--ink);stroke-width:1.4}
+  .by{fill:rgba(240,192,64,.16);stroke:#c9962a;stroke-width:1.4}
+  .bg{fill:rgba(63,125,83,.14);stroke:#3f7d53;stroke-width:1.4}
+  .br{fill:rgba(201,100,66,.14);stroke:#c96442;stroke-width:1.4}
+  .t{font-family:var(--font-mono),monospace;font-size:10.5px;fill:var(--ink)}
+  .ts{font-family:var(--font-mono),monospace;font-size:9px;fill:var(--ink);opacity:.8}
+  .th{font-family:var(--font-mono),monospace;font-size:11.5px;font-weight:700;fill:var(--ink)}
+  .ln{stroke:var(--ink);stroke-width:1.3;fill:none}
+  .lr{stroke:#c96442;stroke-width:2;fill:none;stroke-dasharray:6 4}
+  .lg{stroke:#3f7d53;stroke-width:2.4;fill:none}
+  .ah{fill:var(--ink)}
+</style><text x="12" y="18" class="th">TRAFFIC STREAM: T1 to T7</text><rect x="12.0" y="26" width="94.9" height="44" rx="6" class="by"/><text x="59.4" y="45" text-anchor="middle" class="t">T1 signals</text><text x="59.4" y="58" text-anchor="middle" class="ts">batched GPS</text><line x1="107.9" y1="48" x2="114.9" y2="48" class="ln"/><path d="M113.9 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="118.9" y="26" width="94.9" height="44" rx="6" class="by"/><text x="166.3" y="45" text-anchor="middle" class="t">T2 ingest</text><text x="166.3" y="58" text-anchor="middle" class="ts">Kafka by region</text><line x1="214.7" y1="48" x2="221.7" y2="48" class="ln"/><path d="M220.7 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="225.7" y="26" width="94.9" height="44" rx="6" class="by"/><text x="273.1" y="45" text-anchor="middle" class="t">T3 stream</text><text x="273.1" y="58" text-anchor="middle" class="ts">dedupe, windows</text><line x1="321.6" y1="48" x2="328.6" y2="48" class="ln"/><path d="M327.6 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="332.6" y="26" width="94.9" height="44" rx="6" class="by"/><text x="380.0" y="45" text-anchor="middle" class="t">T4 match</text><text x="380.0" y="58" text-anchor="middle" class="ts">trace to roads</text><line x1="428.4" y1="48" x2="435.4" y2="48" class="ln"/><path d="M434.4 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="439.4" y="26" width="94.9" height="44" rx="6" class="by"/><text x="486.9" y="45" text-anchor="middle" class="t">T5 speed</text><text x="486.9" y="58" text-anchor="middle" class="ts">per segment</text><line x1="535.3" y1="48" x2="542.3" y2="48" class="ln"/><path d="M541.3 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="546.3" y="26" width="94.9" height="44" rx="6" class="by"/><text x="593.7" y="45" text-anchor="middle" class="t">T6 aggregate</text><text x="593.7" y="58" text-anchor="middle" class="ts">history, incidents</text><line x1="642.1" y1="48" x2="649.1" y2="48" class="ln"/><path d="M648.1 44.5 l5 3.5 l-5 3.5z" class="ah"/><rect x="653.1" y="26" width="94.9" height="44" rx="6" class="by"/><text x="700.6" y="45" text-anchor="middle" class="t">T7 store</text><text x="700.6" y="58" text-anchor="middle" class="ts">seg → speed</text></svg><p class="diagram-label">Fig 5 — The traffic pipeline. Nobody requests it. It runs all the time and publishes segment speeds.</p></div>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Step</th><th>Name</th><th>What happens</th></tr></thead>
+          <tbody>
+            <tr><td>T1</td><td>Location signals</td><td>Opted-in phones send batched GPS: lat, lng, speed, heading, timestamp. Anonymised</td></tr>
+            <tr><td>T2</td><td>Traffic ingestion</td><td>Location Ingestion (C) writes to Kafka, partitioned by region or cell</td></tr>
+            <tr><td>T3</td><td>Stream processing</td><td>Dedupe, drop outliers such as parked cars and GPS jumps, group into 1 to 2 minute windows</td></tr>
+            <tr><td>T4</td><td>Map matching</td><td>Trace → road segments. HMM-style, the likeliest path, not the nearest road</td></tr>
+            <tr><td>T5</td><td>Segment speed</td><td>Speed per segment per window. Needs enough devices to publish</td></tr>
+            <tr><td>T6</td><td>Traffic aggregation</td><td>Add history, incidents and confidence → a congestion level per segment</td></tr>
+            <tr><td>T7</td><td>Traffic data store</td><td>segment_id → speed, confidence, timestamp. NoSQL plus a Redis hot set</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>Why each step is there</h3>
+
+        <p><strong>T2, partition by region.</strong> Kafka keeps order within a partition. If all pings from one area land in one partition, one consumer sees all the data for a road segment and can aggregate it without coordinating with others. Ingestion also "acks fast" (section C): it writes to the log and returns. It does not wait for any processing.</p>
+
+        <p><strong>T3, outliers.</strong> A phone in a parked car reports speed zero on a road that is flowing freely. A phone in a pedestrian's pocket reports 5 km/h next to a highway. A GPS glitch reports a jump of 300 metres in one second. All of these would poison the average if they got through.</p>
+
+        <p><strong>T3, windows.</strong> One to two minute windows are a trade-off. Shorter windows react faster but have fewer samples and more noise. Longer windows are smooth but slow to notice a new jam.</p>
+
+        <p><strong>T5, enough devices.</strong> A segment's speed is published only when enough devices contributed. This is both a quality rule and a privacy rule, and the board gives it its own box.</p>
+
+        <h3>The picture of the junction</h3>
+
+        <p>The board draws a small crossroads with dots. One arm shows segment 811 at 48 km/h. Another shows segment 812 at 7 km/h where the usual speed is 40, drawn as a line of red dots bunched together. A third shows 45, a fourth 52. The caption: a dot is a device ping. Many slow devices on one segment = congestion. One slow device = someone parking or a delivery stop.</p>
+
+        <p>That caption is the whole statistical idea. No single phone tells you anything. Agreement between many phones does.</p>
+
+        <h3>What goes into a segment's colour</h3>
+
+        <ul>
+          <li><strong>Current speed</strong> from this window's observations.</li>
+          <li><strong>Historical pattern</strong> for the same segment, same hour, same weekday.</li>
+          <li><strong>Congestion level</strong> = current ÷ free-flow speed. This ratio is what matters. 30 km/h is a disaster on a motorway and perfectly normal on a residential street.</li>
+          <li><strong>Incident reports</strong>: crash, closure, hazard.</li>
+          <li><strong>Traffic forecast</strong> (section N): what it will be in 20 minutes.</li>
+        </ul>
+
+        <p>When a segment has no live data, at 3 am on a quiet road for example, the historical pattern fills in. That is also why confidence is stored at T7. A speed backed by 200 devices and a speed backed by history alone should not be trusted equally.</p>
+
+        <h3>Privacy</h3>
+
+        <blockquote>Raw locations never reach other users.</blockquote>
+
+        <p>The board's rules: data is anonymised and aggregated per segment. A segment publishes only with enough devices. What leaves the pipeline is a speed and a colour, not who was there. Raw traces get short retention and controlled access. The board also marks as public that Google says live traffic is built from aggregated, anonymised location data from people who opt in.</p>
+
+        <p>The minimum-device threshold is worth understanding. If one car is on a rural road at night and that road turns green on the map, then the map has just told the world that someone is driving there. Aggregation thresholds make sure the published signal describes a crowd.</p>
+
+        <h3>Incident detection</h3>
+
+        <p>The red box: many devices slow sharply on one segment, plus user reports → incident or closure → the edge cost goes very high or to infinity → routes avoid it (R7 and R8) and alerts go out in navigation (section I). Notice it is the same mechanism again. An incident is not a special feature in the router. It is an edge weight.</p>
+
+        <p>And the board closes the section by repeating the rule from section C: routing <em>reads</em> traffic, it never waits on this pipeline. <strong>Stale traffic is a quality problem, not an outage.</strong></p>
+
+
+        <h2 id="k-places">K. Places search and geocoding</h2>
+
+        <p>Section K covers everything where the input is text. The main flow is six steps, S1 to S6.</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Step</th><th>Name</th><th>What happens</th></tr></thead>
+          <tbody>
+            <tr><td>S1</td><td>Search query</td><td>"coffee near me", "12 MG Road", "JFK"</td></tr>
+            <tr><td>S2</td><td>Query processing</td><td>Spelling fix, language detection, intent: is this a place, an address or a category?</td></tr>
+            <tr><td>S3</td><td>Places + address index</td><td>Text match on names, categories and addresses</td></tr>
+            <tr><td>S4</td><td>Geographic filter</td><td>Viewport or radius → cells (section E) + distance</td></tr>
+            <tr><td>S5</td><td>Search ranking</td><td>Relevance, distance, prominence, open now</td></tr>
+            <tr><td>S6</td><td>Results</td><td>Pins and cards: id, name, lat/lng, hours, rating</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>The three example queries in S1 are chosen well, because they are three different intents. "coffee near me" is a <em>category</em> search: many acceptable answers, distance matters most. "12 MG Road" is an <em>address</em>: one right answer, and it needs geocoding. "JFK" is a specific <em>place</em>: one famous answer, and distance barely matters. S2 has to tell these apart before anything else can go right.</p>
+
+        <h3>Three related operations</h3>
+
+        <ul>
+          <li><strong>Geocoding.</strong> Address → coordinates. "12 MG Road" → (12.97, 77.60). This involves parsing the address into parts, normalising them ("Rd" and "Road", different scripts, missing postcodes) and matching against known addresses. When the exact house number is unknown, geocoders interpolate along the street's number range.</li>
+          <li><strong>Reverse geocoding.</strong> Coordinates → address. Find the nearest address point, or the nearest street plus its number range. This is what turns a dropped pin into something readable.</li>
+          <li><strong>Nearby search.</strong> Places inside an area: a radius or a viewport, resolved through spatial cells.</li>
+        </ul>
+
+        <h3>Ranking is where the product lives</h3>
+
+        <p>The board lists oval tags along the bottom, restaurants, hospitals, petrol stations, airports, businesses, landmarks, with a caption I really like: same index, very different ranking. "hospital" weighs distance. "airport" weighs prominence.</p>
+
+        <p>Think about it. If you search "hospital", you want the close one, even if it is small. If you search "airport", you want the big international one 30 km away, not the private airstrip 5 km away. Same index, same query pipeline, but the ranking signals are weighted differently per category. "Open now" is another signal that changes by the minute.</p>
+
+        <h3>Freshness</h3>
+
+        <p>The places database holds name, category, hours, phone, photos, reviews and owner edits. It is indexed into the search index <em>asynchronously</em>, in minutes, not instantly. This is the standard pattern: a database of record takes the write, and the search index catches up through a queue. A new cafe being searchable three minutes after it is added is fine. Blocking the write until every index shard confirms is not worth it.</p>
+
+        <h2 id="l-offline">L. Offline maps and client caching</h2>
+
+        <p>Section L is headed "on the device (a copy, not the server DB)". That bracket is the important part. The device never has the real database. It has a packaged, versioned snapshot of one region.</p>
+
+        <p>Four things are stored on the device:</p>
+
+        <ul>
+          <li><strong>Cache manager.</strong> LRU eviction for tiles, a size cap, expiry and versions. LRU means least recently used goes first when space runs out.</li>
+          <li><strong>Local tile storage.</strong> Tiles you viewed plus tiles you downloaded.</li>
+          <li><strong>Local geographic data.</strong> A slice of the road graph, for routing.</li>
+          <li><strong>Local search data.</strong> A subset of places and addresses.</li>
+        </ul>
+
+        <p><strong>Offline map download:</strong> the user picks a region → the server packs tiles + a road graph slice + places into a versioned bundle. <strong>Map data sync:</strong> a version check when online, delta updates, and a bundle that is not refreshed eventually expires.</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Works offline</th><th>Needs a connection</th></tr></thead>
+          <tbody>
+            <tr><td>Map rendering</td><td>Live traffic and traffic-aware ETA</td></tr>
+            <tr><td>Search inside the region (basic)</td><td>Incidents, closures, jam reroutes</td></tr>
+            <tr><td>Driving directions, without traffic</td><td>Reviews, photos, fresh opening hours</td></tr>
+            <tr><td>Your own GPS position</td><td>Real-time transit</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>The split makes sense once you sort data by how fast it changes. Road geometry changes over months, so a snapshot works. Traffic changes over minutes, so a snapshot is useless. GPS needs no network at all, because the satellites broadcast and the phone only listens.</p>
+
+        <p>Offline routing means the phone itself runs a graph search on the downloaded graph slice. This is one more reason the road graph is a separate artifact from tiles. You cannot route on pictures.</p>
+
+        <div class="bm-warn"><strong>Why bundles expire.</strong> The board puts it bluntly: expired offline data is dangerous (closed roads), so it expires on purpose. A two-year-old map that confidently sends you down a road that no longer exists is worse than an app that says "please update". Expiry is a safety feature, not a storage trick.</div>
+
+        <h2 id="m-storage">M. Data storage</h2>
+
+        <p>Section M lines up eight stores. The subtitle repeats the disclaimer: illustrative choices, not Google's stack. What matters is the pairing of data shape to store type.</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>Store</th><th>Holds</th><th>Example tech on the board</th><th>Why this type</th></tr></thead>
+          <tbody>
+            <tr><td>Spatial DB</td><td>Geo source of truth: geometry + attributes, spatial index</td><td>PostGIS-style, GiST or cell indexes</td><td>Transactions, history, real geometry queries. Feeds Map Data and Geocode</td></tr>
+            <tr><td>Graph snapshots</td><td>The road network graph</td><td>Built per region from the geo DB, loaded in memory</td><td>Graph search needs random access at memory speed. Feeds Route Calc</td></tr>
+            <tr><td>Object storage</td><td>Generated tiles, offline packs, imagery, graph builds</td><td>S3-style blobs</td><td>Huge, immutable, cheap, sits behind the CDN</td></tr>
+            <tr><td>Distributed NoSQL</td><td>Traffic observations: segment speeds, location events with TTL</td><td>Bigtable or Cassandra-style</td><td>Massive write rate, simple key lookups, data that expires</td></tr>
+            <tr><td>Redis</td><td>Cached results: hot geocodes, short-TTL route results, nav sessions, live segment speeds</td><td>Redis</td><td>Sub-millisecond reads for things asked constantly</td></tr>
+            <tr><td>Search index</td><td>Places and addresses, with geo-point fields</td><td>Elasticsearch or OpenSearch</td><td>Text relevance plus geo filters in one query</td></tr>
+            <tr><td>Kafka</td><td>The event stream: location pings, traffic, nav and search events</td><td>Kafka</td><td>Durable, ordered per partition, replayable</td></tr>
+            <tr><td>Data warehouse</td><td>Historical traffic, travel times, trips, training data</td><td>A columnar warehouse</td><td>Big scans over months of data for analytics and ML</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>Three things stand out to me.</p>
+
+        <p><strong>TTL on location events.</strong> A location ping is valuable for a few minutes and a liability afterwards. Giving it a time-to-live at the storage layer means deletion is automatic. It does not rely on someone remembering to run a cleanup job.</p>
+
+        <p><strong>Replayable Kafka.</strong> If the map-matching code had a bug for an hour, you can fix it and reprocess that hour from the log. A queue that deletes messages after delivery cannot do that.</p>
+
+        <p><strong>Graph snapshots are built, not edited.</strong> The routing graph is compiled from the geo DB into a compact, read-only, in-memory format and shipped to routing servers as a versioned file. Live changes arrive as weights (traffic), not as edits to the structure. Structural changes, a new road, arrive with the next build.</p>
+
+        <h2 id="n-ml">N. Analytics and machine learning</h2>
+
+        <p>Section N has two lanes, and the note on the right names them: <strong>real-time</strong> is fresh signals and millisecond-latency inference. <strong>Offline</strong> is months of history, retraining and backtests.</p>
+
+        <p><strong>The events going in:</strong> traffic events, historical travel times, navigation events, route deviations and search events.</p>
+
+        <p><strong>The real-time lane:</strong> Events → streaming pipeline (Kafka → stream jobs) → feature processing (segment + time of day, last-N-minute speeds) → online ML models (traffic forecast, ETA, incident detection) → outputs: the ETA in section H, the forecast in section J, and route optimisation in section G.</p>
+
+        <p><strong>The offline lane:</strong> Data warehouse (months of trips and segment speeds) → offline training (batch features, retrain the models) → backtest and registry (ETA error versus actual, before it ships) → deploy to the online models.</p>
+
+        <h3>The feedback loop</h3>
+
+        <p>The nice thing about ETA as an ML problem is that the labels are free. Every finished trip has a predicted arrival time and an actual one. Nobody has to annotate anything. Arrival detection in section I logs the trip, the trip lands in the warehouse, and the next model is trained on how wrong the last one was.</p>
+
+        <p>Route deviations are an interesting signal too. If many drivers ignore a suggested turn at the same place, something is wrong there. Maybe the turn is illegal now, maybe the road is closed, maybe locals just know better. Either way it is evidence about the map.</p>
+
+        <h3>Backtesting before shipping</h3>
+
+        <p>The registry box says "ETA error vs actual, before it ships". You replay historical trips through the candidate model and compare its predictions with what really happened. If it is better on average but far worse in one city or on rainy evenings, you want to know before real users do. The same features must be computed the same way in the training lane and the live lane, otherwise the model sees one thing in training and another in production. That mismatch is called training-serving skew and it is a classic way for a good offline model to be bad online.</p>
+
+        <h2 id="o-reliability">O. Reliability and system design challenges</h2>
+
+        <p>The last section is a list of ten challenges under the heading "what makes this hard", each with a one-line answer. This is basically an interview cheat sheet, so I will keep it as a table and then expand the cross-cutting notes.</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>#</th><th>Challenge</th><th>The board's answer</th><th>Section</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Billions of geo features</td><td>Shard by region or cell, derived views per workload</td><td>D, E, M</td></tr>
+            <tr><td>2</td><td>Massive map tile delivery</td><td>CDN + immutable versioned keys, vector tiles cut bytes</td><td>B, D</td></tr>
+            <tr><td>3</td><td>High-frequency location updates</td><td>Batch on device, ack fast, Kafka partitioned by region</td><td>A, J</td></tr>
+            <tr><td>4</td><td>Low-latency route calculation</td><td>In-memory graph + precomputed shortcuts (CH-style)</td><td>F, G</td></tr>
+            <tr><td>5</td><td>Real-time traffic aggregation</td><td>Windowed stream jobs, publish only with enough samples</td><td>J</td></tr>
+            <tr><td>6</td><td>Geospatial query scalability</td><td>Cell IDs turn 2-D search into index range scans</td><td>E</td></tr>
+            <tr><td>7</td><td>Accurate ETA prediction</td><td>History + live + ML, track ETA error per region</td><td>H, N</td></tr>
+            <tr><td>8</td><td>Dynamic road network updates</td><td>Rebuild graph slices + affected tiles, not the world</td><td>D, F</td></tr>
+            <tr><td>9</td><td>Navigation reliability</td><td>On-device guidance survives tunnels + lost signal</td><td>I, L</td></tr>
+            <tr><td>10</td><td>Global availability</td><td>Multi-region, fall back to cached tiles + last route</td><td>B, L</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>The cross-cutting notes</h3>
+
+        <ul>
+          <li><strong>Cache invalidation:</strong> versioned tile keys, short TTL on routes. Tiles change rarely, so you version them. Routes change with traffic, so you let them expire in a minute or two.</li>
+          <li><strong>Fault tolerance:</strong> stateless services, replicas across zones.</li>
+          <li><strong>Regional failover:</strong> DNS or anycast shifts users to a healthy region.</li>
+          <li><strong>Retries:</strong> idempotent reads, backoff + jitter, no retry storms. A read can be retried safely. But if a million clients all retry at the same instant after a blip, the retry wave is a bigger outage than the blip. Jitter spreads them out.</li>
+          <li><strong>Data freshness:</strong> traffic in minutes, map edits in hours to days. Different data, different promises.</li>
+          <li><strong>Distributed tracing:</strong> one trace ID from gateway → route → ETA.</li>
+          <li><strong>Metrics and logs:</strong> p99 route latency, ETA error, tile hit ratio.</li>
+        </ul>
+
+        <p>Those three metrics map onto the three flows. Tile hit ratio tells you if map delivery is healthy. p99 route latency tells you if routing is healthy. ETA error tells you if traffic and ML are healthy. If I had to put three numbers on one dashboard for this system, it would be those.</p>
+
+        <h3>Graceful degradation</h3>
+
+        <p>Read the answers to 9 and 10 again. Neither says "never fail". They say what the user still gets when something does. I wrote out the ladder as I understand it from the board:</p>
+
+        <div class="tbl-scroll"><table class="papers">
+          <thead><tr><th>What breaks</th><th>What the user sees</th></tr></thead>
+          <tbody>
+            <tr><td>Traffic pipeline lags</td><td>Routes still work, ETAs lean on slightly old or historical speeds</td></tr>
+            <tr><td>ML models unavailable</td><td>ETA falls back to the plain sum of segment times</td></tr>
+            <tr><td>Routing service down in a region</td><td>DNS moves users to another region. Active trips keep the last route</td></tr>
+            <tr><td>Search index stale</td><td>New places are missing for a while, everything else works</td></tr>
+            <tr><td>CDN origin unreachable</td><td>Cached tiles at the edge and on the device still render</td></tr>
+            <tr><td>Phone loses signal</td><td>On-device guidance continues on the route it already has</td></tr>
+            <tr><td>No network at all</td><td>Offline bundle: map, basic search, routing without traffic</td></tr>
+          </tbody>
+        </table></div>
+
+        <h2 id="end-to-end">Putting it together: one trip, end to end</h2>
+
+        <p>Let me run one trip through every section, to check that the pieces really connect. I open the app in Bengaluru at 8:50 and type "airport".</p>
+
+        <ol>
+          <li><strong>The map appears (A, B, D).</strong> The renderer asks for the tiles covering my viewport. Most are already in the device cache. The rest come from the CDN through the tile door. No application server is involved.</li>
+          <li><strong>I type the query (K).</strong> "airport" goes through the API door: load balancer, gateway, auth, rate limit. Query processing decides it is a category with one very prominent answer. The index is filtered by cells around me (E) and ranked. The international airport comes first.</li>
+          <li><strong>I tap Directions (G).</strong> The Directions service takes my GPS fix as the origin and the airport's place ID as the destination. Both are snapped to road segments. The search runs on the in-memory graph (F), reading live segment speeds (J) as edge costs and respecting restrictions.</li>
+          <li><strong>ETAs are computed (H, N).</strong> For each candidate, segment times are predicted for the moment I will reach them, with an ML correction. Three distinct routes come back as polylines with ETAs. My phone draws them over its tiles.</li>
+          <li><strong>I press Start (I).</strong> A navigation session is created with my chosen route. My phone begins map matching and guidance locally and sends batched location updates.</li>
+          <li><strong>My pings become traffic (J).</strong> If I have opted in, those same updates are anonymised, written to Kafka, matched to segments and averaged with everyone else's. I am now a tiny part of someone else's ETA.</li>
+          <li><strong>A jam forms at 9:05 (J, H, I).</strong> Many devices slow down on a segment ahead. The published speed drops. The session re-estimates my remaining route, finds an alternative that saves 7 minutes, and offers it.</li>
+          <li><strong>I enter a tunnel (I, L).</strong> No signal. The device keeps guiding from the route it holds.</li>
+          <li><strong>I arrive (I, N).</strong> Arrival is detected, the session ends, and the trip (predicted versus actual) is logged for the next round of model training.</li>
+        </ol>
+
+        <p>Every section got used, and at no point did one flow block another. That, to me, is the sign of a good decomposition.</p>
+
+        <h2 id="mistakes">Common mistakes when explaining this design</h2>
+
+        <p>These are the traps the board itself warns about, plus the ones I fell into.</p>
+
+        <ul>
+          <li><strong>Mixing up route calculation and navigation.</strong> One is a stateless function, the other is a stateful session that calls it. The board calls this the classic interview mistake.</li>
+          <li><strong>Sending tiles through the API gateway.</strong> The highest-volume path should have the least machinery on it.</li>
+          <li><strong>Using distance as the edge weight.</strong> Shortest is not fastest.</li>
+          <li><strong>Snapping GPS to the nearest road.</strong> Map matching uses the whole trace and the graph's connectivity.</li>
+          <li><strong>Making routing wait for traffic.</strong> Read the latest published value. Never call into the pipeline.</li>
+          <li><strong>Treating tiles as the source of truth.</strong> Tiles are derived and disposable. The geo DB is the truth.</li>
+          <li><strong>Looking in only one cell for nearby search.</strong> Always include neighbours, then filter by exact distance.</li>
+          <li><strong>One database for everything.</strong> Eight stores is not over-engineering here. The data shapes really are that different.</li>
+          <li><strong>Forgetting the time dimension in ETA.</strong> You will reach segment 40 at 9:20, not at 9:00.</li>
+          <li><strong>Publishing speed from one device.</strong> Bad statistics and bad privacy at the same time.</li>
+          <li><strong>Rerouting on one noisy fix.</strong> Wait for a few consistent fixes, and keep the old guidance on screen until the new route arrives.</li>
+        </ul>
+
+        <h2 id="faq">FAQ</h2>
+
+        <details class="faq"><summary>Is this how Google Maps is actually built?</summary>
+          <p>No, and the diagram says so itself. It is an illustrative reference architecture built from general system design knowledge and a few publicly documented facts. Service names are generic and the technologies are example choices. Treat it as a way to learn the problem, not as a leak of anyone's internals.</p>
+        </details>
+
+        <details class="faq"><summary>The board ends with a question: precompute contraction hierarchies and patch in live traffic, or run plain A* on fresh weights every query. Which one?</summary>
+          <p>My answer is "neither extreme". Plain A* on a continent-sized graph is too slow for interactive long-distance queries. Classic contraction hierarchies are fast but their shortcuts assume fixed weights. The routing literature has a middle path: split preprocessing into a slow, weight-independent phase (the structure of the graph) and a fast customisation phase that re-applies new weights in seconds. Customisable route planning and customisable contraction hierarchies both work this way. You precompute the expensive structure once per map build, then refresh the weights every few minutes as traffic changes. For short trips, where traffic matters most and the search space is small, plain A* on live weights is perfectly fine. So a realistic system can mix both, depending on trip length.</p>
+        </details>
+
+        <details class="faq"><summary>Why not store the road graph in a graph database?</summary>
+          <p>Because the workload is not "flexible queries over relationships". It is one algorithm, run millions of times, where every microsecond per edge lookup matters. A compact array-based graph in memory, built for exactly that algorithm, is far faster than a general-purpose graph database with a query language and disk access in the way.</p>
+        </details>
+
+        <details class="faq"><summary>How does the traffic layer get drawn on the map?</summary>
+          <p>The board says the traffic overlay is tiles plus segment speeds. The base map tiles stay cached for a long time. The speeds are a small, fast-changing layer keyed by segment that the client colours on top. Keeping them separate means the fast-changing data does not destroy the cacheability of the slow-changing data.</p>
+        </details>
+
+        <details class="faq"><summary>What if very few people are on a road? Is there no traffic data?</summary>
+          <p>Below the device threshold, no live speed is published for that segment. The system falls back to the historical pattern for that segment, hour and weekday, and stores a lower confidence. On an empty road that fallback is usually right anyway, since empty roads flow freely.</p>
+        </details>
+
+        <details class="faq"><summary>Why are vector tiles preferred over raster tiles?</summary>
+          <p>They are smaller, they can be restyled on the device without re-downloading (dark mode, a different language for labels), and they stay sharp when you rotate, tilt or zoom between levels. Raster still makes sense for satellite imagery, which is a picture by nature, and for very simple clients.</p>
+        </details>
+
+        <details class="faq"><summary>Geohash, S2 or H3. Which should I use in my own project?</summary>
+          <p>For a first version of "find things near me", geohash is fine and works in almost any datastore. If you already use Postgres, PostGIS with a GiST index is even simpler and handles real shapes. Reach for S2 when you need consistent cell sizes worldwide and need to cover arbitrary regions. Reach for H3 when you are aggregating values over space, like demand or speeds, and want every neighbour at an equal distance.</p>
+        </details>
+
+        <details class="faq"><summary>How can route results be cached if every user has a different location?</summary>
+          <p>By coarsening the key. The board suggests origin and destination cells, the travel mode and a time bucket. Two users a few hundred metres apart, heading to the same area in the same few minutes, share most of a route. The TTL has to be short because traffic changes.</p>
+        </details>
+
+        <details class="faq"><summary>What happens to navigation when the server is unreachable?</summary>
+          <p>The device already has the route geometry and the list of maneuvers, and it runs map matching and guidance locally. So turn instructions continue. What you lose is anything that needs fresh server knowledge: traffic updates, better-route offers and server-side reroutes. With an offline bundle, the phone can even compute a new route itself, without traffic.</p>
+        </details>
+
+        <details class="faq"><summary>How fresh is each kind of data?</summary>
+          <p>The board gives the rough promises: traffic in minutes, map edits in hours to days, places indexed within minutes of a change. Tiles are versioned, so a tile is always exactly as fresh as its version.</p>
+        </details>
+
+        <details class="faq"><summary>How would I answer this in a 45-minute system design interview?</summary>
+          <p>Do not try to draw all fifteen sections. Start with the three flows at the top of the board. State the two doors. Then go deep on whichever part the interviewer steers toward, usually routing (graph, edge weights, A* versus precomputation) or traffic (stream, map matching, aggregation, privacy). Say out loud that route calculation is stateless and navigation is stateful, and that routing reads traffic but never waits on it. Finish with the degradation story.</p>
+        </details>
+
+        <details class="faq"><summary>Where do walking, cycling and transit fit?</summary>
+          <p>The board focuses on driving and only mentions modes in R1 and real-time transit in section L. Conceptually, each mode is a different view of the graph with different allowed edges and different weights. Walking can use footpaths and ignore one-way rules. Cycling cares about gradient and bike lanes. Transit adds timetables, which makes the graph time-dependent in a much stronger way. I would treat transit as its own design problem.</p>
+        </details>
+
+        <h2 id="takeaways">Takeaways</h2>
+
+        <ul>
+          <li><strong>Three flows, one source of truth.</strong> Map delivery, routing and traffic all derive from the geographic database, and they only meet at well-defined points.</li>
+          <li><strong>Two doors.</strong> Tiles go through the CDN. Everything dynamic goes through the gateway. Never mix them.</li>
+          <li><strong>Tiles are for drawing, the graph is for computing.</strong> Both are derived views, rebuilt when the truth changes, and only the affected parts are rebuilt.</li>
+          <li><strong>Everything in routing is an edge cost.</strong> Traffic, tolls, turn penalties, closures and preferences all become one number, so one algorithm serves every case.</li>
+          <li><strong>Time is the weight, and time is time-dependent.</strong> Cost each segment at the moment you will reach it.</li>
+          <li><strong>Route calculation is stateless. Navigation is a stateful loop that calls it.</strong></li>
+          <li><strong>Traffic is a stream.</strong> Routing reads its latest published output and never waits. Stale traffic is a quality problem, not an outage.</li>
+          <li><strong>No single device matters.</strong> Speeds are published only from enough devices, which is good statistics and good privacy.</li>
+          <li><strong>There is no universal geo index.</strong> z/x/y for tiles, cells or R-trees for places, segment IDs for traffic.</li>
+          <li><strong>The device is part of the system.</strong> It renders, caches, matches, guides and routes offline, which is what makes the product survive bad networks.</li>
+          <li><strong>Design the failure, not just the success.</strong> For each component, know what the user still gets when it is down.</li>
+        </ul>
+
+        <h2 id="references">References and extra reads</h2>
+
+        <ul class="reflist">
+          <li><a href="https://deepmind.google/discover/blog/traffic-prediction-with-advanced-graph-neural-networks/" target="_blank" rel="noopener">Traffic prediction with advanced Graph Neural Networks</a> <span>DeepMind blog, 2020. The public source for the GNN-based ETA work with Google Maps.</span></li>
+          <li><a href="https://arxiv.org/abs/2108.11482" target="_blank" rel="noopener">ETA Prediction with Graph Neural Networks in Google Maps</a> <span>Derrow-Pinion et al., 2021. The paper behind the blog post.</span></li>
+          <li><a href="https://s2geometry.io/" target="_blank" rel="noopener">S2 Geometry</a> <span>The open-source library for S2 cells: sphere → cube → Hilbert curve.</span></li>
+          <li><a href="https://h3geo.org/" target="_blank" rel="noopener">H3</a> <span>Uber's open-source hexagonal hierarchical spatial index.</span></li>
+          <li><a href="https://en.wikipedia.org/wiki/Geohash" target="_blank" rel="noopener">Geohash</a> <span>The base32 encoding and its precision table.</span></li>
+          <li><a href="https://postgis.net/documentation/" target="_blank" rel="noopener">PostGIS documentation</a> <span>Spatial types, GiST indexes and distance queries in Postgres.</span></li>
+          <li><a href="https://github.com/mapbox/vector-tile-spec" target="_blank" rel="noopener">Mapbox Vector Tile specification</a> <span>The open format most vector tile stacks use.</span></li>
+          <li><a href="https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames" target="_blank" rel="noopener">Slippy map tilenames</a> <span>How z/x/y tile addressing works, with the maths.</span></li>
+          <li><a href="https://link.springer.com/chapter/10.1007/978-3-540-68552-4_24" target="_blank" rel="noopener">Contraction Hierarchies: Faster and Simpler Hierarchical Routing in Road Networks</a> <span>Geisberger, Sanders, Schultes and Delling, 2008. The original CH paper.</span></li>
+          <li><a href="https://www.microsoft.com/en-us/research/publication/customizable-route-planning/" target="_blank" rel="noopener">Customizable Route Planning</a> <span>Delling, Goldberg, Pajor and Werneck. Separating structure from weights so traffic can be applied fast.</span></li>
+          <li><a href="https://arxiv.org/abs/1402.0402" target="_blank" rel="noopener">Customizable Contraction Hierarchies</a> <span>Dibbelt, Strasser and Wagner. The CH answer to changing weights.</span></li>
+          <li><a href="https://www.microsoft.com/en-us/research/publication/hidden-markov-map-matching-noise-sparseness/" target="_blank" rel="noopener">Hidden Markov Map Matching Through Noise and Sparseness</a> <span>Newson and Krumm, 2009. The standard HMM map matching paper.</span></li>
+          <li><a href="https://project-osrm.org/" target="_blank" rel="noopener">OSRM</a> and <a href="https://valhalla.github.io/valhalla/" target="_blank" rel="noopener">Valhalla</a> <span>Open-source routing engines you can run on OpenStreetMap data to see these ideas working.</span></li>
+          <li><a href="https://kafka.apache.org/documentation/" target="_blank" rel="noopener">Apache Kafka documentation</a> <span>Partitions, ordering and retention, the basis of the traffic stream.</span></li>
+        </ul>
+
+        <p><em>Sourcing note: this article explains a whiteboard-style educational diagram of a maps system. It is not a description of Google's internal architecture. Statements about Google are limited to what Google and DeepMind have published. The worked road graph, the degradation table and the end-to-end trip are my own illustrations.</em></p>
+
+      </div>
+
+      <div class="post-nav">
+        <a href="liquor-ladies-leverage-social-engineering.html">&larr; prev: Liquor, Ladies, Leverage</a>
+        <span></span>
+      </div>
+    </article>
+
+    <footer class="footer">
+      <span>© cvam. written in plaintext, served warm</span>
+    <nav class="footer-links" aria-label="Site information"><a href="../about.html">About</a><a href="../contact.html">Contact</a><a href="../privacy.html">Privacy Policy</a><a href="../terms.html">Terms</a><a href="../all-posts.html">All articles</a></nav></footer>
+    </div>
+
+    <aside class="toc-panel">
+      <p class="toc-panel-label">// on this page</p>
+      <nav id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script src="../stats.js?v=2"></script>
+  <script src="../app.js?v=43"></script>
+  <script defer src="../highlighter.js?v=2"></script>
+  <script defer src="../settings.js?v=18"></script>
+  <script defer src="../reader.js?v=3"></script>
+</body>
+</html>

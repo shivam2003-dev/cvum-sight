@@ -16,6 +16,16 @@
 
 const POSTS = [
   {
+    slug: "liquor-ladies-leverage-social-engineering",
+    title: "Only 3 Ways a Smart Person Gets Hacked: Liquor, Ladies and Leverage.",
+    date: "Nov 10, 2026",
+    cat: "security",
+    tags: ["security", "social-engineering", "human-factor", "counterintelligence", "insider-risk"],
+    time: 38,
+    words: 7568,
+    excerpt: "An old investing line turns out to be a threat model: state, attachment and hold. Why smart people are the best targets, the human shortcuts attackers press on, the six stage recruitment cycle, the Nvidia spy allegations in brief, warning signs, and defences for people and companies.",
+  },
+  {
     slug: "internet-is-breaking-ai-agents-security-oct-2026",
     title: "The Internet Is Breaking: AI Agents, Stolen Keys and Broken Trust.",
     date: "Oct 23, 2026",
